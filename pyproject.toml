@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spambotcontrol"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "Django==4.2.14",
+    "django-unfold==0.37.0",
+    "whitenoise[brotli]==6.7.0",
+    "aiogram==3.7.0",
+    "psycopg2-binary==2.9.9",
+    "redis==5.0.7",
+    "celery==5.3.6",
+    "django-environ==0.11.2",
+    "gunicorn==21.2.0",
+    "uvicorn[standard]==0.29.0",
+    "aiohttp==3.9.5",
+    "aiofiles==23.2.1",
+    "django-celery-results==2.5.1",
+    "django-celery-beat==2.6.0",
+    "asgiref==3.8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "django-debug-toolbar==4.3.0",
+    "ipython==8.25.0",
+    "pytest==8.2.0",
+    "pytest-django==4.8.0",
+    "pytest-asyncio==0.23.6",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+asyncio_mode = "auto"
+python_files = ["test_*.py", "*_test.py"]

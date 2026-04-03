@@ -1,0 +1,48 @@
+version: "3.9"
+
+# Dev overrides. Applied on top of docker-compose.yml.
+#
+# Usage (via Makefile):
+#   make dev
+#
+# Direct usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml \
+#     -f docker-compose.ngrok.yml up -d \
+#     postgres redis ngrok web celery_worker celery_beat
+#
+# Note: nginx is intentionally excluded from the dev startup command.
+# The web service is accessed directly on localhost:8000.
+
+services:
+  web:
+    command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      RUN_MIGRATIONS: "true"
+    ports:
+      - "8000:8000"
+
+  celery_worker:
+    command: celery -A config.celery worker -l debug -c 2 -Q default,broadcasts
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+
+  celery_beat:
+    command: celery -A config.celery beat -l debug --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+
+  # Expose postgres and redis directly for local DB clients / inspection
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
