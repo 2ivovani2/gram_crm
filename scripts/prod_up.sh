@@ -109,23 +109,48 @@ echo ""
 
 # ── 7. Register Telegram webhook with self-signed cert ────────────────────────
 log "Registering Telegram webhook: $WEBHOOK_URL"
-$COMPOSE exec -T web python manage.py setup_webhook \
+WEBHOOK_SECRET=$(grep -m1 '^TELEGRAM_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+PROD_TOKEN=$(grep -m1 '^PROD_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+
+WEBHOOK_REGISTERED=false
+if $COMPOSE exec -T web python manage.py setup_webhook \
     --url "$WEBHOOK_URL" \
-    --certificate /app/ssl/webhook.pem
+    --certificate /app/ssl/webhook.pem 2>&1 || false; then
+    WEBHOOK_REGISTERED=true
+else
+    echo ""
+    echo "  ┌────────────────────────────────────────────────────���────────┐"
+    echo "  │  VPS не может достучаться до api.telegram.org               │"
+    echo "  │  (типично для российских хостингов)                         │"
+    echo "  │                                                              │"
+    echo "  │  Зарегистрируй webhook вручную с локальной машины:          │"
+    echo "  │                                                              │"
+    echo "  │  1. Скопируй сертификат на локалку:                         │"
+    printf "  │     scp root@%s:$(pwd)/ssl/webhook.pem ./webhook.pem\n" "$VPS_IP"
+    echo "  │                                                              │"
+    echo "  │  2. Запусти curl:                                            │"
+    echo "  │                                                              │"
+    printf "  │  curl -F \"url=%s\" \\\\\n" "$WEBHOOK_URL"
+    echo  "  │       -F \"certificate=@webhook.pem\" \\"
+    printf "  │       -F \"secret_token=%s\" \\\\\n" "${WEBHOOK_SECRET:-YOUR_SECRET}"
+    echo  "  │       -F \"drop_pending_updates=true\" \\"
+    printf "  │       \"https://api.telegram.org/bot%s/setWebhook\"\n" "${PROD_TOKEN:-YOUR_TOKEN}"
+    echo "  └─────────────────────────────────────────────────────────────┘"
+fi
 
 # ── 8. Print status ────────────────────────────────────────────────────────────
-echo ""
-log "Webhook info:"
-$COMPOSE exec -T web python manage.py setup_webhook --info
-
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  Production stack ready.                                 ║"
 printf "║  Bot env   : %-43s║\n" "prod (production bot)"
 printf "║  Webhook   : %-43s║\n" "$WEBHOOK_URL"
 printf "║  Admin     : %-43s║\n" "https://${VPS_IP}/admin/"
+if [ "$WEBHOOK_REGISTERED" = "true" ]; then
+    echo "║  Webhook   : registered ✓                                ║"
+else
+    echo "║  Webhook   : требует ручной регистрации (см. выше)       ║"
+fi
 echo "║                                                          ║"
 echo "║  make prod-down     — stop everything + delete webhook   ║"
 echo "║  make logs-prod     — follow logs                        ║"
-echo "║  make webhook-info  — check webhook status               ║"
 echo "╚══════════════════════════════════════════════════════════╝"
