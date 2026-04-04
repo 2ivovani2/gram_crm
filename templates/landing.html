@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpamBotControl</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue-400: #38bdf8;
+      --blue-500: #0ea5e9;
+      --blue-600: #0284c7;
+      --blue-900: #0c4a6e;
+      --bg: #080f1a;
+      --surface: rgba(14, 165, 233, 0.06);
+      --border: rgba(56, 189, 248, 0.15);
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Canvas particles ── */
+    #canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* ── Gradient orbs ── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+      animation: drift 20s ease-in-out infinite alternate;
+    }
+    .orb-1 { width: 600px; height: 600px; background: #0ea5e9; top: -200px; left: -100px; animation-delay: 0s; }
+    .orb-2 { width: 500px; height: 500px; background: #6366f1; bottom: -150px; right: -100px; animation-delay: -7s; }
+    .orb-3 { width: 350px; height: 350px; background: #0284c7; top: 40%; left: 50%; animation-delay: -14s; }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 30px) scale(1.08); }
+    }
+
+    /* ── Layout ── */
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 48px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      background: rgba(8, 15, 26, 0.6);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .logo-icon {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, var(--blue-500), #6366f1);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+
+    .nav-cta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      background: linear-gradient(135deg, var(--blue-500), var(--blue-600));
+      color: #fff;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 0 20px rgba(14, 165, 233, 0.3);
+    }
+    .nav-cta:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 0 30px rgba(14, 165, 233, 0.5); }
+
+    /* ── Hero ── */
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 100px 24px 80px;
+      gap: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: var(--blue-400);
+      margin-bottom: 28px;
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--blue-400);
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.4); }
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    h1 .gradient {
+      background: linear-gradient(135deg, var(--blue-400) 0%, #818cf8 50%, var(--blue-400) 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+    @keyframes shimmer {
+      from { background-position: 0% center; }
+      to   { background-position: 200% center; }
+    }
+
+    .subtitle {
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      color: var(--muted);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 48px;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeUp 0.6s 0.3s ease both;
+    }
+
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, var(--blue-500), #6366f1);
+      color: #fff;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 24px rgba(14, 165, 233, 0.35);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(14, 165, 233, 0.5); }
+
+    .btn-secondary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(14, 165, 233, 0.1); transform: translateY(-2px); }
+
+    /* ── Stats row ── */
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      padding: 0 24px 80px;
+      animation: fadeUp 0.6s 0.4s ease both;
+    }
+
+    .stat-item {
+      padding: 28px 48px;
+      text-align: center;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      transition: background 0.2s;
+    }
+    .stat-item:first-child { border-radius: 16px 0 0 16px; }
+    .stat-item:last-child  { border-radius: 0 16px 16px 0; border-left: none; }
+    .stat-item:not(:first-child):not(:last-child) { border-left: none; }
+    .stat-item:hover { background: rgba(14, 165, 233, 0.08); }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--blue-400), #a5b4fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 4px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Features ── */
+    .features {
+      padding: 0 24px 100px;
+      max-width: 1100px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--blue-400);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 56px;
+      color: #fff;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      padding: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+      animation: fadeUp 0.5s ease both;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(56, 189, 248, 0.4);
+      box-shadow: 0 12px 40px rgba(14, 165, 233, 0.12);
+    }
+    .card:nth-child(2) { animation-delay: 0.1s; }
+    .card:nth-child(3) { animation-delay: 0.2s; }
+    .card:nth-child(4) { animation-delay: 0.3s; }
+    .card:nth-child(5) { animation-delay: 0.4s; }
+    .card:nth-child(6) { animation-delay: 0.5s; }
+
+    .card-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, rgba(14,165,233,0.2), rgba(99,102,241,0.2));
+      border: 1px solid var(--border);
+    }
+
+    .card h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 10px;
+    }
+
+    .card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    /* ── CTA block ── */
+    .cta-block {
+      margin: 0 24px 100px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 60px 48px;
+      background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(99,102,241,0.1));
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-block::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(14,165,233,0.05), rgba(99,102,241,0.05));
+      border-radius: inherit;
+    }
+
+    .cta-block h2 {
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .cta-block p {
+      color: var(--muted);
+      margin-bottom: 32px;
+      position: relative;
+    }
+
+    .cta-block .btn-primary {
+      display: inline-flex;
+      position: relative;
+    }
+
+    /* ── Footer ── */
+    footer {
+      padding: 24px 48px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      nav { padding: 16px 20px; }
+      .hero { padding: 70px 16px 60px; }
+      .stats { flex-direction: column; align-items: center; }
+      .stat-item { width: 100%; border-radius: 12px !important; border-left: 1px solid var(--border) !important; margin-bottom: 8px; }
+      .cta-block { padding: 40px 24px; }
+      footer { flex-direction: column; gap: 8px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="wrapper">
+
+  <!-- Nav -->
+  <nav>
+    <a href="/" class="logo">
+      <div class="logo-icon">🤖</div>
+      SpamBotControl
+    </a>
+    <a href="/django-admin/" class="nav-cta">
+      ⚡ Войти в панель
+    </a>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      Система управления Telegram-ботом
+    </div>
+
+    <h1>
+      Управление воркерами<br/>
+      <span class="gradient">на новом уровне</span>
+    </h1>
+
+    <p class="subtitle">
+      Централизованная платформа для контроля команды, рассылок,
+      реферальной программы и статистики в реальном времени.
+    </p>
+
+    <div class="hero-actions">
+      <a href="/django-admin/" class="btn-primary">
+        🛠 Открыть Admin Panel
+      </a>
+      <a href="https://t.me/{{ bot_username }}" class="btn-secondary" target="_blank">
+        ✈️ Перейти в бот
+      </a>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-item">
+      <div class="stat-value">∞</div>
+      <div class="stat-label">Воркеров</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">20/с</div>
+      <div class="stat-label">Рассылка</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">24/7</div>
+      <div class="stat-label">Аптайм</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value">100%</div>
+      <div class="stat-label">Webhook</div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section class="features">
+    <p class="section-label">Возможности</p>
+    <h2 class="section-title">Всё что нужно для работы</h2>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">👥</div>
+        <h3>Управление воркерами</h3>
+        <p>Полный контроль над командой: статусы, балансы, рабочие ссылки, история активности и поиск по любому параметру.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔑</div>
+        <h3>Invite Keys</h3>
+        <p>Создавайте ключи с лимитом использований и сроком действия. Полный лог активаций — кто и когда подключился.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📢</div>
+        <h3>Рассылки</h3>
+        <p>HTML-форматирование, выбор аудитории (все / активные / по ключу), двухэтапное подтверждение, логи доставки.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🤝</div>
+        <h3>Реферальная программа</h3>
+        <p>Уникальные deep-link ссылки для каждого воркера. Настраиваемая ставка с заработка реферала.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📊</div>
+        <h3>Статистика</h3>
+        <p>Дневная статистика по задачам на каждого воркера. История за 7 дней прямо в боте.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3>Webhook-only</h3>
+        <p>Никакого polling. Только HTTPS webhook с валидацией секрета. Мгновенный отклик, стабильная работа 24/7.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta-block">
+    <h2>Готовы начать?</h2>
+    <p>Войдите в панель администратора и настройте систему под себя.</p>
+    <a href="/django-admin/" class="btn-primary">
+      🚀 Открыть Admin Panel
+    </a>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <span>© 2026 SpamBotControl</span>
+    <span>Powered by Django + aiogram</span>
+  </footer>
+
+</div>
+
+<script>
+  // Particle canvas
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let particles = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function randomBetween(a, b) { return a + Math.random() * (b - a); }
+
+  function createParticle() {
+    return {
+      x: randomBetween(0, canvas.width),
+      y: randomBetween(0, canvas.height),
+      r: randomBetween(1, 2.5),
+      dx: randomBetween(-0.3, 0.3),
+      dy: randomBetween(-0.5, -0.1),
+      alpha: randomBetween(0.1, 0.5),
+    };
+  }
+
+  for (let i = 0; i < 80; i++) particles.push(createParticle());
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(56, 189, 248, ${p.alpha})`;
+      ctx.fill();
+
+      p.x += p.dx;
+      p.y += p.dy;
+      p.alpha -= 0.0008;
+
+      if (p.y < -10 || p.alpha <= 0) {
+        Object.assign(p, createParticle(), { y: canvas.height + 10 });
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+
+  // Intersection Observer for card animations
+  const cards = document.querySelectorAll('.card');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.style.opacity = '1';
+        e.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  cards.forEach(c => {
+    c.style.opacity = '0';
+    c.style.transform = 'translateY(30px)';
+    c.style.transition = 'opacity 0.5s ease, transform 0.5s ease, border-color 0.25s, box-shadow 0.25s';
+    io.observe(c);
+  });
+</script>
+</body>
+</html>
