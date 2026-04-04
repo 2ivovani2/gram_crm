@@ -6,13 +6,22 @@ The active bot is selected by BOT_ENV:
   BOT_ENV=prod → PROD_BOT_TOKEN  (use with TELEGRAM_WEBHOOK_URL in .env)
 
 Usage:
+    # Dev (ngrok URL passed by make dev automatically):
     python manage.py setup_webhook --url https://<ngrok>.ngrok-free.app/bot/webhook/
-    python manage.py setup_webhook           # uses TELEGRAM_WEBHOOK_URL from .env
+
+    # Prod (VPS with self-signed cert):
+    python manage.py setup_webhook --url https://45.135.164.155/bot/webhook/ --certificate /app/ssl/webhook.pem
+
+    # Prod (domain with proper SSL — no certificate upload needed):
+    python manage.py setup_webhook  # uses TELEGRAM_WEBHOOK_URL from .env
+
     python manage.py setup_webhook --delete  # remove webhook for the active bot
     python manage.py setup_webhook --info    # show current webhook state
 
-The --url flag takes priority over the TELEGRAM_WEBHOOK_URL setting and is the
-recommended way to register the webhook in dev (called automatically by make dev).
+Notes:
+  - --url takes priority over TELEGRAM_WEBHOOK_URL from settings.
+  - --certificate uploads the PEM file to Telegram (required for self-signed certs).
+  - Called automatically by scripts/dev_up.sh (dev) and scripts/prod_up.sh (prod).
 """
 import asyncio
 import logging
@@ -29,14 +38,21 @@ class Command(BaseCommand):
         group = parser.add_mutually_exclusive_group()
         group.add_argument("--delete", action="store_true", help="Delete the webhook")
         group.add_argument("--info", action="store_true", help="Show current webhook info")
-        # --url is not part of the mutually exclusive group: it is used together
-        # with the default "set" action, not with --delete or --info.
         parser.add_argument(
             "--url",
             default="",
             help=(
                 "Webhook URL to register (overrides TELEGRAM_WEBHOOK_URL from settings). "
-                "Typically passed by scripts/dev_up.sh with the current ngrok URL."
+                "Typically passed by scripts/dev_up.sh (ngrok) or scripts/prod_up.sh (VPS IP)."
+            ),
+        )
+        parser.add_argument(
+            "--certificate",
+            default="",
+            help=(
+                "Path to self-signed certificate PEM file. "
+                "Required when registering a webhook for a VPS IP (no domain). "
+                "Example: --certificate /app/ssl/webhook.pem"
             ),
         )
 
@@ -63,21 +79,43 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("Webhook deleted."))
 
             else:
-                # --url flag takes priority over the settings value
                 webhook_url = options["url"] or settings.TELEGRAM_WEBHOOK_URL
                 if not webhook_url:
                     self.stderr.write(self.style.ERROR(
                         "No webhook URL provided.\n"
                         "  Dev:  use 'make dev' — it passes the ngrok URL automatically.\n"
-                        "  Prod: set TELEGRAM_WEBHOOK_URL=https://yourdomain.com/bot/webhook/ in .env"
+                        "  Prod: set TELEGRAM_WEBHOOK_URL=https://<vps_ip>/bot/webhook/ in .env\n"
+                        "        or pass --url https://<vps_ip>/bot/webhook/"
                     ))
                     return
 
-                await bot.set_webhook(
-                    url=webhook_url.rstrip("/") + "/",
-                    secret_token=settings.TELEGRAM_WEBHOOK_SECRET or None,
-                    drop_pending_updates=True,
-                )
-                self.stdout.write(self.style.SUCCESS(f"Webhook set: {webhook_url}"))
+                cert_path = options.get("certificate", "")
+                if cert_path:
+                    import os
+                    if not os.path.isfile(cert_path):
+                        self.stderr.write(self.style.ERROR(
+                            f"Certificate file not found: {cert_path}\n"
+                            "Run 'make prod' to generate it automatically, "
+                            "or check the path."
+                        ))
+                        return
+                    from aiogram.types import FSInputFile
+                    certificate = FSInputFile(cert_path)
+                    await bot.set_webhook(
+                        url=webhook_url.rstrip("/") + "/",
+                        certificate=certificate,
+                        secret_token=settings.TELEGRAM_WEBHOOK_SECRET or None,
+                        drop_pending_updates=True,
+                    )
+                    self.stdout.write(self.style.SUCCESS(
+                        f"Webhook set: {webhook_url} (with self-signed certificate)"
+                    ))
+                else:
+                    await bot.set_webhook(
+                        url=webhook_url.rstrip("/") + "/",
+                        secret_token=settings.TELEGRAM_WEBHOOK_SECRET or None,
+                        drop_pending_updates=True,
+                    )
+                    self.stdout.write(self.style.SUCCESS(f"Webhook set: {webhook_url}"))
         finally:
             await bot.session.close()

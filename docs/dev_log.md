@@ -5,6 +5,44 @@ Updated after every significant step.
 
 ---
 
+## 2026-04-04 — Production VPS deployment + user guides
+
+### What was done
+
+Prepared a complete one-command production deployment for VPS `45.135.164.155` (no domain, HTTPS via self-signed SSL certificate). Added usage documentation for the bot and Django admin panel.
+
+#### Problem
+Telegram requires HTTPS for webhooks. Without a domain, a standard Let's Encrypt certificate is not possible. Solution: self-signed certificate — Telegram explicitly supports this via the `certificate` parameter in `setWebhook`.
+
+#### SSL approach
+- `openssl req -newkey rsa:2048 -subj "/CN=<VPS_IP>"` generates a 10-year self-signed cert
+- Nginx serves HTTPS on port 443 with this cert
+- `setup_webhook --certificate /app/ssl/webhook.pem` uploads the cert to Telegram at registration time
+- Cert is stored in `ssl/` directory (gitignored — never commit private keys)
+- If VPS_IP changes, the cert is automatically regenerated on next `make prod`
+
+#### Files created/modified
+
+- **`nginx/prod.conf`** — HTTPS nginx config (listens on 443 with self-signed cert, HTTP:80 → HTTPS redirect)
+- **`docker-compose.yml`** — nginx now mounts `nginx/prod.conf` and `./ssl:/etc/ssl/bot:ro`
+- **`scripts/prod_up.sh`** — one-command prod startup: validates BOT_ENV=prod → reads VPS_IP → generates SSL cert → builds images → starts all services → waits for web health (exec curl inside container) → registers webhook with cert
+- **`scripts/prod_down.sh`** — stops prod stack + deletes webhook
+- **`apps/telegram_bot/management/commands/setup_webhook.py`** — added `--certificate <path>` argument; when provided, uploads PEM file to Telegram via `FSInputFile`
+- **`Makefile`** — added `make prod`, `make prod-down`, `make logs-prod`
+- **`.env.example`** — added `VPS_IP` variable with explanation
+- **`.gitignore`** — added `ssl/` entry
+- **`docs/bot_guide.md`** — full usage guide for workers and admins (bot commands, flows, all sections)
+- **`docs/django_admin_guide.md`** — full guide for Django admin panel (all models, common operations)
+- **`CLAUDE.md`** — updated commands, env vars, files table, added "Production deployment" section
+
+#### Design decisions
+
+- **Self-signed cert vs nip.io + Let's Encrypt**: self-signed chosen for simplicity — no external dependencies, works offline, no rate limits, valid 10 years.
+- **Health check via `docker exec`** instead of external HTTP: in prod, no ports are exposed from the `web` container (only nginx exposes 80/443), so health check uses `docker-compose exec -T web curl http://localhost:8000/health/`.
+- **No docker-compose.prod.yml overlay**: base `docker-compose.yml` IS the prod config. Dev uses `docker-compose.dev.yml` overlay on top.
+
+---
+
 ## 2026-04-03 — Webhook-only architecture + dual-bot setup
 
 ### What was done
