@@ -9,7 +9,7 @@
 #   7. Print final status
 #
 # Prerequisites on VPS:
-#   apt install -y docker.io docker-compose openssl curl
+#   apt install -y docker.io docker-compose-plugin openssl curl
 #   git clone <repo> && cd <repo>
 #   cp .env.example .env && nano .env   # set BOT_ENV=prod, PROD_BOT_TOKEN, VPS_IP, etc.
 #
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-COMPOSE="docker-compose -f docker-compose.yml"
+COMPOSE="docker compose -f docker-compose.yml"
 WEBHOOK_PATH="/bot/webhook/"
 SSL_DIR="$PROJECT_DIR/ssl"
 CERT_FILE="$SSL_DIR/webhook.pem"

@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-COMPOSE="docker-compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.ngrok.yml"
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.ngrok.yml"
 NGROK_API="http://localhost:4040/api/tunnels"
 WEB_HEALTH="http://localhost:8000/health/"
 WEBHOOK_PATH="/bot/webhook/"

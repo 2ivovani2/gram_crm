@@ -1,11 +1,11 @@
 .PHONY: dev dev-down prod prod-down logs logs-prod webhook-info help
 
-COMPOSE_DEV = docker-compose \
+COMPOSE_DEV = docker compose \
 	-f docker-compose.yml \
 	-f docker-compose.dev.yml \
 	-f docker-compose.ngrok.yml
 
-COMPOSE_PROD = docker-compose \
+COMPOSE_PROD = docker compose \
 	-f docker-compose.yml
 
 # ── Dev targets ───────────────────────────────────────────────────────────────
