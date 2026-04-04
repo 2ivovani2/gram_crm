@@ -60,8 +60,17 @@ class Command(BaseCommand):
         asyncio.run(self._run(options))
 
     async def _run(self, options):
+        from aiogram.client.session.aiohttp import AiohttpSession
+        from aiohttp import ClientTimeout
         from apps.telegram_bot.bot import get_bot
-        bot = get_bot()
+
+        # Use a longer timeout when uploading a certificate file to Telegram
+        if options.get("certificate"):
+            from aiogram import Bot
+            session = AiohttpSession(timeout=ClientTimeout(total=60))
+            bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, session=session)
+        else:
+            bot = get_bot()
 
         token_hint = settings.TELEGRAM_BOT_TOKEN[:10] + "..."
         self.stdout.write(f"Bot env   : {settings.BOT_ENV}")
