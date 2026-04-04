@@ -92,7 +92,7 @@ $COMPOSE up -d postgres redis web celery_worker celery_beat nginx
 # ── 6. Wait for web service ────────────────────────────────────────────────────
 log "Waiting for web service (up to ${WEB_WAIT_SEC}s) ..."
 for i in $(seq 1 "$WEB_WAIT_SEC"); do
-    if $COMPOSE exec -T web curl -sf http://localhost:8000/health/ -o /dev/null 2>/dev/null; then
+    if $COMPOSE exec -T web curl -sf -H "Host: ${VPS_IP}" http://localhost:8000/health/ -o /dev/null 2>/dev/null; then
         ok "Web service is healthy (${i}s)."
         break
     fi
