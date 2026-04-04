@@ -36,7 +36,7 @@ RUN chmod +x scripts/entrypoint.sh
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+# Healthcheck is defined per-service in docker-compose.yml (only web gets one).
+# Celery containers don't run uvicorn, so a global HTTP healthcheck is wrong.
 
 ENTRYPOINT ["bash", "scripts/entrypoint.sh"]

@@ -18,7 +18,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -46,7 +46,7 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       RUN_MIGRATIONS: "true"
     healthcheck:
-      test: ["CMD-SHELL", "curl -s --max-time 3 http://localhost:8000/health/ -o /dev/null"]
+      test: ["CMD-SHELL", "curl -sf --max-time 3 -H \"Host: $VPS_IP\" http://localhost:8000/health/ -o /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -81,6 +81,5 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
   redis_data:
   static_files:
