@@ -46,7 +46,7 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       RUN_MIGRATIONS: "true"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "-H", "Host: ${VPS_IP}", "http://localhost:8000/health/"]
+      test: ["CMD-SHELL", "curl -s --max-time 3 http://localhost:8000/health/ -o /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12
