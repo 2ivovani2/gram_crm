@@ -15,9 +15,12 @@ def setup_routers(dp: Dispatcher) -> None:
     from apps.telegram_bot.handlers.admin.stats import router as admin_stats_router
     from apps.telegram_bot.handlers.admin.settings import router as admin_settings_router
 
+    from apps.telegram_bot.handlers.admin.withdrawals import router as admin_withdrawals_router
+
     from apps.telegram_bot.handlers.worker.start import router as worker_start_router
     from apps.telegram_bot.handlers.worker.profile import router as worker_profile_router
     from apps.telegram_bot.handlers.worker.invite import router as worker_invite_router
+    from apps.telegram_bot.handlers.worker.withdrawal import router as worker_withdrawal_router
 
     # Admin routers first — they have IsAdmin() filter so no conflict
     dp.include_router(admin_menu_router)
@@ -26,8 +29,10 @@ def setup_routers(dp: Dispatcher) -> None:
     dp.include_router(admin_broadcasts_router)
     dp.include_router(admin_stats_router)
     dp.include_router(admin_settings_router)
+    dp.include_router(admin_withdrawals_router)
 
     # Worker routers
     dp.include_router(worker_start_router)
     dp.include_router(worker_profile_router)
     dp.include_router(worker_invite_router)
+    dp.include_router(worker_withdrawal_router)

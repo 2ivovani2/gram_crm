@@ -2,7 +2,7 @@ from .base import *  # noqa: F401, F403
 
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", ".ngrok-free.app", ".ngrok.io"]
 
 # Shorter cache for dev
 CELERY_TASK_ALWAYS_EAGER = False  # set True to run tasks synchronously in tests

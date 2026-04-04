@@ -1,5 +1,3 @@
-version: "3.9"
-
 # Dev overrides. Applied on top of docker-compose.yml.
 #
 # Usage (via Makefile):

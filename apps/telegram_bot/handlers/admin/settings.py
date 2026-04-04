@@ -13,7 +13,10 @@ from apps.telegram_bot.admin_keyboards import get_settings_keyboard, get_user_ca
 from apps.telegram_bot.callbacks import AdminMenuCallback, AdminSettingsCallback
 from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import safe_edit_text
-from apps.telegram_bot.states import AdminSetWorkUrlState, AdminSetReferralRateState, AdminSetAttractedCountState
+from apps.telegram_bot.states import (
+    AdminSetWorkUrlState, AdminSetReferralRateState, AdminSetAttractedCountState,
+    AdminSetPersonalRateState, AdminSetReferralRatePerUserState,
+)
 from apps.users.models import User
 from apps.users.services import UserService
 
@@ -165,9 +168,102 @@ async def process_set_attracted(message: Message, state: FSMContext) -> None:
     await state.clear()
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_attracted_count)(user, count)
+    # Refresh user to get updated balance
+    user = await sync_to_async(User.objects.get)(pk=target_user_id)
 
     from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
     await message.answer(
-        f"✅ Привлечено людей для <b>{user.display_name}</b>: <b>{user.attracted_count}</b>",
+        f"✅ Привлечено людей для <b>{user.display_name}</b>: <b>{user.attracted_count}</b>\n"
+        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
+        reply_markup=_kb(user),
+    )
+
+
+# ── Set personal rate FSM ─────────────────────────────────────────────────────
+
+@router.callback_query(AdminSettingsCallback.filter(F.action == "set_personal_rate"), IsAdmin())
+async def cb_set_personal_rate_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+    await callback.answer()
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    await state.set_state(AdminSetPersonalRateState.waiting_for_rate)
+    await state.update_data(target_user_id=callback_data.user_id)
+    from apps.telegram_bot.keyboards import get_cancel_keyboard
+    await safe_edit_text(
+        callback,
+        f"💰 <b>Личная ставка — {user.display_name}</b>\n\n"
+        f"Текущая ставка: <b>{user.personal_rate:.2f} руб.</b> за прямого подписчика\n\n"
+        "Введите новую ставку в рублях (например: <code>50</code> или <code>12.5</code>):",
+        get_cancel_keyboard(),
+    )
+
+
+@router.message(AdminSetPersonalRateState.waiting_for_rate, IsAdmin())
+async def process_set_personal_rate(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    target_user_id = data["target_user_id"]
+    raw = (message.text or "").strip().replace(",", ".")
+    try:
+        rate = float(raw)
+        if rate < 0:
+            raise ValueError
+    except ValueError:
+        from apps.telegram_bot.keyboards import get_cancel_keyboard
+        await message.answer("⚠️ Введите число ≥ 0 (например: 50 или 12.5).", reply_markup=get_cancel_keyboard())
+        return
+
+    await state.clear()
+    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    user = await sync_to_async(UserService.set_personal_rate)(user, rate)
+    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+
+    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
+    await message.answer(
+        f"✅ Личная ставка для <b>{user.display_name}</b>: <b>{user.personal_rate:.2f} руб.</b>\n"
+        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
+        reply_markup=_kb(user),
+    )
+
+
+# ── Set referral rate per user FSM ────────────────────────────────────────────
+
+@router.callback_query(AdminSettingsCallback.filter(F.action == "set_referral_rate"), IsAdmin())
+async def cb_set_referral_rate_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+    await callback.answer()
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    await state.set_state(AdminSetReferralRatePerUserState.waiting_for_rate)
+    await state.update_data(target_user_id=callback_data.user_id)
+    from apps.telegram_bot.keyboards import get_cancel_keyboard
+    await safe_edit_text(
+        callback,
+        f"🤝 <b>Ставка за рефералов — {user.display_name}</b>\n\n"
+        f"Текущая ставка: <b>{user.referral_rate:.2f} руб.</b> за подписчика реферала\n\n"
+        "Введите новую ставку в рублях (например: <code>10</code> или <code>5.5</code>):",
+        get_cancel_keyboard(),
+    )
+
+
+@router.message(AdminSetReferralRatePerUserState.waiting_for_rate, IsAdmin())
+async def process_set_referral_rate_per_user(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    target_user_id = data["target_user_id"]
+    raw = (message.text or "").strip().replace(",", ".")
+    try:
+        rate = float(raw)
+        if rate < 0:
+            raise ValueError
+    except ValueError:
+        from apps.telegram_bot.keyboards import get_cancel_keyboard
+        await message.answer("⚠️ Введите число ≥ 0 (например: 10 или 5.5).", reply_markup=get_cancel_keyboard())
+        return
+
+    await state.clear()
+    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    user = await sync_to_async(UserService.set_referral_rate)(user, rate)
+    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+
+    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
+    await message.answer(
+        f"✅ Ставка за рефералов для <b>{user.display_name}</b>: <b>{user.referral_rate:.2f} руб.</b>\n"
+        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
         reply_markup=_kb(user),
     )

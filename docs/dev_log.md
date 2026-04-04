@@ -5,6 +5,56 @@ Updated after every significant step.
 
 ---
 
+## 2026-04-05 — Referral system rework + withdrawal mechanism
+
+### What was done
+
+Replaced the global `ReferralSettings.rate_percent` model with per-user rates. Added full withdrawal request flow (worker → admin notifications → approve/reject → balance recalculation).
+
+#### Balance calculation
+`balance = attracted_count × personal_rate + Σ(ref.attracted_count × referral_rate for ref in direct referrals) − Σ(approved withdrawals)`
+
+Recalculated automatically when admin changes `attracted_count`, `personal_rate`, or `referral_rate` of any user. Also recalculates the referrer's balance when a referral's `attracted_count` changes.
+
+#### New app: `apps/withdrawals/`
+- `WithdrawalRequest` model: `user`, `amount`, `method` (cryptobot/usdt_trc20), `details`, `status` (pending/approved/rejected), `processed_by`, `processed_at`, `admin_notifications` (JSONField — list of `{telegram_id, message_id}`)
+- `WithdrawalService`: create, approve (deducts balance), reject, save_admin_notifications, get_list
+- `WithdrawalRequestAdmin` (Django admin, unfold)
+
+#### Worker withdrawal flow
+1. Button "💸 Вывод средств" on main menu and profile
+2. Choose method: CryptoBot or USDT TRC20
+3. Enter details (validated: @username regex or TRC20 address regex `^T[a-zA-Z0-9]{33}$`)
+4. Request saved; user gets confirmation; all admins notified via bot message with approve/reject buttons
+
+#### Admin withdrawal handling
+- "💸 Выводы" section in admin main menu
+- List with pagination, card view
+- Approve: balance recalculated (deducts amount), user notified, all other admin notification messages edited to "Обработано {admin}"
+- Reject: status updated, user notified, other admin messages edited
+- First admin to act locks the request — others see "already processed" on callback
+
+#### User model changes
+- Added `personal_rate` (Decimal, default 0) — rate per direct subscriber
+- Added `referral_rate` (Decimal, default 0) — rate per referral's subscriber
+- `attracted_count` help_text updated
+
+#### User card (admin bot)
+- Shows `personal_rate`, `referral_rate`
+- Two new buttons: "💰 Личная ставка", "🤝 Ставка за рефералов" → FSM to set per-user rates
+
+#### Migrations
+- `users/0004_user_personal_rate_user_referral_rate_and_more.py`
+- `withdrawals/0001_initial.py`
+
+#### Design decisions
+- Per-user rates (not global) — each worker can have individual economics
+- Balance recalculation is always deterministic (counts × rates − withdrawn), never cumulative increments — prevents drift from manual edits
+- `admin_notifications` as JSONField on WithdrawalRequest — avoids extra table, safe for concurrent admin edits
+- Withdrawal only possible if `balance > 0` — checked at entry point and before save
+
+---
+
 ## 2026-04-04 — Production VPS deployment + user guides
 
 ### What was done

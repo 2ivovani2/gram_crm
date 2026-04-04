@@ -14,6 +14,8 @@ Prefix map:
   adm_i   → admin invites
   adm_b   → admin broadcasts
   adm_s   → admin stats
+  adm_cfg → admin settings
+  adm_w   → admin withdrawals
 """
 from aiogram.filters.callback_data import CallbackData
 
@@ -51,3 +53,14 @@ class AdminStatsCallback(CallbackData, prefix="adm_s"):
 class AdminSettingsCallback(CallbackData, prefix="adm_cfg"):
     action: str
     user_id: int = 0
+
+
+class AdminWithdrawalCallback(CallbackData, prefix="adm_w"):
+    action: str
+    withdrawal_id: int = 0
+    page: int = 1
+
+
+class WorkerWithdrawalCallback(CallbackData, prefix="ww"):
+    action: str
+    withdrawal_id: int = 0

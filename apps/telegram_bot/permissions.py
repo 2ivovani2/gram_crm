@@ -24,7 +24,7 @@ class IsActivatedWorker(BaseFilter):
         return (
             db_user is not None
             and db_user.is_activated
-            and db_user.status == UserStatus.ACTIVE
+            and db_user.status not in (UserStatus.INACTIVE, UserStatus.BANNED)
         )
 
 

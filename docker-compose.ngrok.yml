@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ngrok overlay — exposes the local web service via a public HTTPS tunnel
 # so Telegram can deliver webhook updates to your local machine.
 #

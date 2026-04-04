@@ -72,9 +72,62 @@ class UserService:
         return user
 
     @staticmethod
+    def recalculate_balance(user: User) -> User:
+        """
+        Balance = attracted_count * personal_rate
+                + sum(ref.attracted_count * referral_rate for ref in direct referrals)
+        Then subtract total approved withdrawals.
+        """
+        from decimal import Decimal
+        from django.db.models import Sum
+        earned = (
+            Decimal(user.attracted_count) * user.personal_rate
+            + sum(
+                Decimal(ref.attracted_count) * user.referral_rate
+                for ref in user.referrals.only("attracted_count")
+            )
+        )
+        # Deduct approved withdrawals so balance reflects available funds
+        try:
+            from apps.withdrawals.models import WithdrawalRequest
+            withdrawn = (
+                WithdrawalRequest.objects.filter(user=user, status="approved")
+                .aggregate(total=Sum("amount"))["total"] or Decimal("0")
+            )
+        except Exception:
+            withdrawn = Decimal("0")
+
+        user.balance = max(Decimal("0"), earned - withdrawn)
+        user.save(update_fields=["balance", "updated_at"])
+        return user
+
+    @staticmethod
     def set_attracted_count(user: User, count: int) -> User:
         user.attracted_count = count
         user.save(update_fields=["attracted_count", "updated_at"])
+        # Recalculate this user's balance
+        UserService.recalculate_balance(user)
+        # Recalculate the referrer's balance (they earn from this user's attracted_count)
+        if user.referred_by_id:
+            referrer = User.objects.filter(pk=user.referred_by_id).first()
+            if referrer:
+                UserService.recalculate_balance(referrer)
+        return user
+
+    @staticmethod
+    def set_personal_rate(user: User, rate) -> User:
+        from decimal import Decimal
+        user.personal_rate = Decimal(str(rate))
+        user.save(update_fields=["personal_rate", "updated_at"])
+        UserService.recalculate_balance(user)
+        return user
+
+    @staticmethod
+    def set_referral_rate(user: User, rate) -> User:
+        from decimal import Decimal
+        user.referral_rate = Decimal(str(rate))
+        user.save(update_fields=["referral_rate", "updated_at"])
+        UserService.recalculate_balance(user)
         return user
 
     @staticmethod

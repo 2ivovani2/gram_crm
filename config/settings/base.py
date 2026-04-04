@@ -39,6 +39,7 @@ LOCAL_APPS = [
     "apps.stats",
     "apps.broadcasts",
     "apps.referrals",
+    "apps.withdrawals",
     "apps.telegram_bot",
 ]
 
@@ -110,6 +111,7 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ROUTES = {
     "apps.broadcasts.tasks.*": {"queue": "broadcasts"},
 }
@@ -245,6 +247,17 @@ UNFOLD = {
                         "title": "Логи доставки",
                         "icon": "receipt_long",
                         "link": "/django-admin/broadcasts/broadcastdeliverylog/",
+                    },
+                ],
+            },
+            {
+                "title": "Выводы",
+                "separator": False,
+                "items": [
+                    {
+                        "title": "Заявки на вывод",
+                        "icon": "payments",
+                        "link": "/django-admin/withdrawals/withdrawalrequest/",
                     },
                 ],
             },

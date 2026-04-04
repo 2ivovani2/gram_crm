@@ -46,7 +46,9 @@ def _user_card_text(user: User, referral_count: int = 0) -> str:
         "",
         f"💰 Баланс: <b>{user.balance:.2f} ₽</b>",
         f"👥 Рефералов: <b>{referral_count}</b>",
-        f"👤 Привлечено людей: <b>{user.attracted_count}</b>",
+        f"👤 Привлечено подписчиков: <b>{user.attracted_count}</b>",
+        f"💰 Личная ставка: <b>{user.personal_rate:.2f} руб./чел.</b>",
+        f"🤝 Ставка за рефералов: <b>{user.referral_rate:.2f} руб./чел.</b>",
     ]
     if user.work_url:
         lines.append(f"🔗 Рабочая ссылка: {user.work_url}")

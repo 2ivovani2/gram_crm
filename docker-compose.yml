@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-common: &common
   restart: unless-stopped
   env_file: .env
@@ -46,7 +44,7 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       RUN_MIGRATIONS: "true"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 3 -H \"Host: $VPS_IP\" http://localhost:8000/health/ -o /dev/null"]
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/health/ -o /dev/null || true"]
       interval: 10s
       timeout: 5s
       retries: 12

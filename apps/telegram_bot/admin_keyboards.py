@@ -5,6 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .callbacks import (
     AdminMenuCallback, AdminUserCallback, AdminInviteCallback,
     AdminBroadcastCallback, AdminStatsCallback, AdminSettingsCallback,
+    AdminWithdrawalCallback,
 )
 
 PAGE_SIZE = 10
@@ -99,8 +100,9 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     b.button(text="🔑 Invite Keys", callback_data=AdminMenuCallback(section="invites"))
     b.button(text="📢 Рассылки", callback_data=AdminMenuCallback(section="broadcasts"))
     b.button(text="📊 Статистика", callback_data=AdminMenuCallback(section="stats"))
+    b.button(text="💸 Выводы", callback_data=AdminMenuCallback(section="withdrawals"))
     b.button(text="⚙️ Настройки", callback_data=AdminMenuCallback(section="settings"))
-    b.adjust(2, 2, 1)
+    b.adjust(2, 2, 2)
     return b.as_markup()
 
 
@@ -136,8 +138,10 @@ def get_users_list_keyboard(users, page: int, total: int) -> InlineKeyboardMarku
 def get_user_card_keyboard(user, back_page: int = 1) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="🔄 Изменить статус", callback_data=AdminUserCallback(action="change_status", user_id=user.id, page=back_page))
-    b.button(text="🔗 Установить рабочую ссылку", callback_data=AdminSettingsCallback(action="set_work_url", user_id=user.id))
+    b.button(text="🔗 Рабочая ссылка", callback_data=AdminSettingsCallback(action="set_work_url", user_id=user.id))
     b.button(text="👤 Привлечено людей", callback_data=AdminSettingsCallback(action="set_attracted", user_id=user.id))
+    b.button(text="💰 Личная ставка", callback_data=AdminSettingsCallback(action="set_personal_rate", user_id=user.id))
+    b.button(text="🤝 Ставка за рефералов", callback_data=AdminSettingsCallback(action="set_referral_rate", user_id=user.id))
     b.button(text="🔙 К списку", callback_data=AdminUserCallback(action="list", user_id=0, page=back_page))
     b.adjust(1)
     return b.as_markup()
@@ -299,4 +303,52 @@ def get_stats_keyboard() -> InlineKeyboardMarkup:
     b.button(text="🔄 Обновить", callback_data=AdminStatsCallback(action="refresh"))
     b.button(text="🔙 Главное меню", callback_data=AdminMenuCallback(section="main"))
     b.adjust(1)
+    return b.as_markup()
+
+
+# ── Withdrawals ───────────────────────────────────────────────────────────────
+
+_WD_STATUS_ICONS = {"pending": "⏳", "approved": "✅", "rejected": "❌"}
+
+
+def get_withdrawals_list_keyboard(withdrawals, page: int, total: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for wd in withdrawals:
+        icon = _WD_STATUS_ICONS.get(wd.status, "❓")
+        b.button(
+            text=f"{icon} #{wd.pk} {wd.user.display_name} — {wd.amount} руб.",
+            callback_data=AdminWithdrawalCallback(action="view", withdrawal_id=wd.id, page=page),
+        )
+    b.adjust(1)
+    # Pagination
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    row = []
+    if page > 1:
+        row.append(InlineKeyboardButton(text="◀️", callback_data=AdminWithdrawalCallback(action="list", page=page - 1).pack()))
+    row.append(InlineKeyboardButton(text=f"· {page}/{total_pages} ·", callback_data=AdminWithdrawalCallback(action="noop").pack()))
+    if page < total_pages:
+        row.append(InlineKeyboardButton(text="▶️", callback_data=AdminWithdrawalCallback(action="list", page=page + 1).pack()))
+    if row:
+        b.row(*row)
+    b.row(_main_btn())
+    return b.as_markup()
+
+
+def get_withdrawal_card_keyboard(withdrawal, back_page: int = 1) -> InlineKeyboardMarkup:
+    from apps.withdrawals.models import WithdrawalStatus
+    b = InlineKeyboardBuilder()
+    if withdrawal.status == WithdrawalStatus.PENDING:
+        b.button(text="✅ Исполнить", callback_data=AdminWithdrawalCallback(action="approve", withdrawal_id=withdrawal.id, page=back_page))
+        b.button(text="❌ Отклонить", callback_data=AdminWithdrawalCallback(action="reject", withdrawal_id=withdrawal.id, page=back_page))
+    b.button(text="🔙 К списку", callback_data=AdminWithdrawalCallback(action="list", page=back_page))
+    b.adjust(2, 1) if withdrawal.status == "pending" else b.adjust(1)
+    return b.as_markup()
+
+
+def get_withdrawal_admin_notify_keyboard(withdrawal_id: int) -> InlineKeyboardMarkup:
+    """Keyboard sent to admins in notification message."""
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Исполнить", callback_data=AdminWithdrawalCallback(action="approve", withdrawal_id=withdrawal_id).pack())
+    b.button(text="❌ Отклонить", callback_data=AdminWithdrawalCallback(action="reject", withdrawal_id=withdrawal_id).pack())
+    b.adjust(2)
     return b.as_markup()

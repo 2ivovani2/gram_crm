@@ -25,7 +25,9 @@ def _format_profile(user: User, referral_count: int, referral_url: str, daily_st
         "",
         f"💰 Баланс: <b>{user.balance:.2f} ₽</b>",
         f"👥 Рефералов: <b>{referral_count}</b>",
-        f"👤 Привлечено людей: <b>{user.attracted_count}</b>",
+        f"👤 Привлечено подписчиков: <b>{user.attracted_count}</b>",
+        f"💰 Личная ставка: <b>{user.personal_rate:.2f} руб./чел.</b>",
+        f"🤝 Ставка за рефералов: <b>{user.referral_rate:.2f} руб./чел.</b>",
     ]
 
     if user.work_url:

@@ -63,7 +63,17 @@ class User(AbstractUser):
     # ── Worker metrics ────────────────────────────────────────────────────────
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     work_url = models.URLField(max_length=500, blank=True, help_text="Рабочая ссылка, выставляется администратором")
-    attracted_count = models.PositiveIntegerField(default=0, help_text="Количество привлечённых людей, выставляется администратором вручную")
+    attracted_count = models.PositiveIntegerField(default=0, help_text="Количество привлечённых подписчиков (прямые), выставляется администратором вручную")
+
+    # ── Rates (per subscriber, in RUB) ────────────────────────────────────────
+    personal_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Ставка за прямых подписчиков (руб. за человека), выставляется администратором",
+    )
+    referral_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Ставка за подписчиков рефералов (руб. за человека), выставляется администратором",
+    )
 
     # ── Bot interaction ───────────────────────────────────────────────────────
     is_blocked_bot = models.BooleanField(default=False)  # set when TelegramForbiddenError

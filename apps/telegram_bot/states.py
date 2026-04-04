@@ -40,3 +40,19 @@ class AdminSetAttractedCountState(StatesGroup):
 class AdminSetReferralRateState(StatesGroup):
     """Admin: changing global referral rate."""
     waiting_for_rate = State()
+
+
+class AdminSetPersonalRateState(StatesGroup):
+    """Admin: setting personal_rate for a specific worker."""
+    waiting_for_rate = State()
+
+
+class AdminSetReferralRatePerUserState(StatesGroup):
+    """Admin: setting referral_rate for a specific worker."""
+    waiting_for_rate = State()
+
+
+class WorkerWithdrawalState(StatesGroup):
+    """Worker: withdrawal request flow."""
+    choosing_method = State()
+    entering_details = State()
