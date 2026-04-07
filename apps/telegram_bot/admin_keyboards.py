@@ -5,7 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .callbacks import (
     AdminMenuCallback, AdminUserCallback, AdminInviteCallback,
     AdminBroadcastCallback, AdminStatsCallback, AdminSettingsCallback,
-    AdminWithdrawalCallback,
+    AdminWithdrawalCallback, AdminDailyCallback,
 )
 
 PAGE_SIZE = 10
@@ -101,8 +101,9 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     b.button(text="📢 Рассылки", callback_data=AdminMenuCallback(section="broadcasts"))
     b.button(text="📊 Статистика", callback_data=AdminMenuCallback(section="stats"))
     b.button(text="💸 Выводы", callback_data=AdminMenuCallback(section="withdrawals"))
+    b.button(text="📋 Ввод данных", callback_data=AdminMenuCallback(section="daily"))
     b.button(text="⚙️ Настройки", callback_data=AdminMenuCallback(section="settings"))
-    b.adjust(2, 2, 2)
+    b.adjust(2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -116,14 +117,16 @@ def get_admin_cancel_keyboard(back_section: str = "main") -> InlineKeyboardMarku
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 _STATUS_ICONS = {"active": "✅", "pending": "⏳", "inactive": "⛔", "banned": "🚫"}
+_ROLE_ICONS = {"admin": "👑", "curator": "🎓", "worker": "👷"}
 
 
 def get_users_list_keyboard(users, page: int, total: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for user in users:
         icon = _STATUS_ICONS.get(user.status, "❓")
+        role_icon = _ROLE_ICONS.get(user.role, "")
         b.button(
-            text=f"{icon} {user.display_name}",
+            text=f"{icon}{role_icon} {user.display_name}",
             callback_data=AdminUserCallback(action="view", user_id=user.id, page=page),
         )
     b.adjust(1)
@@ -136,20 +139,26 @@ def get_users_list_keyboard(users, page: int, total: int) -> InlineKeyboardMarku
 
 
 def get_user_card_keyboard(user, back_page: int = 1) -> InlineKeyboardMarkup:
+    from apps.users.models import UserRole
     b = InlineKeyboardBuilder()
     b.button(text="🔄 Изменить статус", callback_data=AdminUserCallback(action="change_status", user_id=user.id, page=back_page))
     b.button(text="🔗 Рабочая ссылка", callback_data=AdminSettingsCallback(action="set_work_url", user_id=user.id))
     b.button(text="👤 Привлечено людей", callback_data=AdminSettingsCallback(action="set_attracted", user_id=user.id))
     b.button(text="💰 Личная ставка", callback_data=AdminSettingsCallback(action="set_personal_rate", user_id=user.id))
     b.button(text="🤝 Ставка за рефералов", callback_data=AdminSettingsCallback(action="set_referral_rate", user_id=user.id))
+    # Role assignment: show curator button for workers, worker button for curators
+    if user.role == UserRole.WORKER:
+        b.button(text="🎓 Назначить куратором", callback_data=AdminUserCallback(action="set_curator", user_id=user.id, page=back_page))
+    elif user.role == UserRole.CURATOR:
+        b.button(text="👷 Назначить воркером", callback_data=AdminUserCallback(action="set_worker", user_id=user.id, page=back_page))
     b.button(text="🔙 К списку", callback_data=AdminUserCallback(action="list", user_id=0, page=back_page))
     b.adjust(1)
     return b.as_markup()
 
 
-def get_settings_keyboard(back_to_url_user_id: int = 0) -> InlineKeyboardMarkup:
+def get_settings_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✏️ Изменить реф. ставку", callback_data=AdminSettingsCallback(action="set_rate"))
+    b.button(text="⚙️ Доли ставок (RateConfig)", callback_data=AdminSettingsCallback(action="set_rate_config"))
     b.button(text="🔙 Главное меню", callback_data=AdminMenuCallback(section="main"))
     b.adjust(1)
     return b.as_markup()
@@ -207,7 +216,6 @@ def get_invite_key_card_keyboard(key, back_page: int = 1) -> InlineKeyboardMarku
 
 def get_invite_activations_keyboard(key_id: int, page: int, total: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    # reuse broadcast pagination shape adapted for invite activations
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     row = []
     if page > 1:
@@ -222,6 +230,28 @@ def get_invite_activations_keyboard(key_id: int, page: int, total: int) -> Inlin
     if row:
         b.row(*row)
     b.row(InlineKeyboardButton(text="🔙 Назад", callback_data=AdminInviteCallback(action="view", key_id=key_id, page=1).pack()))
+    return b.as_markup()
+
+
+# ── Curator invite keyboards (reuse admin invite shapes) ──────────────────────
+
+def get_curator_invites_list_keyboard(keys, page: int, total: int) -> InlineKeyboardMarkup:
+    from .callbacks import CuratorCallback
+    b = InlineKeyboardBuilder()
+    for key in keys:
+        icon = "✅" if key.is_valid else "❌"
+        uses = f"{key.uses_count}/{key.max_uses or '∞'}"
+        label = f"{key.key[:10]}… [{uses}]"
+        b.button(
+            text=f"{icon} {label}",
+            callback_data=AdminInviteCallback(action="view", key_id=key.id, page=page),
+        )
+    b.adjust(1)
+    _add_pagination_invites(b, page, total)
+    b.row(
+        InlineKeyboardButton(text="➕ Создать", callback_data=AdminInviteCallback(action="create", key_id=0, page=1).pack()),
+        InlineKeyboardButton(text="🔙 Назад", callback_data=CuratorCallback(action="back_to_main").pack()),
+    )
     return b.as_markup()
 
 
@@ -306,6 +336,23 @@ def get_stats_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+# ── Daily report ──────────────────────────────────────────────────────────────
+
+def get_daily_report_confirm_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Подтвердить", callback_data=AdminDailyCallback(action="confirm"))
+    b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="main"))
+    b.adjust(2)
+    return b.as_markup()
+
+
+def get_rate_config_cancel_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="settings"))
+    b.adjust(1)
+    return b.as_markup()
+
+
 # ── Withdrawals ───────────────────────────────────────────────────────────────
 
 _WD_STATUS_ICONS = {"pending": "⏳", "approved": "✅", "rejected": "❌"}
@@ -320,7 +367,6 @@ def get_withdrawals_list_keyboard(withdrawals, page: int, total: int) -> InlineK
             callback_data=AdminWithdrawalCallback(action="view", withdrawal_id=wd.id, page=page),
         )
     b.adjust(1)
-    # Pagination
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     row = []
     if page > 1:

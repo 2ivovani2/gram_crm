@@ -1,4 +1,5 @@
-"""Admin: system statistics overview."""
+"""Admin: system statistics overview with weekly chart and financial summary."""
+import datetime
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from asgiref.sync import sync_to_async
@@ -15,6 +16,8 @@ router = Router(name="admin_stats")
 async def _build_stats_text() -> str:
     from apps.broadcasts.models import Broadcast, BroadcastStatus
     from apps.invites.models import InviteKey
+    from apps.stats.models import DailyReport
+    from apps.stats.services import DailyReportService
     from django.utils import timezone
 
     user_stats = await sync_to_async(UserService.get_stats_summary)()
@@ -25,25 +28,54 @@ async def _build_stats_text() -> str:
         Broadcast.objects.filter(status=BroadcastStatus.RUNNING).count
     )()
 
+    today = datetime.date.today()
+    today_report, week_reports, top_worker = await sync_to_async(
+        lambda: (
+            DailyReport.objects.filter(date=today).first(),
+            DailyReportService.get_week_reports(),
+            DailyReportService.get_top_worker_week(),
+        )
+    )()
+
+    bar_chart = await sync_to_async(DailyReportService.build_weekly_bar_chart)(week_reports)
+    fin_summary = await sync_to_async(DailyReportService.build_financial_summary)(today_report, week_reports)
+
+    avg_applications = (
+        round(sum(r.total_applications for r in week_reports) / len(week_reports), 1)
+        if week_reports else 0
+    )
+
+    top_line = "—"
+    if top_worker:
+        user, count = top_worker
+        top_line = f"<b>{user.display_name}</b> — {count} заявок"
+
+    now_str = timezone.now().strftime("%d.%m.%Y %H:%M")
+
     return (
-        "📊 <b>Статистика системы</b>\n"
-        f"<i>{timezone.now().strftime('%d.%m.%Y %H:%M')} UTC</i>\n"
+        f"📊 <b>Статистика системы</b>\n"
+        f"<i>{now_str} UTC</i>\n"
         "\n"
         "👥 <b>Пользователи</b>\n"
         f"  Всего: <b>{user_stats['total']}</b>\n"
         f"  Активных: <b>{user_stats['active']}</b>\n"
         f"  Ожидают активации: <b>{user_stats['pending']}</b>\n"
-        f"  Заблокировано: <b>{user_stats['banned']}</b>\n"
+        f"  Воркеров: <b>{user_stats['workers']}</b> · "
+        f"Кураторов: <b>{user_stats['curators']}</b>\n"
         f"  Новых сегодня: <b>{user_stats['new_today']}</b>\n"
-        f"  Администраторов: <b>{user_stats['admins']}</b>\n"
         "\n"
         "🔑 <b>Invite Keys</b>\n"
-        f"  Всего: <b>{total_keys}</b>\n"
-        f"  Активных: <b>{active_keys}</b>\n"
+        f"  Всего: <b>{total_keys}</b> · Активных: <b>{active_keys}</b>\n"
         "\n"
         "📢 <b>Рассылки</b>\n"
-        f"  Всего: <b>{total_broadcasts}</b>\n"
-        f"  Запущено сейчас: <b>{running_broadcasts}</b>\n"
+        f"  Всего: <b>{total_broadcasts}</b> · Запущено: <b>{running_broadcasts}</b>\n"
+        "\n"
+        "📈 <b>Заявки — неделя (Пн → Вс)</b>\n"
+        f"<code>{bar_chart}</code>\n"
+        f"  Среднее/день: <b>{avg_applications}</b>\n"
+        f"  Топ-1: {top_line}\n"
+        "\n"
+        f"{fin_summary}"
     )
 
 

@@ -9,6 +9,7 @@ Convention:
 
 Prefix map:
   w       → worker flows
+  cur     → curator flows
   adm     → admin main menu
   adm_u   → admin users
   adm_i   → admin invites
@@ -16,11 +17,17 @@ Prefix map:
   adm_s   → admin stats
   adm_cfg → admin settings
   adm_w   → admin withdrawals
+  adm_d   → admin daily report
+  ww      → worker withdrawal
 """
 from aiogram.filters.callback_data import CallbackData
 
 
 class WorkerCallback(CallbackData, prefix="w"):
+    action: str
+
+
+class CuratorCallback(CallbackData, prefix="cur"):
     action: str
 
 
@@ -59,6 +66,11 @@ class AdminWithdrawalCallback(CallbackData, prefix="adm_w"):
     action: str
     withdrawal_id: int = 0
     page: int = 1
+
+
+class AdminDailyCallback(CallbackData, prefix="adm_d"):
+    action: str
+    report_id: int = 0
 
 
 class WorkerWithdrawalCallback(CallbackData, prefix="ww"):

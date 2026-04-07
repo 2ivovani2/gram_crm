@@ -7,7 +7,7 @@ class InviteKeyInputState(StatesGroup):
 
 
 class AdminInviteCreateState(StatesGroup):
-    """Admin: multi-step invite key creation."""
+    """Admin/Curator: multi-step invite key creation."""
     waiting_for_label = State()
     waiting_for_max_uses = State()
     waiting_for_expiry = State()
@@ -37,11 +37,6 @@ class AdminSetAttractedCountState(StatesGroup):
     waiting_for_count = State()
 
 
-class AdminSetReferralRateState(StatesGroup):
-    """Admin: changing global referral rate."""
-    waiting_for_rate = State()
-
-
 class AdminSetPersonalRateState(StatesGroup):
     """Admin: setting personal_rate for a specific worker."""
     waiting_for_rate = State()
@@ -53,6 +48,21 @@ class AdminSetReferralRatePerUserState(StatesGroup):
 
 
 class WorkerWithdrawalState(StatesGroup):
-    """Worker: withdrawal request flow."""
+    """Worker/Curator: withdrawal request flow."""
     choosing_method = State()
     entering_details = State()
+
+
+class AdminDailyReportState(StatesGroup):
+    """Admin: daily client data entry form (4-step FSM)."""
+    waiting_for_link = State()
+    waiting_for_client_nick = State()
+    waiting_for_client_rate = State()
+    waiting_for_total_applications = State()
+    confirm = State()
+
+
+class AdminSetRateConfigState(StatesGroup):
+    """Admin: update RateConfig worker_share and referral_share."""
+    waiting_for_worker_share = State()
+    waiting_for_referral_share = State()

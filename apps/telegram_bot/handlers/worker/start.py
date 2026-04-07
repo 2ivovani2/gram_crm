@@ -6,8 +6,11 @@ Flow for new user:
   → user taps button → FSM state: waiting_for_key
   → user sends key text → validate → activate OR show error
 
-Flow for activated user:
+Flow for activated worker:
   /start → show main worker menu
+
+Flow for curator:
+  /start → show curator main menu
 """
 from aiogram import Router, F
 from aiogram.filters import CommandStart
@@ -46,11 +49,19 @@ async def cmd_start(message: Message, command: CommandObject, db_user: User, sta
         await send_admin_main_menu(message, db_user)
         return
 
+    # Curators get their own menu
+    if db_user.is_curator():
+        from apps.telegram_bot.handlers.curator.menu import send_curator_main_menu
+        await send_curator_main_menu(message, db_user)
+        return
+
     if db_user.is_activated:
+        from django.conf import settings
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
         await message.answer(
             f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\n"
             "Выберите действие:",
-            reply_markup=get_main_menu_keyboard(is_activated=True),
+            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
         )
     else:
         await message.answer(
@@ -77,6 +88,13 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
         await send_admin_main_menu(callback, db_user)
         return
 
+    if db_user.is_curator():
+        from apps.telegram_bot.handlers.curator.menu import send_curator_main_menu
+        await send_curator_main_menu(callback, db_user)
+        return
+
+    from django.conf import settings
+    channels_url = getattr(settings, "CHANNELS_DB_URL", "")
     text = (
         f"👋 Главное меню, <b>{db_user.display_name}</b>!"
         if db_user.is_activated
@@ -84,7 +102,7 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
     )
     await callback.message.edit_text(
         text,
-        reply_markup=get_main_menu_keyboard(is_activated=db_user.is_activated),
+        reply_markup=get_main_menu_keyboard(is_activated=db_user.is_activated, channels_db_url=channels_url),
     )
 
 
@@ -135,15 +153,67 @@ async def process_invite_key(message: Message, db_user: User, state: FSMContext)
         from apps.users.services import UserService
         db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id)
 
+        from django.conf import settings
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+
         await message.answer(
             f"✅ <b>Активация прошла успешно!</b>\n\n"
             f"Добро пожаловать, <b>{db_user.display_name}</b>! "
             "Теперь у вас есть полный доступ.",
-            reply_markup=get_main_menu_keyboard(is_activated=True),
+            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
         )
+
+        # Notify admins and curator (key creator)
+        await _notify_activation(db_user, raw_key)
+
     except InviteValidationError as exc:
         await message.answer(
             f"❌ <b>Ошибка:</b> {exc}\n\n"
             "Попробуйте снова или обратитесь к администратору.",
             reply_markup=get_cancel_keyboard(),
         )
+
+
+async def _notify_activation(user: User, raw_key: str) -> None:
+    """Send activation notification to all admins and to the key creator if they're a curator."""
+    from apps.users.models import User as UserModel
+    from apps.invites.models import InviteKey
+    from apps.telegram_bot.bot import get_bot
+
+    bot = get_bot()
+
+    text = (
+        f"🎉 <b>Новый пользователь активирован!</b>\n\n"
+        f"👤 Имя: <b>{user.display_name}</b>\n"
+        f"🆔 Telegram ID: <code>{user.telegram_id}</code>"
+    )
+    if user.telegram_username:
+        text += f"\n📱 @{user.telegram_username}"
+    if user.referred_by:
+        text += f"\n🤝 Куратор: <b>{user.referred_by.display_name}</b>"
+
+    # Collect recipient IDs: all admins
+    recipient_ids = await sync_to_async(
+        lambda: list(
+            UserModel.objects.filter(role="admin", is_blocked_bot=False)
+            .values_list("telegram_id", flat=True)
+        )
+    )()
+
+    # Also notify key creator if they're a curator (and not already in admin list)
+    key_creator_tg_id = await sync_to_async(
+        lambda: InviteKey.objects.filter(
+            key__iexact=raw_key
+        ).select_related("created_by").values_list("created_by__telegram_id", "created_by__role", "created_by__is_blocked_bot").first()
+    )()
+
+    if key_creator_tg_id:
+        creator_tg_id, creator_role, creator_blocked = key_creator_tg_id
+        if creator_role == "curator" and not creator_blocked and creator_tg_id not in recipient_ids:
+            recipient_ids.append(creator_tg_id)
+
+    for tg_id in recipient_ids:
+        try:
+            await bot.send_message(tg_id, text)
+        except Exception:
+            pass

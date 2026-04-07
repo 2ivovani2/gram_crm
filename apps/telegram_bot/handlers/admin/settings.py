@@ -1,21 +1,26 @@
 """
-Admin: global settings.
-  - referral rate management (global %)
-  - set work URL for a specific worker (triggered from user card)
+Admin: settings panel.
+  - RateConfig (worker_share / referral_share) — for daily report rate computation
+  - Set work URL, attracted count, personal rate, referral rate per user
 """
+from decimal import Decimal, InvalidOperation
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from asgiref.sync import sync_to_async
 
-from apps.referrals.services import ReferralService
-from apps.telegram_bot.admin_keyboards import get_settings_keyboard, get_user_card_keyboard, get_admin_main_menu
+from apps.telegram_bot.admin_keyboards import (
+    get_settings_keyboard, get_user_card_keyboard, get_admin_main_menu,
+    get_rate_config_cancel_keyboard,
+)
 from apps.telegram_bot.callbacks import AdminMenuCallback, AdminSettingsCallback
 from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import safe_edit_text
 from apps.telegram_bot.states import (
-    AdminSetWorkUrlState, AdminSetReferralRateState, AdminSetAttractedCountState,
+    AdminSetWorkUrlState, AdminSetAttractedCountState,
     AdminSetPersonalRateState, AdminSetReferralRatePerUserState,
+    AdminSetRateConfigState,
 )
 from apps.users.models import User
 from apps.users.services import UserService
@@ -23,15 +28,14 @@ from apps.users.services import UserService
 router = Router(name="admin_settings")
 
 
-def _settings_text(ref_settings) -> str:
-    rate = ref_settings.rate_percent
-    updated = ref_settings.updated_by.display_name if ref_settings.updated_by else "—"
+def _settings_text(config) -> str:
     return (
         "⚙️ <b>Настройки</b>\n\n"
-        "<b>Реферальная программа</b>\n"
-        f"Ставка: <b>{rate}%</b>\n"
-        f"Изменил: {updated}\n\n"
-        "<i>Ставка начисляется рефереру с каждого заработка его реферала.</i>"
+        "<b>Доли ставок (для дневного отчёта)</b>\n"
+        f"  Доля работника:  <b>{float(config.worker_share)*100:.2f}%</b> от ставки клиента\n"
+        f"  Доля реферала:   <b>{float(config.referral_share)*100:.2f}%</b> от ставки клиента\n"
+        f"  Наша прибыль:    <b>{(1 - float(config.worker_share) - float(config.referral_share))*100:.2f}%</b>\n\n"
+        "<i>Эти доли используются при расчёте ставок в форме «Ввод данных».</i>"
     )
 
 
@@ -41,49 +45,92 @@ def _settings_text(ref_settings) -> str:
 async def cb_settings(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    ref_settings = await sync_to_async(ReferralService.get_settings)()
-    await safe_edit_text(callback, _settings_text(ref_settings), get_settings_keyboard())
+    from apps.stats.models import RateConfig
+    config = await sync_to_async(RateConfig.get)()
+    await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
 
 
-# ── Referral rate FSM ─────────────────────────────────────────────────────────
+# ── RateConfig FSM ────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate"), IsAdmin())
-async def cb_set_rate_start(callback: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate_config"), IsAdmin())
+async def cb_set_rate_config_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    ref_settings = await sync_to_async(ReferralService.get_settings)()
-    await state.set_state(AdminSetReferralRateState.waiting_for_rate)
-    from apps.telegram_bot.keyboards import get_cancel_keyboard
+    from apps.stats.models import RateConfig
+    config = await sync_to_async(RateConfig.get)()
+    await state.set_state(AdminSetRateConfigState.waiting_for_worker_share)
     await safe_edit_text(
         callback,
-        f"✏️ <b>Изменить реферальную ставку</b>\n\n"
-        f"Текущая ставка: <b>{ref_settings.rate_percent}%</b>\n\n"
-        "Введите новое значение в процентах (например: <code>5</code> или <code>2.5</code>).\n"
-        "Введите <code>0</code> чтобы отключить реферальную программу.",
-        get_cancel_keyboard(),
+        f"⚙️ <b>Доля работника</b>\n\n"
+        f"Текущая: <b>{float(config.worker_share)*100:.2f}%</b>\n\n"
+        "Введите новое значение в процентах (например: <code>25</code> для 25%):",
+        get_rate_config_cancel_keyboard(),
     )
 
 
-@router.message(AdminSetReferralRateState.waiting_for_rate, IsAdmin())
-async def process_set_rate(message: Message, db_user: User, state: FSMContext) -> None:
+@router.message(AdminSetRateConfigState.waiting_for_worker_share, IsAdmin())
+async def process_worker_share(message: Message, state: FSMContext) -> None:
     raw = (message.text or "").strip().replace(",", ".")
     try:
-        rate = float(raw)
-        if rate < 0 or rate > 100:
+        val = Decimal(raw)
+        if val < 0 or val > 100:
             raise ValueError
-    except ValueError:
-        from apps.telegram_bot.keyboards import get_cancel_keyboard
-        await message.answer("⚠️ Введите число от 0 до 100.", reply_markup=get_cancel_keyboard())
+    except (InvalidOperation, ValueError):
+        await message.answer("⚠️ Введите число от 0 до 100.", reply_markup=get_rate_config_cancel_keyboard())
+        return
+    await state.update_data(worker_share=str(val / 100))
+    await state.set_state(AdminSetRateConfigState.waiting_for_referral_share)
+    from apps.stats.models import RateConfig
+    config = await sync_to_async(RateConfig.get)()
+    await message.answer(
+        f"⚙️ <b>Доля реферала</b>\n\n"
+        f"Текущая: <b>{float(config.referral_share)*100:.2f}%</b>\n\n"
+        "Введите новое значение в процентах (например: <code>13.89</code>):",
+        reply_markup=get_rate_config_cancel_keyboard(),
+    )
+
+
+@router.message(AdminSetRateConfigState.waiting_for_referral_share, IsAdmin())
+async def process_referral_share(message: Message, db_user: User, state: FSMContext) -> None:
+    raw = (message.text or "").strip().replace(",", ".")
+    try:
+        val = Decimal(raw)
+        if val < 0 or val > 100:
+            raise ValueError
+    except (InvalidOperation, ValueError):
+        await message.answer("⚠️ Введите число от 0 до 100.", reply_markup=get_rate_config_cancel_keyboard())
         return
 
+    data = await state.get_data()
     await state.clear()
-    ref_settings = await sync_to_async(ReferralService.set_rate)(rate, db_user)
+
+    worker_share = Decimal(data["worker_share"])
+    referral_share = val / 100
+    our_share = 1 - worker_share - referral_share
+
+    if our_share < 0:
+        await message.answer(
+            "⚠️ Сумма долей больше 100%. Начните заново.",
+            reply_markup=get_admin_main_menu(),
+        )
+        return
+
+    from apps.stats.models import RateConfig
+    config = await sync_to_async(RateConfig.get)()
+    config.worker_share = worker_share
+    config.referral_share = referral_share
+    config.updated_by = db_user
+    await sync_to_async(config.save)(update_fields=["worker_share", "referral_share", "updated_by", "updated_at"])
+
     await message.answer(
-        f"✅ Реферальная ставка установлена: <b>{ref_settings.rate_percent}%</b>",
+        f"✅ Доли обновлены!\n\n"
+        f"  Работник: <b>{float(worker_share)*100:.2f}%</b>\n"
+        f"  Реферал:  <b>{float(referral_share)*100:.2f}%</b>\n"
+        f"  Прибыль:  <b>{float(our_share)*100:.2f}%</b>",
         reply_markup=get_admin_main_menu(),
     )
 
 
-# ── Set work URL FSM (triggered from user card) ───────────────────────────────
+# ── Set work URL FSM ──────────────────────────────────────────────────────────
 
 @router.callback_query(AdminSettingsCallback.filter(F.action == "set_work_url"), IsAdmin())
 async def cb_set_work_url_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
@@ -124,12 +171,7 @@ async def process_set_work_url(message: Message, state: FSMContext) -> None:
         return
 
     user = await sync_to_async(UserService.set_work_url)(user, raw)
-
-    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
-    await message.answer(
-        f"✅ Рабочая ссылка установлена:\n{user.work_url}",
-        reply_markup=_kb(user),
-    )
+    await message.answer(f"✅ Рабочая ссылка установлена:\n{user.work_url}", reply_markup=get_user_card_keyboard(user))
 
 
 # ── Set attracted count FSM ───────────────────────────────────────────────────
@@ -155,7 +197,6 @@ async def process_set_attracted(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     target_user_id = data["target_user_id"]
     raw = (message.text or "").strip()
-
     try:
         count = int(raw)
         if count < 0:
@@ -168,14 +209,12 @@ async def process_set_attracted(message: Message, state: FSMContext) -> None:
     await state.clear()
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_attracted_count)(user, count)
-    # Refresh user to get updated balance
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
 
-    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
     await message.answer(
         f"✅ Привлечено людей для <b>{user.display_name}</b>: <b>{user.attracted_count}</b>\n"
         f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
-        reply_markup=_kb(user),
+        reply_markup=get_user_card_keyboard(user),
     )
 
 
@@ -203,10 +242,10 @@ async def process_set_personal_rate(message: Message, state: FSMContext) -> None
     target_user_id = data["target_user_id"]
     raw = (message.text or "").strip().replace(",", ".")
     try:
-        rate = float(raw)
+        rate = Decimal(raw)
         if rate < 0:
             raise ValueError
-    except ValueError:
+    except (InvalidOperation, ValueError):
         from apps.telegram_bot.keyboards import get_cancel_keyboard
         await message.answer("⚠️ Введите число ≥ 0 (например: 50 или 12.5).", reply_markup=get_cancel_keyboard())
         return
@@ -215,12 +254,10 @@ async def process_set_personal_rate(message: Message, state: FSMContext) -> None
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_personal_rate)(user, rate)
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
-
-    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
     await message.answer(
         f"✅ Личная ставка для <b>{user.display_name}</b>: <b>{user.personal_rate:.2f} руб.</b>\n"
         f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
-        reply_markup=_kb(user),
+        reply_markup=get_user_card_keyboard(user),
     )
 
 
@@ -248,10 +285,10 @@ async def process_set_referral_rate_per_user(message: Message, state: FSMContext
     target_user_id = data["target_user_id"]
     raw = (message.text or "").strip().replace(",", ".")
     try:
-        rate = float(raw)
+        rate = Decimal(raw)
         if rate < 0:
             raise ValueError
-    except ValueError:
+    except (InvalidOperation, ValueError):
         from apps.telegram_bot.keyboards import get_cancel_keyboard
         await message.answer("⚠️ Введите число ≥ 0 (например: 10 или 5.5).", reply_markup=get_cancel_keyboard())
         return
@@ -260,10 +297,8 @@ async def process_set_referral_rate_per_user(message: Message, state: FSMContext
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_referral_rate)(user, rate)
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
-
-    from apps.telegram_bot.admin_keyboards import get_user_card_keyboard as _kb
     await message.answer(
         f"✅ Ставка за рефералов для <b>{user.display_name}</b>: <b>{user.referral_rate:.2f} руб.</b>\n"
         f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
-        reply_markup=_kb(user),
+        reply_markup=get_user_card_keyboard(user),
     )

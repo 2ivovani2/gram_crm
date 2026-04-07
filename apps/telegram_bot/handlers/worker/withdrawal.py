@@ -34,11 +34,21 @@ _USERNAME_RE = re.compile(r'^@?[a-zA-Z0-9_]{3,32}$')
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+_MIN_WITHDRAWAL = Decimal("700")
+
+
 @router.callback_query(WorkerCallback.filter(F.action == "withdrawal"), IsActivatedWorker())
 async def cb_withdrawal_start(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
     await state.clear()
     if db_user.balance <= 0:
         await callback.answer("Недостаточно средств для вывода.", show_alert=True)
+        return
+    if db_user.balance < _MIN_WITHDRAWAL:
+        await callback.answer(
+            f"Минимальная сумма вывода {_MIN_WITHDRAWAL:.0f} ₽. "
+            f"Ваш баланс: {db_user.balance:.2f} ₽.",
+            show_alert=True,
+        )
         return
     await callback.answer()
     await state.set_state(WorkerWithdrawalState.choosing_method)

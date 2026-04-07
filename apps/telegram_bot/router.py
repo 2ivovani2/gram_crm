@@ -14,8 +14,12 @@ def setup_routers(dp: Dispatcher) -> None:
     from apps.telegram_bot.handlers.admin.broadcasts import router as admin_broadcasts_router
     from apps.telegram_bot.handlers.admin.stats import router as admin_stats_router
     from apps.telegram_bot.handlers.admin.settings import router as admin_settings_router
-
     from apps.telegram_bot.handlers.admin.withdrawals import router as admin_withdrawals_router
+    from apps.telegram_bot.handlers.admin.daily import router as admin_daily_router
+
+    from apps.telegram_bot.handlers.curator.menu import router as curator_menu_router
+    from apps.telegram_bot.handlers.curator.referrals import router as curator_referrals_router
+    from apps.telegram_bot.handlers.curator.invites import router as curator_invites_router
 
     from apps.telegram_bot.handlers.worker.start import router as worker_start_router
     from apps.telegram_bot.handlers.worker.profile import router as worker_profile_router
@@ -30,6 +34,12 @@ def setup_routers(dp: Dispatcher) -> None:
     dp.include_router(admin_stats_router)
     dp.include_router(admin_settings_router)
     dp.include_router(admin_withdrawals_router)
+    dp.include_router(admin_daily_router)
+
+    # Curator routers — IsCurator() filter
+    dp.include_router(curator_menu_router)
+    dp.include_router(curator_referrals_router)
+    dp.include_router(curator_invites_router)
 
     # Worker routers
     dp.include_router(worker_start_router)

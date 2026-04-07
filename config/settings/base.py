@@ -114,6 +114,28 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ROUTES = {
     "apps.broadcasts.tasks.*": {"queue": "broadcasts"},
+    "apps.stats.tasks.*": {"queue": "celery"},
+}
+
+# ── Celery Beat Schedule ──────────────────────────────────────────────────────
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    # 13:00 МСК = 10:00 UTC
+    "admin-reminder-1300": {
+        "task": "apps.stats.tasks.send_admin_reminder_task",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    # 20:00 МСК = 17:00 UTC
+    "admin-reminder-2000": {
+        "task": "apps.stats.tasks.send_admin_reminder_task",
+        "schedule": crontab(hour=17, minute=0),
+    },
+    # Every 15 min: if after 23:01 МСК (20:01 UTC) and no DailyReport → urgent reminder
+    "check-missing-daily-report": {
+        "task": "apps.stats.tasks.check_missing_daily_report_task",
+        "schedule": crontab(minute="*/15"),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -138,6 +160,12 @@ TELEGRAM_WEBHOOK_SECRET = env("TELEGRAM_WEBHOOK_SECRET", default="")
 # Dev:  https://<id>.ngrok-free.app/bot/webhook/
 # Prod: https://yourdomain.com/bot/webhook/
 TELEGRAM_WEBHOOK_URL = env("TELEGRAM_WEBHOOK_URL", default="")
+
+# Shared Google Sheets link shown to workers and curators as "База каналов"
+CHANNELS_DB_URL = env(
+    "CHANNELS_DB_URL",
+    default="https://docs.google.com/spreadsheets/d/1-3kKQZk3LrBy9XEL0lG8oM1dYdgrvWzEDKXgFt5udjE/edit?gid=0#gid=0",
+)
 
 # ── Static ────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
@@ -281,6 +309,16 @@ UNFOLD = {
                 "title": "Статистика",
                 "separator": False,
                 "items": [
+                    {
+                        "title": "Дневные отчёты",
+                        "icon": "today",
+                        "link": "/django-admin/stats/dailyreport/",
+                    },
+                    {
+                        "title": "Конфигурация ставок",
+                        "icon": "tune",
+                        "link": "/django-admin/stats/rateconfig/",
+                    },
                     {
                         "title": "По пользователям",
                         "icon": "bar_chart",

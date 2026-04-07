@@ -68,8 +68,10 @@ async def cb_profile(callback: CallbackQuery, db_user: User) -> None:
         )
     )()
 
+    from django.conf import settings
+    channels_url = getattr(settings, "CHANNELS_DB_URL", "")
     text = _format_profile(db_user, referral_count, referral_url, daily_stats)
-    await answer_and_edit(callback, text, get_profile_keyboard())
+    await answer_and_edit(callback, text, get_profile_keyboard(channels_db_url=channels_url))
 
 
 @router.callback_query(WorkerCallback.filter(F.action == "stats"), IsActivatedWorker())

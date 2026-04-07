@@ -18,7 +18,7 @@ from apps.telegram_bot.callbacks import AdminMenuCallback, AdminUserCallback
 from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import answer_and_edit, safe_edit_text
 from apps.telegram_bot.states import AdminUserSearchState
-from apps.users.models import User
+from apps.users.models import User, UserRole
 from apps.users.services import UserService
 from apps.common.utils import format_dt
 
@@ -27,7 +27,7 @@ router = Router(name="admin_users")
 
 def _user_card_text(user: User, referral_count: int = 0) -> str:
     status_icon = {"active": "✅", "inactive": "⛔", "pending": "⏳", "banned": "🚫"}.get(user.status, "❓")
-    role_icon = {"admin": "👑", "worker": "👷"}.get(user.role, "❓")
+    role_icon = {"admin": "👑", "curator": "🎓", "worker": "👷"}.get(user.role, "❓")
 
     lines = [
         "👤 <b>Карточка пользователя</b>",
@@ -154,6 +154,38 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
 
     text = f"🔍 Найдено: {len(users)}"
     await message.answer(text, reply_markup=get_users_list_keyboard(users, page=1, total=len(users)))
+
+
+# ── Role assignment ───────────────────────────────────────────────────────────
+
+@router.callback_query(
+    AdminUserCallback.filter(F.action.in_({"set_curator", "set_worker"})),
+    IsAdmin(),
+)
+async def cb_set_role(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
+    new_role = UserRole.CURATOR if callback_data.action == "set_curator" else UserRole.WORKER
+
+    user, referral_count = await sync_to_async(
+        lambda: (
+            User.objects.get(pk=callback_data.user_id),
+            User.objects.get(pk=callback_data.user_id).referrals.count(),
+        )
+    )()
+
+    if user.role == new_role:
+        await callback.answer("Роль уже установлена.", show_alert=True)
+        return
+
+    user.role = new_role
+    await sync_to_async(user.save)(update_fields=["role", "updated_at"])
+
+    role_label = "🎓 Куратор" if new_role == UserRole.CURATOR else "👷 Воркер"
+    await callback.answer(f"Роль → {role_label}", show_alert=True)
+    await safe_edit_text(
+        callback,
+        _user_card_text(user, referral_count),
+        get_user_card_keyboard(user, back_page=callback_data.page),
+    )
 
 
 # ── Noop (pagination label tap) ───────────────────────────────────────────────

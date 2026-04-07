@@ -6,11 +6,15 @@ from .models import WithdrawalRequest, WithdrawalStatus
 
 logger = logging.getLogger(__name__)
 
+MIN_WITHDRAWAL_AMOUNT = Decimal("700")
+
 
 class WithdrawalService:
 
     @staticmethod
     def create(user, amount: Decimal, method: str, details: str) -> WithdrawalRequest:
+        if amount < MIN_WITHDRAWAL_AMOUNT:
+            raise ValueError(f"Минимальная сумма вывода {MIN_WITHDRAWAL_AMOUNT:.0f} ₽")
         return WithdrawalRequest.objects.create(
             user=user,
             amount=amount,

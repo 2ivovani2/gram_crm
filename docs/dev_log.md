@@ -222,4 +222,75 @@ just validates the secret token and processes the update, without knowing its ow
 - `cp .env.example .env` and fill: `TEST_BOT_TOKEN`, `NGROK_AUTHTOKEN`, `TELEGRAM_WEBHOOK_SECRET`
 - `make dev` — should work end-to-end
 
+## 2026-04-08 — Feature pack: curator role, daily report, reminders, rate config, stats
+
+### What was done
+
+Complete implementation of 9 features requested in one session.
+
+#### Curator role
+
+- `UserRole.CURATOR` added to `users.User`
+- `IsCurator` aiogram filter; `IsActivatedWorker` updated to accept curators
+- `CuratorCallback(prefix="cur")` — separate namespace for curator callbacks
+- Curator main menu: My referrals, My invite codes, Stats, Withdrawal
+- Curator can list, view, toggle, and create own invite keys (with ownership check — cannot access other curators' or admins' keys)
+- On activation via curator's key: `referred_by` auto-set to curator
+- `/start` branches correctly: admin → admin menu, curator → curator menu, worker → worker menu
+- Admin can change role via user card: "🎓 Назначить куратором" / "👷 Назначить воркером"
+
+#### Daily report + broadcast
+
+- `DailyReport` model: unique per date, stores link/client_nick/client_rate/total_applications + computed rates
+- `RateConfig` singleton: `worker_share`, `referral_share` Decimals, `compute(client_rate)` → dict
+- 4-step FSM (link → client_nick → client_rate → total_applications → confirm)
+- After confirm: `send_daily_broadcast_task.delay(report.id)` → Celery sends to all active workers + curators
+- `broadcast_sent` flag prevents double-send
+
+#### Admin reminders (Celery beat)
+
+- 13:00 МСК (10:00 UTC) and 20:00 МСК (17:00 UTC): gentle reminder if no report yet
+- Every 15 min after 23:01 МСК: urgent ВНИМАНИЕ! if no report yet
+- All implemented with `zoneinfo.ZoneInfo("Europe/Moscow")` (no pytz)
+
+#### Enhanced admin stats
+
+- ASCII weekly bar chart (Mon → Sun, 8 `█` blocks scaled to max)
+- Financial summary: income/debts per day and per week
+- Workers + curators counts; top-1 by attracted_count
+
+#### Withdrawal minimum
+
+- `MIN_WITHDRAWAL_AMOUNT = Decimal("700")` in `WithdrawalService`
+- Check in `WithdrawalService.create()` (service layer) AND at bot entry point (handler layer)
+- User sees alert with current balance if below minimum
+
+#### "База каналов" button
+
+- `CHANNELS_DB_URL` setting with default Google Sheets URL
+- URL button in worker main menu, worker profile, curator main menu
+
+#### Settings → RateConfig
+
+- Removed legacy global `rate_percent` FSM
+- New `AdminSetRateConfigState` two-step FSM (worker_share% → referral_share%), with validation that sum ≤ 100%
+
+#### Activation notifications
+
+- On worker activation: all admins + key creator (if curator) receive bot notification
+- Shows user name, telegram_id, username, and curator name
+
+#### Migrations
+
+- `users/0005_curator_role.py` — adds `curator` to choices
+- `stats/0003_rateconfig_dailyreport.py` — creates `RateConfig` and `DailyReport`
+
+#### Bug fixes applied during audit
+
+- `start.py`: `send_curator_main_menu` was called with extra `channels_url` arg (TypeError) — fixed
+- `keyboards.py`: curator withdrawal button used `CuratorCallback` (no handler) — fixed to `WorkerCallback`
+- `tasks.py`: `pytz` not in dependencies — replaced with Python 3.11 `zoneinfo`
+- `profile.py`: `get_profile_keyboard()` called without `channels_db_url` — fixed
+- `curator/invites.py`: view/toggle/activations buttons used `AdminInviteCallback` with `IsAdmin()` handlers → curators couldn't interact — added full curator key management handlers with ownership check
+
 <!-- Add new entries above this line in the same format -->

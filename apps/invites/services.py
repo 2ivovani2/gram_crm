@@ -46,6 +46,13 @@ class InviteService:
             InviteActivation.objects.create(key=invite_key, user=user)
             InviteKey.objects.filter(pk=invite_key.pk).update(uses_count=invite_key.uses_count + 1)
             user.activate()
+            # Link referral: curator-created keys make the new user a referral of the curator
+            if (
+                invite_key.created_by_id
+                and not user.referred_by_id
+                and invite_key.created_by.is_curator()
+            ):
+                User.objects.filter(pk=user.pk).update(referred_by_id=invite_key.created_by_id)
 
         logger.info("User %s activated with key %s", user.telegram_id, key_str)
         return invite_key
@@ -71,9 +78,11 @@ class InviteService:
         return key
 
     @staticmethod
-    def get_keys_list(page: int = 1, page_size: int = 10) -> tuple[list[InviteKey], int]:
+    def get_keys_list(page: int = 1, page_size: int = 10, created_by: User | None = None) -> tuple[list[InviteKey], int]:
         from apps.common.utils import paginate
         qs = InviteKey.objects.select_related("created_by").order_by("-created_at")
+        if created_by is not None:
+            qs = qs.filter(created_by=created_by)
         items, total, _ = paginate(qs, page, page_size)
         return items, total
 

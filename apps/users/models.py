@@ -5,9 +5,8 @@ from django.utils import timezone
 
 class UserRole(models.TextChoices):
     ADMIN = "admin", "Admin"
+    CURATOR = "curator", "Curator"
     WORKER = "worker", "Worker"
-    # FUTURE: MODERATOR = "moderator", "Moderator"
-    # FUTURE: SUPPORT = "support", "Support"
 
 
 class UserStatus(models.TextChoices):
@@ -110,6 +109,9 @@ class User(AbstractUser):
 
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
+
+    def is_curator(self) -> bool:
+        return self.role == UserRole.CURATOR
 
     def is_worker(self) -> bool:
         return self.role == UserRole.WORKER

@@ -174,12 +174,15 @@ class UserService:
         banned = User.objects.filter(status=UserStatus.BANNED).count()
         admins = User.objects.filter(role=UserRole.ADMIN).count()
         new_today = User.objects.filter(created_at__date=timezone.now().date()).count()
+        curators = User.objects.filter(role=UserRole.CURATOR).count()
+        workers = User.objects.filter(role=UserRole.WORKER).count()
         return {
             "total": total,
             "active": active,
             "pending": pending,
             "banned": banned,
             "admins": admins,
-            "workers": total - admins,
+            "curators": curators,
+            "workers": workers,
             "new_today": new_today,
         }
