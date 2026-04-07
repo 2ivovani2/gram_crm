@@ -50,6 +50,18 @@ async def cb_settings(callback: CallbackQuery, state: FSMContext) -> None:
     await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
 
 
+# ── Backward-compat: old "set_rate" global % — redirect to settings menu ─────
+
+@router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate"), IsAdmin())
+async def cb_set_rate_legacy(callback: CallbackQuery, state: FSMContext) -> None:
+    """Old global rate_percent button (now removed). Redirect gracefully."""
+    await state.clear()
+    await callback.answer("Глобальная % ставка больше не используется.", show_alert=True)
+    from apps.stats.models import RateConfig
+    config = await sync_to_async(RateConfig.get)()
+    await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
+
+
 # ── RateConfig FSM ────────────────────────────────────────────────────────────
 
 @router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate_config"), IsAdmin())
