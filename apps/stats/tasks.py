@@ -152,12 +152,6 @@ def check_missing_daily_report_task(self) -> None:
     if DailyReportService.exists_for_today():
         return
 
-    # Idempotency: send at most once per trigger window per day
-    today_str = now_msk.date().isoformat()
-    cache_key = _URGENT_CACHE_KEY.format(date=today_str)
-    # We allow repeated sends every 15 min as per requirement — do NOT use cache lock
-    # (requirement: "писать каждые 15 минут")
-
     from apps.users.models import User, UserRole
     admins = list(
         User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)

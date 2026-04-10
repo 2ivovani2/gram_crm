@@ -18,7 +18,7 @@ SEND_DELAY_SECONDS = 0.05  # ~20 msg/sec
 def send_broadcast_task(self, broadcast_id: int) -> None:
     from apps.broadcasts.models import Broadcast, BroadcastStatus, DeliveryStatus
     from apps.broadcasts.services import BroadcastService
-    from apps.users.services import UserService
+    from apps.users.models import User
     from django.utils import timezone
 
     try:
@@ -28,10 +28,22 @@ def send_broadcast_task(self, broadcast_id: int) -> None:
         return
 
     if broadcast.status != BroadcastStatus.RUNNING:
-        logger.warning("send_broadcast_task: Broadcast %d is not RUNNING (status=%s)", broadcast_id, broadcast.status)
+        logger.warning(
+            "send_broadcast_task: Broadcast %d is not RUNNING (status=%s)",
+            broadcast_id,
+            broadcast.status,
+        )
         return
 
-    async def _deliver() -> None:
+    # Load recipients synchronously before entering async context
+    recipients = list(BroadcastService.get_recipients_queryset(broadcast).iterator(chunk_size=100))
+
+    async def _deliver(users) -> tuple[list[int], list[tuple[int, str, str]]]:
+        """
+        Returns:
+            blocked_tg_ids — telegram_ids of users who blocked the bot
+            results        — list of (user_pk, DeliveryStatus, error_message)
+        """
         from aiogram import Bot
         from aiogram.client.default import DefaultBotProperties
         from aiogram.enums import ParseMode
@@ -43,48 +55,61 @@ def send_broadcast_task(self, broadcast_id: int) -> None:
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
         )
 
+        blocked_tg_ids: list[int] = []
+        results: list[tuple[int, str, str]] = []
+
         try:
-            recipients = BroadcastService.get_recipients_queryset(broadcast)
-            for user in recipients.iterator(chunk_size=100):
+            for user in users:
                 try:
                     await bot.send_message(
                         chat_id=user.telegram_id,
                         text=broadcast.text,
                         parse_mode=broadcast.parse_mode,
                     )
-                    BroadcastService.log_delivery(broadcast_id, user, DeliveryStatus.SENT)
+                    results.append((user.pk, DeliveryStatus.SENT, ""))
 
                 except TelegramForbiddenError:
-                    # User blocked the bot
-                    UserService.mark_blocked_bot(user)
-                    BroadcastService.log_delivery(broadcast_id, user, DeliveryStatus.BLOCKED, "Bot blocked")
+                    blocked_tg_ids.append(user.telegram_id)
+                    results.append((user.pk, DeliveryStatus.BLOCKED, "Bot blocked"))
 
                 except TelegramRetryAfter as exc:
                     logger.warning("Rate limit hit, sleeping %ds", exc.retry_after)
                     await asyncio.sleep(exc.retry_after)
-                    # Retry this user once
                     try:
                         await bot.send_message(
                             chat_id=user.telegram_id,
                             text=broadcast.text,
                             parse_mode=broadcast.parse_mode,
                         )
-                        BroadcastService.log_delivery(broadcast_id, user, DeliveryStatus.SENT)
+                        results.append((user.pk, DeliveryStatus.SENT, ""))
                     except Exception as inner_exc:
-                        BroadcastService.log_delivery(broadcast_id, user, DeliveryStatus.FAILED, str(inner_exc))
+                        results.append((user.pk, DeliveryStatus.FAILED, str(inner_exc)))
 
                 except Exception as exc:
                     logger.error("Failed to send to %d: %s", user.telegram_id, exc)
-                    BroadcastService.log_delivery(broadcast_id, user, DeliveryStatus.FAILED, str(exc))
+                    results.append((user.pk, DeliveryStatus.FAILED, str(exc)))
 
                 await asyncio.sleep(SEND_DELAY_SECONDS)
         finally:
             await bot.session.close()
 
-    asyncio.run(_deliver())
+        return blocked_tg_ids, results
+
+    blocked_tg_ids, results = asyncio.run(_deliver(recipients))
+
+    # All ORM writes happen synchronously after asyncio.run() — safe in a sync Celery task
+    if blocked_tg_ids:
+        User.objects.filter(telegram_id__in=blocked_tg_ids).update(is_blocked_bot=True)
+
+    # Build pk→user map for log_delivery (which expects a User object)
+    user_by_pk = {u.pk: u for u in recipients}
+    for user_pk, status, error in results:
+        user = user_by_pk.get(user_pk)
+        if user:
+            BroadcastService.log_delivery(broadcast_id, user, status, error)
 
     Broadcast.objects.filter(pk=broadcast_id).update(
         status=BroadcastStatus.DONE,
         finished_at=timezone.now(),
     )
-    logger.info("Broadcast %d completed", broadcast_id)
+    logger.info("Broadcast %d completed: %d sent", broadcast_id, len(results))

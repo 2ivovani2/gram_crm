@@ -109,29 +109,29 @@ CELERY_CACHE_BACKEND = "django-cache"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
+CELERY_TIMEZONE = "Europe/Moscow"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ROUTES = {
     "apps.broadcasts.tasks.*": {"queue": "broadcasts"},
-    "apps.stats.tasks.*": {"queue": "celery"},
+    "apps.stats.tasks.*": {"queue": "default"},
 }
 
 # ── Celery Beat Schedule ──────────────────────────────────────────────────────
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
-    # 13:00 МСК = 10:00 UTC
+    # 13:00 МСК
     "admin-reminder-1300": {
         "task": "apps.stats.tasks.send_admin_reminder_task",
-        "schedule": crontab(hour=10, minute=0),
+        "schedule": crontab(hour=13, minute=0),
     },
-    # 20:00 МСК = 17:00 UTC
+    # 20:00 МСК
     "admin-reminder-2000": {
         "task": "apps.stats.tasks.send_admin_reminder_task",
-        "schedule": crontab(hour=17, minute=0),
+        "schedule": crontab(hour=20, minute=0),
     },
-    # Every 15 min: if after 23:01 МСК (20:01 UTC) and no DailyReport → urgent reminder
+    # Every 15 min: if after 23:01 МСК and no DailyReport → urgent reminder
     "check-missing-daily-report": {
         "task": "apps.stats.tasks.check_missing_daily_report_task",
         "schedule": crontab(minute="*/15"),
@@ -167,6 +167,19 @@ CHANNELS_DB_URL = env(
     default="https://docs.google.com/spreadsheets/d/1-3kKQZk3LrBy9XEL0lG8oM1dYdgrvWzEDKXgFt5udjE/edit?gid=0#gid=0",
 )
 
+# ── Channel subscription gate ─────────────────────────────────────────────────
+# Username (with @) for public channels, or numeric ID for private channels.
+# Public channel example:  @grmly
+# Private channel example: -1001234567890
+# Leave empty to disable the gate entirely.
+SUBSCRIPTION_CHANNEL_ID = env("SUBSCRIPTION_CHANNEL_ID", default="@grmly")
+
+# Link shown to non-subscribed users in the inline button.
+SUBSCRIPTION_CHANNEL_URL = env(
+    "SUBSCRIPTION_CHANNEL_URL",
+    default="https://t.me/grmly",
+)
+
 # ── Static ────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -178,7 +191,7 @@ STORAGES = {
 
 # ── i18n ─────────────────────────────────────────────────────────────────────
 LANGUAGE_CODE = "ru"
-TIME_ZONE = "UTC"
+TIME_ZONE = "Europe/Moscow"
 USE_I18N = True
 USE_TZ = True
 
@@ -297,11 +310,6 @@ UNFOLD = {
                         "title": "Реферальные ссылки",
                         "icon": "link",
                         "link": "/django-admin/referrals/referrallink/",
-                    },
-                    {
-                        "title": "Настройки программы",
-                        "icon": "settings",
-                        "link": "/django-admin/referrals/referralsettings/",
                     },
                 ],
             },

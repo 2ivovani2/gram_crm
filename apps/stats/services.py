@@ -4,20 +4,22 @@ import datetime
 from decimal import Decimal
 from typing import Optional
 
+from django.utils import timezone
+
 
 class DailyReportService:
 
     @staticmethod
     def get_or_create_for_today() -> tuple:
-        """Return (report, created) for today."""
+        """Return (report, created) for today in Moscow timezone."""
         from .models import DailyReport
-        today = datetime.date.today()
+        today = timezone.localdate()
         return DailyReport.objects.get_or_create(date=today)
 
     @staticmethod
     def exists_for_today() -> bool:
         from .models import DailyReport
-        return DailyReport.objects.filter(date=datetime.date.today()).exists()
+        return DailyReport.objects.filter(date=timezone.localdate()).exists()
 
     @staticmethod
     def create_report(
@@ -49,9 +51,9 @@ class DailyReportService:
 
     @staticmethod
     def get_week_reports() -> list:
-        """Return DailyReport objects for Mon–today of the current week."""
+        """Return DailyReport objects for Mon–today of the current week (Moscow timezone)."""
         from .models import DailyReport
-        today = datetime.date.today()
+        today = timezone.localdate()
         monday = today - datetime.timedelta(days=today.weekday())
         return list(
             DailyReport.objects.filter(date__gte=monday, date__lte=today).order_by("date")
@@ -78,7 +80,7 @@ class DailyReportService:
     def build_weekly_bar_chart(reports: list) -> str:
         """Build ASCII bar chart Mon–Sun. Missing days show as empty."""
         RU_DAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-        today = datetime.date.today()
+        today = timezone.localdate()
         monday = today - datetime.timedelta(days=today.weekday())
 
         # Map date → total_applications

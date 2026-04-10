@@ -42,12 +42,25 @@ async def get_dispatcher() -> Dispatcher:
         dp = Dispatcher(storage=storage)
 
         # ── Middleware ────────────────────────────────────────────────────────
-        # outer_middleware runs BEFORE filters, so db_user is available
-        # when IsAdmin() and other permission filters evaluate.
-        # inner middleware (`.middleware()`) runs after filters — too late.
+        # Outer middlewares use LIFO ordering: LAST registered runs FIRST.
+        #
+        # Desired call order:
+        #   UserMiddleware (sets db_user) → SubscriptionMiddleware (reads db_user) → Handler
+        #
+        # To achieve this, register SubscriptionMiddleware FIRST (it becomes
+        # the inner wrapper), then UserMiddleware SECOND (it becomes the outer
+        # wrapper that executes first in the chain).
         from apps.telegram_bot.middleware import UserMiddleware
+        from apps.telegram_bot.subscription import SubscriptionMiddleware
+
+        # Outer middlewares execute in registration order (FIFO).
+        # UserMiddleware must run first to inject db_user into data,
+        # then SubscriptionMiddleware reads db_user to check channel membership.
         dp.message.outer_middleware(UserMiddleware())
         dp.callback_query.outer_middleware(UserMiddleware())
+
+        dp.message.outer_middleware(SubscriptionMiddleware())
+        dp.callback_query.outer_middleware(SubscriptionMiddleware())
 
         # ── Routers ───────────────────────────────────────────────────────────
         from apps.telegram_bot.router import setup_routers

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from django.conf import settings
-from .models import ReferralLink, ReferralSettings
+from .models import ReferralLink
 
 
 class ReferralService:
@@ -23,15 +23,3 @@ class ReferralService:
             return ReferralLink.objects.select_related("user").get(token=token).user
         except ReferralLink.DoesNotExist:
             return None
-
-    @staticmethod
-    def get_settings() -> ReferralSettings:
-        return ReferralSettings.get()
-
-    @staticmethod
-    def set_rate(rate_percent: float, updated_by) -> ReferralSettings:
-        obj = ReferralSettings.get()
-        obj.rate_percent = rate_percent
-        obj.updated_by = updated_by
-        obj.save(update_fields=["rate_percent", "updated_by", "updated_at"])
-        return obj

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Статистика — SpamBotControl</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2a2d3a;
+  --accent: #6366f1;
+  --accent2: #22d3ee;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+.page-header h1 { font-size: 22px; font-weight: 700; }
+.page-header .date { color: var(--muted); font-size: 13px; }
+
+/* ── KPI strip ─────────────────────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+.kpi-card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.kpi-card .value { font-size: 26px; font-weight: 700; line-height: 1; }
+.kpi-card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.kpi-card.green .value { color: var(--green); }
+.kpi-card.blue  .value { color: var(--accent); }
+.kpi-card.cyan  .value { color: var(--accent2); }
+.kpi-card.yellow .value { color: var(--yellow); }
+
+/* ── Layout ─────────────────────────────────────────────────────────── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: 16px;
+}
+
+/* ── Charts ─────────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; height: 220px; }
+
+/* ── Table ──────────────────────────────────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th {
+  text-align: left;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 0 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid #1e2130;
+  font-size: 13px;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .pos { color: var(--green); }
+.data-table .neg { color: var(--red); }
+
+/* ── Workers list ───────────────────────────────────────────────────── */
+.worker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #1e2130;
+}
+.worker-row:last-child { border-bottom: none; }
+.worker-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.worker-name { flex: 1; font-size: 13px; }
+.worker-name .role { color: var(--muted); font-size: 11px; margin-top: 1px; }
+.worker-count { font-size: 15px; font-weight: 700; color: var(--accent2); }
+
+/* ── Logout ─────────────────────────────────────────────────────────── */
+.logout-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: color .2s;
+}
+.logout-link:hover { color: var(--text); }
+
+/* ── Badge ──────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-ok  { background: #14532d; color: var(--green); }
+.badge-no  { background: #450a0a; color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div>
+    <h1>📊 Статистика</h1>
+    <div class="date">{{ today|date:"d E Y" }} МСК</div>
+  </div>
+  <a class="logout-link" href="/django-admin/">Админ-панель</a>
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-grid">
+  <div class="kpi-card green">
+    <div class="label">Заявок сегодня</div>
+    <div class="value">{{ today_report.total_applications|default:"—" }}</div>
+    <div class="sub">
+      {% if today_report %}
+        <span class="badge badge-ok">Данные внесены</span>
+      {% else %}
+        <span class="badge badge-no">Данных нет</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="kpi-card cyan">
+    <div class="label">Доход сегодня</div>
+    <div class="value">{% if today_report %}{{ today_report.total_our_profit|floatformat:0 }} ₽{% else %}—{% endif %}</div>
+    <div class="sub">наша прибыль</div>
+  </div>
+  <div class="kpi-card yellow">
+    <div class="label">Долг спамерам сегодня</div>
+    <div class="value">{% if today_report %}{{ today_report.total_worker_payout|floatformat:0 }} ₽{% else %}—{% endif %}</div>
+    <div class="sub">к выплате</div>
+  </div>
+  <div class="kpi-card blue">
+    <div class="label">Активных работников</div>
+    <div class="value">{{ active_workers }}</div>
+    <div class="sub">{{ total_workers }} воркеров, {{ total_curators }} кураторов</div>
+  </div>
+  {% if top_worker %}
+  <div class="kpi-card">
+    <div class="label">Топ воркер (неделя)</div>
+    <div class="value" style="font-size:18px">{{ top_worker.0.display_name|truncatechars:18 }}</div>
+    <div class="sub">{{ top_worker.1 }} подписчиков</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Charts row -->
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">Заявки — последние 30 дней</div>
+    <div class="chart-wrap"><canvas id="chartApplications"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Финансы — последние 30 дней (₽)</div>
+    <div class="chart-wrap"><canvas id="chartFinance"></canvas></div>
+  </div>
+</div>
+
+<!-- Table + Workers row -->
+<div class="two-col">
+  <div class="card">
+    <div class="card-title">Последние отчёты</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Ник клиента</th>
+          <th class="num">Заявки</th>
+          <th class="num">Наш доход</th>
+          <th class="num">Долг</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recent_reports %}
+        <tr>
+          <td>{{ r.date|date:"d.m" }}</td>
+          <td>{{ r.client_nick|default:"—"|truncatechars:16 }}</td>
+          <td class="num">{{ r.total_applications }}</td>
+          <td class="num pos">{{ r.total_our_profit|floatformat:0 }} ₽</td>
+          <td class="num neg">{{ r.total_worker_payout|floatformat:0 }} ₽</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" style="color:var(--muted); padding:20px 8px">Отчётов пока нет</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Топ-10 по подписчикам</div>
+    {% for w in top_workers %}
+    <div class="worker-row">
+      <div class="worker-avatar">{{ w.display_name|first|upper }}</div>
+      <div class="worker-name">
+        {{ w.display_name }}
+        <div class="role">{{ w.get_role_display }}</div>
+      </div>
+      <div class="worker-count">{{ w.attracted_count }}</div>
+    </div>
+    {% empty %}
+    <div style="color:var(--muted); padding: 20px 0">Нет данных</div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+const LABELS = {{ chart_labels_json|safe }};
+const APPS   = {{ chart_applications_json|safe }};
+const PAYOUT = {{ chart_worker_payout_json|safe }};
+const PROFIT = {{ chart_our_profit_json|safe }};
+
+const defaults = {
+  borderWidth: 2,
+  pointRadius: 3,
+  pointHoverRadius: 5,
+  tension: 0.35,
+  fill: true,
+};
+
+Chart.defaults.color = "#64748b";
+Chart.defaults.borderColor = "#2a2d3a";
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+new Chart(document.getElementById("chartApplications"), {
+  type: "line",
+  data: {
+    labels: LABELS,
+    datasets: [{
+      ...defaults,
+      label: "Заявки",
+      data: APPS,
+      borderColor: "#6366f1",
+      backgroundColor: "rgba(99,102,241,.12)",
+    }],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 8 } },
+      y: { grid: { color: "#1e2130" }, beginAtZero: true },
+    },
+  },
+});
+
+new Chart(document.getElementById("chartFinance"), {
+  type: "line",
+  data: {
+    labels: LABELS,
+    datasets: [
+      {
+        ...defaults,
+        label: "Наш доход",
+        data: PROFIT,
+        borderColor: "#22d3ee",
+        backgroundColor: "rgba(34,211,238,.10)",
+      },
+      {
+        ...defaults,
+        label: "Долг спамерам",
+        data: PAYOUT,
+        borderColor: "#eab308",
+        backgroundColor: "rgba(234,179,8,.08)",
+        fill: false,
+      },
+    ],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } } },
+    scales: {
+      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 8 } },
+      y: { grid: { color: "#1e2130" }, beginAtZero: true },
+    },
+  },
+});
+</script>
+</body>
+</html>

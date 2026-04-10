@@ -53,7 +53,7 @@ services:
   celery_worker:
     <<: *common
     build: .
-    command: celery -A config.celery worker -l info -c 4 -Q default,broadcasts
+    command: celery -A config.celery worker -l info -c 4 -Q celery,default,broadcasts
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
 

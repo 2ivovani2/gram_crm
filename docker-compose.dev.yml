@@ -23,7 +23,7 @@ services:
       - "8000:8000"
 
   celery_worker:
-    command: celery -A config.celery worker -l debug -c 2 -Q default,broadcasts
+    command: celery -A config.celery worker -l debug -c 2 -Q celery,default,broadcasts
     volumes:
       - .:/app
     environment:

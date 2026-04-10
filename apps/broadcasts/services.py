@@ -72,11 +72,12 @@ class BroadcastService:
 
     @staticmethod
     def log_delivery(broadcast_id: int, user: User, status: str, error: str = "") -> None:
-        BroadcastDeliveryLog.objects.create(
+        # Use update_or_create to safely handle duplicate entries (unique_together constraint)
+        # without raising IntegrityError and corrupting the PostgreSQL transaction
+        BroadcastDeliveryLog.objects.update_or_create(
             broadcast_id=broadcast_id,
             user=user,
-            status=status,
-            error_message=error,
+            defaults={"status": status, "error_message": error},
         )
         if status == DeliveryStatus.SENT:
             Broadcast.objects.filter(pk=broadcast_id).update(sent_count=F("sent_count") + 1)

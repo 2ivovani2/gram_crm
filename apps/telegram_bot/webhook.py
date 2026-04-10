@@ -44,6 +44,10 @@ class TelegramWebhookView(View):
         from apps.telegram_bot.bot import get_bot, get_dispatcher
         bot = get_bot()
         dp = await get_dispatcher()
-        await dp.feed_update(bot=bot, update=update)
+        try:
+            await dp.feed_update(bot=bot, update=update)
+        except Exception as exc:
+            # Log but always return 200 — Telegram retries on non-2xx, causing update storms
+            logger.exception("Webhook: unhandled exception processing update %s: %s", update.update_id, exc)
 
         return JsonResponse({"ok": True})

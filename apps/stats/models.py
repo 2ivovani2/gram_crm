@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 from django.db import models
+from django.utils import timezone
 
 
 class UserDailyStats(models.Model):
@@ -99,7 +100,7 @@ class DailyReport(models.Model):
     """
 
     date = models.DateField(
-        unique=True, db_index=True, default=datetime.date.today,
+        unique=True, db_index=True, default=timezone.localdate,
         verbose_name="Дата",
     )
     link = models.URLField(max_length=500, blank=True, verbose_name="Ссылка на пост/канал")
