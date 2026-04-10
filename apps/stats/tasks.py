@@ -1,8 +1,15 @@
 """
 Celery tasks for stats:
-  - send_daily_broadcast_task   — sends daily stats to all active workers + curators
-  - send_admin_reminder_task    — scheduled reminder "к 23:00 МСК внеси данные"
-  - check_missing_daily_report_task — every 15 min: if after 23:01 МСК and no report → urgent
+  - send_daily_broadcast_task       — sends daily stats to all active workers + curators
+  - send_admin_reminder_task        — scheduled reminder at 13:00 and 20:00 МСК
+  - check_missing_daily_report_task — every 15 min:
+      * 23:01–00:59 МСК: if no report for the control date → urgent reminder to admins
+      * 01:00–01:59 МСК: if still no report → create MissedDay record (idempotent)
+      * outside both windows → no-op
+
+control_date logic:
+  Between 00:00–01:59 МСК we're still monitoring the PREVIOUS calendar day.
+  At 02:00+ МСК we switch to monitoring today.
 """
 import asyncio
 import datetime
@@ -14,6 +21,38 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 _MSK = ZoneInfo("Europe/Moscow")
+
+
+def _make_bot():
+    """Create a fresh Bot instance for use in async tasks."""
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from django.conf import settings
+    return Bot(
+        token=settings.TELEGRAM_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+
+async def _send_to_admins(text: str) -> None:
+    """Send a message to all non-blocked admins."""
+    from apps.users.models import User, UserRole
+    admins = list(
+        User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)
+        .values_list("telegram_id", flat=True)
+    )
+    if not admins:
+        return
+    bot = _make_bot()
+    try:
+        for tg_id in admins:
+            try:
+                await bot.send_message(tg_id, text)
+            except Exception as exc:
+                logger.warning("_send_to_admins: failed to send to %s: %s", tg_id, exc)
+    finally:
+        await bot.session.close()
 
 
 @shared_task(name="apps.stats.tasks.send_daily_broadcast_task", bind=True, ignore_result=True)
@@ -55,16 +94,8 @@ def send_daily_broadcast_task(self, report_id: int) -> None:
     )
 
     async def _send():
-        from aiogram import Bot
-        from aiogram.client.default import DefaultBotProperties
-        from aiogram.enums import ParseMode
         from aiogram.exceptions import TelegramForbiddenError
-        from django.conf import settings
-
-        bot = Bot(
-            token=settings.TELEGRAM_BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        )
+        bot = _make_bot()
         blocked = []
         try:
             for tg_id in recipients:
@@ -81,7 +112,6 @@ def send_daily_broadcast_task(self, report_id: int) -> None:
 
     blocked_ids = asyncio.run(_send())
 
-    # Mark bot-blocked users
     if blocked_ids:
         from apps.users.models import User as UserModel
         UserModel.objects.filter(telegram_id__in=blocked_ids).update(is_blocked_bot=True)
@@ -93,95 +123,63 @@ def send_daily_broadcast_task(self, report_id: int) -> None:
 @shared_task(name="apps.stats.tasks.send_admin_reminder_task", bind=True, ignore_result=True)
 def send_admin_reminder_task(self) -> None:
     """
-    Send a gentle reminder to all admins: "к 23:00 МСК нужно внести данные".
-    Called at 13:00 МСК and 20:00 МСК.
+    Send a gentle reminder to all admins at 13:00 and 20:00 МСК.
     Skipped if DailyReport for today already exists.
     """
     from apps.stats.services import DailyReportService
     if DailyReportService.exists_for_today():
         return
 
-    from apps.users.models import User, UserRole
-    admins = list(
-        User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)
-        .values_list("telegram_id", flat=True)
-    )
-    if not admins:
-        return
-
-    text = "⏰ <b>Напоминание:</b> к 23:00 МСК нужно внести данные за сегодня!"
-
-    async def _send():
-        from aiogram import Bot
-        from aiogram.client.default import DefaultBotProperties
-        from aiogram.enums import ParseMode
-        from django.conf import settings
-
-        bot = Bot(
-            token=settings.TELEGRAM_BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        )
-        try:
-            for tg_id in admins:
-                try:
-                    await bot.send_message(tg_id, text)
-                except Exception as exc:
-                    logger.warning("admin_reminder: failed to send to %s: %s", tg_id, exc)
-        finally:
-            await bot.session.close()
-
-    asyncio.run(_send())
+    asyncio.run(_send_to_admins(
+        "⏰ <b>Напоминание:</b> к 23:00 МСК нужно внести данные за сегодня!"
+    ))
 
 
 @shared_task(name="apps.stats.tasks.check_missing_daily_report_task", bind=True, ignore_result=True)
 def check_missing_daily_report_task(self) -> None:
     """
-    Runs every 15 min. If current time is after 23:01 МСК (20:01 UTC)
-    and DailyReport for today is missing → send urgent reminder to all admins.
-    Idempotent: sends at most once per calendar day via cache flag.
+    Runs every 15 min via Celery Beat.
+
+    Reminder window  23:01–00:59 МСК:
+        If no DailyReport for control_date → send urgent reminder to all admins.
+
+    Mark-missed window  01:00–01:59 МСК:
+        If still no report → MissedDay.get_or_create(date=control_date).
+        Unique constraint makes this idempotent (safe to run 4x/hour).
+
+    control_date:
+        00:00–01:59 МСК → yesterday (the day that just ended without a report)
+        02:00+     МСК → today
     """
     now_msk = datetime.datetime.now(tz=_MSK)
-
-    # Only trigger between 23:01 and 06:00 МСК (next day up to 06:00)
     hour, minute = now_msk.hour, now_msk.minute
-    after_deadline = (hour == 23 and minute >= 1) or (0 <= hour < 6)
-    if not after_deadline:
+    today = now_msk.date()
+
+    # The calendar day we are monitoring for a report
+    control_date = (today - datetime.timedelta(days=1)) if hour < 2 else today
+
+    from apps.stats.models import DailyReport, MissedDay
+    has_report = DailyReport.objects.filter(date=control_date).exists()
+
+    # ── Reminder window: 23:01–00:59 МСК ─────────────────────────────────────
+    in_reminder_window = (hour == 23 and minute >= 1) or hour == 0
+
+    if in_reminder_window:
+        if has_report:
+            return  # report submitted, stop spamming
+        asyncio.run(_send_to_admins(
+            "🚨 <b>ВНИМАНИЕ!</b> Данные за сегодня ещё не внесены!\n\n"
+            "Внеси данные, чтобы рассылка ушла пользователям."
+        ))
         return
 
-    from apps.stats.services import DailyReportService
-    if DailyReportService.exists_for_today():
-        return
+    # ── Mark-missed window: 01:00–01:59 МСК ──────────────────────────────────
+    if hour == 1 and not has_report:
+        _, created = MissedDay.objects.get_or_create(date=control_date)
+        if created:
+            logger.warning(
+                "check_missing_daily_report_task: day %s marked as MISSED (no report submitted)",
+                control_date,
+            )
 
-    from apps.users.models import User, UserRole
-    admins = list(
-        User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)
-        .values_list("telegram_id", flat=True)
-    )
-    if not admins:
-        return
-
-    text = (
-        "🚨 <b>ВНИМАНИЕ!</b> Данные за сегодня ещё не внесены!\n\n"
-        "Внеси данные, чтобы рассылка ушла пользователям."
-    )
-
-    async def _send():
-        from aiogram import Bot
-        from aiogram.client.default import DefaultBotProperties
-        from aiogram.enums import ParseMode
-        from django.conf import settings
-
-        bot = Bot(
-            token=settings.TELEGRAM_BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-        )
-        try:
-            for tg_id in admins:
-                try:
-                    await bot.send_message(tg_id, text)
-                except Exception as exc:
-                    logger.warning("urgent_reminder: failed to send to %s: %s", tg_id, exc)
-        finally:
-            await bot.session.close()
-
-    asyncio.run(_send())
+    # Outside both windows → no-op

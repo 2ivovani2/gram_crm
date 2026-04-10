@@ -55,6 +55,7 @@ class AdminBroadcastCallback(CallbackData, prefix="adm_b"):
 
 class AdminStatsCallback(CallbackData, prefix="adm_s"):
     action: str
+    period: str = "week"  # today | week | last_week | month
 
 
 class AdminSettingsCallback(CallbackData, prefix="adm_cfg"):
@@ -71,8 +72,13 @@ class AdminWithdrawalCallback(CallbackData, prefix="adm_w"):
 class AdminDailyCallback(CallbackData, prefix="adm_d"):
     action: str
     report_id: int = 0
+    date_str: str = ""  # ISO date string (YYYY-MM-DD) for backdated entry
 
 
 class WorkerWithdrawalCallback(CallbackData, prefix="ww"):
     action: str
     withdrawal_id: int = 0
+
+
+class SubscriptionCallback(CallbackData, prefix="sub"):
+    action: str  # "check"

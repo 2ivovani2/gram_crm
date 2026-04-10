@@ -35,17 +35,69 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .page-header h1 { font-size: 22px; font-weight: 700; }
 .page-header .date { color: var(--muted); font-size: 13px; }
+
+/* ── Filter bar ─────────────────────────────────────────────────────── */
+.filter-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filter-bar .label { color: var(--muted); font-size: 12px; margin-right: 4px; }
+.preset-btn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all .15s;
+}
+.preset-btn:hover { border-color: var(--accent); color: var(--text); }
+.preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filter-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+.date-range-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.date-range-form input[type="date"] {
+  background: #0f1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.date-range-form input[type="date"]:focus { outline: none; border-color: var(--accent); }
+.date-range-form button {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.date-range-form button:hover { background: var(--accent); color: #fff; }
 
 /* ── KPI strip ─────────────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .kpi-card {
   background: var(--surface);
@@ -60,6 +112,7 @@ body {
 .kpi-card.blue  .value { color: var(--accent); }
 .kpi-card.cyan  .value { color: var(--accent2); }
 .kpi-card.yellow .value { color: var(--yellow); }
+.kpi-card.red   .value { color: var(--red); }
 
 /* ── Layout ─────────────────────────────────────────────────────────── */
 .two-col {
@@ -75,6 +128,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
+  margin-bottom: 0;
 }
 .card-title {
   font-size: 13px;
@@ -84,6 +138,7 @@ body {
   letter-spacing: .07em;
   margin-bottom: 16px;
 }
+.full-card { margin-bottom: 20px; }
 
 /* ── Charts ─────────────────────────────────────────────────────────── */
 .chart-wrap { position: relative; height: 220px; }
@@ -108,6 +163,7 @@ body {
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .data-table .pos { color: var(--green); }
 .data-table .neg { color: var(--red); }
+.data-table tr.missed-row td { opacity: .6; }
 
 /* ── Workers list ───────────────────────────────────────────────────── */
 .worker-row {
@@ -129,7 +185,20 @@ body {
 .worker-name .role { color: var(--muted); font-size: 11px; margin-top: 1px; }
 .worker-count { font-size: 15px; font-weight: 700; color: var(--accent2); }
 
-/* ── Logout ─────────────────────────────────────────────────────────── */
+/* ── Missed days ────────────────────────────────────────────────────── */
+.missed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.missed-badge.unfilled { background: #450a0a; color: var(--red); }
+.missed-badge.filled   { background: #14532d; color: var(--green); }
+
+/* ── Misc ───────────────────────────────────────────────────────────── */
 .logout-link {
   color: var(--muted);
   text-decoration: none;
@@ -141,7 +210,6 @@ body {
 }
 .logout-link:hover { color: var(--text); }
 
-/* ── Badge ──────────────────────────────────────────────────────────── */
 .badge {
   display: inline-block;
   padding: 2px 8px;
@@ -151,6 +219,7 @@ body {
 }
 .badge-ok  { background: #14532d; color: var(--green); }
 .badge-no  { background: #450a0a; color: var(--red); }
+.muted { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -163,17 +232,30 @@ body {
   <a class="logout-link" href="/django-admin/">Админ-панель</a>
 </div>
 
-<!-- KPI strip -->
+<!-- ── Filter bar ───────────────────────────────────────────────────── -->
+<div class="filter-bar">
+  <span class="label">Период:</span>
+  <a href="?preset=today"     class="preset-btn {% if preset == 'today' %}active{% endif %}">Сегодня</a>
+  <a href="?preset=week"      class="preset-btn {% if preset == 'week' %}active{% endif %}">Эта неделя</a>
+  <a href="?preset=last_week" class="preset-btn {% if preset == 'last_week' %}active{% endif %}">Прошлая неделя</a>
+  <a href="?preset=month"     class="preset-btn {% if preset == 'month' %}active{% endif %}">Месяц</a>
+  <div class="filter-sep"></div>
+  <form class="date-range-form" method="get">
+    <input type="date" name="start" value="{{ start_date|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}">
+    <span class="muted">—</span>
+    <input type="date" name="end"   value="{{ end_date|date:'Y-m-d' }}"   max="{{ today|date:'Y-m-d' }}">
+    <button type="submit">Применить</button>
+  </form>
+</div>
+
+<!-- ── KPI strip ────────────────────────────────────────────────────── -->
 <div class="kpi-grid">
   <div class="kpi-card green">
     <div class="label">Заявок сегодня</div>
     <div class="value">{{ today_report.total_applications|default:"—" }}</div>
     <div class="sub">
-      {% if today_report %}
-        <span class="badge badge-ok">Данные внесены</span>
-      {% else %}
-        <span class="badge badge-no">Данных нет</span>
-      {% endif %}
+      {% if today_report %}<span class="badge badge-ok">Данные внесены</span>
+      {% else %}<span class="badge badge-no">Данных нет</span>{% endif %}
     </div>
   </div>
   <div class="kpi-card cyan">
@@ -191,6 +273,13 @@ body {
     <div class="value">{{ active_workers }}</div>
     <div class="sub">{{ total_workers }} воркеров, {{ total_curators }} кураторов</div>
   </div>
+  {% if missed_count > 0 %}
+  <div class="kpi-card red">
+    <div class="label">Пропущено дней</div>
+    <div class="value">{{ missed_count }}</div>
+    <div class="sub">за выбранный период{% if missed_filled_count > 0 %}, {{ missed_filled_count }} заполнено{% endif %}</div>
+  </div>
+  {% endif %}
   {% if top_worker %}
   <div class="kpi-card">
     <div class="label">Топ воркер (неделя)</div>
@@ -200,22 +289,22 @@ body {
   {% endif %}
 </div>
 
-<!-- Charts row -->
+<!-- ── Charts ────────────────────────────────────────────────────────── -->
 <div class="two-col">
   <div class="card">
-    <div class="card-title">Заявки — последние 30 дней</div>
+    <div class="card-title">Заявки — {{ start_date|date:"d.m" }}–{{ end_date|date:"d.m.Y" }}</div>
     <div class="chart-wrap"><canvas id="chartApplications"></canvas></div>
   </div>
   <div class="card">
-    <div class="card-title">Финансы — последние 30 дней (₽)</div>
+    <div class="card-title">Финансы — {{ start_date|date:"d.m" }}–{{ end_date|date:"d.m.Y" }} (₽)</div>
     <div class="chart-wrap"><canvas id="chartFinance"></canvas></div>
   </div>
 </div>
 
-<!-- Table + Workers row -->
+<!-- ── Reports table + missed days ──────────────────────────────────── -->
 <div class="two-col">
   <div class="card">
-    <div class="card-title">Последние отчёты</div>
+    <div class="card-title">Отчёты за период</div>
     <table class="data-table">
       <thead>
         <tr>
@@ -236,12 +325,53 @@ body {
           <td class="num neg">{{ r.total_worker_payout|floatformat:0 }} ₽</td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" style="color:var(--muted); padding:20px 8px">Отчётов пока нет</td></tr>
+        <tr><td colspan="5" style="color:var(--muted); padding:20px 8px">Отчётов за период нет</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
+  <div class="card">
+    <div class="card-title">Пропущенные дни</div>
+    {% if missed_days %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Зафиксировано</th>
+          <th>Статус</th>
+          <th>Заполнил</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in missed_days %}
+        <tr>
+          <td>{{ m.date|date:"d.m.Y" }}</td>
+          <td style="color:var(--muted)">{{ m.detected_at|date:"d.m H:i" }}</td>
+          <td>
+            {% if m.is_filled %}
+              <span class="missed-badge filled">✅ Заполнен</span>
+            {% else %}
+              <span class="missed-badge unfilled">🔴 Не заполнен</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--muted)">
+            {% if m.filled_by %}{{ m.filled_by.display_name|truncatechars:14 }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="color:var(--muted); padding: 20px 0">
+      {% if missed_count == 0 %}✅ Пропущенных дней за период нет{% else %}—{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Top workers + period summary ─────────────────────────────────── -->
+<div class="two-col">
   <div class="card">
     <div class="card-title">Топ-10 по подписчикам</div>
     {% for w in top_workers %}
@@ -257,6 +387,47 @@ body {
     <div style="color:var(--muted); padding: 20px 0">Нет данных</div>
     {% endfor %}
   </div>
+
+  <div class="card">
+    <div class="card-title">Итого за период</div>
+    <table class="data-table">
+      <tbody>
+        <tr>
+          <td>Дней с данными</td>
+          <td class="num">{{ recent_reports|length }}</td>
+        </tr>
+        <tr>
+          <td>Пропущено дней</td>
+          <td class="num {% if missed_count > 0 %}neg{% endif %}">{{ missed_count }}</td>
+        </tr>
+        {% if missed_filled_count > 0 %}
+        <tr>
+          <td style="color:var(--muted)">из них заполнено задним числом</td>
+          <td class="num pos">{{ missed_filled_count }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+      <div style="color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px;">Финансы за период</div>
+      <table class="data-table">
+        <tbody id="periodSummaryTable">
+          <tr>
+            <td>Заявок всего</td>
+            <td class="num" id="totalApps">—</td>
+          </tr>
+          <tr>
+            <td>Наш доход</td>
+            <td class="num pos" id="totalProfit">—</td>
+          </tr>
+          <tr>
+            <td>Долг спамерам</td>
+            <td class="num neg" id="totalWorker">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -264,6 +435,18 @@ const LABELS = {{ chart_labels_json|safe }};
 const APPS   = {{ chart_applications_json|safe }};
 const PAYOUT = {{ chart_worker_payout_json|safe }};
 const PROFIT = {{ chart_our_profit_json|safe }};
+const MISSED = {{ chart_missed_json|safe }};
+
+// Period totals
+const sum = arr => arr.reduce((a, b) => a + b, 0);
+const fmt = v => v.toLocaleString("ru-RU", {minimumFractionDigits: 0, maximumFractionDigits: 0}) + " ₽";
+document.getElementById("totalApps").textContent    = sum(APPS);
+document.getElementById("totalProfit").textContent  = fmt(sum(PROFIT));
+document.getElementById("totalWorker").textContent  = fmt(sum(PAYOUT));
+
+Chart.defaults.color = "#64748b";
+Chart.defaults.borderColor = "#2a2d3a";
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 const defaults = {
   borderWidth: 2,
@@ -273,27 +456,38 @@ const defaults = {
   fill: true,
 };
 
-Chart.defaults.color = "#64748b";
-Chart.defaults.borderColor = "#2a2d3a";
-Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+// Color missed-day points red on applications chart
+const pointColors = MISSED.map((m, i) => m ? "#ef4444" : "#6366f1");
+const pointRadii  = MISSED.map((m, i) => m ? 6 : 3);
 
 new Chart(document.getElementById("chartApplications"), {
   type: "line",
   data: {
     labels: LABELS,
-    datasets: [{
-      ...defaults,
-      label: "Заявки",
-      data: APPS,
-      borderColor: "#6366f1",
-      backgroundColor: "rgba(99,102,241,.12)",
-    }],
+    datasets: [
+      {
+        ...defaults,
+        label: "Заявки",
+        data: APPS,
+        borderColor: "#6366f1",
+        backgroundColor: "rgba(99,102,241,.12)",
+        pointBackgroundColor: pointColors,
+        pointRadius: pointRadii,
+      },
+    ],
   },
   options: {
     responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          afterLabel: (ctx) => MISSED[ctx.dataIndex] ? "⚠️ Пропущенный день" : "",
+        }
+      }
+    },
     scales: {
-      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 8 } },
+      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 12 } },
       y: { grid: { color: "#1e2130" }, beginAtZero: true },
     },
   },
@@ -325,7 +519,7 @@ new Chart(document.getElementById("chartFinance"), {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } } },
     scales: {
-      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 8 } },
+      x: { grid: { color: "#1e2130" }, ticks: { maxTicksLimit: 12 } },
       y: { grid: { color: "#1e2130" }, beginAtZero: true },
     },
   },

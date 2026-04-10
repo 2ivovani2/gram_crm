@@ -5,6 +5,133 @@ Updated after every significant step.
 
 ---
 
+## 2026-04-11 — Subscription gate: "Check subscription" button + redirect to main menu
+
+### What was done
+
+Improved the subscription gate UX. Previously: user got a message with only a "Subscribe" link and had to manually retry their action. Now:
+
+**Keyboard:**
+```
+[ 📢 Подписаться на канал ]  ← URL button
+[ ✅ Проверить подписку   ]  ← callback button
+```
+
+**"Check subscription" flow:**
+1. User clicks "✅ Проверить подписку"
+2. `SubscriptionMiddleware` runs (as always):
+   - Still not subscribed → middleware blocks, sends gate message again (no extra code needed)
+   - Now subscribed → middleware lets through to `cb_check_subscription`
+3. `cb_check_subscription` shows the appropriate main menu based on role (admin → admin panel, curator → curator menu, worker → worker menu)
+
+The middleware itself handles the "not subscribed" retry — zero code duplication.
+
+**Files changed:**
+- `apps/telegram_bot/callbacks.py`: added `SubscriptionCallback(prefix="sub", action: str)`
+- `apps/telegram_bot/subscription.py`: updated keyboard (`_build_gate_keyboard`), updated text, added `router` + `cb_check_subscription` handler
+- `apps/telegram_bot/router.py`: included `subscription_router` first (before all other routers)
+
+---
+
+## 2026-04-11 — Reminder window fix, MissedDay model, backdated entry, stats periods
+
+### What was done
+
+#### 1. Fixed reminder window (23:01–01:00 МСК)
+
+`check_missing_daily_report_task` previously spammed admins until 06:00 МСК and had a bug: after midnight `timezone.localdate()` returns the next day, so the check was looking for the wrong date.
+
+New logic:
+- `control_date` = yesterday when `hour < 2`, today otherwise
+- **Reminder window 23:01–00:59 МСК**: send urgent reminder if no report for `control_date`
+- **Mark-missed window 01:00–01:59 МСК**: if still no report → `MissedDay.get_or_create(date=control_date)` (idempotent via unique constraint, runs 4× but only creates once)
+- **Outside both windows**: no-op
+
+#### 2. New model: `MissedDay`
+
+`apps/stats/models.py` — new model tracking days without a DailyReport:
+- `date` (unique) — the missed calendar day
+- `detected_at` — when the task created the record
+- `filled_at` / `filled_by` — populated when admin later submits data backdated to that date
+
+Migration: `apps/stats/migrations/0005_missedday.py`
+
+Registered in Django admin (`MissedDayAdmin`) and UNFOLD sidebar ("Пропущенные дни").
+
+#### 3. Backdated entry in Telegram bot
+
+`handlers/admin/daily.py` now supports entering data for past dates:
+
+Entry flow:
+1. Tap "📋 Ввод данных" → see today's status
+2. If there are unfilled recent days (last 7 excl. today) → button "📅 Внести за другой день" appears
+3. Date picker shows last 7 days without a DailyReport; missed days highlighted with 🔴
+4. Select date → same 4-step FSM form, date stored in FSM state as ISO string
+5. On confirm: `DailyReportService.create_report(date=selected_date, ...)` + auto-marks MissedDay as filled
+
+Date is shown throughout the form ("Ввод данных за 10.04.2025 (задним числом)").
+`DailyReportService.create_report()` now calls `MissedDay.objects.filter(...).update(filled_at=...)` after saving.
+
+Fixed bug: was using `datetime.date.today()` instead of `timezone.localdate()` throughout.
+
+#### 4. Stats period selector in Telegram bot
+
+`handlers/admin/stats.py` now accepts `period` parameter: `today | week | last_week | month`
+
+New `AdminStatsCallback` field: `period: str = "week"`.
+New handlers: `cb_stats_period` (switches period), `cb_stats_refresh` (refreshes current period).
+
+Keyboard (`get_stats_keyboard(period)`) shows 2×2 period buttons with active period marked "▶".
+Stats text includes: period-specific bar chart or totals, missed days count for the period.
+Fixed: timestamp now shows "МСК" not "UTC" (using `timezone.localtime()`).
+
+#### 5. Web dashboard: date range filter
+
+`apps/stats/views.py` now supports:
+- `?preset=today|week|last_week|month` — quick presets
+- `?start=YYYY-MM-DD&end=YYYY-MM-DD` — custom range
+
+Context includes `missed_days` queryset, `missed_count`, `missed_filled_count`, `chart_missed` (array for annotation).
+`period_financial_summary` is added for the selected range (separate from week-based summary).
+
+#### 6. `DailyReportService` additions
+
+- `get_reports_for_period(start, end)` — generic range query
+- `get_date_range_for_period(period)` — returns (start, end) for named period
+- `get_unfilled_recent_dates(days=7)` — dates without DailyReport in last N days
+- `get_missed_dates_set(dates)` — which of the given dates have unfilled MissedDay
+- `count_missed_days(start, end)` — count for stats display
+- `build_period_financial_summary(reports)` — financial summary for any report list
+- `build_weekly_bar_chart(reports, week_start=None)` — now accepts explicit week_start for last_week support
+
+#### 7. Bugs fixed
+
+- `check_missing_daily_report_task`: wrong date after midnight (now uses control_date)
+- `check_missing_daily_report_task`: window was 23:01–06:00, now correctly 23:01–00:59
+- `daily.py`: `datetime.date.today()` → `timezone.localdate()`
+- `stats.py`: timestamp showed "UTC" → fixed to "МСК" via `timezone.localtime()`
+- `webhook.py`: `dp.feed_update()` unhandled exceptions caused 500 → Telegram retry storms; now wrapped in try/except, always returns 200
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `apps/stats/models.py` | Add `MissedDay` model |
+| `apps/stats/migrations/0005_missedday.py` | New migration |
+| `apps/stats/services.py` | New slice/missed-day methods, `create_report` marks MissedDay |
+| `apps/stats/tasks.py` | Fix window, mark-missed logic, extracted `_send_to_admins` helper |
+| `apps/stats/admin.py` | Register `MissedDay` |
+| `apps/stats/views.py` | Date range filter, missed days in context |
+| `apps/telegram_bot/callbacks.py` | `AdminStatsCallback.period`, `AdminDailyCallback.date_str` |
+| `apps/telegram_bot/admin_keyboards.py` | Period selector, date picker, entry menu keyboards |
+| `apps/telegram_bot/handlers/admin/daily.py` | Backdated entry, date picker, `timezone.localdate()` fix |
+| `apps/telegram_bot/handlers/admin/stats.py` | Period selection, MСК timestamp, missed count |
+| `apps/telegram_bot/subscription.py` | Remove debug logs, fix FIFO middleware order doc |
+| `apps/telegram_bot/webhook.py` | Wrap feed_update in try/except → always return 200 |
+| `config/settings/base.py` | Add MissedDay to UNFOLD sidebar |
+
+---
+
 ## 2026-04-05 — Referral system rework + withdrawal mechanism
 
 ### What was done

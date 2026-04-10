@@ -323,6 +323,11 @@ UNFOLD = {
                         "link": "/django-admin/stats/dailyreport/",
                     },
                     {
+                        "title": "Пропущенные дни",
+                        "icon": "event_busy",
+                        "link": "/django-admin/stats/missedday/",
+                    },
+                    {
                         "title": "Конфигурация ставок",
                         "icon": "tune",
                         "link": "/django-admin/stats/rateconfig/",

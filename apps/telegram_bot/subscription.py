@@ -14,6 +14,13 @@ So the actual call order is:
     SubscriptionMiddleware → reads db_user, checks channel membership
     Filters + Handler
 
+"Check subscription" button flow:
+    User clicks "Проверить подписку" →
+        SubscriptionMiddleware runs again:
+            not subscribed → blocks, sends gate message (same as before)
+            subscribed     → lets through to cb_check_subscription handler
+        cb_check_subscription → shows appropriate main menu for the user's role
+
 Error/edge-case policy:
   - SUBSCRIPTION_CHANNEL_ID not set   → check skipped (backward compat)
   - Telegram API error                → fail-open: user allowed, warning logged
@@ -26,7 +33,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Awaitable, Callable
 
-from aiogram import BaseMiddleware
+from aiogram import BaseMiddleware, Router, F
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import (
     CallbackQuery,
@@ -36,7 +43,11 @@ from aiogram.types import (
     TelegramObject,
 )
 
+from apps.telegram_bot.callbacks import SubscriptionCallback
+
 logger = logging.getLogger(__name__)
+
+router = Router(name="subscription")
 
 # Statuses that mean the user IS a channel member
 _MEMBER_STATUSES = frozenset({"creator", "administrator", "member", "restricted"})
@@ -53,9 +64,6 @@ async def check_channel_membership(bot, channel_id: int | str, user_id: int) -> 
         True  — subscribed (status in member/administrator/creator/restricted)
         False — not subscribed (status is left or kicked)
         None  — check failed due to API error; caller decides safe behavior
-
-    Errors are logged but not re-raised so a bad bot configuration
-    never bricks the entire bot for all users.
     """
     try:
         member = await bot.get_chat_member(chat_id=channel_id, user_id=user_id)
@@ -64,7 +72,6 @@ async def check_channel_membership(bot, channel_id: int | str, user_id: int) -> 
             return True
         if status in _NON_MEMBER_STATUSES:
             return False
-        # Unknown future status → treat as not subscribed (safe default)
         logger.warning(
             "check_channel_membership: unknown status %r for user %d — treating as not subscribed",
             status,
@@ -72,10 +79,6 @@ async def check_channel_membership(bot, channel_id: int | str, user_id: int) -> 
         )
         return False
     except TelegramAPIError as exc:
-        # Common causes:
-        #   - Bot is not a member / not an admin of the channel
-        #   - User_id not found
-        #   - Telegram rate limit
         logger.error(
             "check_channel_membership: TelegramAPIError for user %d in channel %s: %s",
             user_id,
@@ -92,10 +95,15 @@ async def check_channel_membership(bot, channel_id: int | str, user_id: int) -> 
         return None
 
 
-def _build_join_keyboard(channel_url: str) -> InlineKeyboardMarkup:
+def _build_gate_keyboard(channel_url: str) -> InlineKeyboardMarkup:
+    """Two-button keyboard: subscribe link + check subscription callback."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Подписаться на канал", url=channel_url)]
+            [InlineKeyboardButton(text="📢 Подписаться на канал", url=channel_url)],
+            [InlineKeyboardButton(
+                text="✅ Проверить подписку",
+                callback_data=SubscriptionCallback(action="check").pack(),
+            )],
         ]
     )
 
@@ -103,17 +111,13 @@ def _build_join_keyboard(channel_url: str) -> InlineKeyboardMarkup:
 _NOT_SUBSCRIBED_TEXT = (
     "🔒 <b>Доступ ограничен</b>\n\n"
     "Для использования бота необходимо подписаться на наш канал.\n\n"
-    "После подписки просто повторите своё действие."
+    "После подписки нажмите кнопку <b>«Проверить подписку»</b>."
 )
 
 
 class SubscriptionMiddleware(BaseMiddleware):
     """
     Outer middleware that enforces channel subscription for all non-admin users.
-
-    Must be registered BEFORE UserMiddleware in bot.py so that in the
-    LIFO middleware chain it executes AFTER UserMiddleware
-    (and therefore has `db_user` already set in `data`).
     """
 
     async def __call__(
@@ -124,25 +128,17 @@ class SubscriptionMiddleware(BaseMiddleware):
     ) -> Any:
         from django.conf import settings
 
-        db_user_debug = data.get("db_user")
-        logger.info(
-            "SubscriptionMiddleware.__call__ invoked: event=%s db_user=%s",
-            type(event).__name__, db_user_debug,
-        )
-
         channel_id_raw: str = getattr(settings, "SUBSCRIPTION_CHANNEL_ID", "")
         channel_url: str = getattr(
             settings,
             "SUBSCRIPTION_CHANNEL_URL",
-            "https://t.me/+srQfQzCb_6gyY2Rh",
+            "https://t.me/grmly",
         )
 
         # ── Skip check if not configured ─────────────────────────────────────
         if not channel_id_raw:
             return await handler(event, data)
 
-        # Support both public channels (@username) and private channels (-100XXXXXXXXX).
-        # Try to parse as int; if it fails, use the string as-is (@username).
         try:
             channel_id: int | str = int(channel_id_raw)
         except (ValueError, TypeError):
@@ -163,18 +159,13 @@ class SubscriptionMiddleware(BaseMiddleware):
         # ── Check Telegram membership ─────────────────────────────────────────
         bot = data.get("bot")
         if bot is None:
-            # Should never happen; fail-open so bot doesn't brick
             logger.error("SubscriptionMiddleware: bot not found in data — skipping check (fail-open)")
             return await handler(event, data)
 
         result = await check_channel_membership(bot, channel_id, db_user.telegram_id)
-        logger.info(
-            "SubscriptionMiddleware: user=%d channel=%s result=%r event_type=%s",
-            db_user.telegram_id, channel_id, result, type(event).__name__,
-        )
 
         if result is None:
-            # API error → fail-open: allow the user, but log loudly
+            # API error → fail-open
             logger.warning(
                 "SubscriptionMiddleware: membership check failed for user %d "
                 "(API error) — allowing access (fail-open policy)",
@@ -183,22 +174,68 @@ class SubscriptionMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if result is True:
-            # Subscribed — proceed normally
             return await handler(event, data)
 
         # ── Not subscribed — block and prompt to join ─────────────────────────
-        keyboard = _build_join_keyboard(channel_url)
+        keyboard = _build_gate_keyboard(channel_url)
 
         if isinstance(event, CallbackQuery):
-            # Must answer() to dismiss the loading spinner on the button
             await event.answer()
             try:
                 await event.message.answer(_NOT_SUBSCRIBED_TEXT, reply_markup=keyboard)
             except Exception:
-                # Edge case: no message context (inline keyboard in other chats, etc.)
                 pass
         elif isinstance(event, Message):
             await event.answer(_NOT_SUBSCRIBED_TEXT, reply_markup=keyboard)
 
-        # Do NOT call handler — action is blocked
+        return  # block handler
+
+
+# ── "Check subscription" handler ──────────────────────────────────────────────
+#
+# When user taps "✅ Проверить подписку":
+#   - SubscriptionMiddleware runs first (as always)
+#   - If still not subscribed → middleware blocks, sends gate message (no handler called)
+#   - If now subscribed → middleware lets through → this handler shows main menu
+
+@router.callback_query(SubscriptionCallback.filter(F.action == "check"))
+async def cb_check_subscription(callback: CallbackQuery, db_user, state) -> None:
+    """
+    Reached only when SubscriptionMiddleware confirmed the user IS now subscribed.
+    Show the appropriate main menu for their role.
+    """
+    await callback.answer("✅ Подписка подтверждена!")
+
+    from asgiref.sync import sync_to_async
+    from apps.users.services import UserService
+
+    # Re-fetch to get fresh role/activation state
+    db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id) or db_user
+
+    if db_user.is_admin():
+        from apps.telegram_bot.handlers.admin.menu import send_admin_main_menu
+        await send_admin_main_menu(callback, db_user)
         return
+
+    if db_user.is_curator():
+        from apps.telegram_bot.handlers.curator.menu import send_curator_main_menu
+        await send_curator_main_menu(callback, db_user)
+        return
+
+    # Worker
+    from django.conf import settings
+    from apps.telegram_bot.keyboards import get_main_menu_keyboard
+    channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+
+    text = (
+        f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\nВыберите действие:"
+        if db_user.is_activated
+        else f"👋 Привет, <b>{db_user.display_name}</b>!\n\nДля доступа нужен <b>invite key</b>."
+    )
+    await callback.message.answer(
+        text,
+        reply_markup=get_main_menu_keyboard(
+            is_activated=db_user.is_activated,
+            channels_db_url=channels_url,
+        ),
+    )

@@ -158,3 +158,38 @@ class DailyReport(models.Model):
     @property
     def total_our_profit(self) -> Decimal:
         return (self.our_profit * self.total_applications).quantize(Decimal("0.01"))
+
+
+class MissedDay(models.Model):
+    """
+    Tracks calendar days where no DailyReport was submitted within the
+    control window (23:00–01:00 МСК).
+
+    Created automatically by check_missing_daily_report_task at 01:00–01:59 МСК
+    when no report exists for the previous calendar day.
+
+    filled_at / filled_by are populated when admin later submits data backdated
+    to this date (via DailyReportService.create_report).
+    """
+
+    date = models.DateField(unique=True, db_index=True, verbose_name="Дата пропуска")
+    detected_at = models.DateTimeField(auto_now_add=True, verbose_name="Зафиксировано в")
+    filled_at = models.DateTimeField(null=True, blank=True, verbose_name="Заполнено позднее")
+    filled_by = models.ForeignKey(
+        "users.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="filled_missed_days", verbose_name="Кем заполнено",
+    )
+
+    class Meta:
+        ordering = ["-date"]
+        verbose_name = "Пропущенный день"
+        verbose_name_plural = "Пропущенные дни"
+
+    def __str__(self) -> str:
+        if self.filled_at:
+            return f"Пропуск {self.date} — заполнен {self.filled_at.strftime('%d.%m %H:%M')}"
+        return f"Пропуск {self.date} — не заполнен"
+
+    @property
+    def is_filled(self) -> bool:
+        return self.filled_at is not None

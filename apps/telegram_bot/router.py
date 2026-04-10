@@ -21,10 +21,15 @@ def setup_routers(dp: Dispatcher) -> None:
     from apps.telegram_bot.handlers.curator.referrals import router as curator_referrals_router
     from apps.telegram_bot.handlers.curator.invites import router as curator_invites_router
 
+    from apps.telegram_bot.subscription import router as subscription_router
+
     from apps.telegram_bot.handlers.worker.start import router as worker_start_router
     from apps.telegram_bot.handlers.worker.profile import router as worker_profile_router
     from apps.telegram_bot.handlers.worker.invite import router as worker_invite_router
     from apps.telegram_bot.handlers.worker.withdrawal import router as worker_withdrawal_router
+
+    # Subscription check handler — must be first so it's never blocked by itself
+    dp.include_router(subscription_router)
 
     # Admin routers first — they have IsAdmin() filter so no conflict
     dp.include_router(admin_menu_router)

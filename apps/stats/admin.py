@@ -1,6 +1,6 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
-from .models import UserDailyStats, SystemStats, RateConfig, DailyReport
+from .models import UserDailyStats, SystemStats, RateConfig, DailyReport, MissedDay
 
 
 @admin.register(UserDailyStats)
@@ -53,3 +53,14 @@ class DailyReportAdmin(ModelAdmin):
             "fields": ("broadcast_sent", "created_by", "created_at", "updated_at"),
         }),
     )
+
+
+@admin.register(MissedDay)
+class MissedDayAdmin(ModelAdmin):
+    list_display = ("date", "detected_at", "is_filled_display", "filled_at", "filled_by")
+    list_filter = ("date",)
+    readonly_fields = ("date", "detected_at", "filled_at", "filled_by")
+
+    def is_filled_display(self, obj):
+        return "✅ Да" if obj.is_filled else "🔴 Нет"
+    is_filled_display.short_description = "Заполнен"

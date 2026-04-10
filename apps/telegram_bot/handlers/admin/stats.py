@@ -1,10 +1,12 @@
-"""Admin: system statistics overview with weekly chart and financial summary."""
+"""Admin: system statistics with period selector (today / this week / last week / month)."""
 import datetime
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
-from apps.telegram_bot.admin_keyboards import get_stats_keyboard, get_admin_main_menu
+from apps.telegram_bot.admin_keyboards import get_stats_keyboard
 from apps.telegram_bot.callbacks import AdminMenuCallback, AdminStatsCallback
 from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import safe_edit_text
@@ -12,54 +14,104 @@ from apps.users.services import UserService
 
 router = Router(name="admin_stats")
 
+_PERIOD_LABELS = {
+    "today":     "сегодня",
+    "week":      "эта неделя",
+    "last_week": "прошлая неделя",
+    "month":     "этот месяц",
+}
 
-async def _build_stats_text() -> str:
+
+async def _build_stats_text(period: str = "week") -> str:
     from apps.broadcasts.models import Broadcast, BroadcastStatus
     from apps.invites.models import InviteKey
-    from apps.stats.models import DailyReport
     from apps.stats.services import DailyReportService
-    from django.utils import timezone
 
-    user_stats = await sync_to_async(UserService.get_stats_summary)()
-    total_keys = await sync_to_async(InviteKey.objects.count)()
-    active_keys = await sync_to_async(InviteKey.objects.filter(is_active=True).count)()
-    total_broadcasts = await sync_to_async(Broadcast.objects.count)()
-    running_broadcasts = await sync_to_async(
-        Broadcast.objects.filter(status=BroadcastStatus.RUNNING).count
-    )()
+    today = timezone.localdate()
+    period_label = _PERIOD_LABELS.get(period, "эта неделя")
+    start_date, end_date = await sync_to_async(
+        DailyReportService.get_date_range_for_period
+    )(period)
 
-    today = datetime.date.today()
-    today_report, week_reports, top_worker = await sync_to_async(
-        lambda: (
-            DailyReport.objects.filter(date=today).first(),
-            DailyReportService.get_week_reports(),
-            DailyReportService.get_top_worker_week(),
+    (
+        user_stats,
+        total_keys,
+        active_keys,
+        total_broadcasts,
+        running_broadcasts,
+        reports,
+        missed_count,
+        top_worker,
+    ) = await sync_to_async(lambda: (
+        UserService.get_stats_summary(),
+        InviteKey.objects.count(),
+        InviteKey.objects.filter(is_active=True).count(),
+        Broadcast.objects.count(),
+        Broadcast.objects.filter(status=BroadcastStatus.RUNNING).count(),
+        DailyReportService.get_reports_for_period(start_date, end_date),
+        DailyReportService.count_missed_days(start_date, end_date),
+        DailyReportService.get_top_worker_week(),
+    ))()
+
+    today_report = next((r for r in reports if r.date == today), None)
+    now_str = timezone.localtime().strftime("%d.%m.%Y %H:%M")
+
+    # ── Period-specific block ─────────────────────────────────────────────────
+    if period == "today":
+        apps_count = today_report.total_applications if today_report else 0
+        has_data = "✅ внесены" if today_report else "🔴 не внесены"
+        period_section = (
+            f"📋 <b>Данные за сегодня — {has_data}</b>\n"
+            f"  Заявок: <b>{apps_count}</b>\n"
         )
-    )()
+        fin_summary = await sync_to_async(DailyReportService.build_period_financial_summary)(
+            [today_report] if today_report else []
+        )
 
-    bar_chart = await sync_to_async(DailyReportService.build_weekly_bar_chart)(week_reports)
-    fin_summary = await sync_to_async(DailyReportService.build_financial_summary)(today_report, week_reports)
+    elif period in ("week", "last_week"):
+        if period == "week":
+            week_start = today - datetime.timedelta(days=today.weekday())
+        else:
+            last_sunday = today - datetime.timedelta(days=today.weekday() + 1)
+            week_start = last_sunday - datetime.timedelta(days=6)
 
-    avg_applications = (
-        round(sum(r.total_applications for r in week_reports) / len(week_reports), 1)
-        if week_reports else 0
-    )
+        bar_chart = await sync_to_async(DailyReportService.build_weekly_bar_chart)(
+            reports, week_start
+        )
+        avg = (
+            round(sum(r.total_applications for r in reports) / len(reports), 1)
+            if reports else 0
+        )
+        period_section = (
+            f"📈 <b>Заявки — {period_label}</b>\n"
+            f"<code>{bar_chart}</code>\n"
+            f"  Среднее/день: <b>{avg}</b>\n"
+        )
+        fin_summary = await sync_to_async(DailyReportService.build_period_financial_summary)(reports)
+
+    else:  # month
+        total_apps = sum(r.total_applications for r in reports)
+        period_section = (
+            f"📆 <b>Заявки — {period_label}</b>\n"
+            f"  Всего: <b>{total_apps}</b> · Дней с данными: <b>{len(reports)}</b>\n"
+        )
+        fin_summary = await sync_to_async(DailyReportService.build_period_financial_summary)(reports)
+
+    missed_line = f"\n⚠️ Пропущено дней: <b>{missed_count}</b>" if missed_count > 0 else ""
 
     top_line = "—"
     if top_worker:
         user, count = top_worker
         top_line = f"<b>{user.display_name}</b> — {count} заявок"
 
-    now_str = timezone.now().strftime("%d.%m.%Y %H:%M")
-
     return (
-        f"📊 <b>Статистика системы</b>\n"
-        f"<i>{now_str} UTC</i>\n"
+        f"📊 <b>Статистика</b> — {period_label}\n"
+        f"<i>{now_str} МСК</i>\n"
         "\n"
         "👥 <b>Пользователи</b>\n"
         f"  Всего: <b>{user_stats['total']}</b>\n"
         f"  Активных: <b>{user_stats['active']}</b>\n"
-        f"  Ожидают активации: <b>{user_stats['pending']}</b>\n"
+        f"  Ожидают: <b>{user_stats['pending']}</b>\n"
         f"  Воркеров: <b>{user_stats['workers']}</b> · "
         f"Кураторов: <b>{user_stats['curators']}</b>\n"
         f"  Новых сегодня: <b>{user_stats['new_today']}</b>\n"
@@ -70,10 +122,8 @@ async def _build_stats_text() -> str:
         "📢 <b>Рассылки</b>\n"
         f"  Всего: <b>{total_broadcasts}</b> · Запущено: <b>{running_broadcasts}</b>\n"
         "\n"
-        "📈 <b>Заявки — неделя (Пн → Вс)</b>\n"
-        f"<code>{bar_chart}</code>\n"
-        f"  Среднее/день: <b>{avg_applications}</b>\n"
-        f"  Топ-1: {top_line}\n"
+        f"{period_section}"
+        f"  Топ-1: {top_line}{missed_line}\n"
         "\n"
         f"{fin_summary}"
     )
@@ -82,12 +132,21 @@ async def _build_stats_text() -> str:
 @router.callback_query(AdminMenuCallback.filter(F.section == "stats"), IsAdmin())
 async def cb_stats_section(callback: CallbackQuery) -> None:
     await callback.answer()
-    text = await _build_stats_text()
-    await safe_edit_text(callback, text, get_stats_keyboard())
+    text = await _build_stats_text(period="week")
+    await safe_edit_text(callback, text, get_stats_keyboard(period="week"))
 
 
 @router.callback_query(AdminStatsCallback.filter(F.action == "refresh"), IsAdmin())
-async def cb_stats_refresh(callback: CallbackQuery) -> None:
+async def cb_stats_refresh(callback: CallbackQuery, callback_data: AdminStatsCallback) -> None:
     await callback.answer("Обновлено")
-    text = await _build_stats_text()
-    await safe_edit_text(callback, text, get_stats_keyboard())
+    period = callback_data.period or "week"
+    text = await _build_stats_text(period=period)
+    await safe_edit_text(callback, text, get_stats_keyboard(period=period))
+
+
+@router.callback_query(AdminStatsCallback.filter(F.action == "period"), IsAdmin())
+async def cb_stats_period(callback: CallbackQuery, callback_data: AdminStatsCallback) -> None:
+    await callback.answer()
+    period = callback_data.period or "week"
+    text = await _build_stats_text(period=period)
+    await safe_edit_text(callback, text, get_stats_keyboard(period=period))
