@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-04-12 — Fix: CRM owner workspace access bug
+
+**Причина:** `Workspace.created_by` — информационный ForeignKey, не создаёт `WorkspaceMembership`. Весь контроль доступа в `CRMLoginMixin._resolve_workspace_and_membership` работает только через `WorkspaceMembership`. Пользователь ставил себя `created_by` в Django admin → membership не создавался → `crm_is_owner=False` → ограниченный экран.
+
+**Изменения:**
+
+`apps/crm/admin.py` — `WorkspaceAdmin.save_model`:
+- При создании workspace с `created_by` автоматически создаётся `WorkspaceMembership(role=OWNER)` для этого пользователя
+
+`apps/crm/management/commands/setup_crm.py`:
+- `--fix-created-by` — сканирует все workspace, создаёт OWNER membership там где `created_by` не имеет membership (для фикса существующих данных)
+- `--workspace <slug>` — указать конкретный workspace вместо default `gramly`
+
+**Как проверить:**
+```bash
+# Фикс существующих workspace (один раз на проде):
+python manage.py setup_crm --fix-created-by
+
+# Добавить owner вручную по telegram_id:
+python manage.py setup_crm --add-owner <telegram_id>
+
+# Проверить состав участников:
+python manage.py setup_crm
+```
+
+**Сценарии доступа:**
+- Нет membership → ограниченный dashboard (no_workspace экран)
+- OWNER → полный доступ ко всем страницам
+- Несколько workspace → переключение через `/crm/switch-workspace/` (уже реализовано)
+- Разные роли → каждый workspace независим
+
+---
+
 ## 2026-04-12 — Production domain migration: gramly.tech + Let's Encrypt
 
 ### Что изменено

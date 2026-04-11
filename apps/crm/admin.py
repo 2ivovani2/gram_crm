@@ -22,6 +22,22 @@ class WorkspaceAdmin(ModelAdmin):
     prepopulated_fields = {"slug": ("name",)}
     inlines       = [MembershipInline]
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        # Auto-create OWNER membership for created_by when workspace is first created.
+        # created_by is informational only — access requires a WorkspaceMembership row.
+        if not change and obj.created_by_id:
+            from django.utils import timezone as tz
+            WorkspaceMembership.objects.get_or_create(
+                workspace=obj,
+                user=obj.created_by,
+                defaults={
+                    "role": "owner",
+                    "is_active": True,
+                    "joined_at": tz.now(),
+                },
+            )
+
 
 @admin.register(WorkspaceMembership)
 class WorkspaceMembershipAdmin(ModelAdmin):
