@@ -64,42 +64,25 @@ mkdir -p "$PROJECT_DIR/media"
 if [ "$CERT_EXISTS" = "false" ]; then
     log "No certificate found for $DOMAIN. Obtaining Let's Encrypt certificate..."
 
-    # 5a. Start postgres, redis, web + nginx in HTTP-only (init) mode
-    log "Starting services in HTTP-only mode for ACME challenge..."
+    # 5a. Start only postgres + redis (web runs on 8000, port 80 must be FREE for certbot)
+    log "Starting postgres and redis..."
     $COMPOSE up -d postgres redis
-
-    # Wait for DB/redis to be healthy before web starts
     log "Waiting for postgres and redis..."
     sleep 5
 
-    $COMPOSE up -d web
-
-    # Start nginx with the HTTP-only init config (no SSL required)
-    docker run -d --name _nginx_init_tmp \
-        --network "${PROJECT_NAME}_default" \
-        -p 80:80 \
-        -v "${PROJECT_DIR}/nginx/prod-init.conf:/etc/nginx/conf.d/default.conf:ro" \
-        -v "${PROJECT_NAME}_certbot_www:/var/www/certbot" \
-        nginx:alpine 2>/dev/null || true
-
-    log "Waiting 15s for web + nginx to come up..."
-    sleep 15
-
-    # 5b. Run certbot (override entrypoint so renewal loop doesn't start)
+    # 5b. Run certbot standalone — it binds port 80 itself, no nginx needed
     if [ -n "$CERTBOT_EMAIL" ]; then
         EMAIL_FLAG="--email $CERTBOT_EMAIL --no-eff-email"
     else
         EMAIL_FLAG="--register-unsafely-without-email"
     fi
 
-    log "Running certbot certonly..."
+    log "Running certbot standalone on port 80..."
     docker run --rm \
-        --network "${PROJECT_NAME}_default" \
+        -p 80:80 \
         -v "${PROJECT_NAME}_letsencrypt:/etc/letsencrypt" \
-        -v "${PROJECT_NAME}_certbot_www:/var/www/certbot" \
         certbot/certbot:latest certonly \
-            --webroot \
-            --webroot-path /var/www/certbot \
+            --standalone \
             $EMAIL_FLAG \
             --agree-tos \
             --domains "$DOMAIN" \
@@ -107,9 +90,6 @@ if [ "$CERT_EXISTS" = "false" ]; then
             --non-interactive
 
     ok "Certificate obtained for $DOMAIN"
-
-    # 5c. Remove temporary nginx, hand off to compose nginx with HTTPS config
-    docker rm -f _nginx_init_tmp 2>/dev/null || true
 fi
 
 # ── 6. Build images ────────────────────────────────────────────────────────────
