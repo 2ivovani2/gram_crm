@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-04-12 — CRM multi-workspace UI + role-based access
+
+### Что было недоделано
+
+1. **Switcher JS** — `style="display:none"` + `classList.toggle('open')` → dropdown никогда не открывался
+2. **Роль в footer** — `{% if is_owner %}...{% else %}Только просмотр{% endif %}` → FINANCE/APPLICATIONS видели "Только просмотр"
+3. **Навигация** — Cash Flow / Заявки показывались только OWNER → FINANCE и APPLICATIONS не видели свои формы
+4. **Backend permissions** — `FinanceEntryView` и `ApplicationEntryView` использовали `CRMOwnerMixin` → FINANCE/APPLICATIONS получали 403
+5. **Контекст** — не было `can_enter_finance`, `can_enter_applications`, `crm_role` в шаблонном контексте
+
+### Изменения
+
+**`apps/crm/views.py`:**
+- Добавлены `CRMFinanceMixin` (OWNER+FINANCE) и `CRMApplicationsMixin` (OWNER+APPLICATIONS)
+- `FinanceEntryView` → `CRMFinanceMixin`
+- `ApplicationEntryView` → `CRMApplicationsMixin`
+- `get_crm_context` расширен: добавлены `can_enter_finance`, `can_enter_applications`, `crm_role`, `all_memberships`
+
+**`templates/crm/base.html`:**
+- Workspace switcher переписан: CSS dropdown (`ws-dropdown` + `.open`), JS `toggleWsSwitcher()`, закрытие по клику вне
+- Активный workspace выделен цветом в dropdown, роль показана справа от имени
+- Role badge рядом с именем workspace: cyan=owner, green=finance, amber=applications, gray=viewer
+- Навигация: `Cash Flow` виден при `can_enter_finance`, `Заявки` при `can_enter_applications`
+- Footer role: отображает реальную роль из `crm_role` вместо is_owner boolean
+
+### Матрица доступа по ролям
+
+| Страница | OWNER | FINANCE | APPLICATIONS | VIEWER |
+|----------|-------|---------|--------------|--------|
+| Dashboard | ✅ full | ✅ limited | ✅ limited | ✅ limited |
+| History | ✅ | ❌ | ❌ | ❌ |
+| Cash Flow entry | ✅ | ✅ | ❌ | ❌ |
+| Applications entry | ✅ | ❌ | ✅ | ❌ |
+| Admin / Members / Plans | ✅ | ❌ | ❌ | ❌ |
+| Export | ✅ | ❌ | ❌ | ❌ |
+
+---
+
 ## 2026-04-12 — Fix: CRM owner workspace access bug
 
 **Причина:** `Workspace.created_by` — информационный ForeignKey, не создаёт `WorkspaceMembership`. Весь контроль доступа в `CRMLoginMixin._resolve_workspace_and_membership` работает только через `WorkspaceMembership`. Пользователь ставил себя `created_by` в Django admin → membership не создавался → `crm_is_owner=False` → ограниченный экран.

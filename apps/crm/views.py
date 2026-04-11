@@ -110,38 +110,53 @@ class CRMLoginMixin:
         return None
 
     def get_crm_context(self, request):
-        all_ws = []
-        if request.crm_membership:
-            from apps.crm.models import WorkspaceMembership
-            all_ws = [
-                m.workspace for m in
-                WorkspaceMembership.objects.filter(
-                    user=request.crm_user, is_active=True
-                ).select_related("workspace").order_by("workspace__name")
-            ]
+        from apps.crm.models import WorkspaceMembership
+        # Always load all memberships so sidebar switcher works from every page
+        all_memberships = list(
+            WorkspaceMembership.objects.filter(user=request.crm_user, is_active=True)
+            .select_related("workspace")
+            .order_by("workspace__name")
+        )
+        m = request.crm_membership
         return {
-            "crm_user":       request.crm_user,
-            "workspace":      request.crm_workspace,
-            "membership":     request.crm_membership,
-            "all_workspaces": all_ws,
-            "is_owner":       request.crm_is_owner,
+            "crm_user":         request.crm_user,
+            "workspace":        request.crm_workspace,
+            "membership":       m,
+            "all_workspaces":   [ms.workspace for ms in all_memberships],
+            "all_memberships":  all_memberships,   # includes role per workspace
+            "is_owner":         request.crm_is_owner,
+            "can_enter_finance":      bool(m and m.can_enter_finance()),
+            "can_enter_applications": bool(m and m.can_enter_applications()),
+            "crm_role":         m.get_role_display() if m else None,
         }
 
 
 class CRMOwnerMixin(CRMLoginMixin):
-    """
-    Restrict to OWNER role.
-    Authenticated non-owners receive a 403 response before the view runs.
-    """
+    """Restrict to OWNER role."""
 
     def check_crm_permissions(self, request):
         if not request.crm_is_owner:
-            return render(
-                request,
-                "crm/403.html",
-                self.get_crm_context(request),
-                status=403,
-            )
+            return render(request, "crm/403.html", self.get_crm_context(request), status=403)
+        return None
+
+
+class CRMFinanceMixin(CRMLoginMixin):
+    """Allow OWNER and FINANCE roles."""
+
+    def check_crm_permissions(self, request):
+        m = request.crm_membership
+        if not m or not m.can_enter_finance():
+            return render(request, "crm/403.html", self.get_crm_context(request), status=403)
+        return None
+
+
+class CRMApplicationsMixin(CRMLoginMixin):
+    """Allow OWNER and APPLICATIONS roles."""
+
+    def check_crm_permissions(self, request):
+        m = request.crm_membership
+        if not m or not m.can_enter_applications():
+            return render(request, "crm/403.html", self.get_crm_context(request), status=403)
         return None
 
 
@@ -277,7 +292,7 @@ class DashboardView(CRMLoginMixin, TemplateView):
 
 # ─── Entry views (owner only) ─────────────────────────────────────────────────
 
-class FinanceEntryView(CRMOwnerMixin, View):
+class FinanceEntryView(CRMFinanceMixin, View):
     template_name = "crm/entry_finance.html"
 
     def get(self, request):
@@ -327,7 +342,7 @@ class FinanceEntryView(CRMOwnerMixin, View):
             return datetime.datetime.now(tz=_MSK).date()
 
 
-class ApplicationEntryView(CRMOwnerMixin, View):
+class ApplicationEntryView(CRMApplicationsMixin, View):
     template_name = "crm/entry_applications.html"
 
     def get(self, request):

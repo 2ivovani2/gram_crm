@@ -81,10 +81,56 @@ body {
 .sidebar-ws {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
+  position: relative;
 }
 .sidebar-ws-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 4px; }
-.sidebar-ws-name  { font-size: 13px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; justify-content: space-between; }
-.sidebar-ws-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.sidebar-ws-trigger {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: var(--r);
+  cursor: default; background: none; border: none;
+  width: 100%; text-align: left; color: var(--text-2);
+  font-family: inherit;
+  transition: background .15s;
+}
+.sidebar-ws-trigger.switchable { cursor: pointer; }
+.sidebar-ws-trigger.switchable:hover { background: var(--surface-h); }
+.sidebar-ws-trigger svg { flex-shrink: 0; opacity: .5; transition: transform .2s; }
+.sidebar-ws-trigger.open svg { transform: rotate(180deg); opacity: 1; }
+.sidebar-ws-name { font-size: 13px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-ws-role {
+  font-size: 11px; padding: 2px 7px; border-radius: 10px;
+  background: var(--accent-dim); color: var(--accent);
+  font-weight: 600; flex-shrink: 0; white-space: nowrap;
+}
+.sidebar-ws-role.role-finance      { background: rgba(34,197,94,.12); color: var(--green); }
+.sidebar-ws-role.role-applications { background: rgba(245,158,11,.12); color: var(--amber); }
+.sidebar-ws-role.role-viewer       { background: var(--surface-h); color: var(--muted2); }
+
+.ws-dropdown {
+  display: none;
+  position: absolute;
+  left: 8px; right: 8px;
+  top: calc(100% + 4px);
+  background: #1a1f2e;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+.ws-dropdown.open { display: block; }
+.ws-dropdown-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer; background: none; border: none;
+  width: 100%; text-align: left;
+  font-family: inherit; font-size: 13px; color: var(--text-2);
+  transition: background .12s;
+}
+.ws-dropdown-item:hover { background: var(--surface-h); color: var(--text); }
+.ws-dropdown-item.active { background: var(--accent-dim); color: var(--accent); }
+.ws-dropdown-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-dropdown-item-role { font-size: 11px; color: var(--muted); flex-shrink: 0; }
 
 .sidebar-nav { flex: 1; padding: 12px 8px; }
 .sidebar-section { margin-bottom: 20px; }
@@ -312,24 +358,38 @@ tr:hover td { background: var(--surface); }
 
     {% if workspace %}
     <div class="sidebar-ws">
-      <div class="sidebar-ws-label">Пространство</div>
-      <div class="sidebar-ws-name">
-        <span>{{ workspace.name }}</span>
+      <div class="sidebar-ws-label">Рабочее пространство</div>
+      {# Determine role CSS class #}
+      {% with role_class=membership.role|default:"" %}
+      <button
+        type="button"
+        id="ws-trigger"
+        class="sidebar-ws-trigger{% if all_workspaces|length > 1 %} switchable{% endif %}"
+        {% if all_workspaces|length > 1 %}onclick="toggleWsSwitcher()"{% endif %}
+        aria-haspopup="listbox"
+      >
+        <span class="sidebar-ws-name">{{ workspace.name }}</span>
+        {% if membership %}
+        <span class="sidebar-ws-role role-{{ role_class }}">{{ crm_role }}</span>
+        {% endif %}
         {% if all_workspaces|length > 1 %}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="cursor:pointer;opacity:.5" onclick="document.getElementById('ws-switcher').classList.toggle('open')">
-          <path d="M7 15l5 5 5-5M7 9l5-5 5 5"/>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M6 9l6 6 6-6"/>
         </svg>
         {% endif %}
-      </div>
+      </button>
+      {% endwith %}
+
       {% if all_workspaces|length > 1 %}
-      <div id="ws-switcher" style="display:none;margin-top:8px">
-        {% for ws in all_workspaces %}
+      <div class="ws-dropdown" id="ws-dropdown" role="listbox">
+        {% for ms in all_memberships %}
         <form method="post" action="{% url 'crm:switch_workspace' %}">
           {% csrf_token %}
-          <input type="hidden" name="workspace_id" value="{{ ws.id }}"/>
+          <input type="hidden" name="workspace_id" value="{{ ms.workspace.id }}"/>
           <input type="hidden" name="next" value="{{ request.path }}"/>
-          <button type="submit" class="sidebar-item" style="width:100%;text-align:left;{% if ws == workspace %}color:var(--accent){% endif %}">
-            {{ ws.name }}
+          <button type="submit" class="ws-dropdown-item{% if ms.workspace == workspace %} active{% endif %}" role="option">
+            <span class="ws-dropdown-item-name">{{ ms.workspace.name }}</span>
+            <span class="ws-dropdown-item-role">{{ ms.get_role_display }}</span>
           </button>
         </form>
         {% endfor %}
@@ -358,23 +418,29 @@ tr:hover td { background: var(--surface); }
         {% endif %}
       </div>
 
-      {% if is_owner %}
+      {% if can_enter_finance or can_enter_applications %}
       <div class="sidebar-section">
         <div class="sidebar-section-label">Внести данные</div>
+        {% if can_enter_finance %}
         <a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
           </svg>
           Cash Flow
         </a>
+        {% endif %}
+        {% if can_enter_applications %}
         <a href="{% url 'crm:entry_apps' %}" class="sidebar-item {% block nav_apps %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
           </svg>
           Заявки
         </a>
+        {% endif %}
       </div>
+      {% endif %}
 
+      {% if is_owner %}
       <div class="sidebar-section">
         <div class="sidebar-section-label">Администрирование</div>
         <a href="{% url 'crm:admin' %}" class="sidebar-item {% block nav_admin %}{% endblock %}">
@@ -416,7 +482,7 @@ tr:hover td { background: var(--surface); }
         <div class="sidebar-user-info">
           <div class="sidebar-user-name">{{ crm_user.display_name }}</div>
           <div class="sidebar-user-role">
-            {% if is_owner %}{{ membership.get_role_display }}{% else %}Только просмотр{% endif %}
+            {% if crm_role %}{{ crm_role }}{% else %}Нет доступа{% endif %}
           </div>
         </div>
         <form method="post" action="{% url 'crm:logout' %}">
@@ -467,8 +533,29 @@ if (window.innerWidth <= 768) {
   document.getElementById('sidebar-toggle').style.display = 'flex';
 }
 window.addEventListener('resize', () => {
-  const toggle = document.getElementById('sidebar-toggle');
-  if (toggle) toggle.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+  const t = document.getElementById('sidebar-toggle');
+  if (t) t.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+});
+
+// Workspace switcher dropdown
+function toggleWsSwitcher() {
+  const trigger  = document.getElementById('ws-trigger');
+  const dropdown = document.getElementById('ws-dropdown');
+  if (!dropdown) return;
+  const isOpen = dropdown.classList.contains('open');
+  dropdown.classList.toggle('open', !isOpen);
+  trigger.classList.toggle('open', !isOpen);
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  const dropdown = document.getElementById('ws-dropdown');
+  const trigger  = document.getElementById('ws-trigger');
+  if (!dropdown) return;
+  if (!dropdown.contains(e.target) && e.target !== trigger && !trigger.contains(e.target)) {
+    dropdown.classList.remove('open');
+    if (trigger) trigger.classList.remove('open');
+  }
 });
 </script>
 {% block extra_js %}{% endblock %}
