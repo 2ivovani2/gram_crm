@@ -3,31 +3,34 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>SpamBotControl — Панель управления командой</title>
+<title>SpamBotControl — Управление командой и CRM</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #07090f;
+  --bg:        #060810;
+  --bg2:       #080b14;
   --surface:   rgba(255,255,255,0.04);
   --surface-h: rgba(255,255,255,0.07);
-  --border:    rgba(255,255,255,0.08);
-  --border-h:  rgba(0,212,255,0.32);
+  --border:    rgba(255,255,255,0.07);
+  --border-h:  rgba(0,212,255,0.3);
   --accent:    #00d4ff;
   --accent2:   #7c3aed;
+  --purple:    #a78bfa;
   --green:     #22c55e;
+  --amber:     #f59e0b;
   --text:      #f1f5f9;
+  --text2:     #cbd5e1;
   --muted:     #64748b;
   --muted2:    #94a3b8;
-  --r:         14px;
-  --r-lg:      20px;
-  --r-xl:      28px;
+  --r:         12px;
+  --r-lg:      18px;
+  --r-xl:      24px;
 }
 
 html { scroll-behavior: smooth; }
-
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--bg);
@@ -37,529 +40,597 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Background ─────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   BACKGROUND LAYER
+══════════════════════════════════════════════════════════ */
+.bg-canvas {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,212,255,.07) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(124,58,237,.06) 0%, transparent 60%);
+}
 .bg-grid {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background-image:
-    linear-gradient(rgba(0,212,255,.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,212,255,.028) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 100% 60% at 50% 0%, black 20%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 100% 60% at 50% 0%, black 20%, transparent 100%);
-}
-.bg-glow-l {
-  position: fixed; pointer-events: none; z-index: 0;
-  width: 860px; height: 720px;
-  background: radial-gradient(ellipse, rgba(0,212,255,.10) 0%, transparent 68%);
-  top: -300px; left: -200px;
-}
-.bg-glow-r {
-  position: fixed; pointer-events: none; z-index: 0;
-  width: 680px; height: 620px;
-  background: radial-gradient(ellipse, rgba(124,58,237,.09) 0%, transparent 65%);
-  bottom: -200px; right: -180px;
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 120% 80% at 50% 0%, black 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 120% 80% at 50% 0%, black 30%, transparent 100%);
 }
 
 .wrap { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════
    NAV
-══════════════════════════════════════════════════════════════════════ */
+══════════════════════════════════════════════════════════ */
 nav {
+  position: sticky; top: 0; z-index: 200;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 48px; height: 66px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(7,9,15,.80);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  position: sticky; top: 0; z-index: 100;
+  height: 64px; padding: 0 clamp(20px, 4vw, 56px);
+  background: rgba(6,8,16,.85);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border-bottom: 1px solid rgba(255,255,255,.06);
 }
 
 .logo {
   display: flex; align-items: center; gap: 10px;
   text-decoration: none; color: var(--text);
-  font-weight: 700; font-size: .95rem; letter-spacing: -.02em;
+  font-weight: 800; font-size: .9rem; letter-spacing: -.025em;
+  flex-shrink: 0;
 }
 .logo-mark {
-  width: 32px; height: 32px; flex-shrink: 0;
+  width: 30px; height: 30px;
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 16px rgba(0,212,255,.3);
 }
-.logo-mark svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.logo-mark svg { width: 15px; height: 15px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
-.nav-links { display: flex; align-items: center; gap: 2px; }
-
+.nav-center { display: flex; align-items: center; gap: 2px; }
 .nav-link {
   display: flex; align-items: center; gap: 6px;
-  padding: 7px 14px;
-  background: transparent; border: 1px solid transparent;
+  padding: 6px 13px;
   color: var(--muted2); border-radius: 8px;
-  font-size: .82rem; font-weight: 500; text-decoration: none;
-  transition: border-color .2s, color .2s, background .2s;
+  font-size: .8rem; font-weight: 500; text-decoration: none;
+  transition: color .18s, background .18s;
 }
-.nav-link svg { width: 13px; height: 13px; }
-.nav-link:hover { border-color: var(--border); color: var(--text); background: var(--surface); }
-
-.nav-link-stats {
-  color: var(--accent);
-}
-.nav-link-stats:hover { border-color: rgba(0,212,255,.3); background: rgba(0,212,255,.06); color: var(--accent); }
+.nav-link svg { width: 13px; height: 13px; opacity: .8; }
+.nav-link:hover { color: var(--text); background: var(--surface); }
 
 .nav-right { display: flex; align-items: center; gap: 8px; }
 
-.nav-cta {
+.nav-btn-crm {
   display: flex; align-items: center; gap: 6px;
-  padding: 8px 18px;
+  padding: 7px 16px;
+  background: rgba(124,58,237,.15); border: 1px solid rgba(124,58,237,.3);
+  color: var(--purple); border-radius: 8px;
+  font-size: .8rem; font-weight: 600; text-decoration: none;
+  transition: background .18s, border-color .18s, transform .15s, box-shadow .18s;
+}
+.nav-btn-crm svg { width: 13px; height: 13px; }
+.nav-btn-crm:hover {
+  background: rgba(124,58,237,.25); border-color: rgba(124,58,237,.5);
+  transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,.25);
+}
+
+.nav-btn-admin {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 16px;
   background: var(--accent); color: #000;
   border-radius: 8px; border: none;
-  font-size: .82rem; font-weight: 700; text-decoration: none;
-  transition: background .18s, transform .15s, box-shadow .2s;
-  box-shadow: 0 2px 16px rgba(0,212,255,.22);
+  font-size: .8rem; font-weight: 700; text-decoration: none;
+  transition: background .15s, transform .15s, box-shadow .18s;
+  box-shadow: 0 2px 12px rgba(0,212,255,.25);
 }
-.nav-cta svg { width: 12px; height: 12px; }
-.nav-cta:hover { background: #1fe0ff; transform: translateY(-1px); box-shadow: 0 4px 24px rgba(0,212,255,.38); }
-.nav-cta:active { transform: translateY(0); }
+.nav-btn-admin svg { width: 12px; height: 12px; }
+.nav-btn-admin:hover {
+  background: #22e0ff; transform: translateY(-1px);
+  box-shadow: 0 4px 24px rgba(0,212,255,.4);
+}
 
-/* ══════════════════════════════════════════════════════════════════════
-   HERO — Split layout
-══════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   HERO
+══════════════════════════════════════════════════════════ */
 .hero {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 48px;
+  gap: clamp(32px, 5vw, 64px);
   align-items: center;
-  max-width: 1200px;
-  margin: 0 auto;
-  width: 100%;
-  padding: 100px 48px 80px;
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: clamp(64px, 10vh, 120px) clamp(20px, 4vw, 56px) clamp(48px, 8vh, 88px);
 }
 
 .hero-content { display: flex; flex-direction: column; }
 
 .eyebrow {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 5px 12px 5px 9px;
-  background: rgba(0,212,255,.07); border: 1px solid rgba(0,212,255,.18);
-  border-radius: 100px; font-size: .73rem; font-weight: 600;
-  color: var(--accent); margin-bottom: 28px; align-self: flex-start;
-  animation: fadeUp .5s ease both;
+  padding: 5px 14px 5px 10px;
+  background: rgba(0,212,255,.06); border: 1px solid rgba(0,212,255,.16);
+  border-radius: 100px; font-size: .72rem; font-weight: 600;
+  color: var(--accent); margin-bottom: 24px; align-self: flex-start;
+  animation: fadeUp .45s ease both;
 }
 .eyebrow-dot {
-  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
-  animation: blink 2.5s ease infinite;
+  animation: pulse 2.5s ease infinite;
 }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.7)} }
 
 .hero-h1 {
-  font-size: clamp(2.6rem, 5vw, 4.4rem);
-  font-weight: 900; line-height: 1.05; letter-spacing: -.04em;
-  color: var(--text); margin-bottom: 22px;
-  animation: fadeUp .5s .06s ease both;
+  font-size: clamp(2.6rem, 5vw, 4.2rem);
+  font-weight: 900; line-height: 1.06; letter-spacing: -.04em;
+  color: var(--text); margin-bottom: 20px;
+  animation: fadeUp .45s .05s ease both;
 }
 .hero-h1 .grad {
-  display: inline;
-  background: linear-gradient(90deg, var(--accent) 0%, #a78bfa 50%, var(--accent) 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--purple) 45%, var(--accent) 100%);
   background-size: 200% auto;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shine 5s linear infinite;
+  animation: shimmer 5s linear infinite;
 }
-@keyframes shine { to { background-position: 200% center; } }
+@keyframes shimmer { to { background-position: 200% center; } }
 
 .hero-sub {
-  font-size: clamp(.9rem, 1.6vw, 1.05rem); color: var(--muted2);
-  line-height: 1.75; max-width: 460px; margin-bottom: 40px;
-  animation: fadeUp .5s .12s ease both;
+  font-size: clamp(.88rem, 1.5vw, 1rem);
+  color: var(--muted2); line-height: 1.75;
+  max-width: 440px; margin-bottom: 36px;
+  animation: fadeUp .45s .1s ease both;
 }
 
 .hero-btns {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  animation: fadeUp .5s .2s ease both;
+  animation: fadeUp .45s .16s ease both;
 }
 
-.btn-primary {
+/* Primary CRM button — most prominent */
+.btn-crm {
   position: relative; display: inline-flex; align-items: center; gap: 8px;
   padding: 13px 26px;
-  background: var(--accent); color: #000;
-  border-radius: var(--r); font-size: .9rem; font-weight: 700;
-  text-decoration: none; overflow: hidden;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff; border-radius: var(--r);
+  font-size: .9rem; font-weight: 700; text-decoration: none; overflow: hidden;
   transition: transform .2s, box-shadow .2s;
-  box-shadow: 0 4px 28px rgba(0,212,255,.28);
+  box-shadow: 0 4px 28px rgba(124,58,237,.4);
 }
-.btn-primary::after {
+.btn-crm::after {
   content:''; position:absolute; inset:0;
-  background: linear-gradient(135deg, rgba(255,255,255,.2), transparent 60%);
+  background: linear-gradient(135deg, rgba(255,255,255,.18), transparent 60%);
   opacity:0; transition: opacity .2s;
 }
-.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(0,212,255,.44); }
-.btn-primary:hover::after { opacity:1; }
-.btn-primary:active { transform: translateY(0); }
-.btn-primary svg { width: 15px; height: 15px; }
+.btn-crm:hover { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(124,58,237,.55); }
+.btn-crm:hover::after { opacity:1; }
+.btn-crm:active { transform: translateY(0); }
+.btn-crm svg { width: 15px; height: 15px; }
 
-.btn-secondary {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 12px 22px;
+/* Secondary admin button */
+.btn-admin {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px;
+  background: rgba(0,212,255,.08); border: 1px solid rgba(0,212,255,.2);
+  color: var(--accent); border-radius: var(--r);
+  font-size: .9rem; font-weight: 600; text-decoration: none;
+  transition: background .2s, border-color .2s, transform .2s;
+}
+.btn-admin:hover { background: rgba(0,212,255,.13); border-color: rgba(0,212,255,.35); transform: translateY(-2px); }
+.btn-admin svg { width: 14px; height: 14px; }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 12px 20px;
   background: var(--surface); border: 1px solid var(--border);
   color: var(--muted2); border-radius: var(--r);
   font-size: .9rem; font-weight: 500; text-decoration: none;
   transition: background .2s, border-color .2s, color .2s, transform .2s;
 }
-.btn-secondary svg { width: 14px; height: 14px; }
-.btn-secondary:hover { background: var(--surface-h); border-color: rgba(0,212,255,.28); color: var(--text); transform: translateY(-2px); }
+.btn-ghost svg { width: 14px; height: 14px; }
+.btn-ghost:hover { background: var(--surface-h); border-color: rgba(255,255,255,.14); color: var(--text); transform: translateY(-2px); }
 
-.btn-stats-link {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 12px 22px;
-  background: rgba(0,212,255,.07); border: 1px solid rgba(0,212,255,.2);
-  color: var(--accent); border-radius: var(--r);
-  font-size: .9rem; font-weight: 600; text-decoration: none;
-  transition: background .2s, border-color .2s, transform .2s;
-}
-.btn-stats-link svg { width: 14px; height: 14px; }
-.btn-stats-link:hover { background: rgba(0,212,255,.12); border-color: rgba(0,212,255,.38); transform: translateY(-2px); }
-
-/* ── Hero visual: Dashboard Mockup ──────────────────────────────────── */
+/* ── Hero Visual ─────────────────────────────────────────── */
 .hero-visual {
-  animation: fadeUp .6s .18s ease both;
   position: relative;
+  animation: fadeUp .55s .2s ease both;
 }
 
-.dashboard-card {
-  background: rgba(12,16,26,.95);
-  border: 1px solid rgba(255,255,255,.1);
+.mock-window {
+  background: rgba(10,13,22,.97);
+  border: 1px solid rgba(255,255,255,.09);
   border-radius: var(--r-xl);
   overflow: hidden;
   box-shadow:
-    0 40px 80px rgba(0,0,0,.5),
-    0 0 0 1px rgba(0,212,255,.06),
-    inset 0 1px 0 rgba(255,255,255,.06);
-  position: relative;
+    0 40px 80px rgba(0,0,0,.6),
+    0 0 0 1px rgba(0,212,255,.05),
+    inset 0 1px 0 rgba(255,255,255,.05);
 }
-.dashboard-card::before {
-  content:''; position:absolute; inset:0;
-  background: radial-gradient(ellipse 60% 40% at 70% 0%, rgba(0,212,255,.07), transparent 60%);
-  pointer-events:none;
-}
-
-.dc-header {
+.mock-titlebar {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 18px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  background: rgba(0,0,0,.2);
+  padding: 13px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  background: rgba(0,0,0,.25);
 }
-.dc-dots { display: flex; gap: 6px; }
-.dc-dot { width: 10px; height: 10px; border-radius: 50%; }
-.dc-dot.red   { background: #ff5f57; }
-.dc-dot.yellow{ background: #ffbd2e; }
-.dc-dot.green { background: #28ca42; }
-.dc-title { font-size: .73rem; font-weight: 500; color: var(--muted); margin: 0 auto; }
+.mock-dots { display: flex; gap: 6px; }
+.mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+.mock-dot.r { background: #ff5f57; } .mock-dot.y { background: #ffbd2e; } .mock-dot.g { background: #28ca42; }
+.mock-label { font-size: .7rem; font-weight: 500; color: var(--muted); margin: 0 auto; }
 
-.dc-body { padding: 16px; }
+.mock-body { padding: 16px; }
 
-/* KPI row */
-.dc-kpi {
-  display: grid; grid-template-columns: repeat(3,1fr);
-  gap: 8px; margin-bottom: 14px;
-}
-.dc-kpi-item {
-  padding: 12px; border-radius: 10px;
+.mock-kpi { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
+.mock-kpi-item {
+  padding: 11px 12px; border-radius: 10px;
   background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
 }
-.dc-kpi-label { font-size: .64rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
-.dc-kpi-value { font-size: 1.1rem; font-weight: 700; line-height: 1; }
-.dc-kpi-value.c-accent { color: var(--accent); }
-.dc-kpi-value.c-green  { color: var(--green); }
-.dc-kpi-value.c-purple { color: #a78bfa; }
+.mock-kpi-lbl { font-size: .62rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.mock-kpi-val { font-size: 1.05rem; font-weight: 800; line-height: 1; }
+.c-cyan { color: var(--accent); } .c-green { color: var(--green); } .c-purple { color: var(--purple); }
 
-/* Chart bars */
-.dc-chart { display: flex; align-items: flex-end; gap: 5px; height: 64px; margin-bottom: 14px; padding: 0 2px; }
-.dc-bar {
+.mock-chart { display: flex; align-items: flex-end; gap: 5px; height: 56px; margin-bottom: 14px; padding: 0 2px; }
+.mock-bar {
   flex: 1; border-radius: 4px 4px 0 0;
-  background: linear-gradient(to top, rgba(0,212,255,.35), rgba(0,212,255,.55));
-  position: relative; transition: background .2s;
-}
-.dc-bar.active {
-  background: linear-gradient(to top, var(--accent), #22e8ff);
-  box-shadow: 0 0 12px rgba(0,212,255,.4);
-}
-
-/* Workers list */
-.dc-workers { display: flex; flex-direction: column; gap: 6px; }
-.dc-worker {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: 8px;
-  background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.04);
-}
-.dc-avatar {
-  width: 26px; height: 26px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: .65rem; font-weight: 700; flex-shrink: 0;
-}
-.dc-name { flex: 1; font-size: .72rem; color: var(--muted2); }
-.dc-badge {
-  font-size: .6rem; font-weight: 700; padding: 2px 7px;
-  border-radius: 100px;
-}
-.dc-badge.active { background: rgba(34,197,94,.15); color: var(--green); }
-.dc-badge.amount { background: rgba(0,212,255,.12); color: var(--accent); }
-
-/* Floating pill on card */
-.hero-pill {
-  position: absolute; bottom: -12px; left: -20px;
-  background: rgba(12,16,26,.95); border: 1px solid rgba(0,212,255,.2);
-  border-radius: 100px; padding: 8px 16px;
-  display: flex; align-items: center; gap: 8px;
-  font-size: .72rem; font-weight: 600; color: var(--text);
-  box-shadow: 0 8px 32px rgba(0,0,0,.4);
-  animation: float 4s ease-in-out infinite;
-}
-.hero-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s ease infinite; }
-
-.hero-pill-2 {
-  position: absolute; top: 28px; right: -20px;
-  background: rgba(12,16,26,.95); border: 1px solid rgba(124,58,237,.25);
-  border-radius: var(--r); padding: 10px 14px;
-  font-size: .68rem; font-weight: 500; color: var(--muted2);
-  box-shadow: 0 8px 32px rgba(0,0,0,.4);
-  animation: float 5s 1s ease-in-out infinite;
-}
-.hero-pill-2 .val { font-size: .92rem; font-weight: 800; color: #a78bfa; display: block; }
-
-@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-
-/* ── Stats strip ─────────────────────────────────────────────────────── */
-.stats-strip {
-  max-width: 1200px; margin: 0 auto;
-  width: 100%; padding: 0 48px 80px;
-}
-.stats-inner {
-  display: grid; grid-template-columns: repeat(4,1fr);
-  gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden;
-}
-.stat {
-  background: rgba(10,14,22,.97); padding: 22px 20px; text-align: center;
+  background: linear-gradient(to top, rgba(0,212,255,.3), rgba(0,212,255,.5));
   transition: background .2s;
 }
-.stat:hover { background: rgba(0,212,255,.05); }
-.stat-v {
-  font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em;
+.mock-bar.hi { background: linear-gradient(to top, var(--accent), #22e8ff); box-shadow: 0 0 10px rgba(0,212,255,.35); }
+
+.mock-rows { display: flex; flex-direction: column; gap: 6px; }
+.mock-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px;
+  background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.04);
+}
+.mock-av {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .62rem; font-weight: 700; flex-shrink: 0;
+}
+.mock-name { flex: 1; font-size: .7rem; color: var(--muted2); }
+.mock-badge {
+  font-size: .6rem; font-weight: 700; padding: 2px 7px; border-radius: 100px;
+}
+.mock-badge.ok { background: rgba(34,197,94,.12); color: var(--green); }
+.mock-badge.amt { background: rgba(0,212,255,.1); color: var(--accent); }
+.mock-badge.cur { background: rgba(167,139,250,.12); color: var(--purple); }
+
+/* Float pills */
+.pill {
+  position: absolute;
+  background: rgba(10,13,22,.96); border: 1px solid;
+  border-radius: 100px; padding: 7px 14px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: .7rem; font-weight: 600; color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  white-space: nowrap;
+}
+.pill-1 { bottom: -14px; left: -16px; border-color: rgba(34,197,94,.25); animation: floatA 4s ease-in-out infinite; }
+.pill-2 { top: 24px; right: -16px; border-color: rgba(124,58,237,.25); border-radius: var(--r); animation: floatB 5s 1s ease-in-out infinite; }
+.pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s ease infinite; }
+.pill-2-val { font-size: .88rem; font-weight: 800; color: var(--purple); display: block; }
+@keyframes floatA { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+@keyframes floatB { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
+
+/* ══════════════════════════════════════════════════════════
+   METRICS STRIP
+══════════════════════════════════════════════════════════ */
+.metrics {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(48px,7vh,80px);
+}
+.metrics-inner {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  background: var(--border); gap: 1px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden;
+}
+.metric {
+  background: rgba(8,11,20,.98); padding: 22px 20px; text-align: center;
+  transition: background .2s;
+}
+.metric:hover { background: rgba(0,212,255,.04); }
+.metric-v {
+  font-size: 1.55rem; font-weight: 800; letter-spacing: -.03em;
   color: var(--text); line-height: 1; margin-bottom: 5px;
 }
-.stat-v em { font-style: normal; color: var(--accent); }
-.stat-l { font-size: .66rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.metric-v em { font-style: normal; color: var(--accent); }
+.metric-l { font-size: .63rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 
-/* ══════════════════════════════════════════════════════════════════════
-   FEATURES
-══════════════════════════════════════════════════════════════════════ */
-.features { padding: 0 48px 88px; max-width: 1200px; margin: 0 auto; width: 100%; }
-
-.sec-head { text-align: center; margin-bottom: 48px; }
+/* ══════════════════════════════════════════════════════════
+   SECTION HEADERS
+══════════════════════════════════════════════════════════ */
+.sec-head { text-align: center; margin-bottom: 52px; }
 .sec-tag {
-  display: inline-block; font-size: .7rem; font-weight: 700;
-  color: var(--accent); text-transform: uppercase; letter-spacing: .14em; margin-bottom: 10px;
+  display: inline-block; margin-bottom: 14px;
+  padding: 4px 14px; border-radius: 100px;
+  background: rgba(0,212,255,.06); border: 1px solid rgba(0,212,255,.15);
+  font-size: .7rem; font-weight: 700; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .1em;
 }
 .sec-h2 {
-  font-size: clamp(1.65rem, 3vw, 2.4rem); font-weight: 800;
-  letter-spacing: -.03em; color: var(--text); line-height: 1.18;
+  font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+  font-weight: 800; letter-spacing: -.03em; color: var(--text); line-height: 1.12;
 }
 .sec-h2 em { font-style: normal; color: var(--accent); }
 
-.feat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
-
-.feat-card {
-  position: relative; padding: 28px 26px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-lg); overflow: hidden;
-  opacity: 0; transform: translateY(24px);
-  transition: border-color .3s, box-shadow .3s, transform .15s;
+/* ══════════════════════════════════════════════════════════
+   CRM FEATURE SECTION — HERO PLACEMENT
+══════════════════════════════════════════════════════════ */
+.crm-section {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,96px);
 }
-.feat-card.vis {
-  opacity: 1; transform: translateY(0);
-  transition: opacity .5s ease, transform .5s ease, border-color .3s, box-shadow .3s;
+.crm-card {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(32px,5vw,64px); align-items: center;
+  padding: clamp(40px,6vw,64px);
+  background: rgba(124,58,237,.04);
+  border: 1px solid rgba(124,58,237,.16);
+  border-radius: 28px;
+  box-shadow: 0 0 80px rgba(124,58,237,.06), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.crm-card::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 70% 60% at 100% 0%, rgba(124,58,237,.08), transparent 60%);
+}
+.crm-card-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 18px; padding: 5px 14px 5px 10px;
+  background: rgba(124,58,237,.12); border: 1px solid rgba(124,58,237,.28);
+  border-radius: 100px; font-size: .72rem; font-weight: 700;
+  color: var(--purple); align-self: flex-start;
+}
+.crm-card-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple); animation: pulse 2s ease infinite; }
+.crm-h2 {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 800; letter-spacing: -.03em; line-height: 1.12;
+  color: var(--text); margin-bottom: 16px;
+}
+.crm-h2 span { color: var(--purple); }
+.crm-p { font-size: .95rem; color: var(--muted2); line-height: 1.75; margin-bottom: 24px; max-width: 400px; }
+.crm-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+.crm-feature {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: .85rem; color: var(--text2);
+}
+.crm-feature-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--purple);
+  margin-top: 6px; flex-shrink: 0;
+}
+.crm-btns { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* CRM mockup on the right side */
+.crm-mock {
+  position: relative; z-index: 1;
+}
+.crm-mock-window {
+  background: rgba(10,12,22,.97);
+  border: 1px solid rgba(124,58,237,.18);
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 32px 64px rgba(0,0,0,.5), 0 0 0 1px rgba(124,58,237,.06);
+}
+.crm-mock-header {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(124,58,237,.12), rgba(0,212,255,.04));
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.crm-mock-title { font-size: .72rem; font-weight: 700; color: var(--purple); }
+.crm-mock-date { font-size: .65rem; color: var(--muted); }
+.crm-mock-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.crm-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-radius: 10px;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.05);
+}
+.crm-row-lbl { font-size: .75rem; color: var(--muted2); }
+.crm-row-val { font-size: .88rem; font-weight: 700; }
+.crm-row-val.pos { color: var(--green); }
+.crm-row-val.neg { color: #f87171; }
+.crm-row-val.hl { color: var(--purple); }
+.crm-status-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 10px;
+  background: rgba(34,197,94,.04); border: 1px solid rgba(34,197,94,.12);
+  font-size: .75rem;
+}
+.crm-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); flex-shrink: 0; }
+.crm-status-text { color: var(--muted2); }
+.crm-status-badge { margin-left: auto; font-weight: 700; color: var(--green); font-size: .72rem; }
+
+/* ══════════════════════════════════════════════════════════
+   FEATURES GRID
+══════════════════════════════════════════════════════════ */
+.features { padding: 0 clamp(20px,4vw,56px) clamp(48px,8vh,88px); max-width: 1200px; margin: 0 auto; width: 100%; }
+.feat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.feat-card {
+  position: relative; overflow: hidden;
+  padding: 28px 24px;
+  background: rgba(255,255,255,.025);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  transition: border-color .25s, background .25s, transform .25s, box-shadow .25s;
+  display: flex; flex-direction: column;
 }
 .feat-card::before {
-  content:''; position:absolute; inset:0;
-  background: radial-gradient(ellipse 70% 50% at 50% -10%, rgba(0,212,255,.07), transparent 70%);
-  opacity:0; transition: opacity .3s; pointer-events:none;
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,.25), transparent);
+  opacity: 0; transition: opacity .3s;
 }
-.feat-card::after {
-  content:''; position:absolute; inset:0;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(0,212,255,.12), rgba(124,58,237,.1), transparent 60%);
-  opacity:0; transition: opacity .3s; pointer-events:none;
+.feat-card:hover {
+  border-color: rgba(0,212,255,.2); background: rgba(0,212,255,.03);
+  transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,.35);
 }
-.feat-card:hover { border-color: rgba(0,212,255,.26); box-shadow: 0 16px 48px rgba(0,212,255,.07), 0 0 0 1px rgba(0,212,255,.08); transform: translateY(-3px); }
-.feat-card:hover::before { opacity:1; }
-
+.feat-card:hover::before { opacity: 1; }
 .feat-num {
-  position:absolute; top:16px; right:20px;
-  font-size:2.6rem; font-weight:900; line-height:1;
-  color: rgba(255,255,255,.025); letter-spacing:-.04em;
-  pointer-events:none; user-select:none;
+  font-size: .63rem; font-weight: 800; color: var(--muted);
+  letter-spacing: .12em; text-transform: uppercase; margin-bottom: 16px;
 }
 .feat-ico {
-  position:relative; z-index:1;
-  width:42px; height:42px;
-  background: linear-gradient(135deg, rgba(0,212,255,.13), rgba(124,58,237,.13));
-  border: 1px solid rgba(0,212,255,.14);
-  border-radius: 11px;
+  width: 40px; height: 40px; border-radius: 10px; margin-bottom: 16px;
+  background: rgba(0,212,255,.08); border: 1px solid rgba(0,212,255,.14);
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: 16px;
 }
-.feat-ico svg { width: 19px; height: 19px; stroke: var(--accent); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.feat-h3 { position:relative;z-index:1; font-size:.93rem; font-weight:700; color:var(--text); margin-bottom:8px; letter-spacing:-.01em; }
-.feat-p  { position:relative;z-index:1; font-size:.83rem; color:var(--muted2); line-height:1.72; }
+.feat-ico svg { width: 20px; height: 20px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.feat-h3 { font-size: .95rem; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+.feat-p { font-size: .82rem; color: var(--muted2); line-height: 1.7; }
 
-/* ══════════════════════════════════════════════════════════════════════
-   STATS LINK BLOCK
-══════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   HOW IT WORKS
+══════════════════════════════════════════════════════════ */
+.how { padding: 0 clamp(20px,4vw,56px) clamp(48px,8vh,88px); max-width: 1000px; margin: 0 auto; width: 100%; }
+.steps { display: flex; flex-direction: column; gap: 0; }
+.step {
+  display: flex; gap: 28px; align-items: flex-start;
+  padding: 28px 0; position: relative;
+}
+.step + .step { border-top: 1px solid var(--border); }
+.step-n {
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  background: rgba(0,212,255,.07); border: 1px solid rgba(0,212,255,.16);
+  color: var(--accent); font-size: .75rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  letter-spacing: .04em; margin-top: 3px;
+}
+.step-h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.step-p { font-size: .85rem; color: var(--muted2); line-height: 1.7; }
+
+/* ══════════════════════════════════════════════════════════
+   STATS PROMO (for /stats/ link)
+══════════════════════════════════════════════════════════ */
 .stats-promo {
-  padding: 0 48px 88px; max-width: 1200px; margin: 0 auto; width: 100%;
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(48px,8vh,80px);
 }
 .stats-promo-inner {
-  border: 1px solid rgba(0,212,255,.16);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 32px; flex-wrap: wrap;
+  padding: 32px 40px;
+  background: rgba(0,212,255,.03); border: 1px solid rgba(0,212,255,.12);
   border-radius: var(--r-xl);
-  background: linear-gradient(135deg, rgba(0,212,255,.05) 0%, rgba(124,58,237,.05) 100%);
-  padding: 52px 60px;
-  display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: center;
-  position: relative; overflow: hidden;
-}
-.stats-promo-inner::before {
-  content:''; position:absolute; inset:0;
-  background: radial-gradient(ellipse 50% 100% at 100% 50%, rgba(0,212,255,.06), transparent 60%);
-  pointer-events:none;
 }
 .stats-promo-tag {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: .69rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .1em; color: var(--accent); margin-bottom: 10px;
+  padding: 4px 12px; border-radius: 100px; margin-bottom: 12px;
+  background: rgba(0,212,255,.08); border: 1px solid rgba(0,212,255,.2);
+  font-size: .68rem; font-weight: 700; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .08em;
 }
-.stats-promo-h2 {
-  font-size: clamp(1.3rem,2.5vw,1.95rem); font-weight: 800;
-  letter-spacing: -.02em; color: var(--text); line-height: 1.25; margin-bottom: 10px;
-}
-.stats-promo-p { font-size: .88rem; color: var(--muted2); line-height: 1.65; max-width: 480px; }
+.stats-promo-h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.025em; line-height: 1.2; margin-bottom: 8px; }
+.stats-promo-p { font-size: .85rem; color: var(--muted2); max-width: 400px; line-height: 1.65; }
 
-/* ══════════════════════════════════════════════════════════════════════
-   HOW IT WORKS
-══════════════════════════════════════════════════════════════════════ */
-.how { padding: 0 48px 88px; max-width: 860px; margin: 0 auto; width: 100%; }
-
-.steps { position:relative; }
-.steps::before {
-  content:''; position:absolute; left:22px; top:42px; bottom:42px; width:1px;
-  background: linear-gradient(to bottom, transparent, var(--border) 20%, var(--border) 80%, transparent);
+/* ══════════════════════════════════════════════════════════
+   FINAL CTA
+══════════════════════════════════════════════════════════ */
+.cta-section {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(80px,12vh,120px);
 }
-.step {
-  display: flex; align-items: flex-start; gap: 20px; padding: 26px 0;
-  opacity: 0; transform: translateX(-14px);
-}
-.step.vis { opacity:1; transform:translateX(0); transition: opacity .5s ease, transform .5s ease; }
-.step-n {
-  flex-shrink:0; width:44px; height:44px; border-radius:50%;
-  background: rgba(0,212,255,.07); border: 1px solid rgba(0,212,255,.2);
-  display: flex; align-items: center; justify-content: center;
-  font-size:.78rem; font-weight:700; color: var(--accent); position:relative; z-index:1;
-}
-.step-body { padding-top: 9px; }
-.step-h3 { font-size:.97rem; font-weight:700; color:var(--text); margin-bottom:6px; letter-spacing:-.01em; }
-.step-p  { font-size:.84rem; color:var(--muted2); line-height:1.72; max-width:580px; }
-
-/* ══════════════════════════════════════════════════════════════════════
-   CTA
-══════════════════════════════════════════════════════════════════════ */
-.cta-section { padding: 0 48px 88px; }
 .cta-inner {
-  max-width: 900px; margin: 0 auto;
-  padding: 64px 60px; text-align: center;
-  background: linear-gradient(135deg, rgba(0,212,255,.07) 0%, rgba(124,58,237,.07) 100%);
-  border: 1px solid rgba(0,212,255,.14); border-radius: var(--r-xl);
   position: relative; overflow: hidden;
+  padding: clamp(48px,8vw,72px) clamp(32px,5vw,64px);
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 28px; text-align: center;
+  box-shadow: 0 0 80px rgba(0,212,255,.04);
 }
 .cta-inner::before {
-  content:''; position:absolute; width:480px; height:480px;
-  background: radial-gradient(ellipse, rgba(0,212,255,.1), transparent 65%);
-  top:-200px; left:-140px; pointer-events:none;
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:
+    radial-gradient(ellipse 50% 50% at 20% 0%, rgba(0,212,255,.07), transparent),
+    radial-gradient(ellipse 50% 50% at 80% 100%, rgba(124,58,237,.06), transparent);
 }
-.cta-inner::after {
-  content:''; position:absolute; width:360px; height:360px;
-  background: radial-gradient(ellipse, rgba(124,58,237,.09), transparent 65%);
-  bottom:-140px; right:-60px; pointer-events:none;
-}
+.cta-tag { margin-bottom: 16px; }
 .cta-h2 {
-  position:relative; z-index:1;
-  font-size: clamp(1.55rem,3vw,2.3rem); font-weight:800; letter-spacing:-.03em;
-  color: var(--text); margin-bottom: 10px;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-weight: 900; letter-spacing: -.04em; line-height: 1.08;
+  color: var(--text); margin-bottom: 16px; position: relative;
 }
-.cta-p {
-  position:relative; z-index:1;
-  font-size: .98rem; color: var(--muted2); margin-bottom: 32px; line-height:1.65;
+.cta-h2 .grad {
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-.cta-btns {
-  position:relative; z-index:1;
-  display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;
-}
+.cta-p { font-size: 1rem; color: var(--muted2); margin-bottom: 36px; max-width: 480px; margin-left: auto; margin-right: auto; line-height: 1.7; position: relative; }
+.cta-btns { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; position: relative; }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════
    FOOTER
-══════════════════════════════════════════════════════════════════════ */
+══════════════════════════════════════════════════════════ */
 footer {
-  margin-top: auto; padding: 20px 48px;
   border-top: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
+  padding: 24px clamp(20px,4vw,56px);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
 }
-.ft-copy { font-size: .77rem; color: var(--muted); }
-.ft-tags { display: flex; gap: 5px; }
+.ft-copy { font-size: .78rem; color: var(--muted); }
+.ft-tags { display: flex; gap: 8px; flex-wrap: wrap; }
 .ft-tag {
-  padding: 3px 9px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 100px; font-size: .67rem; font-weight: 500; color: var(--muted);
+  font-size: .7rem; font-weight: 500;
+  padding: 3px 10px; border-radius: 100px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--muted2);
 }
 
-/* ── Keyframes ──────────────────────────────────────────────────────── */
-@keyframes fadeUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+/* ══════════════════════════════════════════════════════════
+   SHARED BUTTON VARIANTS (used in sections below)
+══════════════════════════════════════════════════════════ */
+.btn-primary {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  padding: 13px 26px;
+  background: var(--accent); color: #000;
+  border-radius: var(--r); font-size: .9rem; font-weight: 700; text-decoration: none;
+  transition: transform .2s, box-shadow .2s;
+  box-shadow: 0 4px 28px rgba(0,212,255,.3);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(0,212,255,.48); }
+.btn-primary svg { width: 15px; height: 15px; }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════
+   ANIMATIONS
+══════════════════════════════════════════════════════════ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ══════════════════════════════════════════════════════════
    RESPONSIVE
-══════════════════════════════════════════════════════════════════════ */
-@media (max-width: 1024px) {
-  .hero { grid-template-columns: 1fr; padding: 80px 36px 60px; }
-  .hero-visual { display: none; }
-  .hero-h1 { font-size: clamp(2.4rem, 7vw, 3.8rem); }
-  .stats-strip { padding: 0 36px 64px; }
-  .features, .how, .stats-promo, .cta-section { padding-left: 36px; padding-right: 36px; }
+══════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; gap: 40px; }
+  .hero-visual { max-width: 480px; width: 100%; margin: 0 auto; }
+  .crm-card { grid-template-columns: 1fr; }
+  .crm-mock { max-width: 420px; width: 100%; margin: 0 auto; }
+  .feat-grid { grid-template-columns: repeat(2, 1fr); }
+  .metrics-inner { grid-template-columns: repeat(2, 1fr); }
+  .crm-card { padding: clamp(28px,5vw,48px); }
 }
-@media (max-width: 768px) {
-  nav { padding: 0 20px; }
-  .nav-link:not(.nav-link-stats) { display: none; }
-  .hero { padding: 64px 20px 48px; }
-  .stats-strip { padding: 0 20px 56px; }
-  .stats-inner { grid-template-columns: repeat(2,1fr); }
-  .features, .how, .stats-promo, .cta-section { padding-left: 20px; padding-right: 20px; }
+
+@media (max-width: 640px) {
+  nav { padding: 0 16px; }
+  .nav-center { display: none; }
   .feat-grid { grid-template-columns: 1fr; }
-  .stats-promo-inner { grid-template-columns: 1fr; padding: 36px 28px; gap: 24px; }
-  .cta-inner { padding: 40px 24px; }
-  .cta-inner::before, .cta-inner::after { display: none; }
-  footer { padding: 18px 20px; flex-direction: column; gap: 10px; text-align: center; }
+  .metrics-inner { grid-template-columns: repeat(2, 1fr); }
+  .stats-promo-inner { padding: 24px; }
+  .pill-1, .pill-2 { display: none; }
 }
-@media (max-width: 480px) {
-  .hero-h1 { font-size: 2.2rem; }
-  .feat-grid { grid-template-columns: 1fr; }
+
+@media (max-width: 400px) {
+  .nav-btn-crm span { display: none; }
+  .nav-btn-admin span { display: none; }
 }
 </style>
 </head>
 <body>
-
+<div class="bg-canvas"></div>
 <div class="bg-grid"></div>
-<div class="bg-glow-l"></div>
-<div class="bg-glow-r"></div>
 
 <div class="wrap">
 
-<!-- ══ NAV ══════════════════════════════════════════════════════════ -->
+<!-- ══ NAV ══════════════════════════════════════════════════════ -->
 <nav>
   <a href="/" class="logo">
     <div class="logo-mark">
@@ -568,8 +639,8 @@ footer {
     SpamBotControl
   </a>
 
-  <div class="nav-links">
-    <a href="/stats/" class="nav-link nav-link-stats">
+  <div class="nav-center">
+    <a href="/stats/" class="nav-link">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Статистика
     </a>
@@ -582,14 +653,19 @@ footer {
   </div>
 
   <div class="nav-right">
-    <a href="/django-admin/" class="nav-cta">
+    <!-- CRM button in nav — always visible -->
+    <a href="/crm/" class="nav-btn-crm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      <span>CRM</span>
+    </a>
+    <a href="/django-admin/" class="nav-btn-admin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      Admin Panel
+      <span>Admin</span>
     </a>
   </div>
 </nav>
 
-<!-- ══ HERO ══════════════════════════════════════════════════════════ -->
+<!-- ══ HERO ══════════════════════════════════════════════════════ -->
 <section class="hero">
   <div class="hero-content">
     <div class="eyebrow">
@@ -604,22 +680,23 @@ footer {
     </h1>
 
     <p class="hero-sub">
-      Централизованная платформа для управления командой воркеров: рассылки, аналитика, реферальная система, выплаты — всё в одном Telegram-боте.
+      Централизованная платформа для управления командой воркеров: рассылки, аналитика, реферальная система, выплаты — всё в одном месте.
     </p>
 
     <div class="hero-btns">
-      <a href="/django-admin/" class="btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      <!-- CRM — primary hero CTA -->
+      <a href="/crm/" class="btn-crm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Открыть CRM
+      </a>
+      <a href="/django-admin/" class="btn-admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         Admin Panel
       </a>
-      <a href="/stats/" class="btn-stats-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Статистика
-      </a>
       {% if bot_username %}
-      <a href="https://t.me/{{ bot_username }}" class="btn-secondary" target="_blank" rel="noopener">
+      <a href="https://t.me/{{ bot_username }}" class="btn-ghost" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-        Бот
+        Bot
       </a>
       {% endif %}
     </div>
@@ -627,99 +704,172 @@ footer {
 
   <!-- Dashboard mockup -->
   <div class="hero-visual">
-    <div class="dashboard-card">
-      <div class="dc-header">
-        <div class="dc-dots">
-          <div class="dc-dot red"></div>
-          <div class="dc-dot yellow"></div>
-          <div class="dc-dot green"></div>
+    <div class="mock-window">
+      <div class="mock-titlebar">
+        <div class="mock-dots">
+          <div class="mock-dot r"></div>
+          <div class="mock-dot y"></div>
+          <div class="mock-dot g"></div>
         </div>
-        <span class="dc-title">📊 Статистика — сегодня</span>
+        <span class="mock-label">📊 Статистика — сегодня</span>
       </div>
-      <div class="dc-body">
-        <!-- KPI -->
-        <div class="dc-kpi">
-          <div class="dc-kpi-item">
-            <div class="dc-kpi-label">Заявки</div>
-            <div class="dc-kpi-value c-accent">248</div>
+      <div class="mock-body">
+        <div class="mock-kpi">
+          <div class="mock-kpi-item">
+            <div class="mock-kpi-lbl">Заявки</div>
+            <div class="mock-kpi-val c-cyan">248</div>
           </div>
-          <div class="dc-kpi-item">
-            <div class="dc-kpi-label">Доход</div>
-            <div class="dc-kpi-value c-green">12 400 ₽</div>
+          <div class="mock-kpi-item">
+            <div class="mock-kpi-lbl">Доход</div>
+            <div class="mock-kpi-val c-green">12 400 ₽</div>
           </div>
-          <div class="dc-kpi-item">
-            <div class="dc-kpi-label">Воркеры</div>
-            <div class="dc-kpi-value c-purple">24</div>
+          <div class="mock-kpi-item">
+            <div class="mock-kpi-lbl">Воркеры</div>
+            <div class="mock-kpi-val c-purple">24</div>
           </div>
         </div>
-        <!-- Bar chart -->
-        <div class="dc-chart">
-          <div class="dc-bar" style="height:38%"></div>
-          <div class="dc-bar" style="height:55%"></div>
-          <div class="dc-bar" style="height:42%"></div>
-          <div class="dc-bar" style="height:70%"></div>
-          <div class="dc-bar" style="height:60%"></div>
-          <div class="dc-bar active" style="height:88%"></div>
-          <div class="dc-bar" style="height:30%"></div>
+        <div class="mock-chart">
+          <div class="mock-bar" style="height:38%"></div>
+          <div class="mock-bar" style="height:55%"></div>
+          <div class="mock-bar" style="height:42%"></div>
+          <div class="mock-bar" style="height:70%"></div>
+          <div class="mock-bar" style="height:60%"></div>
+          <div class="mock-bar hi" style="height:88%"></div>
+          <div class="mock-bar" style="height:30%"></div>
         </div>
-        <!-- Workers -->
-        <div class="dc-workers">
-          <div class="dc-worker">
-            <div class="dc-avatar" style="background:rgba(0,212,255,.15);color:var(--accent);">А</div>
-            <div class="dc-name">@aleksei_work</div>
-            <div class="dc-badge active">active</div>
-            <div class="dc-badge amount">3 200 ₽</div>
+        <div class="mock-rows">
+          <div class="mock-row">
+            <div class="mock-av" style="background:rgba(0,212,255,.12);color:var(--accent)">А</div>
+            <div class="mock-name">@aleksei_work</div>
+            <div class="mock-badge ok">active</div>
+            <div class="mock-badge amt">3 200 ₽</div>
           </div>
-          <div class="dc-worker">
-            <div class="dc-avatar" style="background:rgba(124,58,237,.15);color:#a78bfa;">М</div>
-            <div class="dc-name">@maria_spam</div>
-            <div class="dc-badge active">active</div>
-            <div class="dc-badge amount">2 800 ₽</div>
+          <div class="mock-row">
+            <div class="mock-av" style="background:rgba(124,58,237,.12);color:var(--purple)">М</div>
+            <div class="mock-name">@maria_spam</div>
+            <div class="mock-badge ok">active</div>
+            <div class="mock-badge amt">2 800 ₽</div>
           </div>
-          <div class="dc-worker">
-            <div class="dc-avatar" style="background:rgba(34,197,94,.15);color:var(--green);">К</div>
-            <div class="dc-name">@kirill_ref</div>
-            <div class="dc-badge active">curator</div>
-            <div class="dc-badge amount">1 900 ₽</div>
+          <div class="mock-row">
+            <div class="mock-av" style="background:rgba(34,197,94,.12);color:var(--green)">К</div>
+            <div class="mock-name">@kirill_ref</div>
+            <div class="mock-badge cur">curator</div>
+            <div class="mock-badge amt">1 900 ₽</div>
           </div>
         </div>
       </div>
     </div>
-    <!-- Floating pills -->
-    <div class="hero-pill">
-      <span class="hero-pill-dot"></span>
-      20 сообщений/сек отправлено
+    <div class="pill pill-1">
+      <span class="pill-dot"></span>
+      20 сообщений/сек
     </div>
-    <div class="hero-pill-2">
+    <div class="pill pill-2" style="font-size:.68rem;font-weight:500;color:var(--muted2);padding:10px 14px;border-radius:var(--r);line-height:1.4">
       Новая рассылка<br/>
-      <span class="val">248 получателей</span>
+      <span class="pill-2-val">248 получателей</span>
     </div>
   </div>
 </section>
 
-<!-- ══ STATS STRIP ════════════════════════════════════════════════════ -->
-<div class="stats-strip">
-  <div class="stats-inner">
-    <div class="stat">
-      <div class="stat-v">∞</div>
-      <div class="stat-l">Воркеров</div>
+<!-- ══ METRICS STRIP ═════════════════════════════════════════════ -->
+<div class="metrics">
+  <div class="metrics-inner">
+    <div class="metric">
+      <div class="metric-v">∞</div>
+      <div class="metric-l">Воркеров</div>
     </div>
-    <div class="stat">
-      <div class="stat-v"><em>20</em>/с</div>
-      <div class="stat-l">Скорость рассылки</div>
+    <div class="metric">
+      <div class="metric-v"><em>20</em>/с</div>
+      <div class="metric-l">Скорость рассылки</div>
     </div>
-    <div class="stat">
-      <div class="stat-v"><em>24</em>/7</div>
-      <div class="stat-l">Аптайм</div>
+    <div class="metric">
+      <div class="metric-v"><em>24</em>/7</div>
+      <div class="metric-l">Аптайм</div>
     </div>
-    <div class="stat">
-      <div class="stat-v"><em>100</em>%</div>
-      <div class="stat-l">Webhook-only</div>
+    <div class="metric">
+      <div class="metric-v"><em>100</em>%</div>
+      <div class="metric-l">Webhook-only</div>
     </div>
   </div>
 </div>
 
-<!-- ══ FEATURES ══════════════════════════════════════════════════════ -->
+<!-- ══ CRM SECTION — placed high, before features ═══════════════ -->
+<section class="crm-section">
+  <div class="crm-card">
+    <div>
+      <div class="crm-card-tag">
+        <span class="crm-card-tag-dot"></span>
+        GRAMLY CRM — Финансовый учёт
+      </div>
+      <h2 class="crm-h2">Финансы и аналитика<br/><span>под контролем</span></h2>
+      <p class="crm-p">
+        Веб-сервис для ежедневного учёта Cash Flow, заявок и выплат. Авторизация через Telegram, workspace-архитектура, автоматические сводные отчёты.
+      </p>
+      <div class="crm-features">
+        <div class="crm-feature">
+          <span class="crm-feature-dot"></span>
+          Ежедневный Cash Flow — приход, расход, сальдо в один клик
+        </div>
+        <div class="crm-feature">
+          <span class="crm-feature-dot"></span>
+          Авто-отчёты после внесения данных — Telegram-уведомления team
+        </div>
+        <div class="crm-feature">
+          <span class="crm-feature-dot"></span>
+          История, недельные планы, контроль дедлайнов
+        </div>
+        <div class="crm-feature">
+          <span class="crm-feature-dot"></span>
+          Экспорт в Excel, поддержка нескольких workspace
+        </div>
+      </div>
+      <div class="crm-btns">
+        <a href="/crm/" class="btn-crm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Войти в CRM
+        </a>
+        <span style="font-size:.78rem;color:var(--muted);padding-left:4px">Авторизация через Telegram</span>
+      </div>
+    </div>
+    <!-- CRM mockup -->
+    <div class="crm-mock">
+      <div class="crm-mock-window">
+        <div class="crm-mock-header">
+          <span class="crm-mock-title">📊 Cash Flow — 11.04.2026</span>
+          <span class="crm-mock-date">GRAMLY Workspace</span>
+        </div>
+        <div class="crm-mock-body">
+          <div class="crm-row">
+            <span class="crm-row-lbl">Приход (ПП)</span>
+            <span class="crm-row-val pos">+1 840 $</span>
+          </div>
+          <div class="crm-row">
+            <span class="crm-row-lbl">Приход (Привата)</span>
+            <span class="crm-row-val pos">+920 $</span>
+          </div>
+          <div class="crm-row">
+            <span class="crm-row-lbl">Расход</span>
+            <span class="crm-row-val neg">−650 $</span>
+          </div>
+          <div class="crm-row">
+            <span class="crm-row-lbl">Сальдо</span>
+            <span class="crm-row-val hl">+2 110 $</span>
+          </div>
+          <div class="crm-row">
+            <span class="crm-row-lbl">Заявки</span>
+            <span class="crm-row-val c-cyan">312</span>
+          </div>
+          <div class="crm-status-row">
+            <span class="crm-status-dot"></span>
+            <span class="crm-status-text">Отчёт сформирован</span>
+            <span class="crm-status-badge">✓ Готов</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FEATURES ══════════════════════════════════════════════════ -->
 <section class="features">
   <div class="sec-head">
     <div class="sec-tag">Возможности</div>
@@ -727,14 +877,13 @@ footer {
   </div>
 
   <div class="feat-grid">
-
     <div class="feat-card">
       <span class="feat-num">01</span>
       <div class="feat-ico">
         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
       </div>
       <h3 class="feat-h3">Управление командой</h3>
-      <p class="feat-p">Статусы, балансы, рабочие ссылки, история активности. Роли: воркер, куратор, администратор. Поиск по любому параметру.</p>
+      <p class="feat-p">Статусы, балансы, рабочие ссылки, история активности. Роли: воркер, куратор, администратор.</p>
     </div>
 
     <div class="feat-card">
@@ -749,69 +898,47 @@ footer {
     <div class="feat-card">
       <span class="feat-num">03</span>
       <div class="feat-ico">
-        <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.37 9.17a19.79 19.79 0 01-3.07-8.63A2 2 0 012.28 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 9.91a16 16 0 006.18 6.18l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+        <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </div>
       <h3 class="feat-h3">Рассылки</h3>
-      <p class="feat-p">HTML-форматирование, выбор аудитории, двухэтапное подтверждение. До 20 сообщений/сек, детальный лог доставки.</p>
+      <p class="feat-p">Broadcast через Celery с соблюдением rate limit (~20 msg/s). Статусы доставки, лог по каждому получателю.</p>
     </div>
 
     <div class="feat-card">
       <span class="feat-num">04</span>
       <div class="feat-ico">
-        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       </div>
-      <h3 class="feat-h3">Выплаты</h3>
-      <p class="feat-p">Вывод от 700 ₽ через CryptoBot или USDT TRC20. Авторасчёт баланса, уведомления в реальном времени.</p>
+      <h3 class="feat-h3">Аналитика и отчёты</h3>
+      <p class="feat-p">Дневная статистика по каждому воркеру. Ставки, начисления, история выплат. Авто-рассылка итогов дня.</p>
     </div>
 
     <div class="feat-card">
       <span class="feat-num">05</span>
       <div class="feat-ico">
-        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
       </div>
-      <h3 class="feat-h3">Аналитика</h3>
-      <p class="feat-p">Дневные отчёты, недельный чарт, финансовая сводка, топ воркеров. Chart.js дашборд по адресу /stats/.</p>
+      <h3 class="feat-h3">Выплаты</h3>
+      <p class="feat-p">Воркеры запрашивают вывод прямо в боте. CryptoBot или USDT TRC-20. Администратор подтверждает одним нажатием.</p>
     </div>
 
     <div class="feat-card">
       <span class="feat-num">06</span>
       <div class="feat-ico">
-        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
       </div>
-      <h3 class="feat-h3">Webhook-only</h3>
-      <p class="feat-p">Никакого polling. HTTPS webhook с валидацией секрета. Два бота (тест/прод), ngrok для локала. Мгновенный отклик 24/7.</p>
-    </div>
-
-  </div>
-</section>
-
-<!-- ══ STATS PROMO BLOCK ══════════════════════════════════════════════ -->
-<section class="stats-promo">
-  <div class="stats-promo-inner">
-    <div>
-      <div class="stats-promo-tag">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Дашборд статистики
-      </div>
-      <h2 class="stats-promo-h2">Полная аналитика<br/>в реальном времени</h2>
-      <p class="stats-promo-p">Графики заявок и доходов за 30 дней, финансовая сводка, топ воркеров, последние отчёты — всё в одном месте. Доступно для staff-пользователей.</p>
-    </div>
-    <div style="position:relative;z-index:1;">
-      <a href="/stats/" class="btn-primary" style="white-space:nowrap;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Открыть статистику
-      </a>
+      <h3 class="feat-h3">Реферальная система</h3>
+      <p class="feat-p">Персональные ссылки, автопривязка куратора, авторасчёт реферального вознаграждения. Цепочки неограниченной глубины.</p>
     </div>
   </div>
 </section>
 
-<!-- ══ HOW IT WORKS ══════════════════════════════════════════════════ -->
+<!-- ══ HOW IT WORKS ══════════════════════════════════════════════ -->
 <section class="how">
   <div class="sec-head">
     <div class="sec-tag">Как это работает</div>
     <h2 class="sec-h2">Простой рабочий <em>процесс</em></h2>
   </div>
-
   <div class="steps">
     <div class="step">
       <div class="step-n">01</div>
@@ -831,28 +958,60 @@ footer {
       <div class="step-n">03</div>
       <div class="step-body">
         <h3 class="step-h3">Управлять выплатами</h3>
-        <p class="step-p">Воркеры запрашивают вывод прямо в боте. Администратор подтверждает или отклоняет через уведомление — баланс пересчитывается автоматически.</p>
+        <p class="step-p">Воркеры запрашивают вывод прямо в боте. Администратор подтверждает или отклоняет — баланс пересчитывается автоматически.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n">04</div>
+      <div class="step-body">
+        <h3 class="step-h3">Контролировать финансы через CRM</h3>
+        <p class="step-p">В GRAMLY CRM ежедневно вносится Cash Flow команды. Автоматические отчёты, история, недельные планы — всё в одном веб-интерфейсе.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ══ CTA ════════════════════════════════════════════════════════════ -->
+<!-- ══ STATS PROMO ════════════════════════════════════════════════ -->
+<div class="stats-promo">
+  <div class="stats-promo-inner">
+    <div>
+      <div class="stats-promo-tag">Аналитика</div>
+      <h2 class="stats-promo-h2">Дашборд статистики<br/>в реальном времени</h2>
+      <p class="stats-promo-p">Графики активности, выплаты по воркерам, история дней — всё на одном экране.</p>
+    </div>
+    <a href="/stats/" class="btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Открыть статистику
+    </a>
+  </div>
+</div>
+
+<!-- ══ FINAL CTA ══════════════════════════════════════════════════ -->
 <section class="cta-section">
   <div class="cta-inner">
-    <h2 class="cta-h2">Готовы к работе?</h2>
-    <p class="cta-p">Войдите в панель администратора и настройте систему за несколько минут.</p>
+    <div class="cta-tag">
+      <div class="eyebrow" style="margin:0 auto">
+        <span class="eyebrow-dot"></span>
+        Готово к работе прямо сейчас
+      </div>
+    </div>
+    <h2 class="cta-h2">Начните работу<br/>с <span class="grad">платформой</span></h2>
+    <p class="cta-p">Войдите в CRM для учёта финансов или в панель администратора для управления командой.</p>
     <div class="cta-btns">
-      <a href="/django-admin/" class="btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      <a href="/crm/" class="btn-crm">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Открыть CRM
+      </a>
+      <a href="/django-admin/" class="btn-admin">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         Admin Panel
       </a>
-      <a href="/stats/" class="btn-stats-link">
+      <a href="/stats/" class="btn-ghost">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         Статистика
       </a>
       {% if bot_username %}
-      <a href="https://t.me/{{ bot_username }}" class="btn-secondary" target="_blank" rel="noopener">
+      <a href="https://t.me/{{ bot_username }}" class="btn-ghost" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
         Telegram Bot
       </a>
@@ -861,7 +1020,7 @@ footer {
   </div>
 </section>
 
-<!-- ══ FOOTER ══════════════════════════════════════════════════════════ -->
+<!-- ══ FOOTER ════════════════════════════════════════════════════ -->
 <footer>
   <span class="ft-copy">© 2026 SpamBotControl</span>
   <div class="ft-tags">
@@ -873,23 +1032,6 @@ footer {
   </div>
 </footer>
 
-</div><!-- /wrap -->
-
-<script>
-// Scroll reveal for cards and steps
-const io = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (!entry.isIntersecting) return;
-    const el = entry.target;
-    const siblings = Array.from(el.parentElement.children).filter(c => c.classList.contains(el.classList[0]));
-    const delay = siblings.indexOf(el) * 70;
-    el.style.transitionDelay = delay + 'ms';
-    el.classList.add('vis');
-    io.unobserve(el);
-  });
-}, { threshold: 0.06, rootMargin: '0px 0px -24px 0px' });
-
-document.querySelectorAll('.feat-card, .step').forEach(el => io.observe(el));
-</script>
+</div><!-- /.wrap -->
 </body>
 </html>

@@ -41,6 +41,7 @@ LOCAL_APPS = [
     "apps.referrals",
     "apps.withdrawals",
     "apps.telegram_bot",
+    "apps.crm",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -115,6 +116,7 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_TASK_ROUTES = {
     "apps.broadcasts.tasks.*": {"queue": "broadcasts"},
     "apps.stats.tasks.*": {"queue": "default"},
+    "apps.crm.tasks.*": {"queue": "default"},
 }
 
 # ── Celery Beat Schedule ──────────────────────────────────────────────────────
@@ -135,6 +137,16 @@ CELERY_BEAT_SCHEDULE = {
     "check-missing-daily-report": {
         "task": "apps.stats.tasks.check_missing_daily_report_task",
         "schedule": crontab(minute="*/15"),
+    },
+    # CRM: check deadline at 00:05 МСК (5 min after midnight)
+    "crm-check-deadline": {
+        "task": "apps.crm.tasks.crm_check_deadline_task",
+        "schedule": crontab(hour=0, minute=5),
+    },
+    # CRM: weekly report every Monday at 08:00 МСК
+    "crm-weekly-report": {
+        "task": "apps.crm.tasks.crm_weekly_report_task",
+        "schedule": crontab(hour=8, minute=0, day_of_week="monday"),
     },
 }
 
@@ -183,6 +195,10 @@ SUBSCRIPTION_CHANNEL_URL = env(
 # ── Static ────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# ── Media (user uploads — CRM screenshots) ────────────────────────────────────
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
@@ -345,8 +361,49 @@ UNFOLD = {
                 ],
             },
             {
-                "title": "Celery",
+                "title": "CRM",
                 "separator": True,
+                "items": [
+                    {
+                        "title": "Пространства",
+                        "icon": "workspaces",
+                        "link": "/django-admin/crm/workspace/",
+                    },
+                    {
+                        "title": "Участники",
+                        "icon": "group",
+                        "link": "/django-admin/crm/workspacemembership/",
+                    },
+                    {
+                        "title": "Финансовые записи",
+                        "icon": "paid",
+                        "link": "/django-admin/crm/financeentry/",
+                    },
+                    {
+                        "title": "Записи по заявкам",
+                        "icon": "receipt_long",
+                        "link": "/django-admin/crm/applicationentry/",
+                    },
+                    {
+                        "title": "Сводные отчёты",
+                        "icon": "summarize",
+                        "link": "/django-admin/crm/dailysummaryreport/",
+                    },
+                    {
+                        "title": "Пропуски дедлайна",
+                        "icon": "alarm_off",
+                        "link": "/django-admin/crm/deadlinemiss/",
+                    },
+                    {
+                        "title": "Недельные планы",
+                        "icon": "event_note",
+                        "link": "/django-admin/crm/weeklyplan/",
+                    },
+                ],
+            },
+            {
+                "title": "Celery",
+                "separator": False,
                 "items": [
                     {
                         "title": "Результаты задач",

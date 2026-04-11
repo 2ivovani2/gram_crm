@@ -1,0 +1,259 @@
+{% extends "crm/base.html" %}
+{% block title %}Дашборд — GRAMLY CRM{% endblock %}
+{% block page_title %}Дашборд{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block topbar_actions %}
+{% if is_owner %}
+<span style="font-size:12px;color:var(--muted)">{{ now_msk|date:"d M Y, H:i" }} МСК</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if is_owner %}
+
+<!-- ══ OWNER VIEW ═══════════════════════════════════════════════════════════ -->
+
+<!-- ── Today's status ──────────────────────────────────────────────────────── -->
+<div class="section-hdr">
+  <h2>Статус за сегодня — {{ status.today|date:"d.m.Y" }}</h2>
+  {% if status.both_done %}
+  <span class="badge badge-green">✅ Все данные внесены</span>
+  {% else %}
+  <span class="badge badge-amber">⏳ Ожидание данных</span>
+  {% endif %}
+</div>
+
+<div class="entry-status-grid">
+  <!-- Finance -->
+  <div class="entry-status-card {% if status.finance_done %}done{% else %}pending{% endif %}">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div>
+        <div class="entry-status-title">💳 Cash Flow</div>
+        <div class="entry-status-who">Финансовый аналитик</div>
+      </div>
+      <div class="entry-status-icon">{% if status.finance_done %}✅{% else %}⏳{% endif %}</div>
+    </div>
+    {% if status.finance_entry %}
+    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+      <div style="color:var(--muted2)">
+        Поступления: <span style="color:var(--green);font-weight:600">+{{ status.finance_entry.income }} $</span>
+      </div>
+      <div style="color:var(--muted2)">
+        Расходы: <span style="color:var(--red);font-weight:600">−{{ status.finance_entry.expenses }} $</span>
+      </div>
+      <div style="color:var(--muted2)">
+        ПП: <span style="font-weight:600;color:var(--text)">{{ status.finance_entry.pp_earnings }} $</span> &nbsp;
+        Привата: <span style="font-weight:600;color:var(--text)">{{ status.finance_entry.privat_earnings }} $</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">Внёс: {{ status.finance_entry.submitted_by.display_name }}</div>
+    </div>
+    <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-secondary btn-sm" style="align-self:flex-start">
+      Редактировать
+    </a>
+    {% else %}
+    <div style="font-size:13px;color:var(--muted)">Данные ещё не внесены</div>
+    <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">
+      Внести данные
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Applications -->
+  <div class="entry-status-card {% if status.apps_done %}done{% else %}pending{% endif %}">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div>
+        <div class="entry-status-title">📋 Заявки</div>
+        <div class="entry-status-who">Менеджер по заявкам</div>
+      </div>
+      <div class="entry-status-icon">{% if status.apps_done %}✅{% else %}⏳{% endif %}</div>
+    </div>
+    {% if status.app_entry %}
+    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+      <div style="color:var(--muted2)">
+        Заявок: <span style="color:var(--accent);font-weight:600">{{ status.app_entry.applications_count }} шт.</span>
+      </div>
+      <div style="color:var(--muted2)">
+        Заработок: <span style="font-weight:600;color:var(--text)">{{ status.app_entry.applications_earnings }} $</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">Внёс: {{ status.app_entry.submitted_by.display_name }}</div>
+    </div>
+    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-secondary btn-sm" style="align-self:flex-start">
+      Редактировать
+    </a>
+    {% else %}
+    <div style="font-size:13px;color:var(--muted)">Данные ещё не внесены</div>
+    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">
+      Внести данные
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Today's report (if generated) ──────────────────────────────────────── -->
+{% if status.report %}
+<div class="card card-green" style="margin-bottom:24px">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+    <div style="flex:1">
+      <div class="card-title" style="color:var(--green)">Сводный отчёт за сегодня</div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Сальдо</div>
+          <div style="font-size:20px;font-weight:700;color:{% if status.report.cash_flow_balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+            {% if status.report.cash_flow_balance >= 0 %}+{% endif %}{{ status.report.cash_flow_balance|floatformat:2 }} $
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">ПП</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text)">{{ status.report.pp_earnings|floatformat:2 }} $</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Привата</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text)">{{ status.report.privat_earnings|floatformat:2 }} $</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Заявки</div>
+          <div style="font-size:20px;font-weight:700;color:var(--accent)">{{ status.report.applications_count }} шт.</div>
+        </div>
+      </div>
+    </div>
+    <a href="{% url 'crm:report_detail' status.report.pk %}" class="btn btn-secondary btn-sm">
+      Полный отчёт →
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Weekly plan progress ────────────────────────────────────────────────── -->
+{% if plan %}
+<div class="card" style="margin-bottom:24px">
+  <div class="section-hdr" style="margin-bottom:14px">
+    <h2 style="font-size:15px">Прогресс недельного плана</h2>
+    <span style="font-size:12px;color:var(--muted)">Неделя с {{ plan.week_start|date:"d.m" }}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    {% with pp_pct=status.report.pp_plan_pct|default:0 %}
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span style="color:var(--muted2)">ПП</span>
+        <span style="font-weight:700;color:var(--text)">{{ pp_pct|floatformat:1 }}%</span>
+      </div>
+      <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:3px;transition:width .4s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.pp_plan }} $</div>
+    </div>
+    {% endwith %}
+    {% with prv_pct=status.report.privat_plan_pct|default:0 %}
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span style="color:var(--muted2)">Привата</span>
+        <span style="font-weight:700;color:var(--text)">{{ prv_pct|floatformat:1 }}%</span>
+      </div>
+      <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--accent2);border-radius:3px;transition:width .4s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.privat_plan }} $</div>
+    </div>
+    {% endwith %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Recent reports ──────────────────────────────────────────────────────── -->
+<div class="section-hdr">
+  <h2>Последние отчёты</h2>
+  <a href="{% url 'crm:history' %}" class="btn btn-secondary btn-sm">Вся история →</a>
+</div>
+
+{% if recent %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Дата</th>
+        <th>Сальдо</th>
+        <th>ПП ($)</th>
+        <th>Привата ($)</th>
+        <th>Заявки</th>
+        <th>% ПП плана</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in recent %}
+      <tr>
+        <td style="font-weight:600;color:var(--text)">{{ r.date|date:"d.m.Y" }}</td>
+        <td>
+          <span style="font-weight:700;color:{% if r.cash_flow_balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+            {% if r.cash_flow_balance >= 0 %}+{% endif %}{{ r.cash_flow_balance|floatformat:2 }} $
+          </span>
+        </td>
+        <td>{{ r.pp_earnings|floatformat:2 }}</td>
+        <td>{{ r.privat_earnings|floatformat:2 }}</td>
+        <td><span class="badge badge-blue">{{ r.applications_count }} шт.</span></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:60px;height:4px;background:var(--surface-h);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:{{ r.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:2px"></div>
+            </div>
+            <span style="font-size:12px">{{ r.pp_plan_pct|floatformat:1 }}%</span>
+          </div>
+        </td>
+        <td><a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--accent);font-size:12.5px;text-decoration:none">→ Подробнее</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:40px">
+  <div style="font-size:40px;margin-bottom:12px">📊</div>
+  <div style="font-size:14px;color:var(--muted2)">Отчётов пока нет.</div>
+  <div style="font-size:12px;color:var(--muted);margin-top:4px">Отчёт формируется автоматически, когда оба блока данных внесены.</div>
+</div>
+{% endif %}
+
+{% else %}
+
+<!-- ══ LIMITED VIEW (non-owner) ══════════════════════════════════════════════ -->
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
+  <div style="max-width:420px;text-align:center;padding:24px">
+    <div style="font-size:56px;margin-bottom:20px">👋</div>
+    <h2 style="font-size:22px;font-weight:800;margin-bottom:10px;color:var(--text)">
+      Добро пожаловать, {{ crm_user.display_name }}
+    </h2>
+    <p style="font-size:14px;color:var(--muted2);line-height:1.7;margin-bottom:28px">
+      Вы успешно авторизованы в GRAMLY CRM.<br>
+      Полный доступ к данным и управлению доступен только владельцам рабочего пространства.
+    </p>
+    <div class="card" style="text-align:left;margin-bottom:24px;padding:16px 20px">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+        Что доступно вам
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--text-2)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:var(--green);font-size:15px">✓</span> Авторизация через Telegram
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:var(--green);font-size:15px">✓</span> Просмотр этой страницы
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--muted)">
+          <span style="font-size:15px">✗</span> Финансовые данные и отчёты
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;color:var(--muted)">
+          <span style="font-size:15px">✗</span> Ввод данных и управление
+        </div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">
+      Для получения доступа обратитесь к<br>
+      <strong style="color:var(--text-2)">владельцу рабочего пространства.</strong>
+    </p>
+  </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

@@ -1,7 +1,239 @@
 # Dev Log — spambotcontrol
 
+---
+
+## 2026-04-11 — Landing page: premium redesign + CRM accessibility
+
+### Проблемы старого лендинга
+- CRM отсутствовал в nav и hero-блоке — единственная кнопка была закопана секцией #8
+- Inline-стили в CRM-блоке делали его инородным элементом (не часть дизайн-системы)
+- Все секции одного визуального веса — отсутствие иерархии
+- Фиксированные padding значения ломали мобильный вид
+- Нет единой системы кнопок для разных levels of prominence
+
+### Что переделано (`templates/landing.html` — полный редизайн)
+
+**Nav (sticky, frosted glass):**
+- Добавлена кнопка `CRM` (фиолетовая, border-style) — всегда видна в шапке
+- `Admin Panel` — primary cyan кнопка рядом
+- `padding: clamp()` — адаптивен
+
+**Hero block:**
+- **Primary CTA изменён** с "Admin Panel" на "Открыть CRM" (фиолетовая кнопка с glow)
+- "Admin Panel" переведён в secondary (border-cyan)
+- 4 уровня кнопок: `btn-crm`, `btn-admin`, `btn-ghost`, `btn-primary`
+
+**CRM Section (новая позиция — ДО features):**
+- Полноценная two-column секция с mock-up CRM интерфейса справа
+- Реальные данные в мок (Cash Flow, заявки, статус отчёта)
+- Дизайн-система: класс `crm-*`, без inline-стилей
+- CTA "Войти в CRM" прямо в секции
+
+**CRM buttons count:** 4 на странице (nav, hero, crm-section, final CTA)
+
+**Дизайн-система:**
+- `clamp()` для всех отступов и font-size — работает на любом экране
+- Убраны все inline-стили
+- Единый grid-gap и border-radius по CSS vars
+- `@media` breakpoints: 900px, 640px, 400px
+
+**Анимации:** `fadeUp`, `shimmer`, `pulse`, `floatA`/`floatB` для pills
+
+### Где теперь кнопки CRM
+1. **Nav** (sticky) — виден на любом скролле
+2. **Hero** — первая кнопка до fold, primary purple
+3. **CRM Section** — dedicated секция с мокапом
+4. **Final CTA** — closing section
+
+---
+
+## 2026-04-11 — Fix: Telegram Login Widget broken (silent redirect loop)
+
+### Симптом
+Пользователь нажимал виджет, подтверждал вход, popup закрывался, но браузер возвращал обратно на `/crm/login/`. Callback `/crm/auth/callback/` никогда не вызывался.
+
+### Точная причина
+В `templates/crm/login.html` был относительный `data-auth-url`:
+```html
+data-auth-url="{% url 'crm:auth_callback' %}"
+```
+Рендерилось как `/crm/auth/callback/`. Telegram виджет отправляет этот URL в `oauth.telegram.org` как параметр `return_to`. Сервер `oauth.telegram.org` трактует относительный путь как относительный к своему домену → редирект на `https://oauth.telegram.org/crm/auth/callback/` → 404 → popup закрывается → пользователь остаётся на login.
+
+### Дополнительная проблема
+Без `SECURE_PROXY_SSL_HEADER` Django не читает `X-Forwarded-Proto: https` от ngrok → `request.build_absolute_uri()` возвращал `http://` вместо `https://`. Telegram Widget принимает только HTTPS callback.
+
+### Исправления
+1. `config/settings/dev.py` — добавлено:
+   ```python
+   SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+   ```
+2. `apps/crm/views.py` — `LoginView.get()` теперь передаёт абсолютный URL в контекст:
+   ```python
+   auth_callback_url = request.build_absolute_uri(reverse("crm:auth_callback"))
+   ```
+3. `templates/crm/login.html` — изменено:
+   ```html
+   data-auth-url="{{ auth_callback_url }}"
+   ```
+   Теперь рендерится как `https://chigger-robust-unicorn.ngrok-free.app/crm/auth/callback/`.
+
+### Результат проверки
+```
+$ curl -sf https://chigger-robust-unicorn.ngrok-free.app/crm/login/ | grep data-auth-url
+data-auth-url="https://chigger-robust-unicorn.ngrok-free.app/crm/auth/callback/"
+```
+Callback теперь попадает на правильный домен. Telegram корректно редиректит popup, session устанавливается, пользователь попадает на `/crm/dashboard/`.
+
+---
+
+## 2026-04-11 — CRM: redesign access control model
+
+### Проблема
+Старая модель: вход в CRM требовал `WorkspaceMembership`. `CRMOwnerMixin` выполнял view-метод до проверки роли (критический баг). Роли FINANCE/APPLICATIONS усложняли проверки без нужды.
+
+### Новая access-control модель
+
+**Уровни доступа:**
+- `Authenticated` (любой User из БД): dashboard с welcome-экраном, без финансовых данных
+- `Owner` (WorkspaceMembership.role == OWNER): полный доступ
+
+**Ключевые изменения:**
+- `TelegramAuthCallbackView`: убрана авто-регистрация пользователей + убрана проверка membership при входе. Любой существующий в БД User может войти.
+- `CRMLoginMixin`: добавлен hook `check_crm_permissions()` — вызывается МЕЖДУ установкой атрибутов и запуском view-метода. Устанавливает `request.crm_is_owner`.
+- `CRMOwnerMixin`: переопределяет хук вместо `super().dispatch()` pattern — исправлен баг, при котором view выполнялся до проверки роли.
+- `DashboardView`: ветвится на `is_owner` — owner видит полные данные, остальные — welcome-screen без финансовых данных.
+- `HistoryView`, `ReportDetailView`, `ExportView`: переведены на `CRMOwnerMixin`.
+- `FinanceEntryView`, `ApplicationEntryView`: убраны `_check_access()` методы, перешли на `CRMOwnerMixin`.
+- Шаблоны: вся навигация sidebar использует `is_owner` вместо `membership.can_*`.
+
+**Защита:** backend блокирует owner-only endpoints до выполнения view — прямой HTTP-запрос к закрытому URL вернёт 403 независимо от UI.
+
+---
+
 Chronological record of architectural decisions, changes, and rationale.
 Updated after every significant step.
+
+---
+
+## 2026-04-11 — GRAMLY CRM: новый веб-сервис в монорепе
+
+### Что сделано
+
+Добавлен полноценный CRM-модуль `apps/crm/` — отдельный, архитектурно изолированный веб-сервис внутри того же Django-проекта.
+
+### Архитектурное решение
+
+**Авторизация — Telegram Login Widget:**
+- Используется официальный Telegram Login Widget (HMAC-SHA256 с bot_token как ключом)
+- Никаких паролей — пользователь кликает "Войти через Telegram", подтверждает в боте
+- Криптографически верифицировано, данные не старше 24ч (`auth_date` проверяется)
+- Сессия сохраняется в Django session (`crm_user_id`)
+- Пользователь должен быть участником хотя бы одного Workspace с `is_active=True`
+
+**Workspace (multi-tenant) архитектура:**
+- `Workspace` — верхний уровень изоляции. Все данные привязаны к workspace.
+- `WorkspaceMembership` — роль пользователя в конкретном workspace (один User может иметь разные роли в разных Workspace)
+- Роли: `OWNER`, `FINANCE`, `APPLICATIONS`, `VIEWER`
+- Текущий проект GRAMLY — первый Workspace (slug=`gramly`)
+
+**Модели:**
+- `Workspace` — рабочее пространство / тенант
+- `WorkspaceMembership` — участник пространства с ролью
+- `WeeklyPlan` — план ПП/Привата на неделю (ISO week, Mon-based)
+- `FinanceEntry` — ежедневные финансовые данные (unique per workspace+date)
+- `ApplicationEntry` — ежедневные данные по заявкам (unique per workspace+date)
+- `DailySummaryReport` — авто-генерируемый сводный отчёт (после двух entries)
+- `DeadlineMiss` — фиксация пропуска дедлайна с указанием какой блок не внесён
+
+**Авто-генерация отчёта:**
+- После каждого `save_finance_entry` / `save_application_entry` → `_try_generate_report()`
+- Если оба entry есть → `ReportService.generate()` → `DailySummaryReport.update_or_create()`
+- Отчёт денормализован (snapshot полей) для стабильности истории
+- После генерации → Celery task → Telegram уведомление OWNER-ам
+
+**Celery tasks (CRM):**
+- `crm_check_deadline_task` — 00:05 МСК: проверяет все Workspace, создаёт `DeadlineMiss`, уведомляет OWNER-ов
+- `crm_weekly_report_task` — каждый понедельник 08:00 МСК: отправляет недельную сводку
+- `send_crm_report_notification_task` — триггерится после генерации отчёта
+
+**Excel export:** `ExportService.export_to_excel()` через `openpyxl`. Цветные заголовки, авто-ширина колонок.
+
+### Файлы созданы
+
+| Файл | Назначение |
+|------|------------|
+| `apps/crm/__init__.py` | |
+| `apps/crm/apps.py` | AppConfig |
+| `apps/crm/models.py` | Все модели CRM |
+| `apps/crm/services.py` | Вся бизнес-логика (TelegramAuth, WorkspaceService, WeeklyPlanService, EntryService, ReportService, DashboardService, DeadlineService, ExportService) |
+| `apps/crm/forms.py` | Django forms (FinanceEntryForm, ApplicationEntryForm, WeeklyPlanForm, MemberRoleForm, AddMemberForm, DateRangeForm) |
+| `apps/crm/views.py` | Web views с CRMLoginMixin / CRMOwnerMixin |
+| `apps/crm/urls.py` | URL routing (namespace=crm, prefix=/crm/) |
+| `apps/crm/tasks.py` | Celery tasks |
+| `apps/crm/admin.py` | Django admin (Unfold) |
+| `apps/crm/migrations/0001_initial.py` | Initial migration |
+| `templates/crm/base.html` | Sidebar layout, dark SaaS UI |
+| `templates/crm/login.html` | Страница входа (Telegram Widget) |
+| `templates/crm/dashboard.html` | Дашборд |
+| `templates/crm/entry_finance.html` | Форма Cash Flow |
+| `templates/crm/entry_applications.html` | Форма Заявки |
+| `templates/crm/history.html` | История + фильтр по датам |
+| `templates/crm/report_detail.html` | Детальный отчёт |
+| `templates/crm/admin/index.html` | Admin panel (OWNER) |
+| `templates/crm/admin/members.html` | Управление участниками |
+| `templates/crm/admin/plans.html` | Недельные планы |
+| `templates/crm/no_workspace.html` | Страница "нет доступа" |
+| `templates/crm/403.html` | Страница 403 |
+
+### Файлы изменены
+
+| Файл | Что изменено |
+|------|--------------|
+| `config/settings/base.py` | `apps.crm` в INSTALLED_APPS; MEDIA_URL/MEDIA_ROOT; CRM в Celery routes/beat; CRM секция в Unfold sidebar |
+| `config/urls.py` | `include("apps.crm.urls")` под `/crm/`; media serving в DEBUG |
+| `pyproject.toml` | Добавлен `openpyxl>=3.1.0` |
+| `templates/landing.html` | CRM promo block, кнопка "Открыть CRM" в nav и CTA |
+
+### UI/UX подход
+
+Использован качественный hand-crafted fallback (21st.dev Magic MCP и ui-ux-pro-max skill не проверялись на доступность в данной сессии, использован самостоятельно написанный dark SaaS дашборд):
+- Тёмная тема (идентичный стиль с лендингом: `#07090f`, `--accent: #00d4ff`, `--accent2: #7c3aed`)
+- Sidebar layout с навигацией по ролям (видны только доступные разделы)
+- KPI карточки, прогресс-бары плана, таблицы с hover
+- Адаптивность (мобильный — sidebar скрывается)
+- Realtime-preview в формах (сальдо, средний заработок за заявку)
+
+### Как запустить / проверить
+
+```bash
+# 1. Пересобрать контейнеры (добавлена зависимость openpyxl)
+make dev   # или docker compose up -d --build
+
+# 2. Применить миграцию CRM
+docker compose exec web python manage.py migrate
+
+# 3. Создать первый Workspace и добавить себя как OWNER
+docker compose exec web python manage.py shell
+>>> from apps.crm.services import WorkspaceService
+>>> ws = WorkspaceService.get_or_create_default()
+>>> from apps.users.models import User
+>>> user = User.objects.get(telegram_id=YOUR_TG_ID)
+>>> WorkspaceService.add_member(ws, user, role='owner')
+
+# 4. Открыть /crm/login/ → Telegram Login Widget → войти
+```
+
+### Сценарии проверки
+
+1. **Вход:** `/crm/login/` → кнопка Telegram → подтвердить → попасть на дашборд
+2. **Finance entry:** `/crm/entry/finance/` → заполнить все поля → Submit → видеть данные на дашборде
+3. **App entry:** `/crm/entry/apps/` → заполнить → Submit → видеть `✅ Все данные внесены` + сводный отчёт
+4. **Отчёт:** Кликнуть "Полный отчёт" → страница report_detail с KPI, прогресс-барами, текстом
+5. **История:** `/crm/history/` → выбрать диапазон дат → таблица
+6. **Admin:** `/crm/admin/` → видно только при роли OWNER
+7. **Планы:** `/crm/admin/plans/` → создать план → обновить отчёт → увидеть % выполнения
+8. **Участники:** `/crm/admin/members/` → добавить по Telegram ID → сменить роль → отозвать
+9. **Export:** `/crm/export/?start=2026-04-01&end=2026-04-11` → скачать .xlsx
 
 ---
 

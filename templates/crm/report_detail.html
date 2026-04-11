@@ -1,0 +1,127 @@
+{% extends "crm/base.html" %}
+{% block title %}Отчёт {{ report.date|date:"d.m.Y" }} — GRAMLY CRM{% endblock %}
+{% block page_title %}Отчёт за {{ report.date|date:"d.m.Y" }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'crm:history' %}" class="btn btn-secondary btn-sm">← История</a>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:700px">
+
+  <!-- ── Header ────────────────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(124,58,237,.04));border-color:rgba(0,212,255,.2)">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:12px;color:var(--accent);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">
+          Сводный ежедневный отчёт
+        </div>
+        <div style="font-size:26px;font-weight:800;letter-spacing:-.5px">{{ report.date|date:"d F Y" }}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Сформирован: {{ report.generated_at|date:"d.m.Y H:i" }} МСК
+          {% if report.generated_by %} · {{ report.generated_by.display_name }}{% endif %}
+        </div>
+      </div>
+      <div style="text-align:right">
+        {% if report.telegram_sent %}
+        <span class="badge badge-green">✅ Отправлен в Telegram</span>
+        {% else %}
+        <span class="badge badge-muted">Не отправлен</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── KPIs ──────────────────────────────────────────────────────────────── -->
+  <div class="kpi-grid">
+    <div class="card {% if report.cash_flow_balance >= 0 %}card-green{% else %}card-red{% endif %}">
+      <div class="card-title">Сальдо Cash Flow</div>
+      <div class="card-value" style="color:{% if report.cash_flow_balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+        {% if report.cash_flow_balance >= 0 %}+{% endif %}{{ report.cash_flow_balance|floatformat:2 }} $
+      </div>
+      <div class="card-sub">Доход − Расходы</div>
+    </div>
+    <div class="card card-accent">
+      <div class="card-title">Заработок с ПП</div>
+      <div class="card-value">{{ report.pp_earnings|floatformat:2 }} $</div>
+      <div class="card-sub">% плана: {{ report.pp_plan_pct|floatformat:1 }}%</div>
+    </div>
+    <div class="card card-purple">
+      <div class="card-title">Заработок с Привата</div>
+      <div class="card-value">{{ report.privat_earnings|floatformat:2 }} $</div>
+      <div class="card-sub">% плана: {{ report.privat_plan_pct|floatformat:1 }}%</div>
+    </div>
+    <div class="card card-amber">
+      <div class="card-title">Заявки за день</div>
+      <div class="card-value">{{ report.applications_count }}</div>
+      <div class="card-sub">Заработок: {{ report.applications_earnings|floatformat:2 }} $</div>
+    </div>
+  </div>
+
+  <!-- ── Plan progress ─────────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Выполнение недельного плана</div>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+          <span style="color:var(--muted2)">ПП (накопленный итог за неделю)</span>
+          <span style="font-weight:700">{{ report.pp_plan_pct|floatformat:1 }}%</span>
+        </div>
+        <div style="height:8px;background:var(--surface-h);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:{{ report.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:4px"></div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+          <span style="color:var(--muted2)">Привата (накопленный итог за неделю)</span>
+          <span style="font-weight:700">{{ report.privat_plan_pct|floatformat:1 }}%</span>
+        </div>
+        <div style="height:8px;background:var(--surface-h);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:{{ report.privat_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent2);border-radius:4px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cash flow details ─────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Детализация Cash Flow</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="padding:14px;background:var(--green-dim);border:1px solid rgba(34,197,94,.2);border-radius:var(--r)">
+        <div style="font-size:11px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Поступления</div>
+        <div style="font-size:22px;font-weight:700;color:var(--green)">+{{ report.cash_flow_income|floatformat:2 }} $</div>
+      </div>
+      <div style="padding:14px;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);border-radius:var(--r)">
+        <div style="font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Расходы / выплаты</div>
+        <div style="font-size:22px;font-weight:700;color:var(--red)">−{{ report.cash_flow_expenses|floatformat:2 }} $</div>
+      </div>
+    </div>
+    {% if report.finance_entry and report.finance_entry.kb_screenshot %}
+    <div style="margin-top:14px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);font-size:13px;color:var(--muted2)">
+      📎 <a href="{{ report.finance_entry.kb_screenshot.url }}" target="_blank" style="color:var(--accent);text-decoration:none">Скрин с КБ — просмотреть</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Raw report text ───────────────────────────────────────────────────── -->
+  {% if report.report_text %}
+  <div class="card" style="margin-bottom:20px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:14px">Текст отчёта (для Telegram)</div>
+    <pre style="font-family:inherit;font-size:13px;color:var(--text-2);white-space:pre-wrap;line-height:1.7;background:var(--surface-h);border-radius:var(--r);padding:16px">{{ report.report_text }}</pre>
+  </div>
+  {% endif %}
+
+  <!-- ── Actions ───────────────────────────────────────────────────────────── -->
+  {% if membership.is_owner %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <form method="post" action="{% url 'crm:generate_report' report.date|date:'Y-m-d' %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-secondary">🔄 Пересформировать отчёт</button>
+    </form>
+    <a href="{% url 'crm:entry_finance' %}?date={{ report.date|date:'Y-m-d' }}" class="btn btn-secondary">Изменить CF</a>
+    <a href="{% url 'crm:entry_apps' %}?date={{ report.date|date:'Y-m-d' }}" class="btn btn-secondary">Изменить заявки</a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

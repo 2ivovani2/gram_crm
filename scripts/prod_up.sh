@@ -81,7 +81,10 @@ else
     ok "SSL certificate generated: $CERT_FILE"
 fi
 
-# ── 4. Build images ────────────────────────────────────────────────────────────
+# ── 4. Ensure media directory exists ──────────────────────────────────────────
+mkdir -p "$PROJECT_DIR/media"
+
+# ── 5. Build images ────────────────────────────────────────────────────────────
 log "Building Docker images ..."
 $COMPOSE build
 
@@ -144,7 +147,9 @@ echo "╔═══════════════════════�
 echo "║  Production stack ready.                                 ║"
 printf "║  Bot env   : %-43s║\n" "prod (production bot)"
 printf "║  Webhook   : %-43s║\n" "$WEBHOOK_URL"
-printf "║  Admin     : %-43s║\n" "https://${VPS_IP}/admin/"
+printf "║  Admin     : %-43s║\n" "https://${VPS_IP}/django-admin/"
+printf "║  CRM       : %-43s║\n" "https://${VPS_IP}/crm/"
+printf "║  Stats     : %-43s║\n" "https://${VPS_IP}/stats/"
 if [ "$WEBHOOK_REGISTERED" = "true" ]; then
     echo "║  Webhook   : registered ✓                                ║"
 else

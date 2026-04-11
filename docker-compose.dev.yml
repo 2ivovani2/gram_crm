@@ -1,5 +1,8 @@
 # Dev overrides. Applied on top of docker-compose.yml.
 #
+# In dev all traffic goes through ngrok — no direct localhost:8000 exposure.
+# Access the app at https://<NGROK_DOMAIN> (set in .env).
+#
 # Usage (via Makefile):
 #   make dev
 #
@@ -7,9 +10,6 @@
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml \
 #     -f docker-compose.ngrok.yml up -d \
 #     postgres redis ngrok web celery_worker celery_beat
-#
-# Note: nginx is intentionally excluded from the dev startup command.
-# The web service is accessed directly on localhost:8000.
 
 services:
   web:
@@ -19,8 +19,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
       RUN_MIGRATIONS: "true"
-    ports:
-      - "8000:8000"
+    # No ports exposed — access via ngrok tunnel only
 
   celery_worker:
     command: celery -A config.celery worker -l debug -c 2 -Q celery,default,broadcasts

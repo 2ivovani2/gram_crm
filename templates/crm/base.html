@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>{% block title %}GRAMLY CRM{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #07090f;
+  --bg-2:        #0d1017;
+  --surface:     rgba(255,255,255,0.04);
+  --surface-h:   rgba(255,255,255,0.07);
+  --surface-2:   rgba(255,255,255,0.06);
+  --border:      rgba(255,255,255,0.08);
+  --border-h:    rgba(0,212,255,0.28);
+  --accent:      #00d4ff;
+  --accent-dim:  rgba(0,212,255,0.12);
+  --accent2:     #7c3aed;
+  --green:       #22c55e;
+  --green-dim:   rgba(34,197,94,0.12);
+  --red:         #ef4444;
+  --red-dim:     rgba(239,68,68,0.12);
+  --amber:       #f59e0b;
+  --amber-dim:   rgba(245,158,11,0.12);
+  --text:        #f1f5f9;
+  --text-2:      #cbd5e1;
+  --muted:       #64748b;
+  --muted2:      #94a3b8;
+  --r:           10px;
+  --r-lg:        16px;
+  --sidebar-w:   240px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.layout { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0;
+  height: 100vh;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+}
+.sidebar-brand-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.sidebar-brand-text { line-height: 1.2; }
+.sidebar-brand-name { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -.3px; }
+.sidebar-brand-sub  { font-size: 11px; color: var(--muted); }
+
+.sidebar-ws {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-ws-label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 4px; }
+.sidebar-ws-name  { font-size: 13px; font-weight: 600; color: var(--text-2); display: flex; align-items: center; justify-content: space-between; }
+.sidebar-ws-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+
+.sidebar-nav { flex: 1; padding: 12px 8px; }
+.sidebar-section { margin-bottom: 20px; }
+.sidebar-section-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--muted); padding: 0 8px; margin-bottom: 4px;
+}
+.sidebar-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r);
+  text-decoration: none; color: var(--muted2);
+  font-size: 13.5px; font-weight: 500;
+  transition: all .15s ease;
+  cursor: pointer;
+}
+.sidebar-item:hover { background: var(--surface-h); color: var(--text); }
+.sidebar-item.active { background: var(--accent-dim); color: var(--accent); }
+.sidebar-item svg { width: 16px; height: 16px; flex-shrink: 0; opacity: .8; }
+.sidebar-item.active svg { opacity: 1; }
+
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-user {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px;
+}
+.sidebar-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: white; flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name { font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-user-role { font-size: 11px; color: var(--muted); }
+.logout-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  background: none; border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer;
+  transition: all .15s; flex-shrink: 0;
+}
+.logout-btn:hover { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+
+/* ── Main content ────────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+}
+
+.topbar {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(7,9,15,.8);
+  backdrop-filter: blur(20px);
+  display: flex; align-items: center;
+  padding: 0 28px;
+  position: sticky; top: 0; z-index: 40;
+  gap: 16px;
+}
+.topbar-title { font-size: 15px; font-weight: 600; color: var(--text); flex: 1; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+.content { flex: 1; padding: 28px; max-width: 1200px; width: 100%; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px 24px;
+}
+.card-title { font-size: 13px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.card-value { font-size: 28px; font-weight: 800; color: var(--text); letter-spacing: -.5px; }
+.card-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+
+.card-accent  { border-color: rgba(0,212,255,.2); background: rgba(0,212,255,.04); }
+.card-green   { border-color: rgba(34,197,94,.2); background: rgba(34,197,94,.04); }
+.card-amber   { border-color: rgba(245,158,11,.2); background: rgba(245,158,11,.04); }
+.card-red     { border-color: rgba(239,68,68,.2);  background: rgba(239,68,68,.04); }
+.card-purple  { border-color: rgba(124,58,237,.2); background: rgba(124,58,237,.04); }
+
+/* ── Section header ──────────────────────────────────────────────────────── */
+.section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.section-hdr h2 { font-size: 17px; font-weight: 700; color: var(--text); }
+
+/* ── Status badge ────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+}
+.badge-green  { background: var(--green-dim); color: var(--green); }
+.badge-red    { background: var(--red-dim);   color: var(--red); }
+.badge-amber  { background: var(--amber-dim); color: var(--amber); }
+.badge-blue   { background: var(--accent-dim); color: var(--accent); }
+.badge-muted  { background: var(--surface-h); color: var(--muted2); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px; border-radius: var(--r);
+  font-size: 13.5px; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+  border: none; transition: all .15s ease;
+  font-family: inherit;
+}
+.btn-primary {
+  background: var(--accent); color: #07090f;
+}
+.btn-primary:hover { background: #22d9ff; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,.3); }
+.btn-secondary {
+  background: var(--surface-h); color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--surface-2); border-color: var(--border-h); }
+.btn-danger {
+  background: var(--red-dim); color: var(--red); border: 1px solid rgba(239,68,68,.3);
+}
+.btn-danger:hover { background: rgba(239,68,68,.2); }
+.btn-sm { padding: 6px 12px; font-size: 12.5px; }
+.btn-icon { padding: 8px; }
+
+/* ── Forms ───────────────────────────────────────────────────────────────── */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; font-size: 13px; font-weight: 600; color: var(--text-2);
+  margin-bottom: 6px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  background: var(--surface-h);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 9px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--accent);
+  background: rgba(0,212,255,.04);
+}
+.form-input::placeholder, .form-textarea::placeholder { color: var(--muted); }
+.form-select option { background: #1a1f2e; }
+.form-help { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.form-error { font-size: 11.5px; color: var(--red); margin-top: 4px; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: var(--r-lg); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; }
+th {
+  padding: 11px 16px; text-align: left;
+  font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+td {
+  padding: 12px 16px; font-size: 13.5px; color: var(--text-2);
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface); }
+
+/* ── Messages ────────────────────────────────────────────────────────────── */
+.messages { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
+.msg {
+  padding: 12px 16px; border-radius: var(--r);
+  font-size: 13.5px; display: flex; align-items: center; gap: 10px;
+}
+.msg-success { background: var(--green-dim); border: 1px solid rgba(34,197,94,.3); color: var(--green); }
+.msg-error   { background: var(--red-dim);   border: 1px solid rgba(239,68,68,.3); color: var(--red); }
+.msg-warning { background: var(--amber-dim); border: 1px solid rgba(245,158,11,.3); color: var(--amber); }
+
+/* ── Entry status cards ──────────────────────────────────────────────────── */
+.entry-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.entry-status-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.entry-status-card.done   { border-color: rgba(34,197,94,.25); background: rgba(34,197,94,.04); }
+.entry-status-card.pending { border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.04); }
+.entry-status-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.entry-status-who   { font-size: 12px; color: var(--muted); }
+.entry-status-icon  { font-size: 28px; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); transition: transform .25s; }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .entry-status-grid { grid-template-columns: 1fr; }
+  .content { padding: 16px; }
+}
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <a href="{% url 'crm:dashboard' %}" class="sidebar-brand">
+      <div class="sidebar-brand-icon">📊</div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name">GRAMLY CRM</div>
+        <div class="sidebar-brand-sub">Финансовый учёт</div>
+      </div>
+    </a>
+
+    {% if workspace %}
+    <div class="sidebar-ws">
+      <div class="sidebar-ws-label">Пространство</div>
+      <div class="sidebar-ws-name">
+        <span>{{ workspace.name }}</span>
+        {% if all_workspaces|length > 1 %}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="cursor:pointer;opacity:.5" onclick="document.getElementById('ws-switcher').classList.toggle('open')">
+          <path d="M7 15l5 5 5-5M7 9l5-5 5 5"/>
+        </svg>
+        {% endif %}
+      </div>
+      {% if all_workspaces|length > 1 %}
+      <div id="ws-switcher" style="display:none;margin-top:8px">
+        {% for ws in all_workspaces %}
+        <form method="post" action="{% url 'crm:switch_workspace' %}">
+          {% csrf_token %}
+          <input type="hidden" name="workspace_id" value="{{ ws.id }}"/>
+          <input type="hidden" name="next" value="{{ request.path }}"/>
+          <button type="submit" class="sidebar-item" style="width:100%;text-align:left;{% if ws == workspace %}color:var(--accent){% endif %}">
+            {{ ws.name }}
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Обзор</div>
+        <a href="{% url 'crm:dashboard' %}" class="sidebar-item {% block nav_dashboard %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          Дашборд
+        </a>
+        {% if is_owner %}
+        <a href="{% url 'crm:history' %}" class="sidebar-item {% block nav_history %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          История
+        </a>
+        {% endif %}
+      </div>
+
+      {% if is_owner %}
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Внести данные</div>
+        <a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+          </svg>
+          Cash Flow
+        </a>
+        <a href="{% url 'crm:entry_apps' %}" class="sidebar-item {% block nav_apps %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 12h6M9 16h6M9 8h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+          </svg>
+          Заявки
+        </a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Администрирование</div>
+        <a href="{% url 'crm:admin' %}" class="sidebar-item {% block nav_admin %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          Управление
+        </a>
+        <a href="{% url 'crm:admin_members' %}" class="sidebar-item {% block nav_members %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          Участники
+        </a>
+        <a href="{% url 'crm:admin_plans' %}" class="sidebar-item {% block nav_plans %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+          </svg>
+          Планы
+        </a>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Экспорт</div>
+        <a href="{% url 'crm:export' %}" class="sidebar-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 15V3m0 12l-3-3m3 3l3-3M2 17l.621 2.485A2 2 0 004.561 21H19.44a2 2 0 001.94-1.515L22 17"/>
+          </svg>
+          Excel
+        </a>
+      </div>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-avatar">{{ crm_user.display_name|first|upper }}</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">{{ crm_user.display_name }}</div>
+          <div class="sidebar-user-role">
+            {% if is_owner %}{{ membership.get_role_display }}{% else %}Только просмотр{% endif %}
+          </div>
+        </div>
+        <form method="post" action="{% url 'crm:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="logout-btn" title="Выйти">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <button class="btn btn-icon btn-secondary" id="sidebar-toggle" style="display:none" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12h18M3 6h18M3 18h18"/>
+        </svg>
+      </button>
+      <span class="topbar-title">{% block page_title %}{% endblock %}</span>
+      <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
+    </div>
+
+    <div class="content">
+      {% if messages %}
+      <div class="messages">
+        {% for msg in messages %}
+        <div class="msg {% if msg.tags == 'success' %}msg-success{% elif msg.tags == 'error' %}msg-error{% else %}msg-warning{% endif %}">
+          {% if msg.tags == 'success' %}✅{% elif msg.tags == 'error' %}❌{% else %}⚠️{% endif %}
+          {{ msg }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Mobile sidebar toggle
+if (window.innerWidth <= 768) {
+  document.getElementById('sidebar-toggle').style.display = 'flex';
+}
+window.addEventListener('resize', () => {
+  const toggle = document.getElementById('sidebar-toggle');
+  if (toggle) toggle.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+});
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs logs-prod webhook-info help
+.PHONY: dev dev-down prod prod-down logs logs-prod webhook-info crm-setup help
 
 COMPOSE_DEV = docker compose \
 	-f docker-compose.yml \
@@ -41,6 +41,10 @@ logs-prod:
 ## Show current Telegram webhook info for the active bot
 webhook-info:
 	$(COMPOSE_DEV) exec web python manage.py setup_webhook --info
+
+## Setup CRM workspace. Add owner: make crm-setup OWNER=<telegram_id>
+crm-setup:
+	$(COMPOSE_DEV) exec web python manage.py setup_crm $(if $(OWNER),--add-owner $(OWNER),)
 
 ## Show available targets
 help:

@@ -1,0 +1,125 @@
+{% extends "crm/base.html" %}
+{% block title %}Участники — GRAMLY CRM{% endblock %}
+{% block page_title %}Управление участниками{% endblock %}
+{% block nav_members %}active{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:flex-start">
+
+  <!-- ── Members list ────────────────────────────────────────────────────── -->
+  <div>
+    <div class="section-hdr">
+      <h2>Участники пространства</h2>
+      <span style="font-size:13px;color:var(--muted)">{{ members|length }} участников</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Участник</th>
+            <th>Telegram ID</th>
+            <th>Роль</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+          <tr>
+            <td>
+              <div style="font-weight:600;color:var(--text)">{{ m.user.display_name }}</div>
+              {% if m.user.telegram_username %}
+              <div style="font-size:11px;color:var(--muted)">@{{ m.user.telegram_username }}</div>
+              {% endif %}
+            </td>
+            <td style="font-family:monospace;font-size:12px;color:var(--muted2)">{{ m.user.telegram_id }}</td>
+            <td>
+              {% if m.role == 'owner' %}<span class="badge badge-blue">👑 Владелец</span>
+              {% elif m.role == 'finance' %}<span class="badge badge-green">💳 Финансы</span>
+              {% elif m.role == 'applications' %}<span class="badge badge-amber">📋 Заявки</span>
+              {% else %}<span class="badge badge-muted">👁 Наблюдатель</span>{% endif %}
+            </td>
+            <td>
+              {% if m.is_active %}<span class="badge badge-green">Активен</span>
+              {% else %}<span class="badge badge-muted">Отозван</span>{% endif %}
+            </td>
+            <td>
+              {% if m.user.pk != crm_user.pk %}
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <!-- Role change inline form -->
+                <form method="post" style="display:inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="change_role"/>
+                  <input type="hidden" name="user_id" value="{{ m.user.pk }}"/>
+                  <select name="role" class="form-select" style="padding:4px 8px;font-size:12px;width:auto" onchange="this.form.submit()">
+                    <option value="owner" {% if m.role == 'owner' %}selected{% endif %}>Владелец</option>
+                    <option value="finance" {% if m.role == 'finance' %}selected{% endif %}>Финансы</option>
+                    <option value="applications" {% if m.role == 'applications' %}selected{% endif %}>Заявки</option>
+                    <option value="viewer" {% if m.role == 'viewer' %}selected{% endif %}>Наблюдатель</option>
+                  </select>
+                </form>
+                {% if m.is_active %}
+                <form method="post" style="display:inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="deactivate"/>
+                  <input type="hidden" name="member_id" value="{{ m.pk }}"/>
+                  <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Отозвать доступ?')">
+                    Отозвать
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+              {% else %}
+              <span style="font-size:12px;color:var(--muted)">Это вы</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Add member ──────────────────────────────────────────────────────── -->
+  <div class="card" style="position:sticky;top:76px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Добавить участника</div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="add"/>
+
+      <div class="form-group">
+        <label class="form-label">Telegram ID</label>
+        <input type="number" name="telegram_id" class="form-input" placeholder="123456789" required/>
+        <div class="form-help">
+          Числовой Telegram ID. Пользователь должен быть уже зарегистрирован через бот.
+        </div>
+        {% if add_form.telegram_id.errors %}
+        <div class="form-error">{{ add_form.telegram_id.errors.0 }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Роль</label>
+        <select name="role" class="form-select">
+          <option value="owner">👑 Главный админ (Владелец)</option>
+          <option value="finance">💳 Финансовый аналитик</option>
+          <option value="applications" selected>📋 Менеджер по заявкам</option>
+          <option value="viewer">👁 Наблюдатель</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%">Добавить участника</button>
+    </form>
+
+    <div style="margin-top:16px;padding:12px;background:var(--accent-dim);border-radius:var(--r);font-size:12px;color:var(--muted2);line-height:1.6">
+      <strong style="color:var(--accent)">Роли:</strong><br>
+      👑 <strong>Владелец</strong> — полный доступ, получает все отчёты<br>
+      💳 <strong>Финансы</strong> — вносит Cash Flow данные<br>
+      📋 <strong>Заявки</strong> — вносит данные по заявкам<br>
+      👁 <strong>Наблюдатель</strong> — только просмотр
+    </div>
+  </div>
+
+</div>
+{% endblock %}

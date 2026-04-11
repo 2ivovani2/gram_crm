@@ -1,0 +1,13 @@
+{% extends "crm/base.html" %}
+{% block title %}Нет доступа — GRAMLY CRM{% endblock %}
+{% block page_title %}Доступ запрещён{% endblock %}
+{% block content %}
+<div style="text-align:center;padding:60px 20px">
+  <div style="font-size:56px;margin-bottom:16px">🚫</div>
+  <h2 style="font-size:22px;font-weight:800;margin-bottom:10px">Нет прав</h2>
+  <p style="font-size:14px;color:var(--muted2);max-width:360px;margin:0 auto 24px">
+    Эта страница доступна только Главному администратору пространства.
+  </p>
+  <a href="{% url 'crm:dashboard' %}" class="btn btn-secondary">← На дашборд</a>
+</div>
+{% endblock %}

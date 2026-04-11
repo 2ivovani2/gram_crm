@@ -1,0 +1,119 @@
+{% extends "crm/base.html" %}
+{% block title %}Cash Flow — GRAMLY CRM{% endblock %}
+{% block page_title %}Внести данные — Cash Flow{% endblock %}
+{% block nav_finance %}active{% endblock %}
+
+{% block content %}
+<div style="max-width:600px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+    <a href="{% url 'crm:dashboard' %}" style="color:var(--muted);text-decoration:none;font-size:13px">← Дашборд</a>
+    <span style="color:var(--border)">/</span>
+    <span style="font-size:13px;color:var(--muted2)">{{ entry_date|date:"d.m.Y" }}</span>
+    {% if existing %}<span class="badge badge-amber">Редактирование</span>{% else %}<span class="badge badge-blue">Новая запись</span>{% endif %}
+  </div>
+
+  <div class="card">
+    <div style="margin-bottom:24px">
+      <h2 style="font-size:18px;font-weight:700;margin-bottom:4px">💳 Cash Flow и финансы</h2>
+      <p style="font-size:13px;color:var(--muted2)">
+        Данные за <strong>{{ entry_date|date:"d F Y" }}</strong>.
+        После сохранения — автоматически сформируется отчёт (если заявки тоже внесены).
+      </p>
+    </div>
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="hidden" name="entry_date" value="{{ entry_date|date:'Y-m-d' }}"/>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label class="form-label">💰 Сумма поступлений ($)</label>
+          <input type="number" name="income" step="0.01" min="0" class="form-input"
+                 value="{{ form.income.value|default:'0.00' }}" placeholder="0.00" required/>
+          {% if form.income.errors %}<div class="form-error">{{ form.income.errors.0 }}</div>{% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">📤 Расходы / выплаты ($)</label>
+          <input type="number" name="expenses" step="0.01" min="0" class="form-input"
+                 value="{{ form.expenses.value|default:'0.00' }}" placeholder="0.00" required/>
+          {% if form.expenses.errors %}<div class="form-error">{{ form.expenses.errors.0 }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div style="background:var(--surface-h);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;font-size:13px">
+        <span style="color:var(--muted)">Сальдо = </span>
+        <span id="balance-preview" style="font-weight:700;color:var(--green)">0.00 $</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group">
+          <label class="form-label">📈 Заработок с ПП ($)</label>
+          <input type="number" name="pp_earnings" step="0.01" min="0" class="form-input"
+                 value="{{ form.pp_earnings.value|default:'0.00' }}" placeholder="0.00" required/>
+          {% if form.pp_earnings.errors %}<div class="form-error">{{ form.pp_earnings.errors.0 }}</div>{% endif %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">🏦 Заработок с Привата ($)</label>
+          <input type="number" name="privat_earnings" step="0.01" min="0" class="form-input"
+                 value="{{ form.privat_earnings.value|default:'0.00' }}" placeholder="0.00" required/>
+          {% if form.privat_earnings.errors %}<div class="form-error">{{ form.privat_earnings.errors.0 }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">📎 Скрин с КБ (файл)</label>
+        {% if existing and existing.kb_screenshot %}
+        <div style="margin-bottom:8px;padding:8px 12px;background:var(--surface-h);border-radius:var(--r);font-size:12.5px;color:var(--muted2);display:flex;align-items:center;gap:8px">
+          <span>📄</span>
+          <span>Текущий файл: <a href="{{ existing.kb_screenshot.url }}" target="_blank" style="color:var(--accent);text-decoration:none">просмотреть</a></span>
+        </div>
+        {% endif %}
+        <input type="file" name="kb_screenshot" accept="image/*,.pdf" class="form-input"
+               style="padding:6px 14px;cursor:pointer"/>
+        <div class="form-help">JPG, PNG или PDF. Замените текущий скрин при необходимости.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">📝 Примечания</label>
+        <textarea name="notes" rows="3" class="form-textarea" placeholder="Дополнительные комментарии...">{{ form.notes.value|default:'' }}</textarea>
+      </div>
+
+      <div style="display:flex;gap:12px;margin-top:8px">
+        <button type="submit" class="btn btn-primary">
+          {% if existing %}Сохранить изменения{% else %}Внести данные{% endif %}
+        </button>
+        <a href="{% url 'crm:dashboard' %}" class="btn btn-secondary">Отмена</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Date picker for other dates -->
+  <div style="margin-top:20px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Внести за другую дату:</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="date" id="other-date" class="form-input" style="width:auto"
+             value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"/>
+      <button class="btn btn-secondary btn-sm" onclick="goToDate()">Перейти</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateBalance() {
+  const income   = parseFloat(document.querySelector('[name=income]').value)   || 0;
+  const expenses = parseFloat(document.querySelector('[name=expenses]').value) || 0;
+  const balance  = income - expenses;
+  const el = document.getElementById('balance-preview');
+  el.textContent = (balance >= 0 ? '+' : '') + balance.toFixed(2) + ' $';
+  el.style.color = balance >= 0 ? 'var(--green)' : 'var(--red)';
+}
+document.querySelector('[name=income]').addEventListener('input', updateBalance);
+document.querySelector('[name=expenses]').addEventListener('input', updateBalance);
+updateBalance();
+
+function goToDate() {
+  const date = document.getElementById('other-date').value;
+  if (date) window.location.href = '{% url "crm:entry_finance" %}?date=' + date;
+}
+</script>
+{% endblock %}

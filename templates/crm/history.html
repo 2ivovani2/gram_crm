@@ -1,0 +1,117 @@
+{% extends "crm/base.html" %}
+{% block title %}История — GRAMLY CRM{% endblock %}
+{% block page_title %}История данных{% endblock %}
+{% block nav_history %}active{% endblock %}
+
+{% block topbar_actions %}
+<a href="{% url 'crm:export' %}?start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
+  📥 Экспорт Excel
+</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Filters ─────────────────────────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:20px">
+  <form method="get" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+    <div>
+      <label class="form-label">Начало</label>
+      <input type="date" name="start" value="{{ start|date:'Y-m-d' }}" class="form-input" style="width:auto"/>
+    </div>
+    <div>
+      <label class="form-label">Конец</label>
+      <input type="date" name="end" value="{{ end|date:'Y-m-d' }}" class="form-input" style="width:auto"/>
+    </div>
+    <button type="submit" class="btn btn-primary">Применить</button>
+    <a href="{% url 'crm:history' %}" class="btn btn-secondary">Сбросить</a>
+  </form>
+</div>
+
+<div style="font-size:13px;color:var(--muted);margin-bottom:16px">
+  Период: {{ start|date:"d.m.Y" }} — {{ end|date:"d.m.Y" }} · {{ entries|length }} дней
+</div>
+
+<!-- ── Entries table ───────────────────────────────────────────────────────── -->
+{% if entries %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Дата</th>
+        <th>Cash Flow</th>
+        <th>Заявки</th>
+        <th>Сальдо</th>
+        <th>ПП ($)</th>
+        <th>Привата ($)</th>
+        <th>Отчёт</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td style="font-weight:600;color:var(--text);white-space:nowrap">
+          {{ entry.date|date:"d.m.Y" }}
+          {% if entry.date == today %}<span class="badge badge-blue" style="margin-left:4px;font-size:10px">Сегодня</span>{% endif %}
+        </td>
+        <td>
+          {% if entry.finance %}
+          <span class="badge badge-green">✅ Внесено</span>
+          {% else %}
+          <span class="badge badge-muted">— Нет</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if entry.application %}
+          <span class="badge badge-green">✅ Внесено</span>
+          {% else %}
+          <span class="badge badge-muted">— Нет</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if entry.finance %}
+          <span style="font-weight:700;color:{% if entry.finance.balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+            {% if entry.finance.balance >= 0 %}+{% endif %}{{ entry.finance.balance|floatformat:2 }} $
+          </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ entry.finance.pp_earnings|floatformat:2|default:"—" }}</td>
+        <td>{{ entry.finance.privat_earnings|floatformat:2|default:"—" }}</td>
+        <td>
+          {% if entry.report %}
+          <span class="badge badge-blue">✅ Готов</span>
+          {% else %}
+          <span class="badge badge-muted">Нет</span>
+          {% endif %}
+        </td>
+        <td style="white-space:nowrap">
+          {% if entry.finance %}
+          <a href="{% url 'crm:entry_finance' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
+          {% endif %}
+          {% if entry.application %}
+          <a href="{% url 'crm:entry_apps' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">Заявки</a>
+          {% endif %}
+          {% if entry.report %}
+          <a href="{% url 'crm:report_detail' entry.report.pk %}" style="color:var(--muted2);font-size:12px;text-decoration:none">Отчёт →</a>
+          {% endif %}
+          {% if is_owner and entry.finance and entry.application and not entry.report %}
+          <form method="post" action="{% url 'crm:generate_report' entry.date|date:'Y-m-d' %}" style="display:inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:11px">Сформировать</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:48px">
+  <div style="font-size:40px;margin-bottom:12px">📭</div>
+  <div style="font-size:15px;font-weight:600;color:var(--text-2)">Нет данных за выбранный период</div>
+  <div style="font-size:13px;color:var(--muted);margin-top:6px">Попробуйте изменить даты фильтра</div>
+</div>
+{% endif %}
+
+{% endblock %}

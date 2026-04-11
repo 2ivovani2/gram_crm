@@ -14,7 +14,7 @@ services:
     # Tunnel traffic to the web service using Docker's internal hostname.
     # ngrok does not depend on web being ready — it establishes the tunnel
     # and queues requests until the target becomes available.
-    command: http web:8000 --log stdout
+    command: http web:8000 --domain=${NGROK_DOMAIN} --log stdout
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     ports:
