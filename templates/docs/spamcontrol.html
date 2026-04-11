@@ -1,0 +1,161 @@
+{% extends "docs/base.html" %}
+{% block title %}SpamControl: Админка{% endblock %}
+{% block nav_spam %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">SpamControl</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">SpamControl: Админка</h1>
+<p class="page-lead">Это главный инструмент управления воркерами. Здесь вы добавляете людей, выдаёте им рабочие ссылки, устанавливаете ставки и смотрите статистику.</p>
+
+<h2 class="section-title"><span class="icon">🗂️</span> Структура системы</h2>
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">👤</div>
+    <div class="card-title">Пользователи</div>
+    <div class="card-text">Все люди в системе. У каждого есть роль (Воркер / Куратор / Администратор) и статус (активен / неактивен / заблокирован).</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔑</div>
+    <div class="card-title">Инвайт-ключи</div>
+    <div class="card-text">Без инвайт-ключа нельзя активировать аккаунт в боте. Вы создаёте ключи и раздаёте нужным людям.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔗</div>
+    <div class="card-title">Рабочие ссылки</div>
+    <div class="card-text">Каждому воркеру выдаётся рабочая ссылка. По ней считается, сколько подписчиков он привлёк.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📢</div>
+    <div class="card-title">Рассылки</div>
+    <div class="card-text">Массовые сообщения всем или отдельным группам пользователей через Telegram.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">➕</span> Как добавить нового воркера</h2>
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Создайте инвайт-ключ</div>
+      <div class="step-text">Перейдите в <strong>Инвайты → Инвайт-ключи → Добавить</strong>. Укажите название (например, имя воркера), максимальное число использований (обычно 1) и срок действия при необходимости.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Передайте ключ воркеру</div>
+      <div class="step-text">Скопируйте созданный ключ и отправьте его воркеру. Воркер должен написать боту и ввести этот ключ для активации аккаунта.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Воркер активирует аккаунт</div>
+      <div class="step-text">После активации воркер появится в списке пользователей со статусом <span class="badge badge-green">active</span>. Он сможет видеть свою статистику и баланс в боте.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Выдайте рабочую ссылку</div>
+      <div class="step-text">В Telegram-боте перейдите в раздел управления пользователем и установите рабочую ссылку. Также можно найти пользователя через <strong>Пользователи</strong> в этой панели и нажать «Edit» — там есть поле «work_url».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <div class="step-title">Установите ставку</div>
+      <div class="step-text">В той же карточке пользователя укажите <code>personal_rate</code> — сколько рублей воркер зарабатывает за каждого привлечённого подписчика.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">👤</span> Управление пользователем</h2>
+<p>Откройте <strong>Пользователи</strong> → найдите нужного через поиск → нажмите на имя.</p>
+
+<h3 class="sub-title">Основные поля</h3>
+<table class="role-table">
+  <thead><tr><th>Поле</th><th>Что означает</th></tr></thead>
+  <tbody>
+    <tr><td><code>role</code></td><td>Роль: <strong>worker</strong> — обычный воркер, <strong>curator</strong> — управляет другими воркерами, <strong>admin</strong> — полный доступ</td></tr>
+    <tr><td><code>status</code></td><td><strong>active</strong> — работает; <strong>inactive</strong> — временно отключён; <strong>banned</strong> — заблокирован навсегда</td></tr>
+    <tr><td><code>work_url</code></td><td>Рабочая ссылка (денормализованный кэш — меняйте через бота или через кнопку «Заменить ссылку»)</td></tr>
+    <tr><td><code>attracted_count</code></td><td>Число привлечённых подписчиков по активной ссылке (кэш)</td></tr>
+    <tr><td><code>personal_rate</code></td><td>Ставка за одного подписчика (руб/чел) — личный заработок воркера</td></tr>
+    <tr><td><code>referral_rate</code></td><td>Ставка за подписчиков, привлечённых рефералами этого воркера</td></tr>
+    <tr><td><code>balance</code></td><td>Текущий баланс (пересчитывается автоматически при изменении данных)</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Рабочие ссылки — меняйте только через бота</div>
+    Когда ссылка меняется, старый счётчик подписчиков замораживается (история сохраняется), новая ссылка начинает считать с нуля. Это важно для корректного расчёта баланса. Используйте функцию «Заменить ссылку» в Telegram-боте, а не прямое редактирование поля в этой панели.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📊</span> Просмотр статистики</h2>
+<p>Основная статистика видна прямо в карточке пользователя. Блок <strong>«Начисления (расчёт)»</strong> показывает:</p>
+<ul style="margin:0 0 16px 20px;font-size:14.5px;color:var(--text2);line-height:2.1">
+  <li><strong>Личное</strong> — заработано с собственной рабочей ссылки</li>
+  <li><strong>Реферальное</strong> — заработано с подписчиков своих рефералов</li>
+  <li><strong>Начислено</strong> — сумма личного + реферального</li>
+  <li><strong>Выведено</strong> — уже выплачено воркеру</li>
+  <li><strong>Баланс</strong> — доступно к выводу (начислено минус выведено)</li>
+</ul>
+<p>Более детальную статистику смотрите в <strong>Статистика → По пользователям</strong> и <strong>Дневные отчёты</strong>.</p>
+
+<h2 class="section-title"><span class="icon">💸</span> Заявки на вывод</h2>
+<p>Когда воркер запрашивает вывод, заявка появляется в <strong>Выводы → Заявки на вывод</strong>.</p>
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Найдите заявку со статусом Pending</div>
+      <div class="step-text">Все новые заявки отображаются первыми. Статус <span class="badge badge-amber">pending</span> = ожидает обработки.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Проверьте данные</div>
+      <div class="step-text">Убедитесь, что сумма не превышает баланс воркера. Проверьте реквизиты (метод вывода и детали платежа).</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Одобрите или отклоните</div>
+      <div class="step-text">В Telegram-боте (раздел администрирования) нажмите «Одобрить» или «Отклонить». При одобрении сумма автоматически вычтется из баланса воркера и воркер получит уведомление.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📢</span> Рассылки</h2>
+<p>Рассылки создаются через Telegram-бота (раздел администрирования). Здесь в <strong>Рассылки</strong> вы можете видеть статус отправки и логи доставки.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">✅</div>
+    <div class="card-title">Статус рассылки</div>
+    <div class="card-text"><strong>Draft</strong> — создана, не запущена. <strong>Running</strong> — отправляется прямо сейчас. <strong>Done</strong> — завершена. <strong>Failed</strong> — ошибка.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📬</div>
+    <div class="card-title">Логи доставки</div>
+    <div class="card-text">В разделе «Логи доставки» можно посмотреть, кому дошло сообщение, а кому нет (например, если воркер заблокировал бота).</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📅</span> Дневные отчёты</h2>
+<p>В разделе <strong>Статистика → Дневные отчёты</strong> хранятся записи о ежедневной работе. Каждый дневной отчёт содержит данные по клиенту: общее число заявок, ставку клиента, ссылку. На основе этих данных системa начисляет заработок воркерам.</p>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Пропущенные дни</div>
+    Если отчёт за какой-то день не был внесён вовремя, он попадёт в раздел <strong>«Пропущенные дни»</strong>. Данные всё равно можно внести задним числом — воркеры получат доначисление автоматически.
+  </div>
+</div>
+{% endblock %}

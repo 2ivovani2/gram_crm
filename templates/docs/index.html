@@ -1,0 +1,101 @@
+{% extends "docs/base.html" %}
+{% block title %}Документация{% endblock %}
+{% block nav_index %}active{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Документация системы</h1>
+<p class="page-lead">Здесь собраны все инструкции для работы с SpamBotControl и CRM. Выберите нужный раздел — каждый написан простым языком без технического жаргона.</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:36px">
+
+  <a href="/docs/crm/" class="nav-card">
+    <div class="nav-card-icon">📊</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Работа с CRM</div>
+      <div class="nav-card-desc">Как вносить данные, читать отчёты, управлять пространствами и участниками</div>
+    </div>
+  </a>
+
+  <a href="/docs/spamcontrol/" class="nav-card">
+    <div class="nav-card-icon">🤖</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">SpamControl: админка</div>
+      <div class="nav-card-desc">Управление воркерами, ссылками, инвайтами, рассылками и статистикой</div>
+    </div>
+  </a>
+
+  <a href="/docs/rates/" class="nav-card">
+    <div class="nav-card-icon">💰</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Ставки, баланс, выводы</div>
+      <div class="nav-card-desc">Как рассчитывается заработок воркеров, как работают рефералы и заявки на вывод</div>
+    </div>
+  </a>
+
+  <a href="/docs/faq/" class="nav-card">
+    <div class="nav-card-icon">❓</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Частые вопросы</div>
+      <div class="nav-card-desc">Ответы на самые распространённые вопросы по работе с системой</div>
+    </div>
+  </a>
+
+</div>
+
+<h2 class="section-title"><span class="icon">🗺️</span> Как устроена система</h2>
+<p>SpamBotControl состоит из двух независимых инструментов, которые работают вместе:</p>
+
+<div class="card-grid" style="grid-template-columns:1fr 1fr;margin-top:16px">
+  <div class="card">
+    <div class="card-icon">🤖</div>
+    <div class="card-title">Telegram-бот (SpamControl)</div>
+    <div class="card-text">Воркеры и кураторы управляют своими ссылками, видят баланс, запрашивают вывод — всё через бот. Вы управляете ими через <strong>эту админ-панель</strong>.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📊</div>
+    <div class="card-title">CRM (GRAMLY)</div>
+    <div class="card-text">Отдельный инструмент для ежедневного учёта финансов и заявок. Вносятся данные по Cash Flow, заявкам — система сама считает итоги и формирует отчёты.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">👥</span> Кто чем пользуется</h2>
+
+<table class="role-table">
+  <thead>
+    <tr>
+      <th>Роль</th>
+      <th>Telegram-бот</th>
+      <th>CRM</th>
+      <th>Эта панель</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="role-name">Администратор</span></td>
+      <td>Управляет всем через бота</td>
+      <td>Полный доступ (Owner)</td>
+      <td>✅ Полный доступ</td>
+    </tr>
+    <tr>
+      <td><span class="role-name">Куратор</span></td>
+      <td>Управляет воркерами через бота</td>
+      <td>Может быть Finance/Applications</td>
+      <td>Ограниченный</td>
+    </tr>
+    <tr>
+      <td><span class="role-name">Воркер</span></td>
+      <td>Видит свою ссылку и баланс</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">С чего начать</div>
+    Если вы впервые работаете с системой — начните с раздела <a href="/docs/spamcontrol/" style="color:var(--accent)">SpamControl: админка</a>. Там описано, как добавить первых воркеров и выдать им ссылки.
+  </div>
+</div>
+{% endblock %}

@@ -18,6 +18,8 @@ urlpatterns = [
     path("health/", HealthCheckView.as_view(), name="health-check"),
     # CRM web service
     path("crm/", include("apps.crm.urls", namespace="crm")),
+    # Manager documentation (staff only)
+    path("docs/", include("apps.docs.urls", namespace="docs")),
 ]
 
 # Serve media files in development (uploaded CRM screenshots etc.)

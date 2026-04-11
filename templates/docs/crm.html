@@ -1,0 +1,208 @@
+{% extends "docs/base.html" %}
+{% block title %}Работа с CRM{% endblock %}
+{% block nav_crm %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">CRM</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Работа с CRM</h1>
+<p class="page-lead">CRM — это инструмент для ежедневного учёта финансов и заявок. Сюда вносятся данные по деньгам (Cash Flow) и количеству заявок, система автоматически считает итоги и формирует отчёты.</p>
+
+<h2 class="section-title"><span class="icon">🔐</span> Вход в CRM</h2>
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Откройте CRM</div>
+      <div class="step-text">Перейдите по адресу <code>/crm/</code> или нажмите ссылку «Открыть CRM» в боковом меню.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Войдите через Telegram</div>
+      <div class="step-text">Нажмите кнопку «Войти через Telegram» — откроется окно подтверждения. Нажмите «Confirm» в Telegram. Вход произойдёт автоматически.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Попадёте на Dashboard</div>
+      <div class="step-text">Главная страница показывает статус данных за сегодня, последние отчёты и прогресс недельного плана.</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Важно: нужен аккаунт в боте</div>
+    Чтобы войти в CRM, ваш Telegram-аккаунт должен быть зарегистрирован в системе — то есть вы когда-либо запускали нашего бота. Если видите ошибку «не зарегистрированы» — сначала напишите боту /start.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">🏢</span> Пространства (Workspace)</h2>
+<p>CRM поддерживает несколько рабочих пространств. Каждое пространство — это отдельный проект или клиент с независимыми данными, настройками и участниками.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🔄</div>
+    <div class="card-title">Переключение пространства</div>
+    <div class="card-text">Если у вас несколько пространств — в левой панели CRM рядом с названием появится стрелка. Нажмите — выберите нужное. Все данные и доступы переключатся автоматически.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">👤</div>
+    <div class="card-title">Роль в пространстве</div>
+    <div class="card-text">В разных пространствах у вас могут быть разные роли. Ваша текущая роль отображается в левом нижнем углу рядом с именем.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">➕</div>
+    <div class="card-title">Создать пространство</div>
+    <div class="card-text">Новые пространства создаются через эту <a href="/django-admin/crm/workspace/add/" style="color:var(--accent)">Django-панель</a>. Не забудьте после создания добавить себя как Owner.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">👑</span> Роли в CRM</h2>
+<table class="role-table">
+  <thead>
+    <tr><th>Роль</th><th>Что может делать</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="badge badge-blue">Owner</span></td>
+      <td>Всё: вносить данные, смотреть отчёты, управлять участниками, менять планы, экспортировать данные</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-green">Finance</span></td>
+      <td>Только вносить финансовые данные (Cash Flow) — вкладка «Деньги»</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-amber">Applications</span></td>
+      <td>Только вносить данные по заявкам — вкладка «Заявки»</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-purple">Viewer</span></td>
+      <td>Только просматривать Dashboard (без финансовых деталей)</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 class="section-title"><span class="icon">💵</span> Внесение данных: Cash Flow</h2>
+<p>Каждый день нужно вносить финансовые данные. Это делается через меню <strong>«Внести данные → Cash Flow»</strong>.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в Cash Flow</div>
+      <div class="step-text">Нажмите «Cash Flow» в левом меню. По умолчанию откроется форма на сегодняшнюю дату. Для другого дня — выберите дату вверху формы.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Заполните поля</div>
+      <div class="step-text">
+        <strong>Поступления ($)</strong> — сумма всех входящих денег за день<br>
+        <strong>Расходы ($)</strong> — сумма всех выплат и расходов<br>
+        <strong>Заработок ПП ($)</strong> — заработок с партнёрских программ<br>
+        <strong>Заработок Приват ($)</strong> — заработок с Привата<br>
+        <strong>Скриншот с КБ</strong> — фото/скрин для подтверждения
+      </div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Нажмите «Сохранить»</div>
+      <div class="step-text">Данные сохранятся. Если в этот же день уже внесены данные по заявкам — система автоматически сформирует сводный отчёт.</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Редактирование задним числом</div>
+    Данные можно вносить за прошлые даты. Просто выберите нужный день в поле «Дата» вверху формы — данные обновятся, отчёт пересчитается автоматически.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📋</span> Внесение данных: Заявки</h2>
+<p>Параллельно с финансами вносятся данные по заявкам через меню <strong>«Внести данные → Заявки»</strong>.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🔢</div>
+    <div class="card-title">Количество заявок</div>
+    <div class="card-text">Число заявок, обработанных за день. Система автоматически считает средний заработок на одну заявку.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">💸</div>
+    <div class="card-title">Заработок с заявок ($)</div>
+    <div class="card-text">Общая сумма, заработанная с обработки заявок за этот день.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📝</div>
+    <div class="card-title">Примечания</div>
+    <div class="card-text">Необязательное поле. Можно записать что-то важное о дне — особые события, аномалии, пояснения.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📈</span> Отчёты и история</h2>
+<p>Когда за один день внесены и финансы, и заявки — система автоматически формирует <strong>Сводный отчёт</strong>. Он включает все показатели за день плюс процент выполнения недельного плана.</p>
+
+<h3 class="sub-title">Где смотреть отчёты</h3>
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Dashboard — сегодня и последние 7 дней</div>
+      <div class="step-text">На главной странице CRM сразу видно: внесены ли сегодня оба блока данных и последние отчёты.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">История — за любой период</div>
+      <div class="step-text">Меню «История» → выберите даты → таблица со всеми днями. Зелёный значок = данные внесены и отчёт готов. Жёлтый = данные частично внесены.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Детальный отчёт</div>
+      <div class="step-text">Нажмите на дату в истории — откроется полный отчёт за день с разбивкой, процентами выполнения плана и готовым текстом для отправки.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📅</span> Недельные планы</h2>
+<p>В разделе <strong>Администрирование → Планы</strong> задаются плановые показатели на каждую неделю. Система сравнивает фактические данные с планом и показывает процент выполнения в каждом отчёте.</p>
+
+<div class="callout success">
+  <span class="callout-icon">✅</span>
+  <div class="callout-body">
+    <div class="callout-title">Подсказка</div>
+    Неделя в системе всегда начинается с понедельника. Если вы вводите план в середине недели — он будет применён к текущей и всем последующим отчётам за эту неделю.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📤</span> Экспорт в Excel</h2>
+<p>Меню <strong>«Экспорт»</strong> — выберите период дат и нажмите «Скачать». Файл Excel содержит все данные за выбранный период: финансы, заявки, балансы, проценты выполнения плана.</p>
+
+<h2 class="section-title"><span class="icon">👥</span> Управление участниками</h2>
+<p>Раздел <strong>Администрирование → Участники</strong> (только Owner). Здесь можно:</p>
+<ul style="margin:0 0 14px 20px;font-size:14.5px;color:var(--text2);line-height:2">
+  <li>Добавить нового участника по его Telegram ID</li>
+  <li>Изменить роль существующего участника</li>
+  <li>Отозвать доступ (участник перестанет видеть данные)</li>
+</ul>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Пользователь должен быть зарегистрирован</div>
+    Добавить участника в CRM можно только если он уже запустил нашего Telegram-бота. Иначе его Telegram ID не будет в базе и система выдаст ошибку.
+  </div>
+</div>
+{% endblock %}

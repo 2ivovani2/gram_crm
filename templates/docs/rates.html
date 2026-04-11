@@ -1,0 +1,151 @@
+{% extends "docs/base.html" %}
+{% block title %}Ставки, баланс и выводы{% endblock %}
+{% block nav_rates %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">Ставки и баланс</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Ставки, баланс и выводы</h1>
+<p class="page-lead">Здесь описано, как в системе считается заработок воркеров — простым языком, без формул. Понимание этой логики поможет избежать ошибок при работе со ставками и выводами.</p>
+
+<h2 class="section-title"><span class="icon">🔗</span> Рабочие ссылки</h2>
+<p>У каждого воркера есть <strong>рабочая ссылка</strong> — это ссылка на Telegram-канал или ресурс, которую воркер распространяет. По ней система считает, сколько подписчиков он привлёк.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">✅</div>
+    <div class="card-title">Активная ссылка</div>
+    <div class="card-text">Текущая рабочая ссылка воркера. Счётчик по ней продолжает расти. У каждого воркера может быть только одна активная ссылка.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🗄️</div>
+    <div class="card-title">Архивные ссылки</div>
+    <div class="card-text">Прошлые ссылки со своими счётчиками. Когда ссылка заменяется — старая уходит в архив, её счётчик <strong>замораживается навсегда</strong>. Эти данные учитываются в балансе.</div>
+  </div>
+</div>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Почему нельзя просто изменить ссылку</div>
+    Если вы меняете ссылку воркеру через «Заменить ссылку» в боте — новая ссылка начинает считать с нуля, но <strong>весь заработок по старой ссылке сохраняется</strong>. Это защита от потери данных. Никогда не обнуляйте счётчик вручную — вы уничтожите историю начислений.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">💡</span> Как считается заработок</h2>
+<p>Заработок воркера складывается из двух частей:</p>
+
+<div class="card-grid" style="grid-template-columns:1fr 1fr">
+  <div class="card" style="border-color:rgba(14,165,233,.2);background:rgba(14,165,233,.04)">
+    <div class="card-icon">👤</div>
+    <div class="card-title">Личный заработок</div>
+    <div class="card-text">
+      Все привлечённые подписчики (по всем ссылкам — и активной, и архивным) × <strong>личная ставка</strong>.<br><br>
+      <em>Пример: 150 подписчиков × 50 ₽ = 7 500 ₽</em>
+    </div>
+  </div>
+  <div class="card" style="border-color:rgba(124,58,237,.2);background:rgba(124,58,237,.04)">
+    <div class="card-icon">🤝</div>
+    <div class="card-title">Реферальный заработок</div>
+    <div class="card-text">
+      Если воркер пригласил других воркеров — он зарабатывает с их подписчиков тоже × <strong>реферальная ставка</strong>.<br><br>
+      <em>Пример: реферал привлёк 100 чел × 10 ₽ = 1 000 ₽</em>
+    </div>
+  </div>
+</div>
+
+<h3 class="sub-title">Итоговый баланс</h3>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px 24px;font-size:14px;color:var(--text2);line-height:2">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <span style="font-size:18px">💰</span>
+    <strong style="color:var(--text)">Начислено</strong>
+    <span style="color:var(--muted)">=</span>
+    <span>Личный заработок <span style="color:var(--muted)">+</span> Реферальный заработок</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <span style="font-size:18px">💸</span>
+    <strong style="color:var(--text)">Выведено</strong>
+    <span style="color:var(--muted)">=</span>
+    <span>Сумма всех одобренных выплат</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+    <span style="font-size:18px">✅</span>
+    <strong style="color:var(--green)">Баланс</strong>
+    <span style="color:var(--muted)">=</span>
+    <span>Начислено <span style="color:var(--muted)">−</span> Выведено <em>(не может быть меньше 0)</em></span>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">⚙️</span> Ставки: что они значат</h2>
+<table class="role-table">
+  <thead><tr><th>Ставка</th><th>Что регулирует</th><th>Пример</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>personal_rate</code></td>
+      <td>Сколько рублей воркер получает за <strong>каждого своего</strong> привлечённого подписчика</td>
+      <td>50 ₽/чел → 200 подписчиков = 10 000 ₽</td>
+    </tr>
+    <tr>
+      <td><code>referral_rate</code></td>
+      <td>Сколько воркер получает за <strong>каждого подписчика своих рефералов</strong></td>
+      <td>10 ₽/чел → реферал привлёк 100 = 1 000 ₽</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Ставки применяются сразу ко всей истории</div>
+    Если вы меняете ставку воркеру — баланс пересчитывается автоматически по новой ставке <em>для всех</em> привлечённых подписчиков (включая архивные ссылки). Это нормальное поведение — ставка всегда одна актуальная.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">🤝</span> Как работают рефералы</h2>
+<p>У каждого воркера есть реферальная ссылка для регистрации. Если другой воркер зарегистрировался по ней — первый воркер становится его «реферрером» и начинает получать надбавку с привлечённых им подписчиков.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Воркер А приглашает Воркера Б</div>
+      <div class="step-text">Воркер А делится своей реферальной ссылкой. Воркер Б регистрируется по ней.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Воркер Б привлекает подписчиков</div>
+      <div class="step-text">Воркер Б работает, у него накапливаются подписчики по его рабочей ссылке.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Воркер А получает надбавку</div>
+      <div class="step-text">За каждого подписчика Воркера Б, Воркер А получает <code>referral_rate</code> рублей. Это не уменьшает заработок Воркера Б — деньги начисляются сверху.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">💳</span> Минимальная сумма вывода</h2>
+<p>По умолчанию минимальная сумма для запроса вывода — <strong>700 ₽</strong>. Если баланс меньше — кнопка вывода в боте неактивна. Изменить это значение можно в коде системы.</p>
+
+<h2 class="section-title"><span class="icon">🛡️</span> Защита от ошибок</h2>
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🔒</div>
+    <div class="card-title">Нельзя вывести больше баланса</div>
+    <div class="card-text">Система не позволит запросить вывод на сумму больше текущего баланса. Это проверяется автоматически.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">⏸️</div>
+    <div class="card-title">Одна заявка за раз</div>
+    <div class="card-text">Воркер не может создать вторую заявку на вывод, пока первая ещё не обработана. Это защита от двойных выплат.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🗄️</div>
+    <div class="card-title">История ссылок сохраняется</div>
+    <div class="card-text">При замене рабочей ссылки все прошлые данные по старой ссылке остаются в архиве. Баланс не обнуляется.</div>
+  </div>
+</div>
+{% endblock %}

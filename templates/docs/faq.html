@@ -1,0 +1,165 @@
+{% extends "docs/base.html" %}
+{% block title %}Частые вопросы{% endblock %}
+{% block nav_faq %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">FAQ</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Частые вопросы</h1>
+<p class="page-lead">Ответы на самые распространённые вопросы по работе с системой. Если вашего вопроса нет — обратитесь к разработчику.</p>
+
+<h2 class="section-title"><span class="icon">🤖</span> Бот и регистрация</h2>
+
+<details class="faq-item">
+  <summary class="faq-q">Воркер говорит, что не может активировать аккаунт. Что делать?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Скорее всего, он вводит инвайт-ключ неправильно или ключ уже использован / истёк. Проверьте в разделе <strong>Инвайты → Инвайт-ключи</strong>: статус ключа, количество использований. Если ключ исчерпан — создайте новый.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Воркер заблокировал бота. Что это значит?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Если воркер нажал «Заблокировать» в Telegram — бот не может ему писать. В карточке пользователя будет флаг <code>is_blocked_bot = Да</code>. Рассылки этому воркеру не доходят. Починить это может только сам воркер, написав боту /start.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Можно ли изменить роль пользователя?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Да. Через Telegram-бот (раздел управления пользователем) или напрямую в этой панели: найдите пользователя → измените поле <code>role</code>. Доступные роли: <strong>worker</strong>, <strong>curator</strong>, <strong>admin</strong>.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Воркер не получает сообщения от бота</summary>
+  <div class="faq-a">
+    Три возможные причины: (1) заблокировал бота — флаг <code>is_blocked_bot</code>; (2) не подписан на канал (если включена подписка-гейт); (3) статус <code>inactive</code> или <code>banned</code>. Проверьте карточку пользователя.
+  </div>
+</details>
+
+<h2 class="section-title"><span class="icon">💰</span> Баланс и выводы</h2>
+
+<details class="faq-item">
+  <summary class="faq-q">Баланс воркера не изменился после внесения отчёта<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Убедитесь, что у воркера установлена ставка (<code>personal_rate &gt; 0</code>). Если ставка равна 0 — начисления будут нулевыми. Также проверьте, что рабочая ссылка активна и счётчик подписчиков больше 0.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Случайно одобрил неправильную заявку на вывод. Как отменить?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Одобренные заявки отменить нельзя — это фиксация факта выплаты. Если выплата не была произведена реально, вам нужно вручную обнулить ситуацию: можно отредактировать запись через Django admin или обратиться к разработчику.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Почему воркер не может запросить вывод, хотя баланс достаточный?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Возможная причина — у него уже есть активная (pending) заявка на вывод. Система разрешает только одну заявку одновременно. Проверьте в разделе <strong>Выводы → Заявки на вывод</strong> — возможно, старую заявку нужно обработать.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Я поменял ставку воркеру — баланс резко изменился. Это правильно?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Да, это правильно. Ставка применяется ко <em>всем</em> привлечённым подписчикам — не только к новым. Система пересчитывает весь баланс по новой ставке автоматически. Это сделано специально, чтобы не вести отдельный учёт «по периодам».
+  </div>
+</details>
+
+<h2 class="section-title"><span class="icon">🔗</span> Рабочие ссылки</h2>
+
+<details class="faq-item">
+  <summary class="faq-q">Как заменить рабочую ссылку воркеру?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Через Telegram-бот: зайдите в управление нужным воркером → «Заменить ссылку» → введите новую ссылку → подтвердите. Старая ссылка уйдёт в архив с замороженным счётчиком, новая начнёт с нуля. Все прошлые начисления сохранятся.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Можно ли удалить рабочую ссылку полностью?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Да. При замене ссылки можно ввести прочерк «-» — это удалит активную ссылку. Старые данные по архивным ссылкам сохранятся. Новая ссылка будет добавлена, когда понадобится.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Почему у воркера нулевой баланс после замены ссылки?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Это может произойти только если кто-то вручную обнулил счётчик или сбросил ставку. При нормальной замене ссылки через бота — история сохраняется. Проверьте в карточке пользователя блок «Начисления» — там видно отдельно личное, реферальное, начислено, выведено.
+  </div>
+</details>
+
+<h2 class="section-title"><span class="icon">📊</span> CRM</h2>
+
+<details class="faq-item">
+  <summary class="faq-q">Вошёл в CRM, но вижу только экран «нет доступа»<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Вы вошли в систему, но у вашего аккаунта нет членства ни в одном рабочем пространстве. Обратитесь к администратору, чтобы вас добавили в нужное пространство через раздел <strong>Администрирование → Участники</strong> в CRM, или через эту панель: <strong>CRM → Участники → Добавить</strong>.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Отчёт за день не сформировался автоматически<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Отчёт формируется только когда <em>оба</em> блока данных внесены за один день: и Cash Flow, и Заявки. Проверьте в разделе «История» — у нужной даты должны быть оба зелёных значка. Если один отсутствует — внесите недостающие данные, отчёт сформируется автоматически.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Можно ли изменить данные уже после того, как отчёт сформирован?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Да. Откройте нужный день через «История» → нажмите на дату → в детальном отчёте есть кнопки «Редактировать финансы» и «Редактировать заявки». После изменений отчёт пересчитается и можно нажать «Переформировать».
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Как добавить нового участника в CRM пространство?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    В CRM: <strong>Администрирование → Участники → поле «Добавить участника»</strong>. Введите Telegram ID человека и выберите роль. Важно: человек должен сначала запустить нашего бота — иначе его ID не будет в базе.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Что такое «пропуск дедлайна» в CRM?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Каждый день данные нужно внести до полуночи по Москве. Если к 00:05 МСК данные не внесены — система фиксирует пропуск и отправляет уведомление владельцам пространства в Telegram. Это не блокирует работу — данные можно внести задним числом.
+  </div>
+</details>
+
+<h2 class="section-title"><span class="icon">🔧</span> Технические вопросы</h2>
+
+<details class="faq-item">
+  <summary class="faq-q">Бот не отвечает / не работает<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Посмотрите логи на сервере: <code>make logs-prod</code>. Проверьте, что сервисы запущены: <code>docker compose ps</code>. Убедитесь, что вебхук Telegram зарегистрирован: <code>make webhook-info-prod</code>.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Как проверить, что вебхук работает?<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    На сервере выполните: <code>make webhook-info-prod</code>. Должно показать URL вебхука (gramly.tech/bot/webhook/) и 0 ошибок. Если есть ошибки — в поле «last_error» будет описание проблемы.
+  </div>
+</details>
+
+<details class="faq-item">
+  <summary class="faq-q">Рассылка зависла в статусе «Running» и не завершается<span class="faq-arrow">›</span></summary>
+  <div class="faq-a">
+    Возможно, Celery worker упал. Проверьте логи: <code>make logs-prod</code>. Перезапустите воркер: <code>docker compose restart celery_worker</code>. Если рассылка большая — просто подождите, скорость ~20 сообщений/секунду.
+  </div>
+</details>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Rotate FAQ arrow on open/close
+document.querySelectorAll('.faq-item').forEach(item => {
+  item.addEventListener('toggle', () => {
+    const arrow = item.querySelector('.faq-arrow');
+    if (arrow) arrow.style.transform = item.open ? 'rotate(90deg)' : '';
+  });
+});
+</script>
+{% endblock %}

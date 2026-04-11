@@ -42,6 +42,7 @@ LOCAL_APPS = [
     "apps.withdrawals",
     "apps.telegram_bot",
     "apps.crm",
+    "apps.docs",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -398,6 +399,17 @@ UNFOLD = {
                         "title": "Недельные планы",
                         "icon": "event_note",
                         "link": "/django-admin/crm/weeklyplan/",
+                    },
+                ],
+            },
+            {
+                "title": "Документация",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "📖 Инструкции для менеджеров",
+                        "icon": "menu_book",
+                        "link": "/docs/",
                     },
                 ],
             },
