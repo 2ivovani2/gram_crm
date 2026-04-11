@@ -1,7 +1,9 @@
 """
 Admin: settings panel.
-  - RateConfig (worker_share / referral_share) — for daily report rate computation
-  - Set work URL, attracted count, personal rate, referral rate per user
+  - RateConfig (worker_share / referral_share)
+  - Set attracted_count (on active WorkLink)
+  - Replace work link (archive old, create new with count=0)
+  - Set personal rate / referral rate per user
 """
 from decimal import Decimal, InvalidOperation
 
@@ -9,6 +11,7 @@ from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from asgiref.sync import sync_to_async
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from apps.telegram_bot.admin_keyboards import (
     get_settings_keyboard, get_user_card_keyboard, get_admin_main_menu,
@@ -18,9 +21,9 @@ from apps.telegram_bot.callbacks import AdminMenuCallback, AdminSettingsCallback
 from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import safe_edit_text
 from apps.telegram_bot.states import (
-    AdminSetWorkUrlState, AdminSetAttractedCountState,
+    AdminSetAttractedCountState,
     AdminSetPersonalRateState, AdminSetReferralRatePerUserState,
-    AdminSetRateConfigState,
+    AdminSetRateConfigState, AdminReplaceWorkLinkState,
 )
 from apps.users.models import User
 from apps.users.services import UserService
@@ -39,6 +42,27 @@ def _settings_text(config) -> str:
     )
 
 
+def _get_replace_link_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    from apps.telegram_bot.callbacks import AdminSettingsCallback
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✅ Подтвердить замену",
+                callback_data=AdminSettingsCallback(action="replace_link_do", user_id=user_id).pack(),
+            ),
+            InlineKeyboardButton(
+                text="❌ Отмена",
+                callback_data=AdminSettingsCallback(action="replace_link_cancel", user_id=user_id).pack(),
+            ),
+        ]
+    ])
+
+
+def _get_cancel_keyboard() -> InlineKeyboardMarkup:
+    from apps.telegram_bot.keyboards import get_cancel_keyboard
+    return get_cancel_keyboard()
+
+
 # ── Settings menu ─────────────────────────────────────────────────────────────
 
 @router.callback_query(AdminMenuCallback.filter(F.section == "settings"), IsAdmin())
@@ -50,11 +74,8 @@ async def cb_settings(callback: CallbackQuery, state: FSMContext) -> None:
     await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
 
 
-# ── Backward-compat: old "set_rate" global % — redirect to settings menu ─────
-
 @router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate"), IsAdmin())
 async def cb_set_rate_legacy(callback: CallbackQuery, state: FSMContext) -> None:
-    """Old global rate_percent button (now removed). Redirect gracefully."""
     await state.clear()
     await callback.answer("Глобальная % ставка больше не используется.", show_alert=True)
     from apps.stats.models import RateConfig
@@ -120,10 +141,7 @@ async def process_referral_share(message: Message, db_user: User, state: FSMCont
     our_share = 1 - worker_share - referral_share
 
     if our_share < 0:
-        await message.answer(
-            "⚠️ Сумма долей больше 100%. Начните заново.",
-            reply_markup=get_admin_main_menu(),
-        )
+        await message.answer("⚠️ Сумма долей больше 100%. Начните заново.", reply_markup=get_admin_main_menu())
         return
 
     from apps.stats.models import RateConfig
@@ -142,48 +160,126 @@ async def process_referral_share(message: Message, db_user: User, state: FSMCont
     )
 
 
-# ── Set work URL FSM ──────────────────────────────────────────────────────────
+# ── Replace work link FSM ─────────────────────────────────────────────────────
+# Flow: start → show current state (count/url) → enter new URL → confirm → done
+# Old link is ARCHIVED (attracted_count frozen), new link starts at 0.
 
 @router.callback_query(AdminSettingsCallback.filter(F.action == "set_work_url"), IsAdmin())
-async def cb_set_work_url_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+async def cb_replace_work_link_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+    """
+    Renamed from 'set_work_url' — now does a full link REPLACEMENT.
+    Shows current state: active link URL + attracted_count + archived count.
+    Warns that counter resets to 0 for new link (old balance preserved).
+    """
     await callback.answer()
     user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
-    await state.set_state(AdminSetWorkUrlState.waiting_for_url)
+    history = await sync_to_async(UserService.get_work_link_history)(user)
+    active = next((l for l in history if l.is_active), None)
+    archived = [l for l in history if not l.is_active]
+
+    await state.set_state(AdminReplaceWorkLinkState.waiting_for_new_url)
     await state.update_data(target_user_id=callback_data.user_id)
-    from apps.telegram_bot.keyboards import get_cancel_keyboard
-    current = f"\nТекущая: {user.work_url}" if user.work_url else ""
-    await safe_edit_text(
-        callback,
-        f"🔗 <b>Рабочая ссылка для {user.display_name}</b>{current}\n\n"
-        "Отправьте новую URL (начинается с https://).\n"
-        "Отправьте «-» чтобы удалить ссылку.",
-        get_cancel_keyboard(),
-    )
+
+    lines = [f"🔗 <b>Замена рабочей ссылки — {user.display_name}</b>", ""]
+    if active:
+        lines += [
+            "📌 <b>Активная ссылка сейчас:</b>",
+            f"  URL: <code>{active.url or '(не задана)'}</code>",
+            f"  Привлечено по ней: <b>{active.attracted_count}</b> чел.",
+        ]
+    else:
+        lines.append("⚠️ Активной ссылки нет.")
+
+    if archived:
+        archived_total = sum(l.attracted_count for l in archived)
+        lines += [
+            "",
+            f"📂 Архивных ссылок: <b>{len(archived)}</b> (итого привлечено: {archived_total} чел.)",
+        ]
+
+    lines += [
+        "",
+        "⚠️ <b>При замене:</b>",
+        "  • Текущая ссылка перейдёт в архив",
+        "  • Её счётчик зафиксируется навсегда",
+        "  • Новая ссылка стартует с <b>0</b>",
+        "  • Старые начисления <b>сохраняются</b>",
+        "",
+        "Введите новый URL (https://...) или «-» для удаления активной ссылки:",
+    ]
+    await safe_edit_text(callback, "\n".join(lines), _get_cancel_keyboard())
 
 
-@router.message(AdminSetWorkUrlState.waiting_for_url, IsAdmin())
-async def process_set_work_url(message: Message, state: FSMContext) -> None:
+@router.message(AdminReplaceWorkLinkState.waiting_for_new_url, IsAdmin())
+async def process_replace_work_link_url(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     target_user_id = data["target_user_id"]
     raw = (message.text or "").strip()
-    await state.clear()
+
+    if raw != "-" and not (raw.startswith("https://") or raw.startswith("http://")):
+        await message.answer(
+            "⚠️ URL должен начинаться с https://. Введите URL или «-» для удаления.",
+            reply_markup=_get_cancel_keyboard(),
+        )
+        return
+
+    await state.update_data(new_url=raw)
+    await state.set_state(AdminReplaceWorkLinkState.confirm)
 
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    active = await sync_to_async(
+        lambda: user.work_links.filter(is_active=True).first()
+    )()
 
     if raw == "-":
-        await sync_to_async(UserService.set_work_url)(user, "")
-        await message.answer(f"✅ Рабочая ссылка для <b>{user.display_name}</b> удалена.", reply_markup=get_admin_main_menu())
-        return
+        action_text = "Активная ссылка будет удалена (перейдёт в архив с текущим счётчиком)."
+    else:
+        action_text = f"Новая ссылка:\n<code>{raw}</code>"
 
-    if not (raw.startswith("https://") or raw.startswith("http://")):
-        from apps.telegram_bot.keyboards import get_cancel_keyboard
-        await state.set_state(AdminSetWorkUrlState.waiting_for_url)
-        await state.update_data(target_user_id=target_user_id)
-        await message.answer("⚠️ URL должен начинаться с https://. Попробуйте снова.", reply_markup=get_cancel_keyboard())
-        return
+    old_count = active.attracted_count if active else 0
+    confirm_text = (
+        f"⚠️ <b>Подтвердите замену ссылки для {user.display_name}</b>\n\n"
+        f"Старая ссылка → архив (зафиксировано: <b>{old_count}</b> чел.)\n"
+        f"{action_text}\n"
+        f"Новый счётчик стартует с <b>0</b>.\n\n"
+        f"Ранее начисленное за {old_count} чел. <b>НЕ пропадёт</b>."
+    )
+    await message.answer(confirm_text, reply_markup=_get_replace_link_confirm_keyboard(target_user_id))
 
-    user = await sync_to_async(UserService.set_work_url)(user, raw)
-    await message.answer(f"✅ Рабочая ссылка установлена:\n{user.work_url}", reply_markup=get_user_card_keyboard(user))
+
+@router.callback_query(AdminSettingsCallback.filter(F.action == "replace_link_do"), IsAdmin())
+async def cb_replace_link_confirm(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+    await callback.answer()
+    data = await state.get_data()
+    new_url = data.get("new_url", "")
+    await state.clear()
+
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    new_link, old_link = await sync_to_async(UserService.replace_work_link)(
+        user, "" if new_url == "-" else new_url
+    )
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
+
+    old_count = old_link.attracted_count if old_link else 0
+    await callback.message.answer(
+        f"✅ <b>Ссылка заменена для {user.display_name}</b>\n\n"
+        f"Архивная ссылка: <b>{old_count}</b> чел. зафиксировано\n"
+        f"Новая ссылка: счётчик = <b>0</b>\n"
+        f"💰 Баланс: <b>{breakdown['balance']:.2f} ₽</b> (начислено: {breakdown['gross_earned']:.2f} ₽, выведено: {breakdown['withdrawn']:.2f} ₽)",
+        reply_markup=get_user_card_keyboard(user),
+    )
+
+
+@router.callback_query(AdminSettingsCallback.filter(F.action == "replace_link_cancel"), IsAdmin())
+async def cb_replace_link_cancel(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Замена отменена.")
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    await callback.message.answer(
+        f"Замена ссылки для <b>{user.display_name}</b> отменена.",
+        reply_markup=get_user_card_keyboard(user),
+    )
 
 
 # ── Set attracted count FSM ───────────────────────────────────────────────────
@@ -192,15 +288,20 @@ async def process_set_work_url(message: Message, state: FSMContext) -> None:
 async def cb_set_attracted_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
     await callback.answer()
     user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    active = await sync_to_async(
+        lambda: user.work_links.filter(is_active=True).first()
+    )()
+    active_count = active.attracted_count if active else user.attracted_count
     await state.set_state(AdminSetAttractedCountState.waiting_for_count)
     await state.update_data(target_user_id=callback_data.user_id)
-    from apps.telegram_bot.keyboards import get_cancel_keyboard
     await safe_edit_text(
         callback,
-        f"👤 <b>Привлечено людей — {user.display_name}</b>\n\n"
-        f"Текущее значение: <b>{user.attracted_count}</b>\n\n"
+        f"👤 <b>Привлечено по активной ссылке — {user.display_name}</b>\n\n"
+        f"Текущее значение (активная ссылка): <b>{active_count}</b>\n\n"
+        "⚠️ Вводите <b>только число для активной ссылки</b>.\n"
+        "Архивные ссылки не затрагиваются.\n\n"
         "Введите новое количество (целое число ≥ 0):",
-        get_cancel_keyboard(),
+        _get_cancel_keyboard(),
     )
 
 
@@ -214,18 +315,19 @@ async def process_set_attracted(message: Message, state: FSMContext) -> None:
         if count < 0:
             raise ValueError
     except ValueError:
-        from apps.telegram_bot.keyboards import get_cancel_keyboard
-        await message.answer("⚠️ Введите целое число ≥ 0.", reply_markup=get_cancel_keyboard())
+        await message.answer("⚠️ Введите целое число ≥ 0.", reply_markup=_get_cancel_keyboard())
         return
 
     await state.clear()
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_attracted_count)(user, count)
-    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
 
     await message.answer(
-        f"✅ Привлечено людей для <b>{user.display_name}</b>: <b>{user.attracted_count}</b>\n"
-        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
+        f"✅ Привлечено (активная ссылка) для <b>{user.display_name}</b>: <b>{count}</b>\n"
+        f"💼 Личное начисление:  <b>{breakdown['personal_earned']:.2f} ₽</b>\n"
+        f"🤝 Реферальное:        <b>{breakdown['referral_earned']:.2f} ₽</b>\n"
+        f"💰 Баланс:             <b>{breakdown['balance']:.2f} ₽</b>",
         reply_markup=get_user_card_keyboard(user),
     )
 
@@ -236,15 +338,17 @@ async def process_set_attracted(message: Message, state: FSMContext) -> None:
 async def cb_set_personal_rate_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
     await callback.answer()
     user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
     await state.set_state(AdminSetPersonalRateState.waiting_for_rate)
     await state.update_data(target_user_id=callback_data.user_id)
-    from apps.telegram_bot.keyboards import get_cancel_keyboard
     await safe_edit_text(
         callback,
         f"💰 <b>Личная ставка — {user.display_name}</b>\n\n"
-        f"Текущая ставка: <b>{user.personal_rate:.2f} руб.</b> за прямого подписчика\n\n"
+        f"Текущая: <b>{user.personal_rate:.2f} руб./чел.</b>\n"
+        f"Итого привлечено: <b>{breakdown['total_attracted']}</b> чел.\n"
+        f"Текущее личное начисление: <b>{breakdown['personal_earned']:.2f} ₽</b>\n\n"
         "Введите новую ставку в рублях (например: <code>50</code> или <code>12.5</code>):",
-        get_cancel_keyboard(),
+        _get_cancel_keyboard(),
     )
 
 
@@ -258,17 +362,20 @@ async def process_set_personal_rate(message: Message, state: FSMContext) -> None
         if rate < 0:
             raise ValueError
     except (InvalidOperation, ValueError):
-        from apps.telegram_bot.keyboards import get_cancel_keyboard
-        await message.answer("⚠️ Введите число ≥ 0 (например: 50 или 12.5).", reply_markup=get_cancel_keyboard())
+        await message.answer("⚠️ Введите число ≥ 0 (например: 50 или 12.5).", reply_markup=_get_cancel_keyboard())
         return
 
     await state.clear()
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_personal_rate)(user, rate)
-    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
+
     await message.answer(
-        f"✅ Личная ставка для <b>{user.display_name}</b>: <b>{user.personal_rate:.2f} руб.</b>\n"
-        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
+        f"✅ Личная ставка для <b>{user.display_name}</b>: <b>{rate:.2f} руб./чел.</b>\n\n"
+        f"Итого привлечено: <b>{breakdown['total_attracted']}</b> чел.\n"
+        f"💼 Личное начисление: <b>{breakdown['personal_earned']:.2f} ₽</b>\n"
+        f"🤝 Реферальное:      <b>{breakdown['referral_earned']:.2f} ₽</b>\n"
+        f"💰 Баланс:           <b>{breakdown['balance']:.2f} ₽</b>",
         reply_markup=get_user_card_keyboard(user),
     )
 
@@ -279,15 +386,17 @@ async def process_set_personal_rate(message: Message, state: FSMContext) -> None
 async def cb_set_referral_rate_start(callback: CallbackQuery, callback_data: AdminSettingsCallback, state: FSMContext) -> None:
     await callback.answer()
     user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
     await state.set_state(AdminSetReferralRatePerUserState.waiting_for_rate)
     await state.update_data(target_user_id=callback_data.user_id)
-    from apps.telegram_bot.keyboards import get_cancel_keyboard
     await safe_edit_text(
         callback,
         f"🤝 <b>Ставка за рефералов — {user.display_name}</b>\n\n"
-        f"Текущая ставка: <b>{user.referral_rate:.2f} руб.</b> за подписчика реферала\n\n"
+        f"Текущая: <b>{user.referral_rate:.2f} руб./чел.</b>\n"
+        f"Рефералы привлекли: <b>{breakdown['referrals_total_attracted']}</b> чел.\n"
+        f"Текущее реф. начисление: <b>{breakdown['referral_earned']:.2f} ₽</b>\n\n"
         "Введите новую ставку в рублях (например: <code>10</code> или <code>5.5</code>):",
-        get_cancel_keyboard(),
+        _get_cancel_keyboard(),
     )
 
 
@@ -301,16 +410,18 @@ async def process_set_referral_rate_per_user(message: Message, state: FSMContext
         if rate < 0:
             raise ValueError
     except (InvalidOperation, ValueError):
-        from apps.telegram_bot.keyboards import get_cancel_keyboard
-        await message.answer("⚠️ Введите число ≥ 0 (например: 10 или 5.5).", reply_markup=get_cancel_keyboard())
+        await message.answer("⚠️ Введите число ≥ 0 (например: 10 или 5.5).", reply_markup=_get_cancel_keyboard())
         return
 
     await state.clear()
     user = await sync_to_async(User.objects.get)(pk=target_user_id)
     user = await sync_to_async(UserService.set_referral_rate)(user, rate)
-    user = await sync_to_async(User.objects.get)(pk=target_user_id)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
+
     await message.answer(
-        f"✅ Ставка за рефералов для <b>{user.display_name}</b>: <b>{user.referral_rate:.2f} руб.</b>\n"
-        f"💰 Баланс пересчитан: <b>{user.balance:.2f} ₽</b>",
+        f"✅ Ставка за рефералов для <b>{user.display_name}</b>: <b>{rate:.2f} руб./чел.</b>\n\n"
+        f"Рефералы привлекли: <b>{breakdown['referrals_total_attracted']}</b> чел.\n"
+        f"🤝 Реферальное начисление: <b>{breakdown['referral_earned']:.2f} ₽</b>\n"
+        f"💰 Баланс:                 <b>{breakdown['balance']:.2f} ₽</b>",
         reply_markup=get_user_card_keyboard(user),
     )

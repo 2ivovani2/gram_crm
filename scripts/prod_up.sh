@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-# One-command production startup for VPS (no domain, self-signed SSL):
+# One-command production startup for VPS with a real domain (gramly.tech).
+#
+# Flow:
 #   1. Validate BOT_ENV=prod in .env
-#   2. Read VPS_IP from .env (or prompt if missing)
-#   3. Generate self-signed SSL cert for the VPS IP (if not exists)
-#   4. Build images and start all services
-#   5. Wait for the web service to become healthy
-#   6. Register Telegram webhook with the self-signed certificate
+#   2. Read DOMAIN from .env
+#   3. Obtain Let's Encrypt certificate (if not yet issued)
+#   4. Build images and start all services (nginx gets HTTPS config)
+#   5. Wait for web service to become healthy
+#   6. Register Telegram webhook
 #   7. Print final status
 #
 # Prerequisites on VPS:
-#   apt install -y docker.io docker-compose-plugin openssl curl
+#   apt install -y docker.io docker-compose-plugin curl
 #   git clone <repo> && cd <repo>
-#   cp .env.example .env && nano .env   # set BOT_ENV=prod, PROD_BOT_TOKEN, VPS_IP, etc.
+#   cp .env.example .env && nano .env   # set DOMAIN, BOT_ENV=prod, PROD_BOT_TOKEN, etc.
+#   # Point gramly.tech A-record to this VPS IP before running
 #
 # Usage:
 #   make prod          (recommended)
@@ -25,9 +28,6 @@ cd "$PROJECT_DIR"
 
 COMPOSE="docker compose -f docker-compose.yml"
 WEBHOOK_PATH="/bot/webhook/"
-SSL_DIR="$PROJECT_DIR/ssl"
-CERT_FILE="$SSL_DIR/webhook.pem"
-KEY_FILE="$SSL_DIR/webhook.key"
 WEB_WAIT_SEC=120
 
 log()  { echo "==> $*"; }
@@ -43,59 +43,81 @@ if [ "$BOT_ENV_VALUE" != "prod" ]; then
     exit 1
 fi
 
-# ── 2. Read VPS_IP ─────────────────────────────────────────────────────────────
-VPS_IP=$(grep -m1 '^VPS_IP=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
-if [ -z "$VPS_IP" ]; then
-    read -rp "==> Enter your VPS IP address: " VPS_IP
-    if [ -z "$VPS_IP" ]; then
-        err "VPS_IP is required. Add VPS_IP=<your_ip> to .env or enter it above."
-        exit 1
-    fi
+# ── 2. Read DOMAIN ─────────────────────────────────────────────────────────────
+DOMAIN=$(grep -m1 '^DOMAIN=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+if [ -z "$DOMAIN" ]; then
+    err "DOMAIN is not set in .env. Add: DOMAIN=gramly.tech"
+    exit 1
 fi
-log "VPS IP: $VPS_IP"
+log "Domain: $DOMAIN"
 
-WEBHOOK_URL="https://${VPS_IP}${WEBHOOK_PATH}"
+WEBHOOK_URL="https://${DOMAIN}${WEBHOOK_PATH}"
+CERTBOT_EMAIL=$(grep -m1 '^CERTBOT_EMAIL=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
 
-# ── 3. Generate self-signed SSL certificate ────────────────────────────────────
-mkdir -p "$SSL_DIR"
-if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
-    CERT_CN=$(openssl x509 -noout -subject -in "$CERT_FILE" 2>/dev/null | grep -oP 'CN\s*=\s*\K[^,/]+' || true)
-    if [ "$CERT_CN" = "$VPS_IP" ]; then
-        skip "SSL certificate already exists for $VPS_IP, reusing."
-    else
-        log "SSL certificate exists but CN=$CERT_CN differs from VPS_IP=$VPS_IP — regenerating."
-        openssl req -newkey rsa:2048 -sha256 -nodes \
-            -keyout "$KEY_FILE" \
-            -x509 -days 3650 \
-            -out "$CERT_FILE" \
-            -subj "/CN=${VPS_IP}" 2>/dev/null
-        ok "SSL certificate regenerated: $CERT_FILE"
-    fi
-else
-    log "Generating self-signed SSL certificate for IP $VPS_IP ..."
-    openssl req -newkey rsa:2048 -sha256 -nodes \
-        -keyout "$KEY_FILE" \
-        -x509 -days 3650 \
-        -out "$CERT_FILE" \
-        -subj "/CN=${VPS_IP}" 2>/dev/null
-    ok "SSL certificate generated: $CERT_FILE"
-fi
-
-# ── 4. Ensure media directory exists ──────────────────────────────────────────
+# ── 3. Ensure media directory exists ──────────────────────────────────────────
 mkdir -p "$PROJECT_DIR/media"
+
+# ── 4. Check if Let's Encrypt cert already exists ─────────────────────────────
+CERT_EXISTS=false
+if $COMPOSE run --rm certbot certificates 2>/dev/null | grep -q "$DOMAIN"; then
+    CERT_EXISTS=true
+fi
+
+if [ "$CERT_EXISTS" = "false" ]; then
+    log "No certificate found for $DOMAIN. Obtaining Let's Encrypt certificate..."
+
+    # Start nginx in HTTP-only mode first so ACME challenge can be served
+    cp nginx/prod.conf nginx/prod.conf.bak
+    cp nginx/prod-init.conf nginx/prod.conf.tmp
+    # Temporarily use init config
+    $COMPOSE up -d postgres redis web nginx || true
+    log "Waiting for web to come up for ACME challenge..."
+    sleep 10
+
+    # Swap nginx config to init (HTTP only) and reload
+    docker compose -f docker-compose.yml exec -T nginx sh -c \
+        "cp /dev/stdin /etc/nginx/conf.d/default.conf && nginx -s reload" \
+        < nginx/prod-init.conf 2>/dev/null || true
+    sleep 2
+
+    # Obtain cert
+    if [ -n "$CERTBOT_EMAIL" ]; then
+        EMAIL_FLAG="--email $CERTBOT_EMAIL --no-eff-email"
+    else
+        EMAIL_FLAG="--register-unsafely-without-email"
+    fi
+
+    $COMPOSE run --rm certbot certonly \
+        --webroot \
+        --webroot-path /var/www/certbot \
+        $EMAIL_FLAG \
+        --agree-tos \
+        --domains "$DOMAIN" \
+        --domains "www.$DOMAIN" \
+        --non-interactive
+
+    ok "Certificate obtained for $DOMAIN"
+
+    # Restore full HTTPS nginx config
+    $COMPOSE exec -T nginx sh -c \
+        "cp /dev/stdin /etc/nginx/conf.d/default.conf && nginx -s reload" \
+        < nginx/prod.conf 2>/dev/null || true
+else
+    skip "Certificate already exists for $DOMAIN, skipping issuance."
+fi
 
 # ── 5. Build images ────────────────────────────────────────────────────────────
 log "Building Docker images ..."
 $COMPOSE build
 
-# ── 5. Start all services ─────────────────────────────────────────────────────
-log "Starting services: postgres redis web celery_worker celery_beat nginx ..."
-$COMPOSE up -d postgres redis web celery_worker celery_beat nginx
+# ── 6. Start all services ─────────────────────────────────────────────────────
+log "Starting services ..."
+$COMPOSE up -d postgres redis web celery_worker celery_beat nginx certbot
 
-# ── 6. Wait for web service ────────────────────────────────────────────────────
+# ── 7. Wait for web service ────────────────────────────────────────────────────
 log "Waiting for web service (up to ${WEB_WAIT_SEC}s) ..."
 for i in $(seq 1 "$WEB_WAIT_SEC"); do
-    if $COMPOSE exec -T web curl -sf -H "Host: ${VPS_IP}" http://localhost:8000/health/ -o /dev/null 2>/dev/null; then
+    if $COMPOSE exec -T web curl -sf --max-time 3 http://localhost:8000/health/ -o /dev/null 2>/dev/null; then
         ok "Web service is healthy (${i}s)."
         break
     fi
@@ -104,58 +126,48 @@ for i in $(seq 1 "$WEB_WAIT_SEC"); do
     if [ "$i" -eq "$WEB_WAIT_SEC" ]; then
         echo ""
         err "Web service did not become healthy in ${WEB_WAIT_SEC}s."
-        err "Check logs: $COMPOSE logs web"
+        err "Check logs: make logs-prod"
         exit 1
     fi
 done
 echo ""
 
-# ── 7. Register Telegram webhook with self-signed cert ────────────────────────
+# ── 8. Register Telegram webhook ──────────────────────────────────────────────
 log "Registering Telegram webhook: $WEBHOOK_URL"
-WEBHOOK_SECRET=$(grep -m1 '^TELEGRAM_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
-PROD_TOKEN=$(grep -m1 '^PROD_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
 
 WEBHOOK_REGISTERED=false
-if $COMPOSE exec -T web python manage.py setup_webhook \
-    --url "$WEBHOOK_URL" \
-    --certificate /app/ssl/webhook.pem 2>&1 || false; then
+if $COMPOSE exec -T web python manage.py setup_webhook --url "$WEBHOOK_URL" 2>&1; then
     WEBHOOK_REGISTERED=true
 else
     echo ""
-    echo "  ┌────────────────────────────────────────────────────���────────┐"
-    echo "  │  VPS не может достучаться до api.telegram.org               │"
-    echo "  │  (типично для российских хостингов)                         │"
-    echo "  │                                                              │"
-    echo "  │  Зарегистрируй webhook вручную с локальной машины:          │"
-    echo "  │                                                              │"
-    echo "  │  1. Скопируй сертификат на локалку:                         │"
-    printf "  │     scp root@%s:$(pwd)/ssl/webhook.pem ./webhook.pem\n" "$VPS_IP"
-    echo "  │                                                              │"
-    echo "  │  2. Запусти curl:                                            │"
-    echo "  │                                                              │"
+    echo "  ┌──────────────────────────────────────────────────────────────┐"
+    echo "  │  Could not reach api.telegram.org from VPS.                  │"
+    echo "  │  Register webhook manually from a local machine:             │"
+    echo "  │                                                               │"
+    WEBHOOK_SECRET=$(grep -m1 '^TELEGRAM_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+    PROD_TOKEN=$(grep -m1 '^PROD_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
     printf "  │  curl -F \"url=%s\" \\\\\n" "$WEBHOOK_URL"
-    echo  "  │       -F \"certificate=@webhook.pem\" \\"
     printf "  │       -F \"secret_token=%s\" \\\\\n" "${WEBHOOK_SECRET:-YOUR_SECRET}"
     echo  "  │       -F \"drop_pending_updates=true\" \\"
     printf "  │       \"https://api.telegram.org/bot%s/setWebhook\"\n" "${PROD_TOKEN:-YOUR_TOKEN}"
-    echo "  └─────────────────────────────────────────────────────────────┘"
+    echo "  └──────────────────────────────────────────────────────────────┘"
 fi
 
-# ── 8. Print status ────────────────────────────────────────────────────────────
+# ── 9. Print status ────────────────────────────────────────────────────────────
 echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  Production stack ready.                                 ║"
-printf "║  Bot env   : %-43s║\n" "prod (production bot)"
-printf "║  Webhook   : %-43s║\n" "$WEBHOOK_URL"
-printf "║  Admin     : %-43s║\n" "https://${VPS_IP}/django-admin/"
-printf "║  CRM       : %-43s║\n" "https://${VPS_IP}/crm/"
-printf "║  Stats     : %-43s║\n" "https://${VPS_IP}/stats/"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║  Production stack ready.                                     ║"
+printf "║  Domain     : %-47s║\n" "https://${DOMAIN}/"
+printf "║  Webhook    : %-47s║\n" "$WEBHOOK_URL"
+printf "║  Admin      : %-47s║\n" "https://${DOMAIN}/django-admin/"
+printf "║  CRM        : %-47s║\n" "https://${DOMAIN}/crm/"
+printf "║  Stats      : %-47s║\n" "https://${DOMAIN}/stats/"
 if [ "$WEBHOOK_REGISTERED" = "true" ]; then
-    echo "║  Webhook   : registered ✓                                ║"
+    echo "║  Webhook    : registered ✓                                   ║"
 else
-    echo "║  Webhook   : требует ручной регистрации (см. выше)       ║"
+    echo "║  Webhook    : needs manual registration (see above)          ║"
 fi
-echo "║                                                          ║"
-echo "║  make prod-down     — stop everything + delete webhook   ║"
-echo "║  make logs-prod     — follow logs                        ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+echo "║                                                              ║"
+echo "║  make prod-down     — stop everything + delete webhook       ║"
+echo "║  make logs-prod     — follow logs                            ║"
+echo "╚══════════════════════════════════════════════════════════════╝"

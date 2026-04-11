@@ -184,12 +184,12 @@ CHANNELS_DB_URL = env(
 # Public channel example:  @grmly
 # Private channel example: -1001234567890
 # Leave empty to disable the gate entirely.
-SUBSCRIPTION_CHANNEL_ID = env("SUBSCRIPTION_CHANNEL_ID", default="@grmly")
+SUBSCRIPTION_CHANNEL_ID = env("SUBSCRIPTION_CHANNEL_ID", default="@gramlyspam")
 
 # Link shown to non-subscribed users in the inline button.
 SUBSCRIPTION_CHANNEL_URL = env(
     "SUBSCRIPTION_CHANNEL_URL",
-    default="https://t.me/grmly",
+    default="https://t.me/gramlyspam",
 )
 
 # ── Static ────────────────────────────────────────────────────────────────────

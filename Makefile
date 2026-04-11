@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down logs logs-prod webhook-info crm-setup help
+.PHONY: dev dev-down prod prod-down prod-renew-cert logs logs-prod webhook-info webhook-info-prod crm-setup crm-setup-prod help
 
 COMPOSE_DEV = docker compose \
 	-f docker-compose.yml \
@@ -24,7 +24,7 @@ logs:
 
 # ── Prod targets ──────────────────────────────────────────────────────────────
 
-## Start production stack on VPS (generates SSL cert, registers webhook)
+## Start production stack (Let's Encrypt SSL, registers webhook)
 prod:
 	@bash scripts/prod_up.sh
 
@@ -36,15 +36,27 @@ prod-down:
 logs-prod:
 	$(COMPOSE_PROD) logs -f web celery_worker
 
+## Force Let's Encrypt certificate renewal
+prod-renew-cert:
+	$(COMPOSE_PROD) exec certbot certbot renew --force-renewal
+
 # ── Shared targets ────────────────────────────────────────────────────────────
 
-## Show current Telegram webhook info for the active bot
+## Show current Telegram webhook info (dev bot)
 webhook-info:
 	$(COMPOSE_DEV) exec web python manage.py setup_webhook --info
 
-## Setup CRM workspace. Add owner: make crm-setup OWNER=<telegram_id>
+## Show current Telegram webhook info (prod bot)
+webhook-info-prod:
+	$(COMPOSE_PROD) exec web python manage.py setup_webhook --info
+
+## Setup CRM workspace for dev. Add owner: make crm-setup OWNER=<telegram_id>
 crm-setup:
 	$(COMPOSE_DEV) exec web python manage.py setup_crm $(if $(OWNER),--add-owner $(OWNER),)
+
+## Setup CRM workspace for prod. Add owner: make crm-setup-prod OWNER=<telegram_id>
+crm-setup-prod:
+	$(COMPOSE_PROD) exec web python manage.py setup_crm $(if $(OWNER),--add-owner $(OWNER),)
 
 ## Show available targets
 help:

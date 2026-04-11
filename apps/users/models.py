@@ -3,6 +3,49 @@ from django.db import models
 from django.utils import timezone
 
 
+class WorkLink(models.Model):
+    """
+    History of work URLs and their attracted_count for a user.
+
+    Financial model:
+      personal_earned(user) = SUM(link.attracted_count for ALL WorkLinks of user) × personal_rate
+      referral_earned(user) = SUM(
+          SUM(ref_link.attracted_count for ALL WorkLinks of ref) × referral_rate
+          for ref in direct_referrals(user)
+      )
+      balance = personal_earned + referral_earned − approved_withdrawals
+
+    Rules:
+      - Exactly ONE active WorkLink per user at any time (is_active=True).
+      - Replacing a link deactivates the old one (attracted_count frozen),
+        creates a new one with attracted_count=0.
+      - Historical attracted_count is NEVER zeroed — old earnings persist.
+    """
+    user = models.ForeignKey(
+        "User",
+        on_delete=models.CASCADE,
+        related_name="work_links",
+    )
+    url = models.URLField(max_length=500, blank=True)
+    attracted_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Число привлечённых по этой ссылке (замораживается при деактивации)",
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+    note = models.CharField(max_length=255, blank=True, help_text="Причина замены / примечание")
+
+    class Meta:
+        verbose_name = "Рабочая ссылка"
+        verbose_name_plural = "Рабочие ссылки"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        status = "активна" if self.is_active else "архив"
+        return f"WorkLink #{self.pk} ({status}) → {self.user_id} | {self.attracted_count} чел."
+
+
 class UserRole(models.TextChoices):
     ADMIN = "admin", "Admin"
     CURATOR = "curator", "Curator"
@@ -104,6 +147,46 @@ class User(AbstractUser):
     @property
     def referral_count(self) -> int:
         return self.referrals.count()
+
+    @property
+    def total_attracted(self) -> int:
+        """Sum of attracted_count across ALL WorkLinks (active + archived)."""
+        from django.db.models import Sum
+        result = self.work_links.aggregate(total=Sum("attracted_count"))["total"]
+        return result or 0
+
+    @property
+    def active_work_link(self) -> "WorkLink | None":
+        return self.work_links.filter(is_active=True).first()
+
+    def compute_personal_earned(self) -> "Decimal":
+        from decimal import Decimal
+        return (Decimal(self.total_attracted) * self.personal_rate).quantize(Decimal("0.01"))
+
+    def compute_referral_earned(self) -> "Decimal":
+        from decimal import Decimal
+        total = Decimal("0")
+        for ref in self.referrals.only("id"):
+            total += Decimal(ref.total_attracted) * self.referral_rate
+        return total.quantize(Decimal("0.01"))
+
+    def compute_withdrawn(self) -> "Decimal":
+        from decimal import Decimal
+        from django.db.models import Sum
+        try:
+            from apps.withdrawals.models import WithdrawalRequest
+            result = (
+                WithdrawalRequest.objects.filter(user=self, status="approved")
+                .aggregate(total=Sum("amount"))["total"]
+            )
+            return (result or Decimal("0")).quantize(Decimal("0.01"))
+        except Exception:
+            return Decimal("0")
+
+    def compute_balance(self) -> "Decimal":
+        from decimal import Decimal
+        earned = self.compute_personal_earned() + self.compute_referral_earned()
+        return max(Decimal("0"), earned - self.compute_withdrawn())
 
     # ── Role helpers ──────────────────────────────────────────────────────────
 

@@ -66,3 +66,13 @@ class AdminSetRateConfigState(StatesGroup):
     """Admin: update RateConfig worker_share and referral_share."""
     waiting_for_worker_share = State()
     waiting_for_referral_share = State()
+
+
+class AdminReplaceWorkLinkState(StatesGroup):
+    """
+    Admin: replace active work link for a worker.
+    Flow: confirm current state → enter new URL → confirm → done.
+    Old link is archived (attracted_count frozen), new starts at 0.
+    """
+    waiting_for_new_url = State()
+    confirm = State()

@@ -28,7 +28,7 @@ fi
 
 # ── 2. Stop containers ────────────────────────────────────────────────────────
 log "Stopping all prod services ..."
-$COMPOSE down
+$COMPOSE down --remove-orphans
 
 echo ""
 echo "==> Production stack stopped."

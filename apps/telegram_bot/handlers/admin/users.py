@@ -1,8 +1,8 @@
 """
 Admin: user management.
   - list with pagination
-  - user card view
-  - status change
+  - user card view with full earnings breakdown
+  - status change, role change
   - free-text search
 """
 from aiogram import Router, F
@@ -25,7 +25,7 @@ from apps.common.utils import format_dt
 router = Router(name="admin_users")
 
 
-def _user_card_text(user: User, referral_count: int = 0) -> str:
+def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None = None) -> str:
     status_icon = {"active": "✅", "inactive": "⛔", "pending": "⏳", "banned": "🚫"}.get(user.status, "❓")
     role_icon = {"admin": "👑", "curator": "🎓", "worker": "👷"}.get(user.role, "❓")
 
@@ -43,21 +43,63 @@ def _user_card_text(user: User, referral_count: int = 0) -> str:
         f"{status_icon} Статус: <b>{user.get_status_display()}</b>",
         f"🔑 Активирован: {'✅ Да' if user.is_activated else '❌ Нет'}",
         f"🤖 Заблокировал бота: {'⚠️ Да' if user.is_blocked_bot else 'Нет'}",
+    ]
+
+    if breakdown:
+        lines += [
+            "",
+            "💼 <b>Начисления</b>",
+            f"  👤 Личное:        <b>{breakdown['personal_earned']:.2f} ₽</b>",
+            f"  🤝 Реферальное:   <b>{breakdown['referral_earned']:.2f} ₽</b>",
+            f"  📊 Начислено:     <b>{breakdown['gross_earned']:.2f} ₽</b>",
+            f"  💸 Выведено:      <b>{breakdown['withdrawn']:.2f} ₽</b>",
+            f"  ✅ Баланс:        <b>{breakdown['balance']:.2f} ₽</b>",
+        ]
+    else:
+        lines += [
+            "",
+            f"💰 Баланс: <b>{user.balance:.2f} ₽</b>",
+        ]
+
+    lines += [
         "",
-        f"💰 Баланс: <b>{user.balance:.2f} ₽</b>",
         f"👥 Рефералов: <b>{referral_count}</b>",
-        f"👤 Привлечено подписчиков: <b>{user.attracted_count}</b>",
         f"💰 Личная ставка: <b>{user.personal_rate:.2f} руб./чел.</b>",
         f"🤝 Ставка за рефералов: <b>{user.referral_rate:.2f} руб./чел.</b>",
     ]
+
+    if breakdown:
+        total = breakdown["total_attracted"]
+        active = breakdown["active_attracted"]
+        archived = total - active
+        lines += [
+            "",
+            "📈 <b>Привлечённые</b>",
+            f"  По активной ссылке: <b>{active}</b>",
+        ]
+        if archived > 0:
+            lines.append(f"  Архивные ссылки:    <b>{archived}</b>")
+        lines.append(f"  Итого:              <b>{total}</b>")
+    else:
+        lines.append(f"👤 Привлечено подписчиков: <b>{user.attracted_count}</b>")
+
     if user.work_url:
-        lines.append(f"🔗 Рабочая ссылка: {user.work_url}")
+        lines.append(f"🔗 Активная ссылка: {user.work_url}")
+
     lines += [
         "",
         f"📅 Зарегистрирован: {format_dt(user.created_at)}",
         f"⏰ Последняя активность: {format_dt(user.last_activity_at)}",
     ]
     return "\n".join(lines)
+
+
+def _load_user_data(user_id: int) -> tuple:
+    """Load user + referral_count + earnings breakdown in one sync block."""
+    user = User.objects.select_related("referred_by").get(pk=user_id)
+    referral_count = user.referrals.count()
+    breakdown = UserService.get_earnings_breakdown(user)
+    return user, referral_count, breakdown
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
@@ -84,13 +126,12 @@ async def cb_users_list(callback: CallbackQuery, callback_data: AdminUserCallbac
 @router.callback_query(AdminUserCallback.filter(F.action == "view"), IsAdmin())
 async def cb_user_view(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
     await callback.answer()
-    user, referral_count = await sync_to_async(
-        lambda: (
-            User.objects.select_related("referred_by").get(pk=callback_data.user_id),
-            User.objects.get(pk=callback_data.user_id).referrals.count(),
-        )
-    )()
-    await safe_edit_text(callback, _user_card_text(user, referral_count), get_user_card_keyboard(user, back_page=callback_data.page))
+    user, referral_count, breakdown = await sync_to_async(_load_user_data)(callback_data.user_id)
+    await safe_edit_text(
+        callback,
+        _user_card_text(user, referral_count, breakdown),
+        get_user_card_keyboard(user, back_page=callback_data.page),
+    )
 
 
 # ── Status change ─────────────────────────────────────────────────────────────
@@ -114,16 +155,25 @@ async def cb_set_status(callback: CallbackQuery, callback_data: AdminUserCallbac
     action_map = {"set_active": "active", "set_inactive": "inactive", "set_banned": "banned"}
     new_status = action_map[callback_data.action]
 
-    user, referral_count = await sync_to_async(
+    user, referral_count, breakdown = await sync_to_async(
         lambda: (
-            User.objects.get(pk=callback_data.user_id),
-            User.objects.get(pk=callback_data.user_id).referrals.count(),
+            *(_d := _load_user_data(callback_data.user_id)),
         )
     )()
+    # Unpack
+    user = user
+    referral_count = referral_count
+    breakdown = breakdown
+
     user = await sync_to_async(UserService.set_status)(user, new_status)
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
 
     await callback.answer(f"Статус → {user.get_status_display()}", show_alert=True)
-    await safe_edit_text(callback, _user_card_text(user, referral_count), get_user_card_keyboard(user, back_page=1))
+    await safe_edit_text(
+        callback,
+        _user_card_text(user, referral_count, breakdown),
+        get_user_card_keyboard(user, back_page=1),
+    )
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
@@ -165,12 +215,7 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
 async def cb_set_role(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
     new_role = UserRole.CURATOR if callback_data.action == "set_curator" else UserRole.WORKER
 
-    user, referral_count = await sync_to_async(
-        lambda: (
-            User.objects.get(pk=callback_data.user_id),
-            User.objects.get(pk=callback_data.user_id).referrals.count(),
-        )
-    )()
+    user, referral_count, breakdown = await sync_to_async(_load_user_data)(callback_data.user_id)
 
     if user.role == new_role:
         await callback.answer("Роль уже установлена.", show_alert=True)
@@ -178,12 +223,13 @@ async def cb_set_role(callback: CallbackQuery, callback_data: AdminUserCallback)
 
     user.role = new_role
     await sync_to_async(user.save)(update_fields=["role", "updated_at"])
+    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
 
     role_label = "🎓 Куратор" if new_role == UserRole.CURATOR else "👷 Воркер"
     await callback.answer(f"Роль → {role_label}", show_alert=True)
     await safe_edit_text(
         callback,
-        _user_card_text(user, referral_count),
+        _user_card_text(user, referral_count, breakdown),
         get_user_card_keyboard(user, back_page=callback_data.page),
     )
 

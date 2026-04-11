@@ -132,7 +132,7 @@ class SubscriptionMiddleware(BaseMiddleware):
         channel_url: str = getattr(
             settings,
             "SUBSCRIPTION_CHANNEL_URL",
-            "https://t.me/grmly",
+            "https://t.me/gramlyspam",
         )
 
         # ── Skip check if not configured ─────────────────────────────────────

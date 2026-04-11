@@ -2,6 +2,92 @@
 
 ---
 
+## 2026-04-12 — Production domain migration: gramly.tech + Let's Encrypt
+
+### Что изменено
+
+**`nginx/prod.conf`** — полный рерайт:
+- `server_name gramly.tech www.gramly.tech`
+- HTTP → HTTPS редирект + ACME challenge passthrough
+- TLS через Let's Encrypt: `/etc/letsencrypt/live/gramly.tech/fullchain.pem`
+- `Strict-Transport-Security` header
+- Удалён self-signed cert (VPS IP-based подход упразднён)
+
+**`nginx/prod-init.conf`** (новый) — временный HTTP-only конфиг для первичного получения сертификата
+
+**`docker-compose.yml`**:
+- nginx монтирует `letsencrypt` и `certbot_www` volumes вместо `./ssl`
+- Добавлен сервис `certbot` (certbot/certbot) с авто-обновлением каждые 12h
+
+**`scripts/prod_up.sh`** — полный рерайт:
+- Читает `DOMAIN` из .env вместо `VPS_IP`
+- Если сертификат отсутствует: запускает nginx в HTTP-mode, получает LE cert, перезагружает nginx с HTTPS
+- Webhook регистрируется по `https://gramly.tech/bot/webhook/` без `--certificate` параметра
+
+**`config/settings/prod.py`**:
+- `CSRF_TRUSTED_ORIGINS = ["https://gramly.tech", "https://www.gramly.tech"]`
+- `SECURE_CROSS_ORIGIN_OPENER_POLICY = None` (Telegram Login Widget)
+- Читает `DOMAIN` из env динамически
+
+**`.env.example`**:
+- Добавлены `DOMAIN=gramly.tech`, `CERTBOT_EMAIL`
+- Убрал `VPS_IP`
+- Обновлены все примерные URLs на gramly.tech
+
+**`Makefile`**:
+- Добавлены `webhook-info-prod`, `crm-setup-prod`, `prod-renew-cert`
+
+---
+
+## 2026-04-12 — Financial logic revision: WorkLink history model
+
+### Проблема
+Старая модель хранила `User.attracted_count` как единственное поле. При замене ссылки admin сбрасывал счётчик → `recalculate_balance()` пересчитывал balance в 0 → выплаченные ранее деньги "исчезали" из системы. Риск двойной выплаты при параллельных заявках на вывод.
+
+### Что изменено
+
+**`apps/users/models.py`** — добавлена модель `WorkLink`:
+- Хранит историю всех рабочих ссылок пользователя с замороженными счётчиками
+- Ровно одна `is_active=True` запись на пользователя
+- Архивные ссылки никогда не обнуляются — исторические начисления сохраняются
+
+**Финансовая модель (задокументирована в коде и CLAUDE.md):**
+- `personal_earned = SUM(link.attracted_count for ALL work_links) × personal_rate`
+- `referral_earned = SUM(SUM(ref_link.attracted_count) × referral_rate for direct_referrals)`
+- `balance = max(0, personal_earned + referral_earned − approved_withdrawals)`
+
+**`apps/users/services.py`** — полный рерайт:
+- `recalculate_balance`: агрегирует ВСЕ WorkLinks (не только активную)
+- `replace_work_link`: архивирует старую ссылку (замораживает счётчик), создаёт новую с 0
+- `set_attracted_count`: обновляет только АКТИВНУЮ WorkLink
+- `get_earnings_breakdown`: возвращает полный разбор: personal/referral/gross/withdrawn/balance/attracted breakdown
+
+**`apps/withdrawals/services.py`**:
+- Проверка `amount ≤ user.balance` при создании заявки
+- Блокировка повторной заявки если уже есть PENDING (защита от двойной выплаты)
+
+**`apps/telegram_bot/handlers/worker/profile.py`** — воркер видит полный разбор начислений
+
+**`apps/telegram_bot/handlers/admin/users.py`** — карточка пользователя показывает earnings breakdown
+
+**`apps/telegram_bot/handlers/admin/settings.py`** — `set_work_url` заменён полным FSM `replace_work_link`:
+1. Показывает текущую ссылку + архивную историю
+2. Предупреждает о сбросе счётчика (старые начисления сохранятся)
+3. Принимает новый URL или `-` для удаления
+4. Экран подтверждения → вызов `UserService.replace_work_link()`
+
+**`apps/users/admin.py`**:
+- `WorkLinkInline` — полная история ссылок в карточке пользователя Django admin
+- `earnings_breakdown_display` — readonly таблица с разбором начислений
+
+**Миграции:**
+- `0006_worklink.py` — схема таблицы `WorkLink`
+- `0007_worklink_seed_from_users.py` — data migration: создаёт начальные WorkLink для всех пользователей у которых есть `work_url` или `attracted_count > 0`
+
+**`apps/telegram_bot/states.py`** — добавлен `AdminReplaceWorkLinkState`
+
+---
+
 ## 2026-04-11 — Landing page: premium redesign + CRM accessibility
 
 ### Проблемы старого лендинга
