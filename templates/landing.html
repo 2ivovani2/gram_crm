@@ -102,6 +102,17 @@ nav {
 
 .nav-right { display: flex; align-items: center; gap: 8px; }
 
+.nav-btn-docs {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted2); border-radius: 8px;
+  font-size: .8rem; font-weight: 600; text-decoration: none;
+  transition: all .18s;
+}
+.nav-btn-docs svg { width: 13px; height: 13px; }
+.nav-btn-docs:hover { background: var(--surface-h); border-color: rgba(0,212,255,.25); color: var(--text); }
+
 .nav-btn-crm {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 16px;
@@ -501,6 +512,141 @@ nav {
 .step-p { font-size: .85rem; color: var(--muted2); line-height: 1.7; }
 
 /* ══════════════════════════════════════════════════════════
+   DOCS SECTION
+══════════════════════════════════════════════════════════ */
+.docs-section {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,96px);
+}
+.docs-card {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(32px,5vw,64px); align-items: center;
+  padding: clamp(40px,6vw,64px);
+  background: rgba(0,212,255,.03);
+  border: 1px solid rgba(0,212,255,.14);
+  border-radius: 28px;
+  box-shadow: 0 0 80px rgba(0,212,255,.05), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.docs-card::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 70% 60% at 0% 100%, rgba(0,212,255,.07), transparent 60%);
+}
+.docs-card-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 18px; padding: 5px 14px 5px 10px;
+  background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.25);
+  border-radius: 100px; font-size: .72rem; font-weight: 700;
+  color: var(--accent); align-self: flex-start;
+}
+.docs-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s ease infinite; }
+.docs-h2 {
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  font-weight: 800; letter-spacing: -.03em; line-height: 1.12;
+  color: var(--text); margin-bottom: 16px;
+}
+.docs-h2 span { color: var(--accent); }
+.docs-p { font-size: .95rem; color: var(--muted2); line-height: 1.75; margin-bottom: 24px; max-width: 400px; }
+.docs-features { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+.docs-feature {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: .85rem; color: var(--text2);
+}
+.docs-feature-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  margin-top: 6px; flex-shrink: 0; opacity: .7;
+}
+.docs-btns { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn-docs {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 22px; border-radius: 10px;
+  background: rgba(0,212,255,.12); border: 1px solid rgba(0,212,255,.3);
+  color: var(--accent); font-size: .85rem; font-weight: 700;
+  text-decoration: none; transition: all .2s; position: relative; overflow: hidden;
+}
+.btn-docs::after {
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(135deg, rgba(0,212,255,.15), transparent);
+  opacity:0; transition: opacity .2s;
+}
+.btn-docs:hover { background: rgba(0,212,255,.2); border-color: rgba(0,212,255,.5); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,212,255,.2); }
+.btn-docs:hover::after { opacity:1; }
+.btn-docs svg { width: 15px; height: 15px; }
+
+/* Docs UI mockup */
+.docs-mock { position: relative; z-index: 1; }
+.docs-mock-window {
+  background: rgba(8,10,18,.97);
+  border: 1px solid rgba(0,212,255,.14);
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 32px 64px rgba(0,0,0,.5), 0 0 0 1px rgba(0,212,255,.05);
+  display: flex; min-height: 320px;
+}
+.docs-mock-sidebar {
+  width: 140px; flex-shrink: 0;
+  background: rgba(5,7,14,.9);
+  border-right: 1px solid rgba(255,255,255,.05);
+  padding: 14px 10px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.docs-mock-logo {
+  font-size: .68rem; font-weight: 800; color: var(--accent);
+  padding: 4px 6px 10px; margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  display: flex; align-items: center; gap: 5px;
+}
+.docs-mock-nav-item {
+  padding: 6px 8px; border-radius: 6px;
+  font-size: .64rem; font-weight: 500; color: var(--muted);
+  display: flex; align-items: center; gap: 5px;
+}
+.docs-mock-nav-item.active {
+  background: rgba(0,212,255,.1); color: var(--accent); font-weight: 700;
+}
+.docs-mock-nav-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: currentColor; opacity: .6; flex-shrink: 0;
+}
+.docs-mock-content {
+  flex: 1; padding: 16px; overflow: hidden;
+}
+.docs-mock-title {
+  font-size: .78rem; font-weight: 800; color: var(--text);
+  margin-bottom: 10px; letter-spacing: -.01em;
+}
+.docs-mock-section-label {
+  font-size: .58rem; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+  margin: 10px 0 6px; display: flex; align-items: center; gap: 6px;
+}
+.docs-mock-section-label::after {
+  content:''; flex:1; height:1px; background: rgba(255,255,255,.05);
+}
+.docs-mock-cards {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;
+}
+.docs-mock-card {
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 8px; padding: 8px 9px;
+}
+.docs-mock-card-ico { font-size: 11px; margin-bottom: 3px; }
+.docs-mock-card-title { font-size: .6rem; font-weight: 700; color: var(--text2); }
+.docs-mock-card-text { font-size: .55rem; color: var(--muted); line-height: 1.4; margin-top: 1px; }
+.docs-mock-callout {
+  background: rgba(0,212,255,.05); border: 1px solid rgba(0,212,255,.15);
+  border-radius: 8px; padding: 8px 10px;
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.docs-mock-callout-ico { font-size: 10px; flex-shrink: 0; }
+.docs-mock-callout-text { font-size: .58rem; color: var(--muted2); line-height: 1.5; }
+.docs-mock-callout-text strong { color: var(--accent); font-weight: 700; display: block; margin-bottom: 1px; font-size: .6rem; }
+
+@media (max-width: 760px) {
+  .docs-card { grid-template-columns: 1fr; }
+  .docs-mock { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════
    STATS PROMO (for /stats/ link)
 ══════════════════════════════════════════════════════════ */
 .stats-promo {
@@ -619,6 +765,7 @@ footer {
 }
 
 @media (max-width: 400px) {
+  .nav-btn-docs span { display: none; }
   .nav-btn-crm span { display: none; }
   .nav-btn-admin span { display: none; }
 }
@@ -653,6 +800,10 @@ footer {
   </div>
 
   <div class="nav-right">
+    <a href="/docs/" class="nav-btn-docs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+      <span>Docs</span>
+    </a>
     <!-- CRM button in nav — always visible -->
     <a href="/crm/" class="nav-btn-crm">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
@@ -968,6 +1119,111 @@ footer {
         <p class="step-p">В GRAMLY CRM ежедневно вносится Cash Flow команды. Автоматические отчёты, история, недельные планы — всё в одном веб-интерфейсе.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ══ DOCS SECTION ══════════════════════════════════════════════ -->
+<section class="docs-section">
+  <div class="docs-card">
+    <div>
+      <div class="docs-card-tag">
+        <span class="docs-tag-dot"></span>
+        Встроенная документация
+      </div>
+      <h2 class="docs-h2">Всё под рукой —<br/><span>прямо в системе</span></h2>
+      <p class="docs-p">
+        Полные инструкции для менеджеров и воркеров — без внешних ссылок, без PDF. Авторизация через Telegram: вошли в бота — вошли в документацию.
+      </p>
+      <div class="docs-features">
+        <div class="docs-feature">
+          <span class="docs-feature-dot"></span>
+          SpamControl — как добавлять воркеров, выдавать ссылки, обрабатывать выплаты
+        </div>
+        <div class="docs-feature">
+          <span class="docs-feature-dot"></span>
+          CRM — ежедневный Cash Flow, заявки, отчёты, управление участниками
+        </div>
+        <div class="docs-feature">
+          <span class="docs-feature-dot"></span>
+          Ставки и баланс — как считается заработок, реферальная система, выводы
+        </div>
+        <div class="docs-feature">
+          <span class="docs-feature-dot"></span>
+          FAQ — ответы на частые вопросы с примерами и пошаговыми инструкциями
+        </div>
+      </div>
+      <div class="docs-btns">
+        <a href="/docs/" class="btn-docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          Открыть документацию
+        </a>
+        <span style="font-size:.78rem;color:var(--muted)">Вход через Telegram</span>
+      </div>
+    </div>
+
+    <!-- Docs UI mockup -->
+    <div class="docs-mock">
+      <div class="docs-mock-window">
+        <!-- Sidebar -->
+        <div class="docs-mock-sidebar">
+          <div class="docs-mock-logo">
+            <span>📖</span> Docs
+          </div>
+          <div class="docs-mock-nav-item active">
+            <span class="docs-mock-nav-dot"></span>Главная
+          </div>
+          <div class="docs-mock-nav-item">
+            <span class="docs-mock-nav-dot"></span>CRM
+          </div>
+          <div class="docs-mock-nav-item">
+            <span class="docs-mock-nav-dot"></span>SpamControl
+          </div>
+          <div class="docs-mock-nav-item">
+            <span class="docs-mock-nav-dot"></span>Ставки
+          </div>
+          <div class="docs-mock-nav-item">
+            <span class="docs-mock-nav-dot"></span>FAQ
+          </div>
+        </div>
+        <!-- Content -->
+        <div class="docs-mock-content">
+          <div class="docs-mock-title">Документация системы</div>
+
+          <div class="docs-mock-section-label">Разделы</div>
+          <div class="docs-mock-cards">
+            <div class="docs-mock-card">
+              <div class="docs-mock-card-ico">📊</div>
+              <div class="docs-mock-card-title">Работа с CRM</div>
+              <div class="docs-mock-card-text">Cash Flow, отчёты, планы</div>
+            </div>
+            <div class="docs-mock-card">
+              <div class="docs-mock-card-ico">🤖</div>
+              <div class="docs-mock-card-title">SpamControl</div>
+              <div class="docs-mock-card-text">Воркеры, ссылки, выплаты</div>
+            </div>
+            <div class="docs-mock-card">
+              <div class="docs-mock-card-ico">💰</div>
+              <div class="docs-mock-card-title">Ставки и баланс</div>
+              <div class="docs-mock-card-text">Расчёт, рефералы, выводы</div>
+            </div>
+            <div class="docs-mock-card">
+              <div class="docs-mock-card-ico">❓</div>
+              <div class="docs-mock-card-title">Частые вопросы</div>
+              <div class="docs-mock-card-text">Ответы на типовые ситуации</div>
+            </div>
+          </div>
+
+          <div class="docs-mock-callout">
+            <div class="docs-mock-callout-ico">💡</div>
+            <div class="docs-mock-callout-text">
+              <strong>Совет</strong>
+              Начните со SpamControl — там описано, как добавить первых воркеров.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </section>
 

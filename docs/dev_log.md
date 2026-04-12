@@ -978,4 +978,38 @@ If `SUBSCRIPTION_CHANNEL_ID` is empty, the gate is disabled entirely (backward c
 1. Remove bot from the channel
 2. Any user action → bot should still work (fail-open), ERROR logged in `celery_worker` / `web` logs
 
+---
+
+## 2026-04-12 — Docs: Telegram auth + мобильная адаптация
+
+### Задача
+Документация была доступна только `is_staff` пользователям (Django admin). Нужно было:
+1. Сделать её доступной всем зарегистрированным пользователям системы
+2. Авторизация через Telegram (не Django admin)
+3. Вынести ссылку на лендинг
+4. Исправить мобильную вёрстку
+
+### Что сделано
+
+**Auth:**
+- `apps/docs/views.py` — убран `staff_member_required`; добавлен `DocsLoginMixin` (проверяет `crm_user_id` в session)
+- `DocsLoginView` + `DocsAuthCallbackView` + `DocsLogoutView` — Telegram Widget → HMAC → session (общий ключ `crm_user_id` с CRM)
+- `apps/docs/urls.py` — добавлены `/docs/login/`, `/docs/auth/callback/`, `/docs/logout/`
+- `templates/docs/login.html` — страница входа в стиле CRM login, брендированная под docs
+
+**Шаблоны — мобильная адаптация:**
+- `templates/docs/base.html` — полный рефактор:
+  - Sidebar скрыт на мобилке, появляется по кнопке hamburger
+  - Оверлей (backdrop) для закрытия sidebar кликом вне
+  - CSS transitions для плавного открытия/закрытия
+  - `@media (≤900px)`: sidebar в drawer, `topbar-burger` видим, `content` padding сужен
+  - `@media (≤580px)`: card-grid в 1 колонку, шаги стакуются вертикально, callout — вертикально
+  - Кнопка выхода в footer sidebar
+  - `.table-wrap` — горизонтальный скролл таблиц на мобилке
+- `templates/docs/{index,spamcontrol,rates,crm}.html` — таблицы обёрнуты в `.table-wrap`
+- `templates/docs/index.html` — nav-cards-grid получил CSS-класс для mobile override
+
+**Лендинг:**
+- `templates/landing.html` — добавлена кнопка "Docs" в navbar (`.nav-btn-docs`), скрывает текст на мобилке
+
 <!-- Add new entries above this line in the same format -->
