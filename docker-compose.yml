@@ -34,6 +34,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── S3 file storage: MinIO ──────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+    # Ports are NOT exposed on host — access only via nginx proxy at /s3/
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 8s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  # One-shot: creates the bucket with public-read policy, then exits 0.
+  # web/celery_worker depend on this completing successfully.
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY}@minio:9000
+    entrypoint: >
+      /bin/sh -c "
+        mc mb --ignore-existing local/${AWS_STORAGE_BUCKET_NAME} &&
+        mc anonymous set download local/${AWS_STORAGE_BUCKET_NAME} &&
+        echo '✓ MinIO bucket ready: ${AWS_STORAGE_BUCKET_NAME}'
+      "
+
   web:
     <<: *common
     build: .
@@ -43,6 +78,13 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       RUN_MIGRATIONS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/health/ -o /dev/null || true"]
       interval: 10s
@@ -56,6 +98,13 @@ services:
     command: celery -A config.celery worker -l info -c 4 -Q celery,default,broadcasts
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   celery_beat:
     <<: *common
@@ -75,7 +124,7 @@ services:
       - letsencrypt:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
       - static_files:/app/staticfiles:ro
-      # Note: no media_files volume — media is served from S3, not local disk
+      # Note: no media_files volume — media served from MinIO via nginx /s3/ proxy
     depends_on:
       web:
         condition: service_healthy
@@ -95,5 +144,4 @@ volumes:
   static_files:
   letsencrypt:
   certbot_www:
-  # media_files removed: CRM uploads now go to S3-compatible storage (R2/MinIO).
-  # No local volume needed; nginx no longer serves /media/.
+  minio_data:
