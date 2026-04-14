@@ -148,3 +148,119 @@ class StatsDashboardView(View):
             "chart_missed_json": json.dumps(chart_missed),
         }
         return render(request, "stats_dashboard.html", context)
+
+
+# ── Clients & Links ───────────────────────────────────────────────────────────
+
+@method_decorator(staff_member_required, name="dispatch")
+class ClientsView(View):
+    """
+    List + CRUD for Client and ClientLink.
+    GET  /stats/clients/                   — list of clients
+    POST /stats/clients/                   — create client (nick, rate, notes)
+    POST /stats/clients/<id>/add-link/     — add link to client
+    POST /stats/clients/<id>/delete/       — delete client
+    POST /stats/clients/links/<id>/delete/ — delete link
+    """
+
+    def get(self, request):
+        from apps.clients.models import Client, LinkAssignment
+        from django.db.models import Sum, Count, Q
+
+        clients = list(
+            Client.objects.prefetch_related(
+                "links__assignments__work_link",
+                "links__assignments__worker",
+            ).order_by("-created_at")
+        )
+
+        # Annotate each client with computed stats
+        client_data = []
+        for c in clients:
+            total_apps = c.total_applications
+            client_earned = c.client_earned
+            # worker payout = sum(personal_rate × attracted_count) for all assignments
+            from decimal import Decimal
+            worker_payout = Decimal("0")
+            referral_payout = Decimal("0")
+            for link in c.links.all():
+                for a in link.assignments.all():
+                    if a.work_link:
+                        cnt = Decimal(a.work_link.attracted_count)
+                        worker_payout += cnt * a.worker.personal_rate
+                        if a.worker.referred_by:
+                            referral_payout += cnt * a.worker.referred_by.referral_rate
+            net_profit = client_earned - worker_payout - referral_payout
+
+            active_links = list(c.active_links)
+            all_links = list(c.links.all())
+
+            client_data.append({
+                "client": c,
+                "total_apps": total_apps,
+                "client_earned": client_earned,
+                "worker_payout": worker_payout.quantize(Decimal("0.01")),
+                "referral_payout": referral_payout.quantize(Decimal("0.01")),
+                "net_profit": net_profit.quantize(Decimal("0.01")),
+                "active_links": active_links,
+                "all_links": all_links,
+            })
+
+        return render(request, "stats_clients.html", {
+            "client_data": client_data,
+            "msg": request.GET.get("msg", ""),
+            "error": request.GET.get("error", ""),
+        })
+
+    def post(self, request):
+        from apps.clients.models import Client, ClientLink
+        from django.shortcuts import redirect
+
+        action = request.POST.get("action", "")
+
+        if action == "create_client":
+            nick = request.POST.get("nick", "").strip()
+            rate = request.POST.get("rate", "0").strip()
+            notes = request.POST.get("notes", "").strip()
+            if not nick:
+                return redirect("/stats/clients/?error=Укажите+ник+клиента")
+            if Client.objects.filter(nick=nick).exists():
+                return redirect(f"/stats/clients/?error=Клиент+{nick}+уже+существует")
+            try:
+                from decimal import Decimal
+                Client.objects.create(nick=nick, rate=Decimal(rate), notes=notes)
+            except Exception as e:
+                return redirect(f"/stats/clients/?error={e}")
+            return redirect("/stats/clients/?msg=Клиент+создан")
+
+        if action == "add_link":
+            client_id = request.POST.get("client_id", "")
+            url = request.POST.get("url", "").strip()
+            if not url:
+                return redirect("/stats/clients/?error=Укажите+URL")
+            try:
+                client = Client.objects.get(pk=client_id)
+                ClientLink.objects.create(client=client, url=url)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+            except Exception as e:
+                return redirect(f"/stats/clients/?error={e}")
+            return redirect("/stats/clients/?msg=Ссылка+добавлена")
+
+        if action == "delete_client":
+            client_id = request.POST.get("client_id", "")
+            try:
+                Client.objects.get(pk=client_id).delete()
+            except Client.DoesNotExist:
+                pass
+            return redirect("/stats/clients/?msg=Клиент+удалён")
+
+        if action == "delete_link":
+            link_id = request.POST.get("link_id", "")
+            try:
+                ClientLink.objects.get(pk=link_id).delete()
+            except ClientLink.DoesNotExist:
+                pass
+            return redirect("/stats/clients/?msg=Ссылка+удалена")
+
+        return redirect("/stats/clients/")

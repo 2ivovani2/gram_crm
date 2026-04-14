@@ -294,6 +294,24 @@ class UserService:
     # ── Misc ──────────────────────────────────────────────────────────────────
 
     @staticmethod
+    def clear_work_url(user: User) -> None:
+        """
+        Archive the active WorkLink (freeze count) and leave user without an active link.
+        Used when a link is deactivated — worker keeps their earnings but has no active URL.
+        """
+        old_link = WorkLink.objects.filter(user=user, is_active=True).first()
+        if old_link:
+            WorkLink.objects.filter(pk=old_link.pk).update(
+                is_active=False,
+                deactivated_at=timezone.now(),
+                note="Ссылка клиента деактивирована",
+            )
+        user.work_url = ""
+        user.attracted_count = 0
+        user.save(update_fields=["work_url", "attracted_count", "updated_at"])
+        UserService.recalculate_balance(user)
+
+    @staticmethod
     def mark_blocked_bot(user: User) -> None:
         User.objects.filter(pk=user.pk).update(is_blocked_bot=True)
 

@@ -48,8 +48,9 @@ urlpatterns = [
     path("entry/apps/",         views.ApplicationEntryView.as_view(),  name="entry_apps"),
 
     # ── History & reports ─────────────────────────────────────────────────────
-    path("history/",            views.HistoryView.as_view(),          name="history"),
-    path("reports/<int:pk>/",   views.ReportDetailView.as_view(),     name="report_detail"),
+    path("history/",                    views.HistoryView.as_view(),      name="history"),
+    path("history/<str:date_str>/",     views.DayDetailView.as_view(),    name="day_detail"),
+    path("reports/<int:pk>/",           views.ReportDetailView.as_view(), name="report_detail"),
 
     # ── Export ────────────────────────────────────────────────────────────────
     path("export/",             views.ExportView.as_view(),           name="export"),

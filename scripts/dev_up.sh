@@ -48,9 +48,11 @@ WEBHOOK_URL="${NGROK_URL}${WEBHOOK_PATH}"
 log "ngrok domain: $NGROK_DOMAIN"
 
 # ── 1. Start services (nginx excluded from dev) ───────────────────────────────
-mkdir -p "$PROJECT_DIR/media"
-log "Starting services: postgres redis ngrok web celery_worker celery_beat ..."
-$COMPOSE up -d postgres redis ngrok web celery_worker celery_beat
+# MinIO + minio-init are started automatically via docker-compose.dev.yml.
+# minio-init creates the bucket and sets public-read policy, then exits.
+# web/celery depend on minio-init completing before they start.
+log "Starting services: postgres redis minio ngrok web celery_worker celery_beat ..."
+$COMPOSE up -d postgres redis minio minio-init ngrok web celery_worker celery_beat
 
 # ── 2. Wait for web service (via Docker internal exec, no localhost needed) ───
 log "Waiting for web service health check (up to ${WEB_WAIT_SEC}s) ..."
@@ -89,6 +91,8 @@ echo "║  Inspector: http://localhost:4040                          ║"
 printf "║  Admin    : %-47s║\n" "${NGROK_URL}/django-admin/"
 printf "║  CRM      : %-47s║\n" "${NGROK_URL}/crm/"
 printf "║  Stats    : %-47s║\n" "${NGROK_URL}/stats/"
+echo "║  MinIO S3 : http://localhost:9000  (API)                   ║"
+echo "║  MinIO UI : http://localhost:9001  (console)               ║"
 echo "║                                                            ║"
 echo "║  make logs         — follow logs                          ║"
 echo "║  make webhook-info — check webhook status                  ║"

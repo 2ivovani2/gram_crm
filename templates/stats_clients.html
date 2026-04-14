@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Клиенты — SpamBotControl</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2a2d3a;
+  --accent: #6366f1;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.page-title { font-size: 22px; font-weight: 700; }
+.nav-links { display: flex; gap: 12px; }
+.nav-link {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  transition: color .15s, border-color .15s;
+}
+.nav-link:hover { color: var(--text); border-color: var(--accent); }
+
+.alert {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  font-size: 13px;
+}
+.alert-success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: var(--green); }
+.alert-error   { background: rgba(239,68,68,.12);  border: 1px solid rgba(239,68,68,.3);  color: var(--red); }
+
+/* Create client form */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+.form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12px; color: var(--muted); }
+.form-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-input.short { width: 120px; }
+.form-input.medium { width: 220px; }
+.form-input.wide { width: 380px; }
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-danger  { background: var(--red);    color: #fff; }
+.btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+.btn-ghost:hover { color: var(--text); border-color: var(--text); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+/* Client list */
+.client-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.client-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.client-name { font-size: 16px; font-weight: 600; }
+.client-rate { color: var(--green); font-size: 13px; }
+.client-stats {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.stat-item { display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 11px; color: var(--muted); }
+.stat-value { font-size: 14px; font-weight: 600; }
+.stat-value.green { color: var(--green); }
+.stat-value.red   { color: var(--red); }
+.stat-value.yellow{ color: var(--yellow); }
+
+/* Links table */
+.links-section { padding: 16px 20px; }
+.links-title {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 10px;
+}
+
+.links-table { width: 100%; border-collapse: collapse; }
+.links-table th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.links-table td {
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(42,45,58,.6);
+  vertical-align: middle;
+  font-size: 13px;
+}
+.links-table tr:last-child td { border-bottom: none; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.badge-active   { background: rgba(34,197,94,.15);  color: var(--green); }
+.badge-inactive { background: rgba(239,68,68,.15);  color: var(--red); }
+.badge-paused   { background: rgba(234,179,8,.15);  color: var(--yellow); }
+
+.url-cell { font-family: monospace; font-size: 12px; word-break: break-all; max-width: 300px; }
+
+/* Add link form inside client card */
+.add-link-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 12px 0;
+}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="page-title">🔗 Клиенты и ссылки</div>
+  <div class="nav-links">
+    <a href="/stats/" class="nav-link">📊 Статистика</a>
+  </div>
+</div>
+
+{% if msg %}
+<div class="alert alert-success">✅ {{ msg }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">❌ {{ error }}</div>
+{% endif %}
+
+<!-- Create client form -->
+<div class="card">
+  <div class="card-title">Добавить клиента</div>
+  <form method="post" action="/stats/clients/">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_client">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Ник клиента</label>
+        <input class="form-input medium" name="nick" placeholder="Клиент1" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ставка ($ / заявка)</label>
+        <input class="form-input short" name="rate" type="number" step="0.01" min="0" value="0" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Примечания</label>
+        <input class="form-input wide" name="notes" placeholder="Необязательно">
+      </div>
+      <div class="form-group">
+        <label class="form-label">&nbsp;</label>
+        <button class="btn btn-primary" type="submit">Создать</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Clients list -->
+{% if client_data %}
+  {% for row in client_data %}
+  <div class="client-card">
+    <div class="client-header">
+      <div>
+        <span class="client-name">{{ row.client.nick }}</span>
+        <span class="client-rate" style="margin-left:10px;">{{ row.client.rate }}$ / заявка</span>
+        {% if row.client.notes %}
+        <div style="font-size:12px; color: var(--muted); margin-top:4px;">{{ row.client.notes }}</div>
+        {% endif %}
+      </div>
+      <div class="client-stats">
+        <div class="stat-item">
+          <span class="stat-label">Всего заявок</span>
+          <span class="stat-value">{{ row.total_apps }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Доход клиента</span>
+          <span class="stat-value green">{{ row.client_earned }} $</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Выплаты воркерам</span>
+          <span class="stat-value yellow">{{ row.worker_payout }} $</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Рефералы</span>
+          <span class="stat-value yellow">{{ row.referral_payout }} $</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Чистая прибыль</span>
+          <span class="stat-value {% if row.net_profit >= 0 %}green{% else %}red{% endif %}">{{ row.net_profit }} $</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Активных ссылок</span>
+          <span class="stat-value">{{ row.active_links|length }} / {{ row.all_links|length }}</span>
+        </div>
+      </div>
+      <form method="post" action="/stats/clients/" onsubmit="return confirm('Удалить клиента {{ row.client.nick }} и все его ссылки?')">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete_client">
+        <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+        <button class="btn btn-danger btn-sm" type="submit">Удалить</button>
+      </form>
+    </div>
+
+    <div class="links-section">
+      <div class="links-title">Ссылки</div>
+
+      {% if row.all_links %}
+      <table class="links-table">
+        <thead>
+          <tr>
+            <th>URL</th>
+            <th>Статус</th>
+            <th>Заявок</th>
+            <th>Исполнитель</th>
+            <th>Последняя активность</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for link in row.all_links %}
+          {% with asgn=link.active_assignment %}
+          <tr>
+            <td class="url-cell">{{ link.url }}</td>
+            <td>
+              {% if link.status == "active" %}
+                <span class="badge badge-active">Активна</span>
+              {% elif link.status == "inactive" %}
+                <span class="badge badge-inactive">Деактивирована</span>
+              {% else %}
+                <span class="badge badge-paused">Пауза</span>
+              {% endif %}
+            </td>
+            <td>{{ link.total_applications }}</td>
+            <td>
+              {% if asgn %}
+                {{ asgn.worker.display_name }}
+              {% else %}
+                <span style="color:var(--muted)">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if asgn and asgn.last_count_updated_at %}
+                {{ asgn.last_count_updated_at|date:"d.m.Y H:i" }}
+              {% else %}
+                <span style="color:var(--muted)">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/stats/clients/" onsubmit="return confirm('Удалить ссылку?')">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_link">
+                <input type="hidden" name="link_id" value="{{ link.pk }}">
+                <button class="btn btn-ghost btn-sm" type="submit">Удалить</button>
+              </form>
+            </td>
+          </tr>
+          {% endwith %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">Ссылок нет</div>
+      {% endif %}
+
+      <!-- Add link -->
+      <form method="post" action="/stats/clients/" class="add-link-row">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_link">
+        <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+        <input class="form-input" name="url" style="flex:1; min-width:200px;" placeholder="https://..." required>
+        <button class="btn btn-primary btn-sm" type="submit">+ Добавить ссылку</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+<div class="card">
+  <div class="empty-state">Клиентов пока нет. Создайте первого клиента выше.</div>
+</div>
+{% endif %}
+
+</body>
+</html>

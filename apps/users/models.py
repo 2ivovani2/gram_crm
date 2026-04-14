@@ -217,3 +217,67 @@ class User(AbstractUser):
     def ban(self) -> None:
         self.status = UserStatus.BANNED
         self.save(update_fields=["status", "updated_at"])
+
+
+# ─── Join Request ──────────────────────────────────────────────────────────────
+
+class JoinRequestStatus(models.TextChoices):
+    PENDING = "pending", "На рассмотрении"
+    APPROVED = "approved", "Принята"
+    REJECTED = "rejected", "Отклонена"
+
+
+class JoinRequest(models.Model):
+    """
+    Replaces the invite key system.
+
+    Flow:
+      1. New user sends /start → taps "Подать заявку" → JoinRequest created (PENDING).
+      2. All admins receive a notification with Approve / Reject inline buttons.
+      3. Admin taps Approve → user.activate() + worker notified.
+         Admin taps Reject → user stays PENDING + notified with rejection message.
+
+    One request per user at a time (unique_together on user + PENDING status is
+    enforced in the service, not at DB level, to allow re-application after rejection).
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="join_requests",
+        verbose_name="Пользователь",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=JoinRequestStatus.choices,
+        default=JoinRequestStatus.PENDING,
+        db_index=True,
+    )
+    message = models.TextField(
+        blank=True,
+        verbose_name="Сообщение от кандидата",
+        help_text="Опциональный текст, который пользователь отправил вместе с заявкой",
+    )
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_join_requests",
+        verbose_name="Рассмотрел",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    # Stores [{telegram_id, message_id}] for each admin notification message
+    # so we can edit them after a decision is made.
+    admin_notifications = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Заявка на вступление"
+        verbose_name_plural = "Заявки на вступление"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"JoinRequest #{self.pk} | {self.user} [{self.status}]"
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == JoinRequestStatus.PENDING

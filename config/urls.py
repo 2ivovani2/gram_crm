@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from apps.common.views import HealthCheckView, LandingView
-from apps.stats.views import StatsDashboardView
+from apps.stats.views import StatsDashboardView, ClientsView
 from apps.telegram_bot.webhook import TelegramWebhookView
 
 urlpatterns = [
@@ -10,6 +10,7 @@ urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
     # Stats dashboard (staff_member_required — superuser login via /django-admin/)
     path("stats/", StatsDashboardView.as_view(), name="stats-dashboard"),
+    path("stats/clients/", ClientsView.as_view(), name="stats-clients"),
     # Django admin (superuser/backup tool only — main admin is inside Telegram bot)
     path("django-admin/", admin.site.urls),
     # Telegram webhook

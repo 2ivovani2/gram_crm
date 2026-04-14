@@ -1,17 +1,24 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
+# InviteKeyInputState kept for migration safety — no longer used in bot flow.
 class InviteKeyInputState(StatesGroup):
-    """Worker: entering invite key for account activation."""
+    """DEPRECATED: invite key system removed. Kept to avoid stale FSM state errors."""
     waiting_for_key = State()
 
 
+# AdminInviteCreateState kept for migration safety — handlers removed from router.
 class AdminInviteCreateState(StatesGroup):
-    """Admin/Curator: multi-step invite key creation."""
+    """DEPRECATED: invite key system removed."""
     waiting_for_label = State()
     waiting_for_max_uses = State()
     waiting_for_expiry = State()
     confirm = State()
+
+
+class AdminApplicationRejectState(StatesGroup):
+    """Admin: entering rejection reason for a join request."""
+    waiting_for_reason = State()
 
 
 class AdminBroadcastCreateState(StatesGroup):

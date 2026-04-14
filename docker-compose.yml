@@ -40,7 +40,6 @@ services:
     command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 2
     volumes:
       - static_files:/app/staticfiles
-      - media_files:/app/media
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       RUN_MIGRATIONS: "true"
@@ -76,7 +75,7 @@ services:
       - letsencrypt:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
       - static_files:/app/staticfiles:ro
-      - media_files:/app/media:ro
+      # Note: no media_files volume — media is served from S3, not local disk
     depends_on:
       web:
         condition: service_healthy
@@ -94,6 +93,7 @@ services:
 volumes:
   redis_data:
   static_files:
-  media_files:
   letsencrypt:
   certbot_www:
+  # media_files removed: CRM uploads now go to S3-compatible storage (R2/MinIO).
+  # No local volume needed; nginx no longer serves /media/.

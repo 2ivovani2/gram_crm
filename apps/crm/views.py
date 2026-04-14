@@ -430,6 +430,31 @@ class ReportDetailView(CRMOwnerMixin, TemplateView):
         return render(request, self.template_name, ctx)
 
 
+class DayDetailView(CRMOwnerMixin, TemplateView):
+    """Detail view for a single history day: finance entry, application entry, screenshot."""
+    template_name = "crm/day_detail.html"
+
+    def get(self, request, date_str: str):
+        try:
+            date = datetime.date.fromisoformat(date_str)
+        except ValueError:
+            raise Http404
+
+        from apps.crm.models import FinanceEntry, ApplicationEntry, DailySummaryReport
+        finance = FinanceEntry.objects.filter(workspace=request.crm_workspace, date=date).first()
+        application = ApplicationEntry.objects.filter(workspace=request.crm_workspace, date=date).first()
+        report = DailySummaryReport.objects.filter(workspace=request.crm_workspace, date=date).first()
+
+        ctx = self.get_crm_context(request)
+        ctx.update({
+            "date": date,
+            "finance": finance,
+            "application": application,
+            "report": report,
+        })
+        return render(request, self.template_name, ctx)
+
+
 # ─── Admin views (owner only) ─────────────────────────────────────────────────
 
 class AdminIndexView(CRMOwnerMixin, TemplateView):

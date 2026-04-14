@@ -36,6 +36,7 @@ LOCAL_APPS = [
     "apps.common",
     "apps.users",
     "apps.invites",
+    "apps.clients",
     "apps.stats",
     "apps.broadcasts",
     "apps.referrals",
@@ -149,6 +150,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.crm.tasks.crm_weekly_report_task",
         "schedule": crontab(hour=8, minute=0, day_of_week="monday"),
     },
+    # Daily at 09:00 МСК: unassign workers with no activity for 3+ days
+    "check-worker-inactivity": {
+        "task": "apps.clients.tasks.check_worker_inactivity_task",
+        "schedule": crontab(hour=9, minute=0),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -197,10 +203,44 @@ SUBSCRIPTION_CHANNEL_URL = env(
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# ── Media (user uploads — CRM screenshots) ────────────────────────────────────
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# ── Media — S3-compatible storage (always active) ─────────────────────────────
+# All CRM uploads go to S3-compatible storage.
+# Dev:  local MinIO container (docker-compose.dev.yml, port 9000).
+# Prod: Cloudflare R2 / AWS S3 / any S3-compatible endpoint.
+# See config/storage_backends.py and .env.example for full setup docs.
+
+# ── boto3 credentials + bucket ────────────────────────────────────────────────
+AWS_ACCESS_KEY_ID       = env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY   = env("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
+
+# Endpoint URL:
+#   Dev  → http://minio:9000  (internal Docker DNS, resolved inside container)
+#   Prod → https://<account>.r2.cloudflarestorage.com  (omit for AWS S3)
+AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default=None)
+AWS_S3_REGION_NAME  = env("AWS_S3_REGION_NAME", default="auto")
+
+# Signed URLs:
+#   Dev  → false  (MinIO bucket is public-read; no signing overhead)
+#   Prod → true   (private bucket, time-limited signed URLs, 1 h TTL)
+AWS_QUERYSTRING_AUTH   = env.bool("MEDIA_QUERYSTRING_AUTH", default=True)
+AWS_QUERYSTRING_EXPIRE = env.int("MEDIA_QUERYSTRING_EXPIRE", default=3600)
+
+# URL rewriting for dev: boto3 generates URLs with the internal Docker hostname
+# (e.g. http://minio:9000/...) which is unreachable from the browser.
+# MEDIA_S3_PUBLIC_URL replaces the internal host with a publicly accessible one.
+# Dev:  http://localhost:9000
+# Prod: leave empty — R2/S3 endpoint URLs are directly accessible.
+MEDIA_S3_PUBLIC_URL = env("MEDIA_S3_PUBLIC_URL", default="")
+
+# MEDIA_URL is used by Django admin file widgets as a prefix fallback.
+# With S3 backend the actual URL comes from storage.url() — this is a safe default.
+MEDIA_URL = "/"
+
 STORAGES = {
+    "default": {
+        "BACKEND": "config.storage_backends.MediaStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },

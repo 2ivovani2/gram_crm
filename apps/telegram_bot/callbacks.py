@@ -12,12 +12,13 @@ Prefix map:
   cur     → curator flows
   adm     → admin main menu
   adm_u   → admin users
-  adm_i   → admin invites
   adm_b   → admin broadcasts
   adm_s   → admin stats
   adm_cfg → admin settings
   adm_w   → admin withdrawals
   adm_d   → admin daily report
+  adm_a   → admin applications (join requests)
+  adm_cl  → admin clients & links
   ww      → worker withdrawal
 """
 from aiogram.filters.callback_data import CallbackData
@@ -38,6 +39,20 @@ class AdminMenuCallback(CallbackData, prefix="adm"):
 class AdminUserCallback(CallbackData, prefix="adm_u"):
     action: str
     user_id: int = 0
+    page: int = 1
+
+
+class AdminApplicationCallback(CallbackData, prefix="adm_a"):
+    action: str          # list | view | approve | reject | noop
+    request_id: int = 0
+    page: int = 1
+
+
+class AdminClientCallback(CallbackData, prefix="adm_cl"):
+    action: str          # list | view_client | view_link | deactivate | assign | noop
+    client_id: int = 0
+    link_id: int = 0
+    worker_id: int = 0
     page: int = 1
 
 

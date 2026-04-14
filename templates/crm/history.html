@@ -9,6 +9,14 @@
 </a>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+tr.clickable-row { cursor: pointer; transition: background .15s; }
+tr.clickable-row:hover { background: rgba(0,212,255,.06); }
+tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
+</style>
+{% endblock %}
+
 {% block content %}
 
 <!-- ── Filters ─────────────────────────────────────────────────────────────── -->
@@ -49,8 +57,8 @@
     </thead>
     <tbody>
       {% for entry in entries %}
-      <tr>
-        <td style="font-weight:600;color:var(--text);white-space:nowrap">
+      <tr class="clickable-row" data-href="/crm/history/{{ entry.date|date:'Y-m-d' }}/">
+        <td style="white-space:nowrap">
           {{ entry.date|date:"d.m.Y" }}
           {% if entry.date == today %}<span class="badge badge-blue" style="margin-left:4px;font-size:10px">Сегодня</span>{% endif %}
         </td>
@@ -84,7 +92,7 @@
           <span class="badge badge-muted">Нет</span>
           {% endif %}
         </td>
-        <td style="white-space:nowrap">
+        <td style="white-space:nowrap" onclick="event.stopPropagation()">
           {% if entry.finance %}
           <a href="{% url 'crm:entry_finance' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
           {% endif %}
@@ -114,4 +122,15 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('tr.clickable-row').forEach(function(row) {
+  row.addEventListener('click', function(e) {
+    if (e.target.closest('a, button, form')) return;
+    window.location.href = row.dataset.href;
+  });
+});
+</script>
 {% endblock %}

@@ -23,6 +23,7 @@ dependencies = [
     "django-celery-beat==2.6.0",
     "asgiref==3.8.1",
     "openpyxl>=3.1.0",
+    "django-storages[boto3]>=1.14",
 ]
 
 [project.optional-dependencies]

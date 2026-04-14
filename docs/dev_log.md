@@ -2,6 +2,126 @@
 
 ---
 
+## 2026-04-14 — Client/Link system + Join Request flow + Worker inactivity task
+
+### Overview
+
+Full business logic overhaul replacing the invite key system with a proper client/link/assignment architecture.
+
+### New models (`apps/clients/models.py` + `apps/users/models.py`)
+
+- **`Client`** — paying client with `nick` (unique) + `rate` ($/application) + `notes`. Properties: `active_links`, `total_applications`, `client_earned`.
+- **`ClientLink`** — URL belonging to a Client. Status: `active` / `inactive` / `paused`. Tracks `deactivated_at`, `deactivation_note`. Properties: `active_assignment`, `total_applications`. Method: `deactivate(note)`.
+- **`LinkAssignment`** — worker-to-link mapping. `is_active=True` means currently assigned. `work_link` FK to `WorkLink` created at assignment time (preserves earnings history). `last_count_updated_at` tracks activity for 3-day inactivity rule. `unassign_reason` audit trail.
+- **`JoinRequest`** (in `apps/users/models.py`) — replaces invite key flow. Status: `pending` / `approved` / `rejected`. `admin_notifications` JSON: `[{telegram_id, message_id}]` for editing admin messages after decision.
+
+### New services (`apps/clients/services.py`)
+
+- **`JoinService`**: `submit` (creates JoinRequest, errors if pending exists), `approve` (activates user), `reject`, `get_pending_list`, `count_pending`
+- **`AssignmentService`**: `auto_assign` (picks worker with fewest active assignments), `manual_assign` (unassigns existing, assigns chosen), `unassign` (archives WorkLink), `deactivate_link` (deactivates + unassigns + returns worker tg_ids), `touch_count_updated`, `get_inactive_assignments`
+
+`UserService.clear_work_url` added — archives WorkLink without creating a new one (used on link deactivation).
+
+### Bot changes
+
+**Worker `/start` rewrite (`apps/telegram_bot/handlers/worker/start.py`):**
+- Removed invite key input flow entirely
+- New states based on JoinRequest status: no request → apply button; pending → update button; approved → "restart bot"; rejected → reapply button
+- `submit_request` callback: creates JoinRequest, sends notification to all admins with inline approve/reject buttons, saves message IDs to `admin_notifications`
+- `check_request` callback: re-fetches user, shows current status
+
+**New admin handler: `apps/telegram_bot/handlers/admin/applications.py`:**
+- Paginated list of PENDING requests
+- View request card with user info
+- Approve: activates user, notifies worker, edits other admin notifications
+- Reject: FSM (AdminApplicationRejectState) for entering reason, notifies worker, edits other admin notifications
+
+**New admin handler: `apps/telegram_bot/handlers/admin/clients.py`:**
+- Browse clients list (paginated)
+- Client card: total apps, earnings, active link count
+- Link card: assignment info, last activity, apps count
+- Deactivate link: calls `AssignmentService.deactivate_link`, notifies unassigned workers
+- Manual assignment: pick worker by active assignment count, calls `AssignmentService.manual_assign`, notifies worker
+
+**Admin keyboards updated (`apps/telegram_bot/admin_keyboards.py`):**
+- Main menu: `Заявки (N)` badge shows pending count
+- Added: `get_clients_list_keyboard`, `get_client_card_keyboard`, `get_link_card_keyboard`, `get_assign_workers_keyboard`
+
+**Router updated (`apps/telegram_bot/router.py`):**
+- Registered `admin_applications_router` and `admin_clients_router`
+
+**Menu updated (`apps/telegram_bot/handlers/admin/menu.py`):**
+- `send_admin_main_menu` now fetches `JoinService.count_pending()` and passes it to keyboard
+- Handles `section="applications"` → redirects to applications list
+
+**Callbacks added (`apps/telegram_bot/callbacks.py`):**
+- `AdminApplicationCallback(prefix="adm_a")`: action, request_id, page
+- `AdminClientCallback(prefix="adm_cl")`: action, client_id, link_id, worker_id, page
+
+**States updated (`apps/telegram_bot/states.py`):**
+- `AdminApplicationRejectState.waiting_for_reason`
+- `InviteKeyInputState` + `AdminInviteCreateState` deprecated (kept for stale FSM safety)
+
+### Web UI (`/stats/clients/`)
+
+New view `ClientsView` in `apps/stats/views.py` at `/stats/clients/` (staff_member_required). Template `templates/stats_clients.html`.
+
+Features:
+- Create client (nick + rate + notes)
+- Per-client stats table: total apps, client_earned, worker_payout, referral_payout, net_profit, active links count
+- Per-link table: URL, status badge, apps count, current worker, last activity
+- Add link to client
+- Delete client / delete link
+
+### Celery task (`apps/clients/tasks.py`)
+
+`check_worker_inactivity_task` — scheduled daily at 09:00 МСК via `CELERY_BEAT_SCHEDULE`.
+- Calls `AssignmentService.get_inactive_assignments(days=3)`
+- For each inactive: unassigns worker (reason=INACTIVITY), notifies worker via bot
+- Sends admin summary with list of unassigned workers
+
+### Migrations
+
+- `apps/users/migrations/0008_join_request_and_clients.py`
+- `apps/clients/migrations/0001_join_request_and_clients.py`
+
+---
+
+## 2026-04-12 — Mandatory S3 file storage + CRM upload UX + Docs Telegram auth
+
+### S3-compatible storage migration
+
+**Goal:** eliminate local filesystem storage for CRM media. All environments use S3-compatible storage permanently.
+
+**Architecture:**
+- Dev → MinIO Docker container. `minio-init` one-shot service creates bucket + sets public-read policy before web/celery start. Browser accesses files at `http://localhost:9000`. Internal Docker URL (`minio:9000`) rewritten to `http://localhost:9000` via `MEDIA_S3_PUBLIC_URL`.
+- Prod → Cloudflare R2 (recommended) / AWS S3. Private bucket, signed URLs (1h TTL).
+
+**Files changed:**
+- `config/storage_backends.py` — rewritten: always-active `MediaStorage(S3Boto3Storage)`, `default_acl = None` (R2 compatibility), custom `url()` for dev URL rewriting.
+- `config/settings/base.py` — storage section replaced: no `USE_S3_STORAGE` toggle, always S3. New vars: `AWS_*`, `MEDIA_QUERYSTRING_AUTH`, `MEDIA_QUERYSTRING_EXPIRE`, `MEDIA_S3_PUBLIC_URL`.
+- `docker-compose.dev.yml` — added `minio` (S3 API + console) and `minio-init` (one-shot bucket setup). `web` and `celery_worker` depend on `minio-init: service_completed_successfully`. Added `minio_data` volume.
+- `docker-compose.yml` — removed `media_files` volume from web, nginx, and global volumes section.
+- `nginx/prod.conf` — removed `/media/` location block. Files served from bucket, not nginx.
+- `.env.example` — replaced `USE_S3_STORAGE` section with full S3 docs for dev (MinIO) and prod (R2/S3).
+- `scripts/dev_up.sh` — starts `minio` and `minio-init` explicitly; removed `mkdir -p media`; added MinIO URLs to status box.
+- `Makefile` — added `minio-console` target; updated `.PHONY`.
+- `pyproject.toml` — added `django-storages[boto3]>=1.14`.
+
+### CRM Cash Flow upload UX
+
+- `templates/crm/entry_finance.html` — drag-and-drop upload zone with idle/dragover/has-file states, image thumbnails via FileReader, PDF emoji fallback, clear button, clipboard paste via `document.addEventListener('paste')`, toast notification on paste.
+
+### Documentation — Telegram auth
+
+- `apps/docs/views.py` — replaced `staff_member_required` with `DocsLoginMixin` (shares `crm_user_id` session with CRM). Added `DocsLoginView`, `DocsAuthCallbackView`, `DocsLogoutView`.
+- `templates/docs/login.html` — Telegram Widget login page, styled to match CRM login (cyan accent).
+- `templates/docs/base.html` — mobile hamburger sidebar, responsive tables, shows `docs_user.display_name`.
+- `apps/docs/urls.py` — added login/logout/auth_callback routes.
+- `templates/landing.html` — added Docs section block and nav button.
+
+---
+
 ## 2026-04-12 — CRM multi-workspace UI + role-based access
 
 ### Что было недоделано
@@ -1011,5 +1131,40 @@ If `SUBSCRIPTION_CHANNEL_ID` is empty, the gate is disabled entirely (backward c
 
 **Лендинг:**
 - `templates/landing.html` — добавлена кнопка "Docs" в navbar (`.nav-btn-docs`), скрывает текст на мобилке
+
+---
+
+## 2026-04-14 — CRM: файловое хранилище + улучшенный UI загрузки
+
+### Задача
+1. Приличный UI для загрузки файла (скрин КБ) в форме Cash Flow
+2. Вставка файла из буфера обмена (Ctrl+V)
+3. Правильная архитектура файлового хранилища с возможностью масштабирования
+
+### Анализ текущего состояния
+- Хранилище: `MEDIA_ROOT = BASE_DIR / "media"` + Docker named volume `media_files` — файлы УЖЕ переживают `docker compose up --build`, т.к. volume независим от образа контейнера
+- Nginx уже отдаёт `/media/` напрямую из volume (без Django)
+- Upload path в модели: `crm/{workspace_id}/screenshots/{date}/{uuid}{ext}` — структура грамотная
+
+### Что сделано
+
+**Хранилище (storage):**
+- `pyproject.toml` — добавлен `django-storages[boto3]>=1.14`
+- `config/storage_backends.py` — новый файл: класс `MediaStorage(S3Boto3Storage)` с private ACL и signed URLs
+- `config/settings/base.py` — STORAGES теперь условный: `USE_S3_STORAGE=true` → S3-compatible (AWS S3 / Cloudflare R2 / MinIO); иначе → локальный FileSystemStorage с Docker volume
+- `.env.example` — добавлена секция `# File storage` с документацией всех S3-переменных
+
+**Почему не AWS сразу**: текущая single-VPS архитектура уже надёжно хранит файлы в Docker volume + nginx. S3 нужен только при: multi-server setup / CDN / disaster recovery. Переключение — только через env vars без изменения кода.
+
+**Рекомендуемый S3-провайдер для масштабирования:** Cloudflare R2 — бесплатный egress (в отличие от AWS S3), совместим с boto3 API, дешевле хранение.
+
+**UI загрузки файла (`templates/crm/entry_finance.html`):**
+- Заменён `<input type="file">` на drag-and-drop зону с hover/dragover состояниями
+- Preview после выбора: `FileReader` для thumbnail изображений; иконка для PDF; имя и размер файла
+- Кнопка сброса (✕) — чистит через `new DataTransfer()`
+- Drag-and-drop: `dragenter/dragover/dragleave/drop` с корректной обработкой дочерних элементов
+- **Clipboard paste** (`Ctrl+V`): слушатель `document.addEventListener('paste')` — перехватывает `clipboardData.items` типа `file`, инжектирует в `<input type="file">` через `DataTransfer`, показывает toast "Вставлено: <имя>"
+- При редактировании: chip с ссылкой на текущий файл скрывается при выборе нового
+- Бизнес-логика `FinanceEntryView` в views.py — без изменений
 
 <!-- Add new entries above this line in the same format -->

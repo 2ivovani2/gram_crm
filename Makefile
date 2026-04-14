@@ -1,4 +1,4 @@
-.PHONY: dev dev-down prod prod-down prod-renew-cert logs logs-prod webhook-info webhook-info-prod crm-setup crm-setup-prod help
+.PHONY: dev dev-down prod prod-down prod-renew-cert logs logs-prod minio-console webhook-info webhook-info-prod crm-setup crm-setup-prod help
 
 COMPOSE_DEV = docker compose \
 	-f docker-compose.yml \
@@ -21,6 +21,11 @@ dev-down:
 ## Follow logs of web + celery_worker (dev)
 logs:
 	$(COMPOSE_DEV) logs -f web celery_worker
+
+## Open MinIO console in browser (dev only — local S3 UI at localhost:9001)
+minio-console:
+	@echo "MinIO Console: http://localhost:9001"
+	@open http://localhost:9001 2>/dev/null || xdg-open http://localhost:9001 2>/dev/null || true
 
 # ── Prod targets ──────────────────────────────────────────────────────────────
 

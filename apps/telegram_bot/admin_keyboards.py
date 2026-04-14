@@ -5,7 +5,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .callbacks import (
     AdminMenuCallback, AdminUserCallback, AdminInviteCallback,
     AdminBroadcastCallback, AdminStatsCallback, AdminSettingsCallback,
-    AdminWithdrawalCallback, AdminDailyCallback,
+    AdminWithdrawalCallback, AdminDailyCallback, AdminApplicationCallback,
+    AdminClientCallback,
 )
 
 PAGE_SIZE = 10
@@ -94,16 +95,20 @@ def _add_pagination_logs(b: InlineKeyboardBuilder, page: int, total: int, broadc
 
 # ── Main Menu ─────────────────────────────────────────────────────────────────
 
-def get_admin_main_menu() -> InlineKeyboardMarkup:
+def get_admin_main_menu(pending_requests: int = 0) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    app_label = "📋 Заявки"
+    if pending_requests > 0:
+        app_label = f"📋 Заявки ({pending_requests})"
     b.button(text="👥 Пользователи", callback_data=AdminMenuCallback(section="users"))
-    b.button(text="🔑 Invite Keys", callback_data=AdminMenuCallback(section="invites"))
+    b.button(text=app_label, callback_data=AdminMenuCallback(section="applications"))
     b.button(text="📢 Рассылки", callback_data=AdminMenuCallback(section="broadcasts"))
     b.button(text="📊 Статистика", callback_data=AdminMenuCallback(section="stats"))
+    b.button(text="🔗 Клиенты и ссылки", callback_data=AdminMenuCallback(section="clients"))
     b.button(text="💸 Выводы", callback_data=AdminMenuCallback(section="withdrawals"))
     b.button(text="📋 Ввод данных", callback_data=AdminMenuCallback(section="daily"))
     b.button(text="⚙️ Настройки", callback_data=AdminMenuCallback(section="settings"))
-    b.adjust(2, 2, 2, 1)
+    b.adjust(2, 2, 2, 2)
     return b.as_markup()
 
 
@@ -450,4 +455,75 @@ def get_withdrawal_admin_notify_keyboard(withdrawal_id: int) -> InlineKeyboardMa
     b.button(text="✅ Исполнить", callback_data=AdminWithdrawalCallback(action="approve", withdrawal_id=withdrawal_id).pack())
     b.button(text="❌ Отклонить", callback_data=AdminWithdrawalCallback(action="reject", withdrawal_id=withdrawal_id).pack())
     b.adjust(2)
+    return b.as_markup()
+
+
+# ── Clients & Links ───────────────────────────────────────────────────────────
+
+def get_clients_list_keyboard(clients, page: int, total: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for client in clients:
+        b.button(
+            text=f"👤 {client.nick} ({client.rate}$)",
+            callback_data=AdminClientCallback(action="view_client", client_id=client.id, page=page),
+        )
+    b.adjust(1)
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=AdminClientCallback(action="list", page=page - 1).pack()))
+    nav.append(InlineKeyboardButton(text=f"· {page}/{total_pages} ·", callback_data=AdminClientCallback(action="noop").pack()))
+    if page < total_pages:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=AdminClientCallback(action="list", page=page + 1).pack()))
+    if nav:
+        b.row(*nav)
+    b.row(_main_btn())
+    return b.as_markup()
+
+
+def get_client_card_keyboard(client) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for link in client.links.all():
+        status_icon = "🟢" if link.status == "active" else "🔴"
+        b.button(
+            text=f"{status_icon} {link.url[:45]}",
+            callback_data=AdminClientCallback(action="view_link", client_id=client.id, link_id=link.id),
+        )
+    b.adjust(1)
+    b.row(InlineKeyboardButton(text="🔙 К списку", callback_data=AdminClientCallback(action="list").pack()))
+    return b.as_markup()
+
+
+def get_link_card_keyboard(link) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if link.status == "active":
+        b.button(
+            text="🔴 Деактивировать ссылку",
+            callback_data=AdminClientCallback(action="deactivate", link_id=link.id, client_id=link.client_id),
+        )
+        b.button(
+            text="👷 Назначить воркера вручную",
+            callback_data=AdminClientCallback(action="assign_ask", link_id=link.id, client_id=link.client_id),
+        )
+        b.adjust(1)
+    b.row(InlineKeyboardButton(
+        text="🔙 К клиенту",
+        callback_data=AdminClientCallback(action="view_client", client_id=link.client_id).pack(),
+    ))
+    return b.as_markup()
+
+
+def get_assign_workers_keyboard(workers, link_id: int, client_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for worker in workers:
+        assignments_count = getattr(worker, "active_assignments", 0)
+        b.button(
+            text=f"👷 {worker.display_name} ({assignments_count} ссылок)",
+            callback_data=AdminClientCallback(action="assign", link_id=link_id, client_id=client_id, worker_id=worker.id),
+        )
+    b.adjust(1)
+    b.row(InlineKeyboardButton(
+        text="🔙 Назад",
+        callback_data=AdminClientCallback(action="view_link", link_id=link_id, client_id=client_id).pack(),
+    ))
     return b.as_markup()

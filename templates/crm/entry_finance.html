@@ -4,6 +4,118 @@
 {% block nav_finance %}active{% endblock %}
 
 {% block content %}
+<style>
+/* ── File upload zone ─────────────────────────────────────────────── */
+.upload-zone {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: var(--r);
+  padding: 28px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  background: var(--surface);
+  outline: none;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(0,212,255,.04);
+}
+.upload-zone.has-file {
+  border-style: solid;
+  border-color: rgba(34,197,94,.4);
+  background: rgba(34,197,94,.04);
+}
+.upload-zone.has-file:hover {
+  border-color: rgba(239,68,68,.4);
+  background: rgba(239,68,68,.04);
+}
+.upload-zone input[type="file"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; z-index: 2;
+}
+/* hide native input when file already chosen (clicks go to zone's own handler) */
+.upload-zone.has-file input[type="file"] { pointer-events: none; }
+
+.upload-icon {
+  font-size: 32px; margin-bottom: 10px; line-height: 1;
+  transition: transform .2s;
+}
+.upload-zone:hover .upload-icon,
+.upload-zone.drag-over .upload-icon { transform: translateY(-3px); }
+.upload-zone.has-file .upload-icon { font-size: 24px; margin-bottom: 6px; }
+
+.upload-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-bottom: 4px;
+}
+.upload-sub {
+  font-size: 12px; color: var(--muted2); line-height: 1.5;
+}
+.upload-sub kbd {
+  display: inline-flex; align-items: center;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--surface-h); border: 1px solid var(--border);
+  font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted2);
+  line-height: 1.6;
+}
+
+/* ── File preview (shown after selection) ───────────────────────── */
+.upload-preview {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: rgba(34,197,94,.06); border: 1px solid rgba(34,197,94,.2);
+  border-radius: var(--r); margin-top: 10px;
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
+.upload-preview-thumb {
+  width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
+  background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0; overflow: hidden;
+}
+.upload-preview-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.upload-preview-info { flex: 1; min-width: 0; text-align: left; }
+.upload-preview-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.upload-preview-size { font-size: 11.5px; color: var(--muted2); margin-top: 2px; }
+.upload-preview-clear {
+  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+  background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.2);
+  color: var(--red); font-size: 16px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s; user-select: none;
+}
+.upload-preview-clear:hover { background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); }
+
+/* ── Existing file chip ─────────────────────────────────────────── */
+.existing-file-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: var(--r);
+  background: var(--surface-h); border: 1px solid var(--border);
+  font-size: 12.5px; color: var(--muted2); margin-bottom: 10px;
+}
+.existing-file-chip a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.existing-file-chip a:hover { text-decoration: underline; }
+
+/* ── Paste toast ────────────────────────────────────────────────── */
+.paste-toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  padding: 10px 16px; border-radius: var(--r);
+  background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3);
+  color: var(--green); font-size: 13px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  animation: toastIn .25s ease;
+  pointer-events: none;
+}
+@keyframes toastIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+</style>
+
 <div style="max-width:600px">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
     <a href="{% url 'crm:dashboard' %}" style="color:var(--muted);text-decoration:none;font-size:13px">← Дашборд</a>
@@ -21,7 +133,7 @@
       </p>
     </div>
 
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" id="finance-form">
       {% csrf_token %}
       <input type="hidden" name="entry_date" value="{{ entry_date|date:'Y-m-d' }}"/>
 
@@ -60,22 +172,59 @@
         </div>
       </div>
 
+      <!-- ── Screenshot upload ─────────────────────────────────────── -->
       <div class="form-group">
-        <label class="form-label">📎 Скрин с КБ (файл)</label>
+        <label class="form-label" style="margin-bottom:8px">📎 Скрин с КБ</label>
+
         {% if existing and existing.kb_screenshot %}
-        <div style="margin-bottom:8px;padding:8px 12px;background:var(--surface-h);border-radius:var(--r);font-size:12.5px;color:var(--muted2);display:flex;align-items:center;gap:8px">
+        <div class="existing-file-chip" id="existing-chip">
           <span>📄</span>
-          <span>Текущий файл: <a href="{{ existing.kb_screenshot.url }}" target="_blank" style="color:var(--accent);text-decoration:none">просмотреть</a></span>
+          <span>Текущий файл:</span>
+          <a href="{{ existing.kb_screenshot.url }}" target="_blank">просмотреть</a>
+          <span style="color:var(--muted)">— загрузите новый, чтобы заменить</span>
         </div>
         {% endif %}
-        <input type="file" name="kb_screenshot" accept="image/*,.pdf" class="form-input"
-               style="padding:6px 14px;cursor:pointer"/>
-        <div class="form-help">JPG, PNG или PDF. Замените текущий скрин при необходимости.</div>
+
+        <!-- Drop zone -->
+        <div class="upload-zone" id="upload-zone" tabindex="0"
+             role="button" aria-label="Загрузить скриншот">
+          <input type="file" name="kb_screenshot" id="kb-file-input"
+                 accept="image/*,.pdf" tabindex="-1"/>
+
+          <div id="upload-idle">
+            <div class="upload-icon">🖼️</div>
+            <div class="upload-title">Перетащите файл или нажмите для выбора</div>
+            <div class="upload-sub">
+              JPG, PNG, PDF&nbsp;&nbsp;·&nbsp;&nbsp;вставьте из буфера <kbd>Ctrl+V</kbd>
+            </div>
+          </div>
+
+          <div id="upload-dragover" style="display:none">
+            <div class="upload-icon">📂</div>
+            <div class="upload-title" style="color:var(--accent)">Отпустите, чтобы прикрепить</div>
+          </div>
+        </div>
+
+        <!-- Preview (hidden until file chosen) -->
+        <div class="upload-preview" id="upload-preview" style="display:none">
+          <div class="upload-preview-thumb" id="preview-thumb">📄</div>
+          <div class="upload-preview-info">
+            <div class="upload-preview-name" id="preview-name">—</div>
+            <div class="upload-preview-size" id="preview-size"></div>
+          </div>
+          <div class="upload-preview-clear" id="preview-clear" title="Удалить">✕</div>
+        </div>
+
+        {% if form.kb_screenshot.errors %}
+        <div class="form-error">{{ form.kb_screenshot.errors.0 }}</div>
+        {% endif %}
       </div>
+      <!-- ── / Screenshot upload ─────────────────────────────────── -->
 
       <div class="form-group">
         <label class="form-label">📝 Примечания</label>
-        <textarea name="notes" rows="3" class="form-textarea" placeholder="Дополнительные комментарии...">{{ form.notes.value|default:'' }}</textarea>
+        <textarea name="notes" rows="3" class="form-textarea"
+                  placeholder="Дополнительные комментарии...">{{ form.notes.value|default:'' }}</textarea>
       </div>
 
       <div style="display:flex;gap:12px;margin-top:8px">
@@ -99,6 +248,7 @@
 </div>
 
 <script>
+// ── Balance preview ────────────────────────────────────────────────
 function updateBalance() {
   const income   = parseFloat(document.querySelector('[name=income]').value)   || 0;
   const expenses = parseFloat(document.querySelector('[name=expenses]').value) || 0;
@@ -114,6 +264,147 @@ updateBalance();
 function goToDate() {
   const date = document.getElementById('other-date').value;
   if (date) window.location.href = '{% url "crm:entry_finance" %}?date=' + date;
+}
+
+// ── File upload zone ───────────────────────────────────────────────
+const zone      = document.getElementById('upload-zone');
+const fileInput = document.getElementById('kb-file-input');
+const preview   = document.getElementById('upload-preview');
+const idle      = document.getElementById('upload-idle');
+const dragover  = document.getElementById('upload-dragover');
+const thumbEl   = document.getElementById('preview-thumb');
+const nameEl    = document.getElementById('preview-name');
+const sizeEl    = document.getElementById('preview-size');
+const clearBtn  = document.getElementById('preview-clear');
+
+function formatSize(bytes) {
+  if (bytes < 1024)      return bytes + ' B';
+  if (bytes < 1048576)   return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function showPreview(file) {
+  if (!file) return;
+  nameEl.textContent = file.name;
+  sizeEl.textContent = formatSize(file.size);
+
+  // Thumbnail: image preview or file-type icon
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      thumbEl.innerHTML = `<img src="${e.target.result}" alt="preview"/>`;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    thumbEl.textContent = file.type === 'application/pdf' ? '📄' : '📎';
+  }
+
+  zone.classList.add('has-file');
+  idle.style.display = 'none';
+  preview.style.display = 'flex';
+
+  // hide existing-file chip (it's being replaced)
+  const chip = document.getElementById('existing-chip');
+  if (chip) chip.style.display = 'none';
+}
+
+function clearFile() {
+  // Reset file input
+  const dt = new DataTransfer();
+  fileInput.files = dt.files;
+
+  zone.classList.remove('has-file');
+  idle.style.display = '';
+  preview.style.display = 'none';
+  thumbEl.innerHTML = '📄';
+  nameEl.textContent = '—';
+  sizeEl.textContent = '';
+
+  const chip = document.getElementById('existing-chip');
+  if (chip) chip.style.display = '';
+}
+
+// Native file input change
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) showPreview(fileInput.files[0]);
+  else clearFile();
+});
+
+// Clear button
+clearBtn.addEventListener('click', e => { e.stopPropagation(); clearFile(); });
+
+// Keyboard activation (Enter/Space on zone)
+zone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+// Drag-and-drop
+zone.addEventListener('dragenter', e => {
+  e.preventDefault();
+  zone.classList.add('drag-over');
+  idle.style.display = 'none';
+  dragover.style.display = '';
+});
+zone.addEventListener('dragover',  e => { e.preventDefault(); });
+zone.addEventListener('dragleave', e => {
+  // Only fire when leaving the zone itself (not its children)
+  if (!zone.contains(e.relatedTarget)) {
+    zone.classList.remove('drag-over');
+    idle.style.display = '';
+    dragover.style.display = 'none';
+  }
+});
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  idle.style.display = '';
+  dragover.style.display = 'none';
+
+  const files = e.dataTransfer.files;
+  if (files.length) {
+    const dt = new DataTransfer();
+    dt.items.add(files[0]);
+    fileInput.files = dt.files;
+    showPreview(files[0]);
+  }
+});
+
+// ── Clipboard paste (Ctrl+V anywhere on page) ─────────────────────
+document.addEventListener('paste', e => {
+  // Don't intercept if user is typing in a text field
+  const tag = document.activeElement.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (!file) continue;
+
+      // Inject into native file input via DataTransfer
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      showPreview(file);
+
+      showPasteToast(file.name || 'скриншот из буфера');
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+function showPasteToast(filename) {
+  const t = document.createElement('div');
+  t.className = 'paste-toast';
+  t.innerHTML = `<span>📋</span><span>Вставлено: <strong>${filename}</strong></span>`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2800);
 }
 </script>
 {% endblock %}

@@ -1,30 +1,45 @@
 """
-Worker: /start command, invite key flow, main menu navigation.
+Worker: /start command and join request flow.
 
-Flow for new user:
-  /start → show "enter invite key" menu
-  → user taps button → FSM state: waiting_for_key
-  → user sends key text → validate → activate OR show error
+New join flow (replaces invite key system):
+  /start → if not activated → show "Подать заявку" button
+  → tap button → JoinRequest created → all admins notified
+  → admin approves → user activated + notified
+  → admin rejects  → user notified
 
-Flow for activated worker:
-  /start → show main worker menu
-
-Flow for curator:
-  /start → show curator main menu
+If user already has a pending request: show status screen instead.
 """
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.filters.command import CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from asgiref.sync import sync_to_async
 
 from apps.telegram_bot.callbacks import WorkerCallback
-from apps.telegram_bot.keyboards import get_main_menu_keyboard, get_cancel_keyboard
-from apps.telegram_bot.states import InviteKeyInputState
+from apps.telegram_bot.keyboards import get_main_menu_keyboard
 from apps.users.models import User
 
 router = Router(name="worker_start")
+
+
+def _pending_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="🔄 Обновить статус", callback_data=WorkerCallback(action="check_request").pack())
+    return b.as_markup()
+
+
+def _apply_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="📝 Подать заявку", callback_data=WorkerCallback(action="submit_request").pack())
+    return b.as_markup()
+
+
+def _rejected_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="📝 Подать повторно", callback_data=WorkerCallback(action="submit_request").pack())
+    return b.as_markup()
 
 
 # ── /start ────────────────────────────────────────────────────────────────────
@@ -43,13 +58,11 @@ async def cmd_start(message: Message, command: CommandObject, db_user: User, sta
         if referrer and referrer.pk != db_user.pk:
             await sync_to_async(_US.set_referred_by)(db_user, referrer)
 
-    # Admins get redirected to their panel
     if db_user.is_admin():
         from apps.telegram_bot.handlers.admin.menu import send_admin_main_menu
         await send_admin_main_menu(message, db_user)
         return
 
-    # Curators get their own menu
     if db_user.is_curator():
         from apps.telegram_bot.handlers.curator.menu import send_curator_main_menu
         await send_curator_main_menu(message, db_user)
@@ -59,17 +72,93 @@ async def cmd_start(message: Message, command: CommandObject, db_user: User, sta
         from django.conf import settings
         channels_url = getattr(settings, "CHANNELS_DB_URL", "")
         await message.answer(
-            f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\n"
-            "Выберите действие:",
+            f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\nВыберите действие:",
             reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
         )
-    else:
-        await message.answer(
+        return
+
+    await _show_not_activated(message, db_user)
+
+
+async def _show_not_activated(event: Message | CallbackQuery, db_user: User) -> None:
+    """Show appropriate screen based on join request status."""
+    from apps.clients.services import JoinService
+    request = await sync_to_async(JoinService.get_any_request)(db_user)
+
+    if request is None:
+        text = (
             f"👋 Привет, <b>{db_user.display_name}</b>!\n\n"
-            "Для получения доступа вам нужен <b>invite key</b>.\n"
-            "Нажмите кнопку ниже и введите ваш ключ.",
-            reply_markup=get_main_menu_keyboard(is_activated=False),
+            "Для получения доступа необходимо подать заявку.\n"
+            "Администратор рассмотрит её и свяжется с вами."
         )
+        markup = _apply_keyboard()
+    elif request.is_pending:
+        text = (
+            f"⏳ <b>Ваша заявка на рассмотрении</b>\n\n"
+            f"Ожидайте решения администратора.\n"
+            f"Заявка подана: {request.created_at.strftime('%d.%m.%Y %H:%M')} МСК"
+        )
+        markup = _pending_keyboard()
+    elif request.status == "approved":
+        # Edge case: approved but not activated yet (shouldn't happen normally)
+        text = "✅ Ваша заявка принята! Перезапустите бота командой /start"
+        markup = None
+    else:  # rejected
+        text = (
+            f"❌ <b>Заявка отклонена</b>\n\n"
+            "Вы можете подать заявку повторно."
+        )
+        markup = _rejected_keyboard()
+
+    if isinstance(event, Message):
+        await event.answer(text, reply_markup=markup)
+    else:
+        await event.message.edit_text(text, reply_markup=markup)
+
+
+# ── Join request flow ─────────────────────────────────────────────────────────
+
+@router.callback_query(WorkerCallback.filter(F.action == "submit_request"))
+async def cb_submit_request(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
+    await callback.answer()
+    if db_user.is_activated:
+        await callback.answer("Вы уже активированы!", show_alert=True)
+        return
+
+    from apps.clients.services import JoinService, JoinServiceError
+    try:
+        request = await sync_to_async(JoinService.submit)(db_user)
+    except JoinServiceError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        f"✅ <b>Заявка отправлена!</b>\n\n"
+        f"Администратор рассмотрит её в ближайшее время.\n"
+        f"Вы получите уведомление о решении.",
+        reply_markup=_pending_keyboard(),
+    )
+
+    await _notify_admins_new_request(request, db_user, callback.bot)
+
+
+@router.callback_query(WorkerCallback.filter(F.action == "check_request"))
+async def cb_check_request(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
+    await callback.answer()
+    # Re-fetch user to get current activation state
+    from apps.users.services import UserService
+    db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id) or db_user
+
+    if db_user.is_activated:
+        from django.conf import settings
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+        await callback.message.edit_text(
+            f"✅ Добро пожаловать, <b>{db_user.display_name}</b>!\nВаша заявка принята.",
+            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
+        )
+        return
+
+    await _show_not_activated(callback, db_user)
 
 
 # ── Navigation ────────────────────────────────────────────────────────────────
@@ -79,7 +168,6 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
     await state.clear()
     await callback.answer()
 
-    # Re-fetch to get current activation state
     from apps.users.services import UserService
     db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id) or db_user
 
@@ -93,17 +181,15 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
         await send_curator_main_menu(callback, db_user)
         return
 
-    from django.conf import settings
-    channels_url = getattr(settings, "CHANNELS_DB_URL", "")
-    text = (
-        f"👋 Главное меню, <b>{db_user.display_name}</b>!"
-        if db_user.is_activated
-        else "👋 Для доступа нужен <b>invite key</b>."
-    )
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_main_menu_keyboard(is_activated=db_user.is_activated, channels_db_url=channels_url),
-    )
+    if db_user.is_activated:
+        from django.conf import settings
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+        await callback.message.edit_text(
+            f"👋 Главное меню, <b>{db_user.display_name}</b>!",
+            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
+        )
+    else:
+        await _show_not_activated(callback, db_user)
 
 
 @router.callback_query(WorkerCallback.filter(F.action == "cancel"))
@@ -116,104 +202,50 @@ async def cb_cancel(callback: CallbackQuery, db_user: User, state: FSMContext) -
     )
 
 
-# ── Invite key input flow ─────────────────────────────────────────────────────
+# ── Admin notification helper ─────────────────────────────────────────────────
 
-@router.callback_query(WorkerCallback.filter(F.action == "enter_invite"))
-async def cb_enter_invite(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
-    if db_user.is_activated:
-        await callback.answer("Вы уже активированы!", show_alert=True)
-        return
-    await callback.answer()
-    await state.set_state(InviteKeyInputState.waiting_for_key)
-    await callback.message.edit_text(
-        "🔑 Введите ваш <b>invite key</b>:\n\n"
-        "<i>Ключ не чувствителен к регистру. "
-        "Обратитесь к администратору, если у вас нет ключа.</i>",
-        reply_markup=get_cancel_keyboard(),
-    )
-
-
-@router.message(InviteKeyInputState.waiting_for_key)
-async def process_invite_key(message: Message, db_user: User, state: FSMContext) -> None:
-    from apps.invites.services import InviteService, InviteValidationError
-
-    raw_key = (message.text or "").strip()
-    if not raw_key:
-        await message.answer(
-            "⚠️ Пожалуйста, отправьте текстовый ключ.",
-            reply_markup=get_cancel_keyboard(),
-        )
-        return
-
-    try:
-        await sync_to_async(InviteService.validate_and_activate)(db_user, raw_key)
-        await state.clear()
-
-        # Refresh user from DB to get updated is_activated
-        from apps.users.services import UserService
-        db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id)
-
-        from django.conf import settings
-        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
-
-        await message.answer(
-            f"✅ <b>Активация прошла успешно!</b>\n\n"
-            f"Добро пожаловать, <b>{db_user.display_name}</b>! "
-            "Теперь у вас есть полный доступ.",
-            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
-        )
-
-        # Notify admins and curator (key creator)
-        await _notify_activation(db_user, raw_key)
-
-    except InviteValidationError as exc:
-        await message.answer(
-            f"❌ <b>Ошибка:</b> {exc}\n\n"
-            "Попробуйте снова или обратитесь к администратору.",
-            reply_markup=get_cancel_keyboard(),
-        )
-
-
-async def _notify_activation(user: User, raw_key: str) -> None:
-    """Send activation notification to all admins and to the key creator if they're a curator."""
+async def _notify_admins_new_request(request, user: User, bot) -> None:
     from apps.users.models import User as UserModel
-    from apps.invites.models import InviteKey
-    from apps.telegram_bot.bot import get_bot
-
-    bot = get_bot()
+    from apps.telegram_bot.callbacks import AdminApplicationCallback
 
     text = (
-        f"🎉 <b>Новый пользователь активирован!</b>\n\n"
+        f"📋 <b>Новая заявка на вступление</b>\n\n"
         f"👤 Имя: <b>{user.display_name}</b>\n"
         f"🆔 Telegram ID: <code>{user.telegram_id}</code>"
     )
     if user.telegram_username:
         text += f"\n📱 @{user.telegram_username}"
     if user.referred_by:
-        text += f"\n🤝 Куратор: <b>{user.referred_by.display_name}</b>"
+        text += f"\n🤝 Реферал от: <b>{user.referred_by.display_name}</b>"
+    if request.message:
+        text += f"\n💬 Сообщение: <i>{request.message[:200]}</i>"
 
-    # Collect recipient IDs: all admins
-    recipient_ids = await sync_to_async(
-        lambda: list(
-            UserModel.objects.filter(role="admin", is_blocked_bot=False)
-            .values_list("telegram_id", flat=True)
-        )
+    kb = InlineKeyboardBuilder()
+    kb.button(
+        text="✅ Принять",
+        callback_data=AdminApplicationCallback(action="approve", request_id=request.pk).pack(),
+    )
+    kb.button(
+        text="❌ Отклонить",
+        callback_data=AdminApplicationCallback(action="reject", request_id=request.pk).pack(),
+    )
+    kb.adjust(2)
+    markup = kb.as_markup()
+
+    admin_ids = await sync_to_async(
+        lambda: list(UserModel.objects.filter(role="admin", is_blocked_bot=False).values_list("telegram_id", flat=True))
     )()
 
-    # Also notify key creator if they're a curator (and not already in admin list)
-    key_creator_tg_id = await sync_to_async(
-        lambda: InviteKey.objects.filter(
-            key__iexact=raw_key
-        ).select_related("created_by").values_list("created_by__telegram_id", "created_by__role", "created_by__is_blocked_bot").first()
-    )()
-
-    if key_creator_tg_id:
-        creator_tg_id, creator_role, creator_blocked = key_creator_tg_id
-        if creator_role == "curator" and not creator_blocked and creator_tg_id not in recipient_ids:
-            recipient_ids.append(creator_tg_id)
-
-    for tg_id in recipient_ids:
+    notifications = []
+    for tg_id in admin_ids:
         try:
-            await bot.send_message(tg_id, text)
+            msg = await bot.send_message(tg_id, text, reply_markup=markup)
+            notifications.append({"telegram_id": tg_id, "message_id": msg.message_id})
         except Exception:
             pass
+
+    # Save notification message IDs so we can edit them after decision
+    if notifications:
+        await sync_to_async(
+            lambda: type(request).objects.filter(pk=request.pk).update(admin_notifications=notifications)
+        )()

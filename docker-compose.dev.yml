@@ -3,15 +3,56 @@
 # In dev all traffic goes through ngrok — no direct localhost:8000 exposure.
 # Access the app at https://<NGROK_DOMAIN> (set in .env).
 #
+# MinIO provides local S3-compatible storage so the dev stack is production-identical.
+# Files in dev land in the `minio_data` Docker volume.
+# MinIO API:     http://localhost:9000  (also used for file URLs in browser)
+# MinIO Console: http://localhost:9001  (web UI: manage buckets, browse files)
+#
 # Usage (via Makefile):
 #   make dev
-#
-# Direct usage:
-#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml \
-#     -f docker-compose.ngrok.yml up -d \
-#     postgres redis ngrok web celery_worker celery_beat
 
 services:
+
+  # ── Local S3: MinIO ─────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API — boto3 connects here (and browser for file URLs)
+      - "9001:9001"   # MinIO Console UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 8s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+  # One-shot container: waits for MinIO, then creates the bucket with public-read policy.
+  # Public read is used in dev so browser can fetch files without signed URLs.
+  # Exits 0 on success; Docker Compose marks it as "completed_successfully" so
+  # web/celery can start (they depend on this service).
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY}@minio:9000
+    entrypoint: >
+      /bin/sh -c "
+        mc mb --ignore-existing local/${AWS_STORAGE_BUCKET_NAME} &&
+        mc anonymous set download local/${AWS_STORAGE_BUCKET_NAME} &&
+        echo '✓ MinIO bucket ready: ${AWS_STORAGE_BUCKET_NAME}'
+      "
+
+  # ── App services (dev overrides) ────────────────────────────────────────────
   web:
     command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload
     volumes:
@@ -19,6 +60,9 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
       RUN_MIGRATIONS: "true"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
     # No ports exposed — access via ngrok tunnel only
 
   celery_worker:
@@ -27,6 +71,9 @@ services:
       - .:/app
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
 
   celery_beat:
     command: celery -A config.celery beat -l debug --scheduler django_celery_beat.schedulers:DatabaseScheduler
@@ -43,3 +90,6 @@ services:
   redis:
     ports:
       - "6379:6379"
+
+volumes:
+  minio_data:
