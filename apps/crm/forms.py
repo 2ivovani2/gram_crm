@@ -14,12 +14,13 @@ from apps.crm.models import FinanceEntry, ApplicationEntry, WeeklyPlan, Workspac
 class FinanceEntryForm(forms.ModelForm):
     class Meta:
         model  = FinanceEntry
-        fields = ["income", "expenses", "kb_screenshot", "pp_earnings", "privat_earnings", "notes"]
+        fields = ["income", "expenses", "kb_screenshot", "pp_earnings", "privat_earnings", "kb_balance", "notes"]
         widgets = {
             "income":          forms.NumberInput(attrs={"step": "0.01", "min": "0", "placeholder": "0.00"}),
             "expenses":        forms.NumberInput(attrs={"step": "0.01", "min": "0", "placeholder": "0.00"}),
             "pp_earnings":     forms.NumberInput(attrs={"step": "0.01", "min": "0", "placeholder": "0.00"}),
             "privat_earnings": forms.NumberInput(attrs={"step": "0.01", "min": "0", "placeholder": "0.00"}),
+            "kb_balance":      forms.NumberInput(attrs={"step": "0.01", "placeholder": "0.00"}),
             "notes":           forms.Textarea(attrs={"rows": 3, "placeholder": "Дополнительные примечания..."}),
         }
         labels = {
@@ -28,6 +29,7 @@ class FinanceEntryForm(forms.ModelForm):
             "kb_screenshot":   "Скрин с КБ (файл)",
             "pp_earnings":     "Заработок с ПП за день ($)",
             "privat_earnings": "Заработок с Привата за день ($)",
+            "kb_balance":      "Баланс КБ ($)",
             "notes":           "Примечания",
         }
 

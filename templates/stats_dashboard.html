@@ -229,7 +229,18 @@ body {
     <h1>📊 Статистика</h1>
     <div class="date">{{ today|date:"d E Y" }} МСК</div>
   </div>
-  <a class="logout-link" href="/django-admin/">Админ-панель</a>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <a href="/stats/clients/" style="
+      display:inline-flex;align-items:center;gap:6px;
+      background:var(--accent);color:#fff;
+      padding:8px 18px;border-radius:8px;
+      font-size:13px;font-weight:600;text-decoration:none;
+      transition:opacity .15s;
+    " onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+      🔗 Клиенты и ссылки
+    </a>
+    <a class="logout-link" href="/django-admin/">Админ-панель</a>
+  </div>
 </div>
 
 <!-- ── Filter bar ───────────────────────────────────────────────────── -->

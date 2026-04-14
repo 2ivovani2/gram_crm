@@ -10,7 +10,6 @@ from aiogram import Dispatcher
 def setup_routers(dp: Dispatcher) -> None:
     from apps.telegram_bot.handlers.admin.menu import router as admin_menu_router
     from apps.telegram_bot.handlers.admin.users import router as admin_users_router
-    from apps.telegram_bot.handlers.admin.invites import router as admin_invites_router
     from apps.telegram_bot.handlers.admin.broadcasts import router as admin_broadcasts_router
     from apps.telegram_bot.handlers.admin.stats import router as admin_stats_router
     from apps.telegram_bot.handlers.admin.settings import router as admin_settings_router
@@ -21,7 +20,6 @@ def setup_routers(dp: Dispatcher) -> None:
 
     from apps.telegram_bot.handlers.curator.menu import router as curator_menu_router
     from apps.telegram_bot.handlers.curator.referrals import router as curator_referrals_router
-    from apps.telegram_bot.handlers.curator.invites import router as curator_invites_router
 
     from apps.telegram_bot.subscription import router as subscription_router
 
@@ -36,7 +34,6 @@ def setup_routers(dp: Dispatcher) -> None:
     # Admin routers first — they have IsAdmin() filter so no conflict
     dp.include_router(admin_menu_router)
     dp.include_router(admin_users_router)
-    dp.include_router(admin_invites_router)
     dp.include_router(admin_broadcasts_router)
     dp.include_router(admin_stats_router)
     dp.include_router(admin_settings_router)
@@ -48,10 +45,9 @@ def setup_routers(dp: Dispatcher) -> None:
     # Curator routers — IsCurator() filter
     dp.include_router(curator_menu_router)
     dp.include_router(curator_referrals_router)
-    dp.include_router(curator_invites_router)
 
     # Worker routers
     dp.include_router(worker_start_router)
     dp.include_router(worker_profile_router)
-    dp.include_router(worker_invite_router)
+    dp.include_router(worker_invite_router)  # handles referrals view (not invites)
     dp.include_router(worker_withdrawal_router)

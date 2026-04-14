@@ -2,6 +2,151 @@
 
 ---
 
+## 2026-04-15 — CRM: поле «Баланс КБ» в Cash Flow
+
+### Изменения
+
+| Файл | Что сделано |
+|------|------------|
+| `apps/crm/models.py` | `FinanceEntry.kb_balance` — DecimalField, default 0, verbose "Баланс КБ ($)". `DailySummaryReport.kb_balance_snapshot` — снимок значения на момент генерации отчёта |
+| `apps/crm/migrations/0002_add_kb_balance.py` | Миграция: добавляет оба поля |
+| `apps/crm/forms.py` | `FinanceEntryForm.fields` — добавлено `kb_balance`; виджет `NumberInput(step=0.01)` |
+| `apps/crm/services.py` | `ReportService.generate()` — сохраняет `kb_balance_snapshot`; `_build_text()` — добавляет строку "💼 Баланс КБ: X.XX $"; `ExportService.export_to_excel()` — колонка "Баланс КБ ($)" |
+| `templates/crm/entry_finance.html` | Новое поле ввода `💼 Баланс КБ ($)` между блоком ПП/Привата и скриншотом |
+| `templates/crm/history.html` | Колонка «КБ ($)» в таблице истории |
+| `templates/crm/day_detail.html` | KPI-карточка «Баланс КБ» + строка в Cash Flow detail |
+| `templates/crm/report_detail.html` | KPI-карточка «Баланс КБ» + строка в детализации CF; значение берётся из `kb_balance_snapshot` |
+
+### Применить миграцию
+
+```bash
+python manage.py migrate crm
+# или в Docker:
+docker compose exec web python manage.py migrate crm
+```
+
+---
+
+## 2026-04-15 — Assignment UX: auto-assign feedback + manual worker selector
+
+### Problem
+
+After adding a link via `/stats/clients/`, there was no visible feedback on whether a worker had been auto-assigned. The link silently got created; if no worker was available there was no indication or recovery path.
+
+### Changes
+
+**`apps/clients/tasks.py`** — added `notify_worker_assigned_task`:
+- New `@shared_task` that sends a Telegram message to a worker when they are assigned to a link (both auto and manual)
+- Message text: "🔗 Вам назначена новая ссылка для работы" + client nick + URL
+- Called via `.delay()` from the web view so the HTTP request doesn't block on bot API
+
+**`apps/stats/views.py`** — `ClientsView` updated:
+- `GET`: now passes `workers` (all active, is_activated, non-blocked workers) and `no_assign_link_id` (from `?no_assign=<pk>`) to template context. Also passes `warn` alert string.
+- `add_link` POST: after creating `ClientLink`, calls `AssignmentService.auto_assign()`:
+  - Worker found → fires `notify_worker_assigned_task.delay()`, redirects with `?msg=Ссылка добавлена. Исполнитель назначен: <name>`
+  - No worker found → redirects with `?warn=Исполнитель не найден&no_assign=<link_id>`
+- New `manual_assign` POST action: validates `link_id` + `worker_id`, calls `AssignmentService.manual_assign()`, fires notification, redirects with success
+- Private `_get_workers()` method to fetch available workers
+
+**`templates/stats_clients.html`** — complete assignment UX:
+- Orange `alert-warn` style added (in addition to success/error)
+- Per-link row in table: shows green worker name when assigned; shows orange "⚠ Не назначен" badge when active link has no worker
+- `highlight-row` CSS class: amber tint on newly added unassigned link (set via `no_assign_link_id` context var); JS scrolls to it on load
+- **Assign panel row** (`<tr class="assign-row">`): appears directly below any active unassigned link; contains orange label, `<select>` of workers, "Назначить" button; hidden when all workers are unavailable (shows hint instead)
+- `btn-orange` button variant added
+
+### Flow after changes
+
+| Scenario | What happens |
+|----------|-------------|
+| Add link, worker found | Green success alert: "Ссылка добавлена. Исполнитель назначен: WorkerName". Worker receives Telegram notification with link URL. |
+| Add link, no worker | Orange warning alert. Link row highlighted amber. Assign panel appears below the row with worker dropdown. |
+| Manual assign via dropdown | Select worker → click "Назначить" → success alert. Worker receives Telegram notification. |
+| Worker notification | Bot sends: "🔗 Вам назначена новая ссылка для работы / Клиент: X / URL: …" |
+
+---
+
+## 2026-04-15 — S3 prod audit + fixes
+
+### Audit: S3 storage transition to production
+
+All four environments checked. Three issues found and fixed.
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | `scripts/prod_up.sh` created `mkdir -p media/` — stale artifact from local-FS era | Removed the block entirely |
+| 2 | `scripts/entrypoint.sh` had no S3 connectivity check — misconfigured S3 vars caused silent start then crash on first upload | Added `default_storage.exists("__healthcheck__")` probe; exits code 1 with clear error if S3 unreachable |
+| 3 | `config/settings/base.py` had `MEDIA_URL = "/"` — trailing slash was prepended to S3 URLs in Django admin | Changed to `MEDIA_URL = ""` |
+| 4 | `.env.example` had MinIO vars active by default with no clear prod-vs-dev separation | Rewrote S3 section with box-style DEV/PROD comment headers and numbered R2/AWS S3 setup steps |
+
+### What prod `.env` needs for S3 (Cloudflare R2 example)
+
+```
+AWS_ACCESS_KEY_ID=your-r2-access-key
+AWS_SECRET_ACCESS_KEY=your-r2-secret-key
+AWS_STORAGE_BUCKET_NAME=spambotcontrol-prod
+AWS_S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+AWS_S3_REGION_NAME=auto
+MEDIA_QUERYSTRING_AUTH=true
+MEDIA_QUERYSTRING_EXPIRE=3600
+MEDIA_S3_PUBLIC_URL=
+```
+
+For AWS S3: omit `AWS_S3_ENDPOINT_URL` entirely (boto3 uses the default endpoint).
+
+### How to verify
+
+On deploy, `scripts/entrypoint.sh` now runs the probe before uvicorn starts. If S3 is unreachable the container exits immediately with:
+```
+[ERROR] S3 storage unreachable: <exception message>
+Check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME, AWS_S3_ENDPOINT_URL in .env
+```
+
+---
+
+## 2026-04-15 — Full invite system removal + UI polish
+
+### Invite system completely removed from runtime
+
+All remaining invite-key references found and eliminated:
+
+| Location | What was removed |
+|----------|-----------------|
+| `apps/telegram_bot/router.py` | `admin_invites_router`, `curator_invites_router` no longer registered |
+| `apps/telegram_bot/keyboards.py` | `"🔑 Ввести invite key"` button in `get_main_menu_keyboard`; `"🔑 Мои инвайт-коды"` in curator menu |
+| `apps/telegram_bot/admin_keyboards.py` | `get_invites_list_keyboard`, `get_invite_key_card_keyboard`, `get_invite_activations_keyboard`, `get_curator_invites_list_keyboard`, `_add_pagination_invites`; `AdminInviteCallback` import removed |
+| `apps/telegram_bot/handlers/admin/stats.py` | `InviteKey` import replaced with `JoinService.count_pending()`; "Invite Keys" stats block → "Заявки на вступление" |
+| `apps/telegram_bot/subscription.py` | `"Для доступа нужен invite key"` text → new `_show_not_activated` join-request flow |
+| `apps/telegram_bot/permissions.py` | Updated docstring |
+| `apps/telegram_bot/handlers/worker/start.py` | `cb_cancel` now re-fetches user and shows join-request screen if not activated (instead of `get_main_menu_keyboard(is_activated=False)`) |
+
+Handler files `handlers/admin/invites.py` and `handlers/curator/invites.py` remain on disk but are no longer imported or registered.
+
+### Bot message texts polished
+
+- Consistent spacing and line breaks across all worker start.py messages
+- Removed "Для доступа нужен invite key" from subscription check callback
+- Clean join request flow texts
+
+### `/stats/` — CTA button to `/stats/clients/`
+
+Added accent-colored "🔗 Клиенты и ссылки" button in the stats dashboard topbar (inline, next to "Админ-панель" link). Visible immediately on page load.
+
+### `/stats/clients/` — Premium UI redesign
+
+Complete template rewrite (`templates/stats_clients.html`):
+- Dark `#0a0c12` background, layered surface colors, indigo accent (#6366f1)
+- Topbar with brand + subtitle + nav links
+- Create-client panel with icon, labeled fields, focus ring
+- Per-client card: head with name + rate badge + 6-KPI strip (заявок, доход, воркерам, рефералы, прибыль, ссылок) + delete button
+- Links table with monospace URL, status dots badges, worker indicator dot, timestamp
+- "Add link" form inline with dashed divider
+- Empty banner state with icon
+- Hover states on rows, buttons, cards
+- Responsive layout (mobile breakpoint at 640px)
+
+---
+
 ## 2026-04-14 — Client/Link system + Join Request flow + Worker inactivity task
 
 ### Overview

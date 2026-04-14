@@ -216,6 +216,11 @@ class FinanceEntry(TimeStampedModel):
         max_digits=14, decimal_places=2, default=0,
         verbose_name="Заработок с Привата за день ($)",
     )
+    kb_balance      = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        verbose_name="Баланс КБ ($)",
+        help_text="Текущий баланс на счёте КБ (в долларах)",
+    )
     notes           = models.TextField(blank=True, verbose_name="Примечания")
     last_edited_at  = models.DateTimeField(null=True, blank=True, verbose_name="Последнее редактирование")
 
@@ -323,6 +328,10 @@ class DailySummaryReport(TimeStampedModel):
     cash_flow_income        = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     cash_flow_expenses      = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     cash_flow_balance       = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    kb_balance_snapshot     = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0,
+        verbose_name="Баланс КБ ($) — снимок",
+    )
     # ── Pre-formatted report ─────────────────────────────────────────────────
     report_text             = models.TextField(blank=True, verbose_name="Текст отчёта (plain)")
     generated_at            = models.DateTimeField(auto_now_add=True, verbose_name="Сгенерирован")

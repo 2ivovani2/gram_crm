@@ -163,9 +163,21 @@ class ClientsView(View):
     POST /stats/clients/links/<id>/delete/ — delete link
     """
 
+    def _get_workers(self):
+        """Return active workers available for manual assignment."""
+        from apps.users.models import User, UserRole, UserStatus
+        return list(
+            User.objects.filter(
+                role__in=[UserRole.WORKER, UserRole.CURATOR],
+                status=UserStatus.ACTIVE,
+                is_activated=True,
+                is_blocked_bot=False,
+            ).order_by("first_name", "telegram_username")
+        )
+
     def get(self, request):
-        from apps.clients.models import Client, LinkAssignment
-        from django.db.models import Sum, Count, Q
+        from apps.clients.models import Client
+        from decimal import Decimal
 
         clients = list(
             Client.objects.prefetch_related(
@@ -174,13 +186,10 @@ class ClientsView(View):
             ).order_by("-created_at")
         )
 
-        # Annotate each client with computed stats
         client_data = []
         for c in clients:
             total_apps = c.total_applications
             client_earned = c.client_earned
-            # worker payout = sum(personal_rate × attracted_count) for all assignments
-            from decimal import Decimal
             worker_payout = Decimal("0")
             referral_payout = Decimal("0")
             for link in c.links.all():
@@ -192,9 +201,6 @@ class ClientsView(View):
                             referral_payout += cnt * a.worker.referred_by.referral_rate
             net_profit = client_earned - worker_payout - referral_payout
 
-            active_links = list(c.active_links)
-            all_links = list(c.links.all())
-
             client_data.append({
                 "client": c,
                 "total_apps": total_apps,
@@ -202,19 +208,23 @@ class ClientsView(View):
                 "worker_payout": worker_payout.quantize(Decimal("0.01")),
                 "referral_payout": referral_payout.quantize(Decimal("0.01")),
                 "net_profit": net_profit.quantize(Decimal("0.01")),
-                "active_links": active_links,
-                "all_links": all_links,
+                "active_links": list(c.active_links),
+                "all_links": list(c.links.all()),
             })
 
         return render(request, "stats_clients.html", {
             "client_data": client_data,
+            "workers": self._get_workers(),
             "msg": request.GET.get("msg", ""),
             "error": request.GET.get("error", ""),
+            "warn": request.GET.get("warn", ""),
+            "no_assign_link_id": request.GET.get("no_assign", ""),
         })
 
     def post(self, request):
         from apps.clients.models import Client, ClientLink
         from django.shortcuts import redirect
+        from urllib.parse import urlencode
 
         action = request.POST.get("action", "")
 
@@ -234,18 +244,83 @@ class ClientsView(View):
             return redirect("/stats/clients/?msg=Клиент+создан")
 
         if action == "add_link":
+            from apps.clients.services import AssignmentService
+            from apps.clients.tasks import notify_worker_assigned_sync
+
             client_id = request.POST.get("client_id", "")
             url = request.POST.get("url", "").strip()
             if not url:
                 return redirect("/stats/clients/?error=Укажите+URL")
             try:
                 client = Client.objects.get(pk=client_id)
-                ClientLink.objects.create(client=client, url=url)
+                link = ClientLink.objects.create(client=client, url=url)
             except Client.DoesNotExist:
                 return redirect("/stats/clients/?error=Клиент+не+найден")
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
-            return redirect("/stats/clients/?msg=Ссылка+добавлена")
+
+            # Auto-assign best available worker
+            assignment = AssignmentService.auto_assign(link)
+            if assignment:
+                notify_worker_assigned_sync(
+                    assignment.worker.telegram_id,
+                    link.url,
+                    client.nick,
+                )
+                msg = f"Ссылка добавлена. Исполнитель назначен: {assignment.worker.display_name}"
+                return redirect(f"/stats/clients/?msg={msg}")
+            else:
+                params = urlencode({"warn": "Исполнитель не найден — назначьте вручную", "no_assign": link.pk})
+                return redirect(f"/stats/clients/?{params}")
+
+        if action == "manual_assign":
+            from apps.clients.services import AssignmentService
+            from apps.clients.tasks import notify_worker_assigned_sync
+            from apps.users.models import User
+
+            link_id = request.POST.get("link_id", "")
+            worker_id = request.POST.get("worker_id", "")
+            if not link_id or not worker_id:
+                return redirect("/stats/clients/?error=Не+указана+ссылка+или+исполнитель")
+            try:
+                link = ClientLink.objects.select_related("client").get(pk=link_id)
+                worker = User.objects.get(pk=worker_id)
+            except (ClientLink.DoesNotExist, User.DoesNotExist):
+                return redirect("/stats/clients/?error=Ссылка+или+воркер+не+найдены")
+
+            try:
+                assignment = AssignmentService.manual_assign(link, worker)
+            except Exception as e:
+                return redirect(f"/stats/clients/?error={e}")
+
+            notify_worker_assigned_sync(worker.telegram_id, link.url, link.client.nick)
+            msg = f"Исполнитель {worker.display_name} назначен на ссылку"
+            return redirect(f"/stats/clients/?msg={msg}")
+
+        if action == "update_count":
+            from apps.clients.models import LinkAssignment
+            from apps.clients.services import AssignmentService
+            from apps.users.services import UserService
+
+            assignment_id = request.POST.get("assignment_id", "")
+            count_str = request.POST.get("count", "").strip()
+            try:
+                count = int(count_str)
+                if count < 0:
+                    raise ValueError("Значение не может быть отрицательным")
+                assignment = (
+                    LinkAssignment.objects
+                    .select_related("worker", "work_link")
+                    .get(pk=assignment_id, is_active=True)
+                )
+            except LinkAssignment.DoesNotExist:
+                return redirect("/stats/clients/?error=Назначение+не+найдено")
+            except (ValueError, TypeError) as e:
+                return redirect(f"/stats/clients/?error={e}")
+
+            UserService.set_attracted_count(assignment.worker, count)
+            AssignmentService.touch_count_updated(assignment)
+            return redirect("/stats/clients/?msg=Количество+заявок+обновлено")
 
         if action == "delete_client":
             client_id = request.POST.get("client_id", "")

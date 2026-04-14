@@ -24,7 +24,7 @@ _PERIOD_LABELS = {
 
 async def _build_stats_text(period: str = "week") -> str:
     from apps.broadcasts.models import Broadcast, BroadcastStatus
-    from apps.invites.models import InviteKey
+    from apps.clients.services import JoinService
     from apps.stats.services import DailyReportService
 
     today = timezone.localdate()
@@ -35,8 +35,7 @@ async def _build_stats_text(period: str = "week") -> str:
 
     (
         user_stats,
-        total_keys,
-        active_keys,
+        pending_requests,
         total_broadcasts,
         running_broadcasts,
         reports,
@@ -44,8 +43,7 @@ async def _build_stats_text(period: str = "week") -> str:
         top_worker,
     ) = await sync_to_async(lambda: (
         UserService.get_stats_summary(),
-        InviteKey.objects.count(),
-        InviteKey.objects.filter(is_active=True).count(),
+        JoinService.count_pending(),
         Broadcast.objects.count(),
         Broadcast.objects.filter(status=BroadcastStatus.RUNNING).count(),
         DailyReportService.get_reports_for_period(start_date, end_date),
@@ -116,8 +114,8 @@ async def _build_stats_text(period: str = "week") -> str:
         f"Кураторов: <b>{user_stats['curators']}</b>\n"
         f"  Новых сегодня: <b>{user_stats['new_today']}</b>\n"
         "\n"
-        "🔑 <b>Invite Keys</b>\n"
-        f"  Всего: <b>{total_keys}</b> · Активных: <b>{active_keys}</b>\n"
+        "📋 <b>Заявки на вступление</b>\n"
+        f"  На рассмотрении: <b>{pending_requests}</b>\n"
         "\n"
         "📢 <b>Рассылки</b>\n"
         f"  Всего: <b>{total_broadcasts}</b> · Запущено: <b>{running_broadcasts}</b>\n"

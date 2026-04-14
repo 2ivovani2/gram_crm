@@ -105,3 +105,37 @@ def check_worker_inactivity_task(self) -> None:
 
     asyncio.run(_notify())
     logger.info("check_worker_inactivity_task: done, unassigned %d workers", len(unassigned))
+
+
+def notify_worker_assigned_sync(worker_tg_id: int, link_url: str, client_nick: str) -> None:
+    """
+    Send assignment notification synchronously via asyncio.run().
+    Called directly from the web view (no Celery needed).
+    Fails silently — the assignment is already saved regardless.
+    """
+    async def _send():
+        bot = _make_bot()
+        try:
+            await bot.send_message(
+                worker_tg_id,
+                f"🔗 <b>Вам назначена новая ссылка для работы</b>\n\n"
+                f"Клиент: <b>{client_nick}</b>\n"
+                f"URL: <code>{link_url}</code>\n\n"
+                "Начинайте работу с этой ссылкой!",
+            )
+            logger.info(
+                "notify_worker_assigned_sync: sent to tg_id=%s, link=%s",
+                worker_tg_id, link_url,
+            )
+        except Exception as exc:
+            logger.warning(
+                "notify_worker_assigned_sync: failed tg_id=%s: %s",
+                worker_tg_id, exc,
+            )
+        finally:
+            await bot.session.close()
+
+    try:
+        asyncio.run(_send())
+    except Exception as exc:
+        logger.warning("notify_worker_assigned_sync: asyncio.run failed: %s", exc)

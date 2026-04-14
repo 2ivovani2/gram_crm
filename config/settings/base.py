@@ -234,8 +234,9 @@ AWS_QUERYSTRING_EXPIRE = env.int("MEDIA_QUERYSTRING_EXPIRE", default=3600)
 MEDIA_S3_PUBLIC_URL = env("MEDIA_S3_PUBLIC_URL", default="")
 
 # MEDIA_URL is used by Django admin file widgets as a prefix fallback.
-# With S3 backend the actual URL comes from storage.url() — this is a safe default.
-MEDIA_URL = "/"
+# With S3 backend the actual URL always comes from storage.url() (full S3 URL).
+# We leave this empty so Django admin doesn't prepend a local prefix to S3 URLs.
+MEDIA_URL = ""
 
 STORAGES = {
     "default": {

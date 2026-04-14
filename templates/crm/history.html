@@ -51,6 +51,7 @@ tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
         <th>Сальдо</th>
         <th>ПП ($)</th>
         <th>Привата ($)</th>
+        <th>КБ ($)</th>
         <th>Отчёт</th>
         <th></th>
       </tr>
@@ -85,6 +86,11 @@ tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
         </td>
         <td>{{ entry.finance.pp_earnings|floatformat:2|default:"—" }}</td>
         <td>{{ entry.finance.privat_earnings|floatformat:2|default:"—" }}</td>
+        <td>
+          {% if entry.finance %}
+          <span style="font-weight:600;color:var(--accent)">{{ entry.finance.kb_balance|floatformat:2 }}</span>
+          {% else %}—{% endif %}
+        </td>
         <td>
           {% if entry.report %}
           <span class="badge badge-blue">✅ Готов</span>

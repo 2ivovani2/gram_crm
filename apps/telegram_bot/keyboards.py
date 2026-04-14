@@ -18,16 +18,13 @@ def _url_btn(text: str, url: str) -> InlineKeyboardButton:
 
 # ── Worker menus ──────────────────────────────────────────────────────────────
 
-def get_main_menu_keyboard(is_activated: bool, channels_db_url: str = "") -> InlineKeyboardMarkup:
+def get_main_menu_keyboard(is_activated: bool = True, channels_db_url: str = "") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    if is_activated:
-        b.row(_btn("👤 Личный кабинет", "profile"))
-        b.row(_btn("🤝 Мои рефералы", "referrals"), _btn("📊 Статистика", "stats"))
-        b.row(_btn("💸 Вывод средств", "withdrawal"))
-        if channels_db_url:
-            b.row(_url_btn("📂 База каналов", channels_db_url))
-    else:
-        b.row(_btn("🔑 Ввести invite key", "enter_invite"))
+    b.row(_btn("👤 Личный кабинет", "profile"))
+    b.row(_btn("🤝 Мои рефералы", "referrals"), _btn("📊 Статистика", "stats"))
+    b.row(_btn("💸 Вывод средств", "withdrawal"))
+    if channels_db_url:
+        b.row(_url_btn("📂 База каналов", channels_db_url))
     return b.as_markup()
 
 
@@ -68,7 +65,7 @@ def get_cancel_keyboard() -> InlineKeyboardMarkup:
 def get_curator_main_menu_keyboard(channels_db_url: str = "") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.row(_cur_btn("👥 Мои рефералы", "referrals"))
-    b.row(_cur_btn("🔑 Мои инвайт-коды", "invites"), _cur_btn("📊 Статистика", "stats"))
+    b.row(_cur_btn("📊 Статистика", "stats"))
     # Withdrawal uses WorkerCallback — handled by worker/withdrawal.py with IsActivatedWorker()
     # which accepts curators too
     b.row(_btn("💸 Вывод средств", "withdrawal"))

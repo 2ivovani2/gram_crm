@@ -50,6 +50,10 @@
       <div class="card-title">Заработок с Привата</div>
       <div class="card-value">{{ finance.privat_earnings|floatformat:2 }} $</div>
     </div>
+    <div class="card card-accent">
+      <div class="card-title">Баланс КБ</div>
+      <div class="card-value">{{ finance.kb_balance|floatformat:2 }} $</div>
+    </div>
     {% endif %}
     {% if application %}
     <div class="card card-amber">
@@ -73,6 +77,12 @@
         <div style="font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Расходы / выплаты</div>
         <div style="font-size:22px;font-weight:700;color:var(--red)">−{{ finance.expenses|floatformat:2 }} $</div>
       </div>
+    </div>
+
+    <!-- ── Баланс КБ ──────────────────────────────────────────────────────────── -->
+    <div style="margin-top:12px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12px;color:var(--muted2);font-weight:600">💼 Баланс КБ</span>
+      <span style="font-size:18px;font-weight:700;color:var(--accent)">{{ finance.kb_balance|floatformat:2 }} $</span>
     </div>
 
     {% if finance.kb_screenshot %}

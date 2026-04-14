@@ -222,20 +222,15 @@ async def cb_check_subscription(callback: CallbackQuery, db_user, state) -> None
         await send_curator_main_menu(callback, db_user)
         return
 
-    # Worker
-    from django.conf import settings
-    from apps.telegram_bot.keyboards import get_main_menu_keyboard
-    channels_url = getattr(settings, "CHANNELS_DB_URL", "")
-
-    text = (
-        f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\nВыберите действие:"
-        if db_user.is_activated
-        else f"👋 Привет, <b>{db_user.display_name}</b>!\n\nДля доступа нужен <b>invite key</b>."
-    )
-    await callback.message.answer(
-        text,
-        reply_markup=get_main_menu_keyboard(
-            is_activated=db_user.is_activated,
-            channels_db_url=channels_url,
-        ),
-    )
+    # Worker — show main menu or join request flow depending on activation status
+    if db_user.is_activated:
+        from django.conf import settings
+        from apps.telegram_bot.keyboards import get_main_menu_keyboard
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+        await callback.message.answer(
+            f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\nВыберите действие:",
+            reply_markup=get_main_menu_keyboard(channels_db_url=channels_url),
+        )
+    else:
+        from apps.telegram_bot.handlers.worker.start import _show_not_activated
+        await _show_not_activated(callback, db_user)

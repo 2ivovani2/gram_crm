@@ -1,13 +1,13 @@
 """
 Worker: /start command and join request flow.
 
-New join flow (replaces invite key system):
-  /start → if not activated → show "Подать заявку" button
-  → tap button → JoinRequest created → all admins notified
+New user flow:
+  /start → not activated → show "Подать заявку" button
+  → tap → JoinRequest created → all admins notified
   → admin approves → user activated + notified
-  → admin rejects  → user notified
+  → admin rejects  → user notified, can re-apply
 
-If user already has a pending request: show status screen instead.
+If user already has a pending request: show status screen.
 """
 from aiogram import Router, F
 from aiogram.filters import CommandStart
@@ -73,7 +73,7 @@ async def cmd_start(message: Message, command: CommandObject, db_user: User, sta
         channels_url = getattr(settings, "CHANNELS_DB_URL", "")
         await message.answer(
             f"👋 С возвращением, <b>{db_user.display_name}</b>!\n\nВыберите действие:",
-            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
+            reply_markup=get_main_menu_keyboard(channels_db_url=channels_url),
         )
         return
 
@@ -89,23 +89,23 @@ async def _show_not_activated(event: Message | CallbackQuery, db_user: User) -> 
         text = (
             f"👋 Привет, <b>{db_user.display_name}</b>!\n\n"
             "Для получения доступа необходимо подать заявку.\n"
-            "Администратор рассмотрит её и свяжется с вами."
+            "Администратор рассмотрит её и уведомит вас о решении."
         )
         markup = _apply_keyboard()
     elif request.is_pending:
         text = (
-            f"⏳ <b>Ваша заявка на рассмотрении</b>\n\n"
-            f"Ожидайте решения администратора.\n"
+            "⏳ <b>Заявка на рассмотрении</b>\n\n"
+            "Ожидайте решения администратора — вы получите уведомление.\n\n"
             f"Заявка подана: {request.created_at.strftime('%d.%m.%Y %H:%M')} МСК"
         )
         markup = _pending_keyboard()
     elif request.status == "approved":
-        # Edge case: approved but not activated yet (shouldn't happen normally)
-        text = "✅ Ваша заявка принята! Перезапустите бота командой /start"
+        # Approved but not activated yet — shouldn't normally happen
+        text = "✅ Ваша заявка принята!\n\nНажмите /start чтобы продолжить."
         markup = None
     else:  # rejected
         text = (
-            f"❌ <b>Заявка отклонена</b>\n\n"
+            "❌ <b>Заявка отклонена</b>\n\n"
             "Вы можете подать заявку повторно."
         )
         markup = _rejected_keyboard()
@@ -133,9 +133,9 @@ async def cb_submit_request(callback: CallbackQuery, db_user: User, state: FSMCo
         return
 
     await callback.message.edit_text(
-        f"✅ <b>Заявка отправлена!</b>\n\n"
-        f"Администратор рассмотрит её в ближайшее время.\n"
-        f"Вы получите уведомление о решении.",
+        "✅ <b>Заявка отправлена!</b>\n\n"
+        "Администратор рассмотрит её в ближайшее время.\n"
+        "Вы получите уведомление о решении.",
         reply_markup=_pending_keyboard(),
     )
 
@@ -145,7 +145,7 @@ async def cb_submit_request(callback: CallbackQuery, db_user: User, state: FSMCo
 @router.callback_query(WorkerCallback.filter(F.action == "check_request"))
 async def cb_check_request(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
     await callback.answer()
-    # Re-fetch user to get current activation state
+    # Re-fetch to get current activation state
     from apps.users.services import UserService
     db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id) or db_user
 
@@ -153,8 +153,9 @@ async def cb_check_request(callback: CallbackQuery, db_user: User, state: FSMCon
         from django.conf import settings
         channels_url = getattr(settings, "CHANNELS_DB_URL", "")
         await callback.message.edit_text(
-            f"✅ Добро пожаловать, <b>{db_user.display_name}</b>!\nВаша заявка принята.",
-            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
+            f"✅ Добро пожаловать, <b>{db_user.display_name}</b>!\n"
+            "Ваша заявка принята. Выберите действие:",
+            reply_markup=get_main_menu_keyboard(channels_db_url=channels_url),
         )
         return
 
@@ -186,7 +187,7 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
         channels_url = getattr(settings, "CHANNELS_DB_URL", "")
         await callback.message.edit_text(
             f"👋 Главное меню, <b>{db_user.display_name}</b>!",
-            reply_markup=get_main_menu_keyboard(is_activated=True, channels_db_url=channels_url),
+            reply_markup=get_main_menu_keyboard(channels_db_url=channels_url),
         )
     else:
         await _show_not_activated(callback, db_user)
@@ -196,10 +197,19 @@ async def cb_back_to_start(callback: CallbackQuery, db_user: User, state: FSMCon
 async def cb_cancel(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
     await state.clear()
     await callback.answer("Отменено")
-    await callback.message.edit_text(
-        "Действие отменено.",
-        reply_markup=get_main_menu_keyboard(is_activated=db_user.is_activated),
-    )
+
+    from apps.users.services import UserService
+    db_user = await sync_to_async(UserService.get_by_telegram_id)(db_user.telegram_id) or db_user
+
+    if db_user.is_activated:
+        from django.conf import settings
+        channels_url = getattr(settings, "CHANNELS_DB_URL", "")
+        await callback.message.edit_text(
+            "Действие отменено.",
+            reply_markup=get_main_menu_keyboard(channels_db_url=channels_url),
+        )
+    else:
+        await _show_not_activated(callback, db_user)
 
 
 # ── Admin notification helper ─────────────────────────────────────────────────
@@ -209,7 +219,7 @@ async def _notify_admins_new_request(request, user: User, bot) -> None:
     from apps.telegram_bot.callbacks import AdminApplicationCallback
 
     text = (
-        f"📋 <b>Новая заявка на вступление</b>\n\n"
+        "📋 <b>Новая заявка на вступление</b>\n\n"
         f"👤 Имя: <b>{user.display_name}</b>\n"
         f"🆔 Telegram ID: <code>{user.telegram_id}</code>"
     )
@@ -217,8 +227,6 @@ async def _notify_admins_new_request(request, user: User, bot) -> None:
         text += f"\n📱 @{user.telegram_username}"
     if user.referred_by:
         text += f"\n🤝 Реферал от: <b>{user.referred_by.display_name}</b>"
-    if request.message:
-        text += f"\n💬 Сообщение: <i>{request.message[:200]}</i>"
 
     kb = InlineKeyboardBuilder()
     kb.button(
@@ -227,7 +235,7 @@ async def _notify_admins_new_request(request, user: User, bot) -> None:
     )
     kb.button(
         text="❌ Отклонить",
-        callback_data=AdminApplicationCallback(action="reject", request_id=request.pk).pack(),
+        callback_data=AdminApplicationCallback(action="reject_ask", request_id=request.pk).pack(),
     )
     kb.adjust(2)
     markup = kb.as_markup()
@@ -244,7 +252,7 @@ async def _notify_admins_new_request(request, user: User, bot) -> None:
         except Exception:
             pass
 
-    # Save notification message IDs so we can edit them after decision
+    # Save message IDs so we can edit them after decision
     if notifications:
         await sync_to_async(
             lambda: type(request).objects.filter(pk=request.pk).update(admin_notifications=notifications)

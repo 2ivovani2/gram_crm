@@ -172,6 +172,16 @@
         </div>
       </div>
 
+      <!-- ── Баланс КБ ─────────────────────────────────────────────── -->
+      <div class="form-group">
+        <label class="form-label">💼 Баланс КБ ($)</label>
+        <input type="number" name="kb_balance" step="0.01" class="form-input"
+               value="{{ form.kb_balance.value|default:'0.00' }}" placeholder="0.00"
+               style="max-width:200px"/>
+        <div style="font-size:12px;color:var(--muted2);margin-top:4px">Текущий баланс на счёте КБ</div>
+        {% if form.kb_balance.errors %}<div class="form-error">{{ form.kb_balance.errors.0 }}</div>{% endif %}
+      </div>
+
       <!-- ── Screenshot upload ─────────────────────────────────────── -->
       <div class="form-group">
         <label class="form-label" style="margin-bottom:8px">📎 Скрин с КБ</label>

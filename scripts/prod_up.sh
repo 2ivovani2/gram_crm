@@ -57,9 +57,6 @@ if [ -n "$VOL_MOUNT" ] && [ -f "$VOL_MOUNT/live/$DOMAIN/fullchain.pem" ]; then
     ok "Certificate already exists for $DOMAIN, skipping issuance."
 fi
 
-# ── 4. Ensure directories exist ───────────────────────────────────────────────
-mkdir -p "$PROJECT_DIR/media"
-
 # ── 5. Obtain cert (first deploy only) ────────────────────────────────────────
 if [ "$CERT_EXISTS" = "false" ]; then
     log "No certificate found for $DOMAIN. Obtaining Let's Encrypt certificate..."

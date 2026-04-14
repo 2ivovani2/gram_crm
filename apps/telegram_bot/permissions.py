@@ -46,7 +46,7 @@ class IsActivatedWorker(BaseFilter):
 
 
 class IsNotActivated(BaseFilter):
-    """Matches users who have NOT yet been activated (need invite key)."""
+    """Matches users who have NOT yet been activated (pending join request or none)."""
     async def __call__(self, event: Message | CallbackQuery, db_user: User | None = None) -> bool:
         if db_user is None:
             return True

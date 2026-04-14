@@ -297,6 +297,7 @@ class ReportService:
             income=finance_entry.income,
             expenses=finance_entry.expenses,
             balance=balance,
+            kb_balance=finance_entry.kb_balance,
         )
 
         is_new = False
@@ -315,6 +316,7 @@ class ReportService:
                 "cash_flow_income":       finance_entry.income,
                 "cash_flow_expenses":     finance_entry.expenses,
                 "cash_flow_balance":      balance,
+                "kb_balance_snapshot":    finance_entry.kb_balance,
                 "report_text":            report_text,
                 "generated_by":           generated_by,
             },
@@ -330,7 +332,8 @@ class ReportService:
 
     @staticmethod
     def _build_text(*, date, pp_earnings, privat_earnings, pp_pct, privat_pct,
-                    applications_count, applications_earnings, income, expenses, balance) -> str:
+                    applications_count, applications_earnings, income, expenses, balance,
+                    kb_balance=Decimal(0)) -> str:
         sign = "+" if balance >= 0 else ""
         return (
             f"📊 Ежедневный отчёт • {date.strftime('%d.%m.%Y')}\n\n"
@@ -343,7 +346,8 @@ class ReportService:
             f"⚖️ Сальдо за день:\n"
             f"   Доход Cash Flow: +{income:.2f} $\n"
             f"   Расходы/выплаты: -{expenses:.2f} $\n"
-            f"   Итого: {sign}{balance:.2f} $"
+            f"   Итого: {sign}{balance:.2f} $\n\n"
+            f"💼 Баланс КБ: {kb_balance:.2f} $"
         )
 
     @staticmethod
@@ -480,6 +484,7 @@ class ExportService:
         headers = [
             "Дата", "Поступления ($)", "Расходы ($)", "Сальдо ($)",
             "Заработок ПП ($)", "Заработок Привата ($)",
+            "Баланс КБ ($)",
             "Заявки (шт.)", "Заработок с заявок ($)",
             "% плана ПП", "% плана Привата",
         ]
@@ -515,6 +520,7 @@ class ExportService:
                 float(fin.balance)         if fin else "",
                 float(fin.pp_earnings)     if fin else "",
                 float(fin.privat_earnings) if fin else "",
+                float(fin.kb_balance)      if fin else "",
                 app.applications_count     if app else "",
                 float(app.applications_earnings) if app else "",
                 f"{rep.pp_plan_pct:.1f}%"     if rep else "",

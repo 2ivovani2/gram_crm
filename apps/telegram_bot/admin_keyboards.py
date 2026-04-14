@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .callbacks import (
-    AdminMenuCallback, AdminUserCallback, AdminInviteCallback,
+    AdminMenuCallback, AdminUserCallback,
     AdminBroadcastCallback, AdminStatsCallback, AdminSettingsCallback,
     AdminWithdrawalCallback, AdminDailyCallback, AdminApplicationCallback,
     AdminClientCallback,
@@ -35,24 +35,6 @@ def _add_pagination_users(b: InlineKeyboardBuilder, page: int, total: int) -> No
     if row:
         b.row(*row)
 
-
-def _add_pagination_invites(b: InlineKeyboardBuilder, page: int, total: int) -> None:
-    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-    row = []
-    if page > 1:
-        row.append(InlineKeyboardButton(
-            text="◀️", callback_data=AdminInviteCallback(action="list", key_id=0, page=page - 1).pack()
-        ))
-    row.append(InlineKeyboardButton(
-        text=f"· {page}/{total_pages} ·",
-        callback_data=AdminInviteCallback(action="noop", key_id=0, page=page).pack(),
-    ))
-    if page < total_pages:
-        row.append(InlineKeyboardButton(
-            text="▶️", callback_data=AdminInviteCallback(action="list", key_id=0, page=page + 1).pack()
-        ))
-    if row:
-        b.row(*row)
 
 
 def _add_pagination_broadcasts(b: InlineKeyboardBuilder, page: int, total: int) -> None:
@@ -185,78 +167,6 @@ def get_user_status_keyboard(user) -> InlineKeyboardMarkup:
         )
     b.button(text="🔙 Назад", callback_data=AdminUserCallback(action="view", user_id=user.id, page=1))
     b.adjust(1)
-    return b.as_markup()
-
-
-# ── Invite Keys ───────────────────────────────────────────────────────────────
-
-def get_invites_list_keyboard(keys, page: int, total: int) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    for key in keys:
-        icon = "✅" if key.is_valid else "❌"
-        uses = f"{key.uses_count}/{key.max_uses or '∞'}"
-        label = f"{key.key[:10]}… [{uses}]"
-        b.button(
-            text=f"{icon} {label}",
-            callback_data=AdminInviteCallback(action="view", key_id=key.id, page=page),
-        )
-    b.adjust(1)
-    _add_pagination_invites(b, page, total)
-    b.row(
-        InlineKeyboardButton(text="➕ Создать", callback_data=AdminInviteCallback(action="create", key_id=0, page=1).pack()),
-        _main_btn(),
-    )
-    return b.as_markup()
-
-
-def get_invite_key_card_keyboard(key, back_page: int = 1) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    toggle_label = "🔴 Деактивировать" if key.is_active else "🟢 Активировать"
-    b.button(text=toggle_label, callback_data=AdminInviteCallback(action="toggle", key_id=key.id, page=back_page))
-    b.button(text="📋 Активации", callback_data=AdminInviteCallback(action="activations", key_id=key.id, page=1))
-    b.button(text="🔙 К списку", callback_data=AdminInviteCallback(action="list", key_id=0, page=back_page))
-    b.adjust(1)
-    return b.as_markup()
-
-
-def get_invite_activations_keyboard(key_id: int, page: int, total: int) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-    row = []
-    if page > 1:
-        row.append(InlineKeyboardButton(
-            text="◀️", callback_data=AdminInviteCallback(action="activations", key_id=key_id, page=page - 1).pack()
-        ))
-    row.append(InlineKeyboardButton(text=f"· {page}/{total_pages} ·", callback_data=AdminInviteCallback(action="noop", key_id=key_id, page=page).pack()))
-    if page < total_pages:
-        row.append(InlineKeyboardButton(
-            text="▶️", callback_data=AdminInviteCallback(action="activations", key_id=key_id, page=page + 1).pack()
-        ))
-    if row:
-        b.row(*row)
-    b.row(InlineKeyboardButton(text="🔙 Назад", callback_data=AdminInviteCallback(action="view", key_id=key_id, page=1).pack()))
-    return b.as_markup()
-
-
-# ── Curator invite keyboards (reuse admin invite shapes) ──────────────────────
-
-def get_curator_invites_list_keyboard(keys, page: int, total: int) -> InlineKeyboardMarkup:
-    from .callbacks import CuratorCallback
-    b = InlineKeyboardBuilder()
-    for key in keys:
-        icon = "✅" if key.is_valid else "❌"
-        uses = f"{key.uses_count}/{key.max_uses or '∞'}"
-        label = f"{key.key[:10]}… [{uses}]"
-        b.button(
-            text=f"{icon} {label}",
-            callback_data=AdminInviteCallback(action="view", key_id=key.id, page=page),
-        )
-    b.adjust(1)
-    _add_pagination_invites(b, page, total)
-    b.row(
-        InlineKeyboardButton(text="➕ Создать", callback_data=AdminInviteCallback(action="create", key_id=0, page=1).pack()),
-        InlineKeyboardButton(text="🔙 Назад", callback_data=CuratorCallback(action="back_to_main").pack()),
-    )
     return b.as_markup()
 
 
