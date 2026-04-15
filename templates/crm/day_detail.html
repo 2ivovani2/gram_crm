@@ -10,10 +10,10 @@
 <div style="max-width:700px">
 
   <!-- ── Header ──────────────────────────────────────────────────────────────── -->
-  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(124,58,237,.04));border-color:rgba(0,212,255,.2)">
+  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(240,180,41,.06),rgba(224,125,10,.04));border-color:rgba(240,180,41,.2)">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
-        <div style="font-size:12px;color:var(--accent);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">Данные за день</div>
+        <div style="font-size:12px;color:var(--gold);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">Данные за день</div>
         <div style="font-size:26px;font-weight:800;letter-spacing:-.5px">{{ date|date:"d F Y" }}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -46,7 +46,7 @@
       <div class="card-title">Заработок с ПП</div>
       <div class="card-value">{{ finance.pp_earnings|floatformat:2 }} $</div>
     </div>
-    <div class="card card-purple">
+    <div class="card card-amber">
       <div class="card-title">Заработок с Привата</div>
       <div class="card-value">{{ finance.privat_earnings|floatformat:2 }} $</div>
     </div>
@@ -82,7 +82,7 @@
     <!-- ── Баланс КБ ──────────────────────────────────────────────────────────── -->
     <div style="margin-top:12px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:12px;color:var(--muted2);font-weight:600">💼 Баланс КБ</span>
-      <span style="font-size:18px;font-weight:700;color:var(--accent)">{{ finance.kb_balance|floatformat:2 }} $</span>
+      <span style="font-size:18px;font-weight:700;color:var(--gold)">{{ finance.kb_balance|floatformat:2 }} $</span>
     </div>
 
     {% if finance.kb_screenshot %}

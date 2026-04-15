@@ -9,12 +9,22 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #07090f; --surface: rgba(255,255,255,.04); --surface-h: rgba(255,255,255,.07);
-  --border: rgba(255,255,255,.08); --border-h: rgba(0,212,255,.3);
-  --accent: #00d4ff; --accent2: #7c3aed;
-  --text: #f1f5f9; --muted: #64748b; --muted2: #94a3b8;
-  --red: #ef4444; --red-dim: rgba(239,68,68,.1);
-  --r: 14px; --r-lg: 20px;
+  --bg:        #0b0a05;
+  --surface:   rgba(240,180,41,.04);
+  --surface-h: rgba(240,180,41,.07);
+  --border:    rgba(240,180,41,.12);
+  --gold:      #f0b429;
+  --gold-dim:  rgba(240,180,41,.12);
+  --gold-glow: rgba(240,180,41,.2);
+  --amber:     #e07d0a;
+  --red:       #f87171;
+  --red-dim:   rgba(248,113,113,.1);
+  --text:      #f5f0e2;
+  --text-2:    #c8bfa2;
+  --muted:     #7a7060;
+  --muted2:    #a09080;
+  --r:         12px;
+  --r-lg:      20px;
 }
 html { scroll-behavior: smooth; }
 body {
@@ -23,58 +33,87 @@ body {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   -webkit-font-smoothing: antialiased; overflow: hidden;
 }
-/* Background */
+
+/* ── Animated background ─────────────────────────────────────────────────── */
+.bg-layer {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+}
+.bg-glow-1 {
+  position: absolute;
+  width: 700px; height: 700px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.06) 0%, transparent 65%);
+  top: -250px; left: -180px;
+  animation: bgFloat 12s ease-in-out infinite;
+}
+.bg-glow-2 {
+  position: absolute;
+  width: 500px; height: 500px;
+  background: radial-gradient(ellipse, rgba(224,125,10,.05) 0%, transparent 65%);
+  bottom: -150px; right: -100px;
+  animation: bgFloat 16s ease-in-out infinite reverse;
+}
+@keyframes bgFloat {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%      { transform: translate(20px,-20px) scale(1.05); }
+}
+
+/* Subtle dot grid */
 .bg-grid {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image:
-    linear-gradient(rgba(0,212,255,.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,212,255,.025) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 100%);
+  background-image: radial-gradient(circle, rgba(240,180,41,.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 20%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 20%, transparent 100%);
 }
-.bg-glow-l {
-  position: fixed; pointer-events: none; z-index: 0;
-  width: 600px; height: 600px;
-  background: radial-gradient(ellipse, rgba(0,212,255,.08) 0%, transparent 70%);
-  top: -200px; left: -150px;
-}
-.bg-glow-r {
-  position: fixed; pointer-events: none; z-index: 0;
-  width: 500px; height: 500px;
-  background: radial-gradient(ellipse, rgba(124,58,237,.07) 0%, transparent 65%);
-  bottom: -150px; right: -100px;
-}
-/* Card */
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
 .login-wrap { position: relative; z-index: 1; width: 100%; max-width: 420px; padding: 24px; }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(24px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
 .login-card {
-  background: rgba(13,16,23,.9);
+  background: rgba(19,17,8,.92);
   border: 1px solid var(--border);
   border-radius: 24px;
   padding: 40px 36px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: 0 32px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(240,180,41,.05);
+  animation: cardIn .45s cubic-bezier(.2,.8,.3,1) both;
 }
+
+/* ── Brand ───────────────────────────────────────────────────────────────── */
 .brand {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 13px;
   margin-bottom: 32px;
 }
 .brand-icon {
-  width: 44px; height: 44px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
-  display: flex; align-items: center; justify-content: center; font-size: 22px;
+  width: 48px; height: 48px; border-radius: 14px;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--amber) 100%);
+  display: flex; align-items: center; justify-content: center; font-size: 24px;
+  box-shadow: 0 4px 20px var(--gold-glow);
+  flex-shrink: 0;
 }
-.brand-name { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
-.brand-sub  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.brand-name { font-size: 22px; font-weight: 800; letter-spacing: -.5px; color: var(--text); }
+.brand-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8px; }
-.subtitle { font-size: 14px; color: var(--muted2); line-height: 1.6; margin-bottom: 32px; }
+/* ── Title ───────────────────────────────────────────────────────────────── */
+h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8px; color: var(--text); }
+.subtitle { font-size: 14px; color: var(--muted2); line-height: 1.65; margin-bottom: 30px; }
 
+/* ── Widget container ────────────────────────────────────────────────────── */
 .tg-widget-wrap {
-  display: flex; justify-content: center; margin-bottom: 24px;
+  display: flex; justify-content: center;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
 }
 
+/* ── Divider ─────────────────────────────────────────────────────────────── */
 .divider {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 20px; color: var(--muted); font-size: 12px;
@@ -83,46 +122,54 @@ h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8p
   content: ''; flex: 1; height: 1px; background: var(--border);
 }
 
+/* ── How it works ────────────────────────────────────────────────────────── */
 .how-it-works {
-  background: rgba(0,212,255,.04);
-  border: 1px solid rgba(0,212,255,.12);
+  background: var(--gold-dim);
+  border: 1px solid rgba(240,180,41,.18);
   border-radius: var(--r);
-  padding: 14px 16px;
+  padding: 16px 18px;
+  margin-bottom: 24px;
 }
-.how-title { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 10px; }
+.how-title { font-size: 12px; font-weight: 700; color: var(--gold); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .5px; }
 .how-step {
   display: flex; align-items: flex-start; gap: 10px;
-  margin-bottom: 8px; font-size: 12.5px; color: var(--muted2); line-height: 1.5;
+  margin-bottom: 10px; font-size: 13px; color: var(--text-2); line-height: 1.5;
 }
 .how-step:last-child { margin-bottom: 0; }
 .how-num {
-  width: 18px; height: 18px; border-radius: 50%;
-  background: rgba(0,212,255,.15); color: var(--accent);
-  font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; margin-top: 1px;
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+  background: var(--gold); color: #0b0a05;
+  font-size: 10px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
 }
 
+/* ── Error ───────────────────────────────────────────────────────────────── */
 .error-box {
-  background: var(--red-dim); border: 1px solid rgba(239,68,68,.25);
+  background: var(--red-dim); border: 1px solid rgba(248,113,113,.25);
   border-radius: var(--r); padding: 12px 14px;
   font-size: 13px; color: var(--red); margin-bottom: 20px;
   display: flex; align-items: flex-start; gap: 8px;
 }
 
-.footer-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 20px; line-height: 1.6; }
-.footer-note a { color: var(--accent); text-decoration: none; }
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.footer-note {
+  font-size: 11.5px; color: var(--muted); text-align: center;
+  line-height: 1.6;
+}
 </style>
 </head>
 <body>
+<div class="bg-layer">
+  <div class="bg-glow-1"></div>
+  <div class="bg-glow-2"></div>
+</div>
 <div class="bg-grid"></div>
-<div class="bg-glow-l"></div>
-<div class="bg-glow-r"></div>
 
 <div class="login-wrap">
   <div class="login-card">
 
     <div class="brand">
-      <div class="brand-icon">📊</div>
+      <div class="brand-icon">💛</div>
       <div>
         <div class="brand-name">GRAMLY CRM</div>
         <div class="brand-sub">Финансовый учёт и аналитика</div>
@@ -173,7 +220,7 @@ h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8p
 
     <p class="footer-note">
       Вход доступен только участникам рабочего пространства.<br>
-      Для получения доступа обратитесь к главному администратору.
+      Для доступа обратитесь к главному администратору.
     </p>
 
   </div>

@@ -189,6 +189,7 @@ SUBSCRIPTION_CHANNEL_URL = env(
 # ── Static ────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 
 # ── Media — S3-compatible storage (always active) ─────────────────────────────
 # All CRM uploads go to S3-compatible storage.

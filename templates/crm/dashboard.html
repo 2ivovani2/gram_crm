@@ -72,7 +72,7 @@
     {% if status.app_entry %}
     <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
       <div style="color:var(--muted2)">
-        Заявок: <span style="color:var(--accent);font-weight:600">{{ status.app_entry.applications_count }} шт.</span>
+        Заявок: <span style="color:var(--gold);font-weight:600">{{ status.app_entry.applications_count }} шт.</span>
       </div>
       <div style="color:var(--muted2)">
         Заработок: <span style="font-weight:600;color:var(--text)">{{ status.app_entry.applications_earnings }} $</span>
@@ -114,7 +114,7 @@
         </div>
         <div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Заявки</div>
-          <div style="font-size:20px;font-weight:700;color:var(--accent)">{{ status.report.applications_count }} шт.</div>
+          <div style="font-size:20px;font-weight:700;color:var(--gold)">{{ status.report.applications_count }} шт.</div>
         </div>
       </div>
     </div>
@@ -140,7 +140,7 @@
         <span style="font-weight:700;color:var(--text)">{{ pp_pct|floatformat:1 }}%</span>
       </div>
       <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
-        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:3px;transition:width .4s"></div>
+        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--gold);border-radius:3px;transition:width .4s"></div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.pp_plan }} $</div>
     </div>
@@ -152,7 +152,7 @@
         <span style="font-weight:700;color:var(--text)">{{ prv_pct|floatformat:1 }}%</span>
       </div>
       <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
-        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--accent2);border-radius:3px;transition:width .4s"></div>
+        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--amber);border-radius:3px;transition:width .4s"></div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.privat_plan }} $</div>
     </div>
@@ -196,12 +196,12 @@
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             <div style="width:60px;height:4px;background:var(--surface-h);border-radius:2px;overflow:hidden">
-              <div style="height:100%;width:{{ r.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:2px"></div>
+              <div style="height:100%;width:{{ r.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--gold);border-radius:2px"></div>
             </div>
             <span style="font-size:12px">{{ r.pp_plan_pct|floatformat:1 }}%</span>
           </div>
         </td>
-        <td><a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--accent);font-size:12.5px;text-decoration:none">→ Подробнее</a></td>
+        <td><a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--gold);font-size:12.5px;text-decoration:none">→ Подробнее</a></td>
       </tr>
       {% endfor %}
     </tbody>

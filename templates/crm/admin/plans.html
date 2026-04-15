@@ -32,10 +32,10 @@
               <div style="font-size:11px;color:var(--muted)">Неделя {{ p.week_start|date:"W" }}</div>
             </td>
             <td>
-              <span style="font-size:18px;font-weight:700;color:var(--accent)">{{ p.pp_plan|floatformat:2 }}</span>
+              <span style="font-size:18px;font-weight:700;color:var(--gold)">{{ p.pp_plan|floatformat:2 }}</span>
             </td>
             <td>
-              <span style="font-size:18px;font-weight:700;color:var(--accent2)">{{ p.privat_plan|floatformat:2 }}</span>
+              <span style="font-size:18px;font-weight:700;color:var(--amber)">{{ p.privat_plan|floatformat:2 }}</span>
             </td>
             <td style="font-size:12px;color:var(--muted)">
               {{ p.created_by.display_name|default:"—" }}<br>

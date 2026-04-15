@@ -10,10 +10,10 @@
 <div style="max-width:700px">
 
   <!-- ── Header ────────────────────────────────────────────────────────────── -->
-  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(124,58,237,.04));border-color:rgba(0,212,255,.2)">
+  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(240,180,41,.06),rgba(224,125,10,.04));border-color:rgba(240,180,41,.2)">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
-        <div style="font-size:12px;color:var(--accent);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">
+        <div style="font-size:12px;color:var(--gold);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">
           Сводный ежедневный отчёт
         </div>
         <div style="font-size:26px;font-weight:800;letter-spacing:-.5px">{{ report.date|date:"d F Y" }}</div>
@@ -46,7 +46,7 @@
       <div class="card-value">{{ report.pp_earnings|floatformat:2 }} $</div>
       <div class="card-sub">% плана: {{ report.pp_plan_pct|floatformat:1 }}%</div>
     </div>
-    <div class="card card-purple">
+    <div class="card card-amber">
       <div class="card-title">Заработок с Привата</div>
       <div class="card-value">{{ report.privat_earnings|floatformat:2 }} $</div>
       <div class="card-sub">% плана: {{ report.privat_plan_pct|floatformat:1 }}%</div>
@@ -72,7 +72,7 @@
           <span style="font-weight:700">{{ report.pp_plan_pct|floatformat:1 }}%</span>
         </div>
         <div style="height:8px;background:var(--surface-h);border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:{{ report.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:4px"></div>
+          <div style="height:100%;width:{{ report.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--gold);border-radius:4px"></div>
         </div>
       </div>
       <div>
@@ -81,7 +81,7 @@
           <span style="font-weight:700">{{ report.privat_plan_pct|floatformat:1 }}%</span>
         </div>
         <div style="height:8px;background:var(--surface-h);border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:{{ report.privat_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent2);border-radius:4px"></div>
+          <div style="height:100%;width:{{ report.privat_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--amber);border-radius:4px"></div>
         </div>
       </div>
     </div>
@@ -102,12 +102,12 @@
     </div>
     <div style="margin-top:12px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
       <span style="font-size:12px;color:var(--muted2);font-weight:600">💼 Баланс КБ</span>
-      <span style="font-size:18px;font-weight:700;color:var(--accent)">{{ report.kb_balance_snapshot|floatformat:2 }} $</span>
+      <span style="font-size:18px;font-weight:700;color:var(--gold)">{{ report.kb_balance_snapshot|floatformat:2 }} $</span>
     </div>
 
     {% if report.finance_entry and report.finance_entry.kb_screenshot %}
     <div style="margin-top:14px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);font-size:13px;color:var(--muted2)">
-      📎 <a href="{{ report.finance_entry.kb_screenshot.url }}" target="_blank" style="color:var(--accent);text-decoration:none">Скрин с КБ — просмотреть</a>
+      📎 <a href="{{ report.finance_entry.kb_screenshot.url }}" target="_blank" style="color:var(--gold);text-decoration:none">Скрин с КБ — просмотреть</a>
     </div>
     {% endif %}
   </div>

@@ -12,8 +12,8 @@
 {% block extra_css %}
 <style>
 tr.clickable-row { cursor: pointer; transition: background .15s; }
-tr.clickable-row:hover { background: rgba(0,212,255,.06); }
-tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
+tr.clickable-row:hover { background: rgba(240,180,41,.06); }
+tr.clickable-row td:first-child { color: var(--gold); font-weight: 600; }
 </style>
 {% endblock %}
 
@@ -88,7 +88,7 @@ tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
         <td>{{ entry.finance.privat_earnings|floatformat:2|default:"—" }}</td>
         <td>
           {% if entry.finance %}
-          <span style="font-weight:600;color:var(--accent)">{{ entry.finance.kb_balance|floatformat:2 }}</span>
+          <span style="font-weight:600;color:var(--gold)">{{ entry.finance.kb_balance|floatformat:2 }}</span>
           {% else %}—{% endif %}
         </td>
         <td>
@@ -100,10 +100,10 @@ tr.clickable-row td:first-child { color: var(--accent); font-weight: 600; }
         </td>
         <td style="white-space:nowrap" onclick="event.stopPropagation()">
           {% if entry.finance %}
-          <a href="{% url 'crm:entry_finance' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
+          <a href="{% url 'crm:entry_finance' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--gold);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
           {% endif %}
           {% if entry.application %}
-          <a href="{% url 'crm:entry_apps' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">Заявки</a>
+          <a href="{% url 'crm:entry_apps' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--gold);font-size:12px;text-decoration:none;margin-right:8px">Заявки</a>
           {% endif %}
           {% if entry.report %}
           <a href="{% url 'crm:report_detail' entry.report.pk %}" style="color:var(--muted2);font-size:12px;text-decoration:none">Отчёт →</a>

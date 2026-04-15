@@ -47,7 +47,7 @@
       </div>
       <div style="display:flex;justify-content:space-between">
         <span style="color:var(--muted)">Слаг</span>
-        <span style="font-family:monospace;font-size:12px;color:var(--accent)">{{ workspace.slug }}</span>
+        <span style="font-family:monospace;font-size:12px;color:var(--gold)">{{ workspace.slug }}</span>
       </div>
       <div style="display:flex;justify-content:space-between">
         <span style="color:var(--muted)">Статус</span>
@@ -99,8 +99,8 @@
         </td>
         <td style="font-size:12px;color:var(--muted)">{{ miss.notified_at|date:"d.m H:i"|default:"—" }}</td>
         <td>
-          <a href="{% url 'crm:entry_finance' %}?date={{ miss.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
-          <a href="{% url 'crm:entry_apps' %}?date={{ miss.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none">Заявки</a>
+          <a href="{% url 'crm:entry_finance' %}?date={{ miss.date|date:'Y-m-d' }}" style="color:var(--gold);font-size:12px;text-decoration:none;margin-right:8px">CF</a>
+          <a href="{% url 'crm:entry_apps' %}?date={{ miss.date|date:'Y-m-d' }}" style="color:var(--gold);font-size:12px;text-decoration:none">Заявки</a>
         </td>
       </tr>
       {% endfor %}
@@ -148,7 +148,7 @@
           {% else %}<span class="badge badge-muted">—</span>{% endif %}
         </td>
         <td style="white-space:nowrap">
-          <a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:8px">Просмотр</a>
+          <a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--gold);font-size:12px;text-decoration:none;margin-right:8px">Просмотр</a>
           <form method="post" action="{% url 'crm:generate_report' r.date|date:'Y-m-d' %}" style="display:inline">
             {% csrf_token %}
             <button type="submit" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline">Пересформировать</button>
