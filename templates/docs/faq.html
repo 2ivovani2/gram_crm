@@ -150,26 +150,19 @@
   </div>
 </details>
 
-<h2 class="section-title"><span class="icon">🔧</span> Технические вопросы</h2>
+<h2 class="section-title"><span class="icon">🔧</span> Что-то не работает</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Бот не отвечает / не работает<span class="faq-arrow">›</span></summary>
+  <summary class="faq-q">Бот не отвечает<span class="faq-arrow">›</span></summary>
   <div class="faq-a">
-    Посмотрите логи на сервере: <code>make logs-prod</code>. Проверьте, что сервисы запущены: <code>docker compose ps</code>. Убедитесь, что вебхук Telegram зарегистрирован: <code>make webhook-info-prod</code>.
+    Напишите администратору — он проверит статус сервера и перезапустит если нужно.
   </div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Как проверить, что вебхук работает?<span class="faq-arrow">›</span></summary>
+  <summary class="faq-q">Рассылка не пришла<span class="faq-arrow">›</span></summary>
   <div class="faq-a">
-    На сервере выполните: <code>make webhook-info-prod</code>. Должно показать URL вебхука (gramly.tech/bot/webhook/) и 0 ошибок. Если есть ошибки — в поле «last_error» будет описание проблемы.
-  </div>
-</details>
-
-<details class="faq-item">
-  <summary class="faq-q">Рассылка зависла в статусе «Running» и не завершается<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Возможно, Celery worker упал. Проверьте логи: <code>make logs-prod</code>. Перезапустите воркер: <code>docker compose restart celery_worker</code>. Если рассылка большая — просто подождите, скорость ~20 сообщений/секунду.
+    Рассылки отправляются со скоростью ~20 сообщений в секунду. Если аудитория большая — подожди несколько минут. Если рассылка так и не пришла — напишите администратору.
   </div>
 </details>
 

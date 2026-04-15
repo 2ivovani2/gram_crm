@@ -3,10 +3,18 @@
 {% block nav_index %}active{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Документация системы</h1>
-<p class="page-lead">Здесь собраны все инструкции для работы с SpamBotControl и CRM. Выберите нужный раздел — каждый написан простым языком без технического жаргона.</p>
+<h1 class="page-title">Документация</h1>
+<p class="page-lead">Все инструкции для воркеров и менеджеров. Начни с гайда — там всё что нужно знать с первого дня.</p>
 
 <div class="nav-cards-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:36px">
+
+  <a href="/docs/guide/" class="nav-card" style="border-color:rgba(240,180,41,.25);background:rgba(240,180,41,.04);grid-column:1/-1">
+    <div class="nav-card-icon" style="background:linear-gradient(135deg,var(--gold),var(--amber));color:#0b0a05">📖</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title" style="color:var(--gold)">Гайд воркера — читать первым</div>
+      <div class="nav-card-desc">Как правильно работать с аккаунтами, комментариями и чатами. Байт-фразы, техника, расписание, масштабирование дохода.</div>
+    </div>
+  </a>
 
   <a href="/docs/crm/" class="nav-card">
     <div class="nav-card-icon">📊</div>

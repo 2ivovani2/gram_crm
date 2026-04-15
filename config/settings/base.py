@@ -173,6 +173,9 @@ CHANNELS_DB_URL = env(
     default="https://docs.google.com/spreadsheets/d/1-3kKQZk3LrBy9XEL0lG8oM1dYdgrvWzEDKXgFt5udjE/edit?gid=0#gid=0",
 )
 
+# Full URL to the worker spam guide in docs (button in bot main menu)
+DOCS_GUIDE_URL = env("DOCS_GUIDE_URL", default="https://gramly.tech/docs/guide/")
+
 # ── Channel subscription gate ─────────────────────────────────────────────────
 # Username (with @) for public channels, or numeric ID for private channels.
 # Public channel example:  @grmly

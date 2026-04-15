@@ -132,6 +132,11 @@ class DocsRatesView(DocsLoginMixin, View):
         return render(request, "docs/rates.html", self.get_docs_context(request))
 
 
+class DocsGuideView(DocsLoginMixin, View):
+    def get(self, request):
+        return render(request, "docs/guide.html", self.get_docs_context(request))
+
+
 class DocsFAQView(DocsLoginMixin, View):
     def get(self, request):
         return render(request, "docs/faq.html", self.get_docs_context(request))

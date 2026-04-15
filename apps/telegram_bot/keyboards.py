@@ -19,12 +19,17 @@ def _url_btn(text: str, url: str) -> InlineKeyboardButton:
 # ── Worker menus ──────────────────────────────────────────────────────────────
 
 def get_main_menu_keyboard(is_activated: bool = True, channels_db_url: str = "") -> InlineKeyboardMarkup:
+    from django.conf import settings
+    docs_url = getattr(settings, "DOCS_GUIDE_URL", "")
+
     b = InlineKeyboardBuilder()
     b.row(_btn("👤 Личный кабинет", "profile"))
     b.row(_btn("🤝 Мои рефералы", "referrals"), _btn("📊 Статистика", "stats"))
     b.row(_btn("💸 Вывод средств", "withdrawal"))
     if channels_db_url:
         b.row(_url_btn("📂 База каналов", channels_db_url))
+    if docs_url:
+        b.row(_url_btn("📖 Гайд воркера", docs_url))
     return b.as_markup()
 
 
@@ -63,6 +68,9 @@ def get_cancel_keyboard() -> InlineKeyboardMarkup:
 # ── Curator menus ─────────────────────────────────────────────────────────────
 
 def get_curator_main_menu_keyboard(channels_db_url: str = "") -> InlineKeyboardMarkup:
+    from django.conf import settings
+    docs_url = getattr(settings, "DOCS_GUIDE_URL", "")
+
     b = InlineKeyboardBuilder()
     b.row(_cur_btn("👥 Мои рефералы", "referrals"))
     b.row(_cur_btn("📊 Статистика", "stats"))
@@ -71,6 +79,8 @@ def get_curator_main_menu_keyboard(channels_db_url: str = "") -> InlineKeyboardM
     b.row(_btn("💸 Вывод средств", "withdrawal"))
     if channels_db_url:
         b.row(_url_btn("📂 База каналов", channels_db_url))
+    if docs_url:
+        b.row(_url_btn("📖 Гайд воркера", docs_url))
     return b.as_markup()
 
 

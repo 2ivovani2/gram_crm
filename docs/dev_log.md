@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-04-16 — Fair auto-assignment: min-load + random tiebreak
+
+### Проблема
+`AssignmentService._find_best_worker()` использовал `.order_by("active_assignments", "created_at").first()`.
+При одинаковой нагрузке вторичная сортировка по `created_at` делала выбор детерминированным — всегда побеждал старейший по регистрации воркер.
+
+### Решение (`apps/clients/services.py`)
+Двухшаговый алгоритм:
+1. Annotate all eligible workers with `active_assignments` count.
+2. Find `min_load = candidates[0].active_assignments` (после сортировки только по нагрузке).
+3. Собрать `pool = [w for w in candidates if w.active_assignments == min_load]`.
+4. `random.choice(pool)` — честное распределение среди равных.
+
+Вторичный ключ `created_at` удалён из `order_by`. Добавлен `import random`.
+
+### Файлы
+| Файл | Изменение |
+|------|-----------|
+| `apps/clients/services.py` | `_find_best_worker()` переписан; добавлен `import random`; обновлён заголовочный комментарий |
+| `CLAUDE.md` | Описание `AssignmentService` обновлено |
+
+### Как проверить вручную
+1. Создать 2+ активных воркеров с одинаковым числом назначений.
+2. Добавить клиентскую ссылку → авто-назначение сработает.
+3. Повторить 10–20 раз → назначения должны распределяться по разным воркерам, а не всегда в первого.
+
+---
+
 ## 2026-04-16 — Удаление bot-handler'ов ежедневного отчёта (final cleanup)
 
 ### Что убрано

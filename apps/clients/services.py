@@ -22,15 +22,16 @@ Key operations:
     → close request with REJECTED status
 
 Auto-assignment rule:
-  Pick the ACTIVE worker (role=WORKER or CURATOR) who:
-    1. Has no active LinkAssignment (free worker first)
-    2. If none free → pick worker with fewest active assignments
-    3. Must not be blocked, must have ACTIVE status
+  Pick an ACTIVE worker (role=WORKER or CURATOR) using two-step selection:
+    1. Find the minimum active-assignment count across all eligible workers.
+    2. Collect all workers sharing that minimum load.
+    3. Choose one at random from that pool (fair distribution, no deterministic tie-breaking).
   Worker gets a new WorkLink set to the client link's URL (count starts at 0).
 """
 from __future__ import annotations
 
 import logging
+import random
 from typing import Optional
 
 from django.db import transaction
@@ -114,11 +115,15 @@ class AssignmentService:
 
     @staticmethod
     def _find_best_worker():
+        """
+        Pick a worker with the lowest current active-assignment count.
+        When multiple workers share the minimum load, choose one at random
+        (fair distribution — no deterministic tie-breaking by pk / created_at).
+        """
         from apps.users.models import User, UserRole, UserStatus
-        from apps.clients.models import LinkAssignment
         from django.db.models import Count, Q
 
-        candidates = (
+        candidates = list(
             User.objects
             .filter(
                 role__in=[UserRole.WORKER, UserRole.CURATOR],
@@ -130,9 +135,15 @@ class AssignmentService:
                 "link_assignments",
                 filter=Q(link_assignments__is_active=True),
             ))
-            .order_by("active_assignments", "created_at")
+            .order_by("active_assignments")   # only sort by load; no secondary key
         )
-        return candidates.first()
+
+        if not candidates:
+            return None
+
+        min_load = candidates[0].active_assignments
+        pool = [w for w in candidates if w.active_assignments == min_load]
+        return random.choice(pool)
 
     @staticmethod
     @transaction.atomic
