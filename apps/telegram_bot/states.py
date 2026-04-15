@@ -61,18 +61,12 @@ class WorkerWithdrawalState(StatesGroup):
 
 
 class AdminDailyReportState(StatesGroup):
-    """Admin: daily client data entry form (4-step FSM)."""
+    """DEPRECATED: daily entry moved to web UI. Kept to clear stale FSM state."""
     waiting_for_link = State()
     waiting_for_client_nick = State()
     waiting_for_client_rate = State()
     waiting_for_total_applications = State()
     confirm = State()
-
-
-class AdminSetRateConfigState(StatesGroup):
-    """Admin: update RateConfig worker_share and referral_share."""
-    waiting_for_worker_share = State()
-    waiting_for_referral_share = State()
 
 
 class AdminReplaceWorkLinkState(StatesGroup):

@@ -2,6 +2,114 @@
 
 ---
 
+## 2026-04-16 — Удаление bot-handler'ов ежедневного отчёта (final cleanup)
+
+### Что убрано
+
+| Компонент | Статус |
+|-----------|--------|
+| `apps/telegram_bot/handlers/admin/daily.py` | Заменён stub'ом: FSM-поток ввода DailyReport удалён, стейты очищаются gracefully |
+| `apps/stats/services.py` (DailyReportService) | Удалён — не используется нигде в активном коде |
+| `AdminDailyCallback` (callbacks.py) | Удалён |
+| `AdminSetRateConfigState` (states.py) | Удалён |
+| `get_daily_entry_menu_keyboard`, `get_daily_date_picker_keyboard`, `get_daily_report_confirm_keyboard`, `get_rate_config_cancel_keyboard` (admin_keyboards.py) | Удалены |
+| Кнопка «📋 Ввод данных» в admin main menu | Удалена (осталось 7 кнопок вместо 8) |
+| RateConfig FSM в `handlers/admin/settings.py` | Удалён (3 handler'а: `cb_set_rate_config_start`, `process_worker_share`, `process_referral_share`) |
+| Раздел «Доли ставок (RateConfig)» в `get_settings_keyboard()` | Удалён |
+| Period selector в `get_stats_keyboard()` | Удалён — статистика в боте более не фильтруется по периоду |
+| `period` field в `AdminStatsCallback` | Удалён |
+
+### Что изменено
+
+**`apps/telegram_bot/handlers/admin/stats.py`** — полностью переписан:
+- Убрана зависимость от `DailyReportService`, `DailyReport`, `MissedDay`
+- Данные: воркеры, клиенты, ссылки, назначения, `GlobalRate`, топ воркер, idle count
+- Финансы: долг воркерам/рефералам по `GlobalRate` × `total_applications`
+
+**`apps/telegram_bot/handlers/admin/settings.py`** — settings меню:
+- Убрана зависимость от `RateConfig`
+- Текст меню переадресует на `/stats/` и `/stats/clients/`
+
+### Итоговое состояние bot admin меню
+
+```
+👥 Пользователи  | 📋 Заявки
+📢 Рассылки      | 📊 Статистика
+🔗 Клиенты       | 💸 Выводы
+⚙️ Настройки
+```
+
+---
+
+## 2026-04-16 — Переход на клиент-ориентированную модель (cleanup)
+
+### Что убрано / изменено
+
+| Компонент | Статус |
+|-----------|--------|
+| `DailyReport`, `MissedDay`, `RateConfig` | Убраны из Django admin; модели в БД остаются для исторических данных |
+| Celery tasks: `send_admin_reminder_task`, `check_missing_daily_report_task`, `send_daily_broadcast_task` | Удалены из `apps/stats/tasks.py` и из `CELERY_BEAT_SCHEDULE` |
+| Персональные ставки (`User.personal_rate`, `User.referral_rate`) | Не используются в `/stats/clients/` расчётах; заменены на `GlobalRate` |
+| `/django-admin/` кнопки на лендинге (×3) | Заменены на `/stats/` и `/stats/clients/` |
+| `⚙️ Панель` ссылка в `/stats/clients/` topbar | Удалена |
+| Старый `/stats/` dashboard (DailyReport-based) | Переписан: клиент/воркер статистика |
+
+### Что добавлено
+
+**`apps/stats/models.py`** — `GlobalRate` (singleton):
+- `worker_rate` — плоская ставка ₽/заявку для воркеров
+- `referral_rate` — плоская ставка ₽/заявку для рефералов
+- Метод `GlobalRate.get()` — get_or_create pk=1
+
+**`apps/stats/migrations/0006_globalrate.py`** — новая миграция
+
+**`apps/stats/views.py`**:
+- `StatsDashboardView` — полностью переписан: KPI (воркеры, ссылки, заявки), топ воркеры, активные назначения, idle воркеры
+- `ClientsView.GET` — финансы клиентов теперь считаются через `GlobalRate` (не через `User.personal_rate`)
+- Новый action `update_rates` — сохраняет GlobalRate
+- Новый action `reassign_worker` — смена воркера на назначенной ссылке; уведомляет нового + старого воркера в боте
+
+**`apps/clients/tasks.py`** — `notify_worker_unassigned_sync()`:
+- Уведомляет воркера что его ссылка переназначена другому
+- Вызывается при `reassign_worker`
+
+**`templates/stats_dashboard.html`** — переписан:
+- KPI: заявок всего, активных воркеров, активных ссылок, клиентов, без воркера, долг воркерам/рефералам
+- Топ-10 воркеров по attracted_count
+- Таблица активных назначений
+- Список idle воркеров без ссылки
+
+**`templates/stats_clients.html`**:
+- Панель «Глобальные ставки» вверху (worker_rate / referral_rate + кнопка Сохранить)
+- Кнопка «✎ сменить» в колонке Исполнитель для назначенных ссылок
+- Скрытая `reassign-row` с select воркеров (показывается по JS toggle)
+- Django-admin ссылка из topbar удалена
+
+**`templates/landing.html`**:
+- Navbar: `Admin` → `Статистика` (`/stats/`)
+- Hero кнопка `Admin Panel` → `Статистика` (`/stats/`)
+- CTA в нижней секции: `Admin Panel` → `Клиенты` (`/stats/clients/`)
+
+### Финансовая модель (new)
+
+```
+worker_payout   = total_apps × GlobalRate.worker_rate
+referral_payout = total_apps × GlobalRate.referral_rate
+net_profit      = client_earned − worker_payout − referral_payout
+```
+
+Ставки единые для всех; редактируются прямо из `/stats/clients/`.
+
+### Применить миграцию
+
+```bash
+docker compose exec web python manage.py migrate stats
+```
+
+После запуска: зайти в `/stats/clients/` → установить ставки в панели «Глобальные ставки».
+
+---
+
 ## 2026-04-15 — CRM: поле «Баланс КБ» в Cash Flow
 
 ### Изменения

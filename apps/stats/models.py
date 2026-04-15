@@ -4,6 +4,46 @@ from django.db import models
 from django.utils import timezone
 
 
+class GlobalRate(models.Model):
+    """
+    Singleton: global flat rates per application used across all client financial calculations.
+
+    worker_rate   — ₽ that goes to the worker per application (flat, not a fraction)
+    referral_rate — ₽ that goes to the referrer per application (flat)
+
+    Replaces the old per-user personal_rate / referral_rate system and the
+    old RateConfig fraction-based model.
+    Edited directly via the /stats/clients/ rate settings panel.
+    """
+
+    worker_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("0"),
+        verbose_name="Ставка воркера (₽/заявка)",
+        help_text="Сколько ₽ воркер получает за одну заявку",
+    )
+    referral_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("0"),
+        verbose_name="Ставка реферала (₽/заявка)",
+        help_text="Сколько ₽ реферрер получает за одну заявку реферала",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "users.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Глобальные ставки"
+        verbose_name_plural = "Глобальные ставки"
+
+    def __str__(self) -> str:
+        return f"Ставки: воркер {self.worker_rate} ₽, реферал {self.referral_rate} ₽"
+
+    @classmethod
+    def get(cls) -> "GlobalRate":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class UserDailyStats(models.Model):
     """Per-user daily task/work metrics. One row per user per day."""
 

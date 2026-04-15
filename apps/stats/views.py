@@ -2,14 +2,12 @@
 Web stats dashboard for admin use.
 URL: /stats/  — protected by Django's staff_member_required.
 
-Supports GET params for filtering:
-  ?start=YYYY-MM-DD  — start date (default: 30 days ago)
-  ?end=YYYY-MM-DD    — end date   (default: today)
-  ?preset=today|week|last_week|month  — shortcut presets (override start/end)
+New model (2026-04-16):
+  - DailyReport/MissedDay/RateConfig removed from active use
+  - Dashboard shows client/link/assignment-based stats
+  - Global flat rates (GlobalRate) editable via /stats/clients/
 """
 from __future__ import annotations
-import datetime
-import json
 from decimal import Decimal
 
 from django.contrib.admin.views.decorators import staff_member_required
@@ -18,72 +16,18 @@ from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from apps.stats.models import DailyReport, MissedDay
-from apps.stats.services import DailyReportService
+from apps.stats.models import GlobalRate
 from apps.users.models import User, UserRole, UserStatus
-
-
-def _json_default(obj):
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError(f"Not serializable: {type(obj)}")
-
-
-def _parse_date(value: str, fallback: datetime.date) -> datetime.date:
-    try:
-        return datetime.date.fromisoformat(value)
-    except (ValueError, TypeError):
-        return fallback
 
 
 @method_decorator(staff_member_required, name="dispatch")
 class StatsDashboardView(View):
 
     def get(self, request, *args, **kwargs):
-        today = timezone.localdate()
+        from apps.clients.models import Client, ClientLink, LinkAssignment, LinkStatus
+        from django.db.models import Sum, Count, Q
 
-        # ── Resolve date range ────────────────────────────────────────────────
-        preset = request.GET.get("preset", "")
-        if preset == "today":
-            start_date = end_date = today
-        elif preset == "week":
-            start_date = today - datetime.timedelta(days=today.weekday())
-            end_date = today
-        elif preset == "last_week":
-            last_sunday = today - datetime.timedelta(days=today.weekday() + 1)
-            start_date = last_sunday - datetime.timedelta(days=6)
-            end_date = last_sunday
-        elif preset == "month":
-            start_date = today.replace(day=1)
-            end_date = today
-        else:
-            default_start = today - datetime.timedelta(days=29)
-            start_date = _parse_date(request.GET.get("start", ""), default_start)
-            end_date = _parse_date(request.GET.get("end", ""), today)
-            if start_date > end_date:
-                start_date = end_date
-            if end_date > today:
-                end_date = today
-
-        # ── Load reports ──────────────────────────────────────────────────────
-        reports = DailyReportService.get_reports_for_period(start_date, end_date)
-        today_report = next((r for r in reports if r.date == today), None)
-        week_reports = DailyReportService.get_week_reports()
-
-        # ── Missed days ───────────────────────────────────────────────────────
-        missed_days = list(
-            MissedDay.objects.filter(date__gte=start_date, date__lte=end_date).order_by("-date")
-        )
-        missed_count = len(missed_days)
-        missed_filled_count = sum(1 for m in missed_days if m.is_filled)
-
-        # ── Financial summaries ───────────────────────────────────────────────
-        financial_summary = DailyReportService.build_financial_summary(today_report, week_reports)
-        period_financial_summary = DailyReportService.build_period_financial_summary(reports)
-
-        top_worker = DailyReportService.get_top_worker_week()
-
-        # ── User counts ───────────────────────────────────────────────────────
+        # ── Worker counts ─────────────────────────────────────────────────────
         total_workers = User.objects.filter(role=UserRole.WORKER).count()
         total_curators = User.objects.filter(role=UserRole.CURATOR).count()
         active_workers = User.objects.filter(
@@ -91,61 +35,75 @@ class StatsDashboardView(View):
             status=UserStatus.ACTIVE,
         ).count()
 
-        # ── Chart data ────────────────────────────────────────────────────────
-        days_in_range = (end_date - start_date).days + 1
-        dates_range = [start_date + datetime.timedelta(days=i) for i in range(days_in_range)]
-        by_date = {r.date: r for r in reports}
-        missed_dates_set = {m.date for m in missed_days}
-
-        chart_labels = [d.strftime("%d.%m") for d in dates_range]
-        chart_applications = [
-            by_date[d].total_applications if d in by_date else 0 for d in dates_range
-        ]
-        chart_worker_payout = [
-            float(by_date[d].total_worker_payout) if d in by_date else 0 for d in dates_range
-        ]
-        chart_our_profit = [
-            float(by_date[d].total_our_profit) if d in by_date else 0 for d in dates_range
-        ]
-        # 1 = missed and unfilled, for chart annotation
-        chart_missed = [
-            1 if d in missed_dates_set and d not in by_date else 0 for d in dates_range
-        ]
-
-        top_workers = list(
-            User.objects.filter(
-                role__in=[UserRole.WORKER, UserRole.CURATOR],
-                attracted_count__gt=0,
-            ).order_by("-attracted_count")[:10]
+        # ── Client / link / assignment counts ────────────────────────────────
+        total_clients = Client.objects.count()
+        active_links = ClientLink.objects.filter(status=LinkStatus.ACTIVE).count()
+        active_assignments = LinkAssignment.objects.filter(is_active=True).count()
+        unassigned_active_links = (
+            ClientLink.objects
+            .filter(status=LinkStatus.ACTIVE)
+            .exclude(assignments__is_active=True)
+            .count()
         )
 
-        recent_reports = list(
-            DailyReport.objects.filter(date__gte=start_date, date__lte=end_date).order_by("-date")[:30]
+        # ── Total applications across all assignments ─────────────────────────
+        from apps.users.models import WorkLink
+        total_applications = WorkLink.objects.aggregate(
+            total=Sum("attracted_count")
+        )["total"] or 0
+
+        # ── Global rates ──────────────────────────────────────────────────────
+        global_rate = GlobalRate.get()
+        total_worker_payout = (Decimal(total_applications) * global_rate.worker_rate).quantize(Decimal("0.01"))
+        total_referral_payout = (Decimal(total_applications) * global_rate.referral_rate).quantize(Decimal("0.01"))
+
+        # ── Top workers by attracted_count ────────────────────────────────────
+        top_workers = list(
+            User.objects
+            .filter(role__in=[UserRole.WORKER, UserRole.CURATOR], attracted_count__gt=0)
+            .order_by("-attracted_count")[:10]
+        )
+
+        # ── Recent active assignments with worker + link data ─────────────────
+        recent_assignments = list(
+            LinkAssignment.objects
+            .filter(is_active=True)
+            .select_related("worker", "client_link__client", "work_link")
+            .order_by("-assigned_at")[:30]
+        )
+
+        # ── Workers with no assignment ────────────────────────────────────────
+        idle_workers = list(
+            User.objects
+            .filter(
+                role__in=[UserRole.WORKER, UserRole.CURATOR],
+                status=UserStatus.ACTIVE,
+                is_activated=True,
+            )
+            .annotate(active_count=Count(
+                "link_assignments",
+                filter=Q(link_assignments__is_active=True),
+            ))
+            .filter(active_count=0)
+            .order_by("first_name", "telegram_username")[:20]
         )
 
         context = {
-            "today": today,
-            "start_date": start_date,
-            "end_date": end_date,
-            "preset": preset,
-            "today_report": today_report,
-            "week_reports": week_reports,
-            "financial_summary": financial_summary,
-            "period_financial_summary": period_financial_summary,
-            "top_worker": top_worker,
+            "today": timezone.localdate(),
             "total_workers": total_workers,
             "total_curators": total_curators,
             "active_workers": active_workers,
+            "total_clients": total_clients,
+            "active_links": active_links,
+            "active_assignments": active_assignments,
+            "unassigned_active_links": unassigned_active_links,
+            "total_applications": total_applications,
+            "total_worker_payout": total_worker_payout,
+            "total_referral_payout": total_referral_payout,
+            "global_rate": global_rate,
             "top_workers": top_workers,
-            "recent_reports": recent_reports,
-            "missed_days": missed_days,
-            "missed_count": missed_count,
-            "missed_filled_count": missed_filled_count,
-            "chart_labels_json": json.dumps(chart_labels),
-            "chart_applications_json": json.dumps(chart_applications),
-            "chart_worker_payout_json": json.dumps(chart_worker_payout),
-            "chart_our_profit_json": json.dumps(chart_our_profit),
-            "chart_missed_json": json.dumps(chart_missed),
+            "recent_assignments": recent_assignments,
+            "idle_workers": idle_workers,
         }
         return render(request, "stats_dashboard.html", context)
 
@@ -155,17 +113,19 @@ class StatsDashboardView(View):
 @method_decorator(staff_member_required, name="dispatch")
 class ClientsView(View):
     """
-    List + CRUD for Client and ClientLink.
-    GET  /stats/clients/                   — list of clients
-    POST /stats/clients/                   — create client (nick, rate, notes)
-    POST /stats/clients/<id>/add-link/     — add link to client
-    POST /stats/clients/<id>/delete/       — delete client
-    POST /stats/clients/links/<id>/delete/ — delete link
+    List + CRUD for Client and ClientLink + GlobalRate settings.
+    Actions (POST):
+      create_client     — create new client
+      add_link          — add link to client (auto-assigns worker)
+      manual_assign     — assign worker to unassigned link
+      reassign_worker   — switch worker on an already-assigned link
+      update_count      — update attracted_count for an assignment
+      update_rates      — save global worker_rate + referral_rate
+      delete_client     — delete client and all its links
+      delete_link       — delete a specific link
     """
 
     def _get_workers(self):
-        """Return active workers available for manual assignment."""
-        from apps.users.models import User, UserRole, UserStatus
         return list(
             User.objects.filter(
                 role__in=[UserRole.WORKER, UserRole.CURATOR],
@@ -177,7 +137,6 @@ class ClientsView(View):
 
     def get(self, request):
         from apps.clients.models import Client
-        from decimal import Decimal
 
         clients = list(
             Client.objects.prefetch_related(
@@ -186,28 +145,23 @@ class ClientsView(View):
             ).order_by("-created_at")
         )
 
+        global_rate = GlobalRate.get()
+
         client_data = []
         for c in clients:
             total_apps = c.total_applications
             client_earned = c.client_earned
-            worker_payout = Decimal("0")
-            referral_payout = Decimal("0")
-            for link in c.links.all():
-                for a in link.assignments.all():
-                    if a.work_link:
-                        cnt = Decimal(a.work_link.attracted_count)
-                        worker_payout += cnt * a.worker.personal_rate
-                        if a.worker.referred_by:
-                            referral_payout += cnt * a.worker.referred_by.referral_rate
-            net_profit = client_earned - worker_payout - referral_payout
+            worker_payout = (Decimal(total_apps) * global_rate.worker_rate).quantize(Decimal("0.01"))
+            referral_payout = (Decimal(total_apps) * global_rate.referral_rate).quantize(Decimal("0.01"))
+            net_profit = (client_earned - worker_payout - referral_payout).quantize(Decimal("0.01"))
 
             client_data.append({
                 "client": c,
                 "total_apps": total_apps,
                 "client_earned": client_earned,
-                "worker_payout": worker_payout.quantize(Decimal("0.01")),
-                "referral_payout": referral_payout.quantize(Decimal("0.01")),
-                "net_profit": net_profit.quantize(Decimal("0.01")),
+                "worker_payout": worker_payout,
+                "referral_payout": referral_payout,
+                "net_profit": net_profit,
                 "active_links": list(c.active_links),
                 "all_links": list(c.links.all()),
             })
@@ -215,6 +169,7 @@ class ClientsView(View):
         return render(request, "stats_clients.html", {
             "client_data": client_data,
             "workers": self._get_workers(),
+            "global_rate": global_rate,
             "msg": request.GET.get("msg", ""),
             "error": request.GET.get("error", ""),
             "warn": request.GET.get("warn", ""),
@@ -228,6 +183,30 @@ class ClientsView(View):
 
         action = request.POST.get("action", "")
 
+        # ── Global rates ──────────────────────────────────────────────────────
+        if action == "update_rates":
+            try:
+                worker_rate = Decimal(request.POST.get("worker_rate", "0").strip())
+                referral_rate = Decimal(request.POST.get("referral_rate", "0").strip())
+                if worker_rate < 0 or referral_rate < 0:
+                    raise ValueError("Ставки не могут быть отрицательными")
+            except Exception as e:
+                return redirect(f"/stats/clients/?error={e}")
+
+            rate = GlobalRate.get()
+            rate.worker_rate = worker_rate
+            rate.referral_rate = referral_rate
+            # updated_by: try to find the User from request.user (staff auth)
+            try:
+                from apps.users.models import User as BotUser
+                bot_user = BotUser.objects.get(username=request.user.username)
+                rate.updated_by = bot_user
+            except Exception:
+                pass
+            rate.save()
+            return redirect("/stats/clients/?msg=Ставки+обновлены")
+
+        # ── Create client ─────────────────────────────────────────────────────
         if action == "create_client":
             nick = request.POST.get("nick", "").strip()
             rate = request.POST.get("rate", "0").strip()
@@ -237,12 +216,12 @@ class ClientsView(View):
             if Client.objects.filter(nick=nick).exists():
                 return redirect(f"/stats/clients/?error=Клиент+{nick}+уже+существует")
             try:
-                from decimal import Decimal
                 Client.objects.create(nick=nick, rate=Decimal(rate), notes=notes)
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
             return redirect("/stats/clients/?msg=Клиент+создан")
 
+        # ── Add link ──────────────────────────────────────────────────────────
         if action == "add_link":
             from apps.clients.services import AssignmentService
             from apps.clients.tasks import notify_worker_assigned_sync
@@ -259,13 +238,10 @@ class ClientsView(View):
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
 
-            # Auto-assign best available worker
             assignment = AssignmentService.auto_assign(link)
             if assignment:
                 notify_worker_assigned_sync(
-                    assignment.worker.telegram_id,
-                    link.url,
-                    client.nick,
+                    assignment.worker.telegram_id, link.url, client.nick,
                 )
                 msg = f"Ссылка добавлена. Исполнитель назначен: {assignment.worker.display_name}"
                 return redirect(f"/stats/clients/?msg={msg}")
@@ -273,10 +249,10 @@ class ClientsView(View):
                 params = urlencode({"warn": "Исполнитель не найден — назначьте вручную", "no_assign": link.pk})
                 return redirect(f"/stats/clients/?{params}")
 
+        # ── Manual assign (for unassigned links) ─────────────────────────────
         if action == "manual_assign":
             from apps.clients.services import AssignmentService
             from apps.clients.tasks import notify_worker_assigned_sync
-            from apps.users.models import User
 
             link_id = request.POST.get("link_id", "")
             worker_id = request.POST.get("worker_id", "")
@@ -297,6 +273,42 @@ class ClientsView(View):
             msg = f"Исполнитель {worker.display_name} назначен на ссылку"
             return redirect(f"/stats/clients/?msg={msg}")
 
+        # ── Reassign worker (for already-assigned links) ──────────────────────
+        if action == "reassign_worker":
+            from apps.clients.models import LinkAssignment
+            from apps.clients.services import AssignmentService
+            from apps.clients.tasks import notify_worker_assigned_sync, notify_worker_unassigned_sync
+
+            link_id = request.POST.get("link_id", "")
+            new_worker_id = request.POST.get("new_worker_id", "")
+            if not link_id or not new_worker_id:
+                return redirect("/stats/clients/?error=Не+указана+ссылка+или+новый+исполнитель")
+            try:
+                link = ClientLink.objects.select_related("client").get(pk=link_id)
+                new_worker = User.objects.get(pk=new_worker_id)
+            except (ClientLink.DoesNotExist, User.DoesNotExist):
+                return redirect("/stats/clients/?error=Ссылка+или+воркер+не+найдены")
+
+            # Remember old worker before reassigning
+            existing = link.assignments.filter(is_active=True).first()
+            old_worker = existing.worker if existing else None
+
+            try:
+                assignment = AssignmentService.manual_assign(link, new_worker)
+            except Exception as e:
+                return redirect(f"/stats/clients/?error={e}")
+
+            # Notify new worker
+            notify_worker_assigned_sync(new_worker.telegram_id, link.url, link.client.nick)
+
+            # Notify old worker (if different from new)
+            if old_worker and old_worker.pk != new_worker.pk:
+                notify_worker_unassigned_sync(old_worker.telegram_id, link.url, link.client.nick)
+
+            msg = f"Исполнитель сменён: {old_worker.display_name if old_worker else '—'} → {new_worker.display_name}"
+            return redirect(f"/stats/clients/?msg={msg}")
+
+        # ── Update attracted_count ────────────────────────────────────────────
         if action == "update_count":
             from apps.clients.models import LinkAssignment
             from apps.clients.services import AssignmentService
@@ -322,6 +334,7 @@ class ClientsView(View):
             AssignmentService.touch_count_updated(assignment)
             return redirect("/stats/clients/?msg=Количество+заявок+обновлено")
 
+        # ── Delete client ─────────────────────────────────────────────────────
         if action == "delete_client":
             client_id = request.POST.get("client_id", "")
             try:
@@ -330,6 +343,7 @@ class ClientsView(View):
                 pass
             return redirect("/stats/clients/?msg=Клиент+удалён")
 
+        # ── Delete link ───────────────────────────────────────────────────────
         if action == "delete_link":
             link_id = request.POST.get("link_id", "")
             try:

@@ -107,6 +107,37 @@ def check_worker_inactivity_task(self) -> None:
     logger.info("check_worker_inactivity_task: done, unassigned %d workers", len(unassigned))
 
 
+def notify_worker_unassigned_sync(worker_tg_id: int, link_url: str, client_nick: str) -> None:
+    """
+    Notify a worker that their link has been reassigned to another person.
+    Called when admin manually switches the worker on an active assignment.
+    Fails silently.
+    """
+    async def _send():
+        bot = _make_bot()
+        try:
+            await bot.send_message(
+                worker_tg_id,
+                f"🔄 <b>Ссылка переназначена другому исполнителю</b>\n\n"
+                f"Клиент: <b>{client_nick}</b>\n"
+                f"URL: <code>{link_url}</code>\n\n"
+                "Ваша текущая ссылка была передана другому воркеру. "
+                "Обратитесь к администратору за новым заданием.",
+            )
+        except Exception as exc:
+            logger.warning(
+                "notify_worker_unassigned_sync: failed tg_id=%s: %s",
+                worker_tg_id, exc,
+            )
+        finally:
+            await bot.session.close()
+
+    try:
+        asyncio.run(_send())
+    except Exception as exc:
+        logger.warning("notify_worker_unassigned_sync: asyncio.run failed: %s", exc)
+
+
 def notify_worker_assigned_sync(worker_tg_id: int, link_url: str, client_nick: str) -> None:
     """
     Send assignment notification synchronously via asyncio.run().

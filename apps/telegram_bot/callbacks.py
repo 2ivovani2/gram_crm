@@ -16,7 +16,6 @@ Prefix map:
   adm_s   → admin stats
   adm_cfg → admin settings
   adm_w   → admin withdrawals
-  adm_d   → admin daily report
   adm_a   → admin applications (join requests)
   adm_cl  → admin clients & links
   ww      → worker withdrawal
@@ -70,7 +69,6 @@ class AdminBroadcastCallback(CallbackData, prefix="adm_b"):
 
 class AdminStatsCallback(CallbackData, prefix="adm_s"):
     action: str
-    period: str = "week"  # today | week | last_week | month
 
 
 class AdminSettingsCallback(CallbackData, prefix="adm_cfg"):
@@ -82,12 +80,6 @@ class AdminWithdrawalCallback(CallbackData, prefix="adm_w"):
     action: str
     withdrawal_id: int = 0
     page: int = 1
-
-
-class AdminDailyCallback(CallbackData, prefix="adm_d"):
-    action: str
-    report_id: int = 0
-    date_str: str = ""  # ISO date string (YYYY-MM-DD) for backdated entry
 
 
 class WorkerWithdrawalCallback(CallbackData, prefix="ww"):

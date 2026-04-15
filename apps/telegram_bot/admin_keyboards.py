@@ -5,7 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from .callbacks import (
     AdminMenuCallback, AdminUserCallback,
     AdminBroadcastCallback, AdminStatsCallback, AdminSettingsCallback,
-    AdminWithdrawalCallback, AdminDailyCallback, AdminApplicationCallback,
+    AdminWithdrawalCallback, AdminApplicationCallback,
     AdminClientCallback,
 )
 
@@ -88,9 +88,8 @@ def get_admin_main_menu(pending_requests: int = 0) -> InlineKeyboardMarkup:
     b.button(text="📊 Статистика", callback_data=AdminMenuCallback(section="stats"))
     b.button(text="🔗 Клиенты и ссылки", callback_data=AdminMenuCallback(section="clients"))
     b.button(text="💸 Выводы", callback_data=AdminMenuCallback(section="withdrawals"))
-    b.button(text="📋 Ввод данных", callback_data=AdminMenuCallback(section="daily"))
     b.button(text="⚙️ Настройки", callback_data=AdminMenuCallback(section="settings"))
-    b.adjust(2, 2, 2, 2)
+    b.adjust(2, 2, 2)
     return b.as_markup()
 
 
@@ -145,7 +144,6 @@ def get_user_card_keyboard(user, back_page: int = 1) -> InlineKeyboardMarkup:
 
 def get_settings_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="⚙️ Доли ставок (RateConfig)", callback_data=AdminSettingsCallback(action="set_rate_config"))
     b.button(text="🔙 Главное меню", callback_data=AdminMenuCallback(section="main"))
     b.adjust(1)
     return b.as_markup()
@@ -243,82 +241,19 @@ def get_broadcast_delivery_logs_keyboard(page: int, total: int, broadcast_id: in
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
-def get_stats_keyboard(period: str = "week") -> InlineKeyboardMarkup:
-    """Period selector + refresh + back to main menu."""
+def get_stats_keyboard() -> InlineKeyboardMarkup:
+    """Refresh + back to main menu."""
     b = InlineKeyboardBuilder()
-    periods = [
-        ("today",     "📅 Сегодня"),
-        ("week",      "📊 Эта неделя"),
-        ("last_week", "📉 Прошлая неделя"),
-        ("month",     "📆 Месяц"),
-    ]
-    row = []
-    for p_val, p_label in periods:
-        marker = "▶ " if p_val == period else ""
-        row.append(InlineKeyboardButton(
-            text=f"{marker}{p_label}",
-            callback_data=AdminStatsCallback(action="period", period=p_val).pack(),
-        ))
-    b.row(*row[:2])
-    b.row(*row[2:])
     b.row(
         InlineKeyboardButton(
             text="🔄 Обновить",
-            callback_data=AdminStatsCallback(action="refresh", period=period).pack(),
+            callback_data=AdminStatsCallback(action="refresh").pack(),
         ),
         _main_btn(),
     )
     return b.as_markup()
 
 
-# ── Daily report: entry menu + date picker ─────────────────────────────────────
-
-def get_daily_entry_menu_keyboard(has_other_dates: bool = False) -> InlineKeyboardMarkup:
-    """Entry menu: today + optionally date picker + back."""
-    b = InlineKeyboardBuilder()
-    b.button(text="📋 Внести за сегодня", callback_data=AdminDailyCallback(action="start"))
-    if has_other_dates:
-        b.button(text="📅 Внести за другой день", callback_data=AdminDailyCallback(action="pick_date"))
-    b.button(text="🔙 Главное меню", callback_data=AdminMenuCallback(section="main"))
-    b.adjust(1)
-    return b.as_markup()
-
-
-def get_daily_date_picker_keyboard(dates: list, missed_dates: set) -> InlineKeyboardMarkup:
-    """Show list of recent dates without a DailyReport."""
-    RU_MONTHS = ["янв", "фев", "мар", "апр", "май", "июн",
-                 "июл", "авг", "сен", "окт", "ноя", "дек"]
-    b = InlineKeyboardBuilder()
-    for d in dates:
-        label = f"{d.day} {RU_MONTHS[d.month - 1]}"
-        if d in missed_dates:
-            label = f"🔴 {label} (пропущен)"
-        else:
-            label = f"📅 {label}"
-        b.button(
-            text=label,
-            callback_data=AdminDailyCallback(action="select_date", date_str=d.isoformat()),
-        )
-    b.adjust(1)
-    b.row(InlineKeyboardButton(text="🔙 Назад", callback_data=AdminMenuCallback(section="daily").pack()))
-    return b.as_markup()
-
-
-# ── Daily report ──────────────────────────────────────────────────────────────
-
-def get_daily_report_confirm_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    b.button(text="✅ Подтвердить", callback_data=AdminDailyCallback(action="confirm"))
-    b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="main"))
-    b.adjust(2)
-    return b.as_markup()
-
-
-def get_rate_config_cancel_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="settings"))
-    b.adjust(1)
-    return b.as_markup()
 
 
 # ── Withdrawals ───────────────────────────────────────────────────────────────

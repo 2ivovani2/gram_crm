@@ -15,14 +15,14 @@
     <div class="card-text">Все люди в системе. У каждого есть роль (Воркер / Куратор / Администратор) и статус (активен / неактивен / заблокирован).</div>
   </div>
   <div class="card">
-    <div class="card-icon">🔑</div>
-    <div class="card-title">Инвайт-ключи</div>
-    <div class="card-text">Без инвайт-ключа нельзя активировать аккаунт в боте. Вы создаёте ключи и раздаёте нужным людям.</div>
-  </div>
-  <div class="card">
     <div class="card-icon">🔗</div>
     <div class="card-title">Рабочие ссылки</div>
-    <div class="card-text">Каждому воркеру выдаётся рабочая ссылка. По ней считается, сколько подписчиков он привлёк.</div>
+    <div class="card-text">Каждому воркеру выдаётся рабочая ссылка. По ней считается, сколько подписчиков он привлёк. Назначение происходит через панель «Клиенты».</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🏢</div>
+    <div class="card-title">Клиенты и ссылки</div>
+    <div class="card-text">Панель <strong>/stats/clients/</strong> — управление клиентами и их ссылками. Авто-назначение воркеров, ручное назначение, редактирование заявок.</div>
   </div>
   <div class="card">
     <div class="card-icon">📢</div>
@@ -32,41 +32,69 @@
 </div>
 
 <h2 class="section-title"><span class="icon">➕</span> Как добавить нового воркера</h2>
+<p>Воркеры вступают в систему через заявку — никаких инвайт-ключей не нужно.</p>
 <div class="steps">
   <div class="step">
     <div class="step-num">1</div>
     <div class="step-body">
-      <div class="step-title">Создайте инвайт-ключ</div>
-      <div class="step-text">Перейдите в <strong>Инвайты → Инвайт-ключи → Добавить</strong>. Укажите название (например, имя воркера), максимальное число использований (обычно 1) и срок действия при необходимости.</div>
+      <div class="step-title">Воркер пишет /start боту</div>
+      <div class="step-text">Бот показывает кнопку «Подать заявку». Воркер нажимает — заявка уходит всем администраторам с кнопками «Одобрить» / «Отклонить».</div>
     </div>
   </div>
   <div class="step">
     <div class="step-num">2</div>
     <div class="step-body">
-      <div class="step-title">Передайте ключ воркеру</div>
-      <div class="step-text">Скопируйте созданный ключ и отправьте его воркеру. Воркер должен написать боту и ввести этот ключ для активации аккаунта.</div>
+      <div class="step-title">Вы одобряете заявку</div>
+      <div class="step-text">Нажмите «✅ Одобрить» в уведомлении от бота. Воркер сразу получит сообщение с подтверждением и увидит своё главное меню.</div>
     </div>
   </div>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      <div class="step-title">Воркер активирует аккаунт</div>
-      <div class="step-text">После активации воркер появится в списке пользователей со статусом <span class="badge badge-green">active</span>. Он сможет видеть свою статистику и баланс в боте.</div>
+      <div class="step-title">Установите ставку</div>
+      <div class="step-text">В Telegram-боте зайдите в управление воркером → «Изменить ставку». Укажите <code>personal_rate</code> — сколько рублей воркер зарабатывает за каждого привлечённого подписчика.</div>
     </div>
   </div>
   <div class="step">
     <div class="step-num">4</div>
     <div class="step-body">
-      <div class="step-title">Выдайте рабочую ссылку</div>
-      <div class="step-text">В Telegram-боте перейдите в раздел управления пользователем и установите рабочую ссылку. Также можно найти пользователя через <strong>Пользователи</strong> в этой панели и нажать «Edit» — там есть поле «work_url».</div>
+      <div class="step-title">Назначьте рабочую ссылку</div>
+      <div class="step-text">Перейдите в <strong>Статистика → Клиенты</strong>. Найдите нужную активную ссылку — система авто-назначит воркера с наименьшей нагрузкой. Или назначьте вручную через выпадающий список в той же таблице.</div>
     </div>
   </div>
-  <div class="step">
-    <div class="step-num">5</div>
-    <div class="step-body">
-      <div class="step-title">Установите ставку</div>
-      <div class="step-text">В той же карточке пользователя укажите <code>personal_rate</code> — сколько рублей воркер зарабатывает за каждого привлечённого подписчика.</div>
-    </div>
+</div>
+
+<h2 class="section-title"><span class="icon">🏢</span> Управление клиентами и ссылками</h2>
+<p>Панель <strong>Статистика → Клиенты</strong> — центральное место для работы с клиентами, их ссылками и назначением воркеров.</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">➕</div>
+    <div class="card-title">Добавить ссылку клиенту</div>
+    <div class="card-text">В карточке клиента нажмите «Добавить ссылку», введите URL. После добавления система <strong>автоматически назначит</strong> свободного воркера — он получит уведомление в бот.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">⚠️</div>
+    <div class="card-title">Ссылка без воркера</div>
+    <div class="card-text">Если свободных воркеров нет — ссылка подсветится оранжевым. Под ней появится выпадающий список для ручного назначения воркера.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">✏️</div>
+    <div class="card-title">Редактировать заявки</div>
+    <div class="card-text">В столбце «Заявок» рядом с каждой ссылкой есть поле ввода. Введите актуальное число и нажмите ✓ — баланс воркера пересчитается сразу.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">💰</div>
+    <div class="card-title">Финансовая сводка</div>
+    <div class="card-text">В нижней части страницы — итоги по каждому клиенту: сколько заработал клиент, выплачено воркерам и рефералам, и чистая прибыль.</div>
+  </div>
+</div>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Авто-назначение и уведомления</div>
+    При добавлении ссылки система выбирает воркера с наименьшим числом активных ссылок. Воркер сразу получает сообщение в бот: «Вам назначена новая ссылка — Клиент: X / URL: …». Назначать вручную нужно только если авто-выбор не нашёл подходящего.
   </div>
 </div>
 

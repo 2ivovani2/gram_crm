@@ -364,6 +364,35 @@ body {
 }
 .add-link-form .field-input { flex: 1; min-width: 180px; }
 
+/* ── Reassign row (below assigned links) ─────────────────────────────── */
+.reassign-row td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  background: rgba(99,102,241,.03) !important;
+}
+.reassign-panel {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 10px 10px 24px; flex-wrap: wrap;
+}
+.reassign-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--text2); white-space: nowrap;
+}
+.reassign-select {
+  background: var(--bg); border: 1px solid rgba(99,102,241,.4);
+  color: var(--text); border-radius: var(--radius-sm);
+  padding: 7px 12px; font-size: 13px; font-family: inherit;
+  outline: none; cursor: pointer; min-width: 180px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.reassign-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.btn-reassign-toggle {
+  background: transparent; border: none; cursor: pointer;
+  font-size: 11px; color: var(--text3); padding: 2px 6px;
+  border-radius: 4px; font-family: inherit; transition: color .15s;
+}
+.btn-reassign-toggle:hover { color: var(--accent); }
+
 /* Empty state */
 .empty-state { padding: 20px 0 8px; color: var(--text3); font-size: 13px; text-align: center; }
 
@@ -398,7 +427,6 @@ body {
     </div>
     <div class="topbar-nav">
       <a href="/stats/" class="nav-link">📊 Статистика</a>
-      <a href="/django-admin/" class="nav-link">⚙️ Панель</a>
     </div>
   </div>
 
@@ -412,6 +440,45 @@ body {
   {% if warn %}
   <div class="alert alert-warn">⚠️ {{ warn }}</div>
   {% endif %}
+
+  <!-- Global rate settings -->
+  <div class="create-panel" style="margin-bottom:16px;border-color:rgba(99,102,241,.25)">
+    <div class="panel-header">
+      <div class="panel-icon" style="background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.3)">💰</div>
+      <div>
+        <div class="panel-title">Глобальные ставки</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">Применяются ко всем клиентам и воркерам</div>
+      </div>
+    </div>
+    <form method="post" action="/stats/clients/">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update_rates">
+      <div class="form-row">
+        <div class="field">
+          <label class="field-label">Ставка воркера (₽/заявку)</label>
+          <input class="field-input w-rate" name="worker_rate" type="number" step="0.01" min="0"
+                 value="{{ global_rate.worker_rate }}">
+        </div>
+        <div class="field">
+          <label class="field-label">Ставка реферала (₽/заявку)</label>
+          <input class="field-input w-rate" name="referral_rate" type="number" step="0.01" min="0"
+                 value="{{ global_rate.referral_rate }}">
+        </div>
+        <div class="field">
+          <label class="field-label">&nbsp;</label>
+          <button class="btn btn-primary" type="submit">Сохранить ставки</button>
+        </div>
+        {% if global_rate.updated_at %}
+        <div class="field" style="align-self:flex-end;padding-bottom:2px">
+          <span style="font-size:11px;color:var(--text3)">
+            Обновлено: {{ global_rate.updated_at|date:"d.m.Y H:i" }}
+            {% if global_rate.updated_by %} · {{ global_rate.updated_by.display_name }}{% endif %}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
 
   <!-- Create client -->
   <div class="create-panel">
@@ -551,6 +618,11 @@ body {
                   <span class="worker-dot"></span>
                   {{ asgn.worker.display_name }}
                 </span>
+                {% if workers %}
+                <button type="button" class="btn-reassign-toggle"
+                        onclick="toggleReassign('reassign-{{ link.pk }}')"
+                        title="Сменить исполнителя">✎ сменить</button>
+                {% endif %}
               {% elif link.status == "active" %}
                 <span class="badge" style="background:var(--orange-dim);color:var(--orange);border:1px solid rgba(249,115,22,.25);">
                   ⚠ Не назначен
@@ -601,6 +673,31 @@ body {
           </tr>
           {% endif %}
 
+          {# Reassign panel row — hidden by default, shown for assigned links via JS #}
+          {% if asgn and workers %}
+          <tr class="reassign-row" id="reassign-{{ link.pk }}" style="display:none">
+            <td colspan="6">
+              <form method="post" action="/stats/clients/" class="reassign-panel">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reassign_worker">
+                <input type="hidden" name="link_id" value="{{ link.pk }}">
+                <span class="reassign-label">🔄 Сменить исполнителя</span>
+                <select name="new_worker_id" class="reassign-select" required>
+                  <option value="" disabled selected>— выберите нового воркера —</option>
+                  {% for w in workers %}
+                  {% if w.pk != asgn.worker.pk %}
+                  <option value="{{ w.pk }}">{{ w.display_name }}{% if w.telegram_username %} (@{{ w.telegram_username }}){% endif %}</option>
+                  {% endif %}
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary btn-sm">Сменить</button>
+                <button type="button" class="btn btn-ghost btn-sm"
+                        onclick="toggleReassign('reassign-{{ link.pk }}')">Отмена</button>
+              </form>
+            </td>
+          </tr>
+          {% endif %}
+
           {% endwith %}
           {% endfor %}
         </tbody>
@@ -632,17 +729,20 @@ body {
 
 </div>
 
-{% if no_assign_link_id %}
 <script>
-  // Scroll to the highlighted unassigned link
-  document.addEventListener("DOMContentLoaded", function() {
-    var row = document.querySelector(".highlight-row");
-    if (row) {
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  });
-</script>
+function toggleReassign(id) {
+  var row = document.getElementById(id);
+  if (!row) return;
+  row.style.display = row.style.display === "none" ? "" : "none";
+}
+
+{% if no_assign_link_id %}
+document.addEventListener("DOMContentLoaded", function() {
+  var row = document.querySelector(".highlight-row");
+  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+});
 {% endif %}
+</script>
 
 </body>
 </html>

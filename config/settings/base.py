@@ -125,21 +125,6 @@ CELERY_TASK_ROUTES = {
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
-    # 13:00 МСК
-    "admin-reminder-1300": {
-        "task": "apps.stats.tasks.send_admin_reminder_task",
-        "schedule": crontab(hour=13, minute=0),
-    },
-    # 20:00 МСК
-    "admin-reminder-2000": {
-        "task": "apps.stats.tasks.send_admin_reminder_task",
-        "schedule": crontab(hour=20, minute=0),
-    },
-    # Every 15 min: if after 23:01 МСК and no DailyReport → urgent reminder
-    "check-missing-daily-report": {
-        "task": "apps.stats.tasks.check_missing_daily_report_task",
-        "schedule": crontab(minute="*/15"),
-    },
     # CRM: check deadline at 00:05 МСК (5 min after midnight)
     "crm-check-deadline": {
         "task": "apps.crm.tasks.crm_check_deadline_task",
@@ -155,6 +140,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clients.tasks.check_worker_inactivity_task",
         "schedule": crontab(hour=9, minute=0),
     },
+    # Removed: admin-reminder-1300, admin-reminder-2000, check-missing-daily-report
+    # These depended on DailyReport/MissedDay (legacy system, replaced by client-link model).
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

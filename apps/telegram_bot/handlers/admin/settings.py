@@ -1,9 +1,9 @@
 """
 Admin: settings panel.
-  - RateConfig (worker_share / referral_share)
   - Set attracted_count (on active WorkLink)
   - Replace work link (archive old, create new with count=0)
   - Set personal rate / referral rate per user
+  Note: global ₽/application rates are managed at /stats/clients/
 """
 from decimal import Decimal, InvalidOperation
 
@@ -15,7 +15,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from apps.telegram_bot.admin_keyboards import (
     get_settings_keyboard, get_user_card_keyboard, get_admin_main_menu,
-    get_rate_config_cancel_keyboard,
 )
 from apps.telegram_bot.callbacks import AdminMenuCallback, AdminSettingsCallback
 from apps.telegram_bot.permissions import IsAdmin
@@ -23,7 +22,7 @@ from apps.telegram_bot.services import safe_edit_text
 from apps.telegram_bot.states import (
     AdminSetAttractedCountState,
     AdminSetPersonalRateState, AdminSetReferralRatePerUserState,
-    AdminSetRateConfigState, AdminReplaceWorkLinkState,
+    AdminReplaceWorkLinkState,
 )
 from apps.users.models import User
 from apps.users.services import UserService
@@ -31,14 +30,12 @@ from apps.users.services import UserService
 router = Router(name="admin_settings")
 
 
-def _settings_text(config) -> str:
+def _settings_text() -> str:
     return (
         "⚙️ <b>Настройки</b>\n\n"
-        "<b>Доли ставок (для дневного отчёта)</b>\n"
-        f"  Доля работника:  <b>{float(config.worker_share)*100:.2f}%</b> от ставки клиента\n"
-        f"  Доля реферала:   <b>{float(config.referral_share)*100:.2f}%</b> от ставки клиента\n"
-        f"  Наша прибыль:    <b>{(1 - float(config.worker_share) - float(config.referral_share))*100:.2f}%</b>\n\n"
-        "<i>Эти доли используются при расчёте ставок в форме «Ввод данных».</i>"
+        "Управление ставками воркеров и клиентами доступно в веб-интерфейсе:\n"
+        "  → /stats/ — статистика\n"
+        "  → /stats/clients/ — клиенты, ссылки, ставки"
     )
 
 
@@ -69,95 +66,7 @@ def _get_cancel_keyboard() -> InlineKeyboardMarkup:
 async def cb_settings(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    from apps.stats.models import RateConfig
-    config = await sync_to_async(RateConfig.get)()
-    await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
-
-
-@router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate"), IsAdmin())
-async def cb_set_rate_legacy(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.clear()
-    await callback.answer("Глобальная % ставка больше не используется.", show_alert=True)
-    from apps.stats.models import RateConfig
-    config = await sync_to_async(RateConfig.get)()
-    await safe_edit_text(callback, _settings_text(config), get_settings_keyboard())
-
-
-# ── RateConfig FSM ────────────────────────────────────────────────────────────
-
-@router.callback_query(AdminSettingsCallback.filter(F.action == "set_rate_config"), IsAdmin())
-async def cb_set_rate_config_start(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    from apps.stats.models import RateConfig
-    config = await sync_to_async(RateConfig.get)()
-    await state.set_state(AdminSetRateConfigState.waiting_for_worker_share)
-    await safe_edit_text(
-        callback,
-        f"⚙️ <b>Доля работника</b>\n\n"
-        f"Текущая: <b>{float(config.worker_share)*100:.2f}%</b>\n\n"
-        "Введите новое значение в процентах (например: <code>25</code> для 25%):",
-        get_rate_config_cancel_keyboard(),
-    )
-
-
-@router.message(AdminSetRateConfigState.waiting_for_worker_share, IsAdmin())
-async def process_worker_share(message: Message, state: FSMContext) -> None:
-    raw = (message.text or "").strip().replace(",", ".")
-    try:
-        val = Decimal(raw)
-        if val < 0 or val > 100:
-            raise ValueError
-    except (InvalidOperation, ValueError):
-        await message.answer("⚠️ Введите число от 0 до 100.", reply_markup=get_rate_config_cancel_keyboard())
-        return
-    await state.update_data(worker_share=str(val / 100))
-    await state.set_state(AdminSetRateConfigState.waiting_for_referral_share)
-    from apps.stats.models import RateConfig
-    config = await sync_to_async(RateConfig.get)()
-    await message.answer(
-        f"⚙️ <b>Доля реферала</b>\n\n"
-        f"Текущая: <b>{float(config.referral_share)*100:.2f}%</b>\n\n"
-        "Введите новое значение в процентах (например: <code>13.89</code>):",
-        reply_markup=get_rate_config_cancel_keyboard(),
-    )
-
-
-@router.message(AdminSetRateConfigState.waiting_for_referral_share, IsAdmin())
-async def process_referral_share(message: Message, db_user: User, state: FSMContext) -> None:
-    raw = (message.text or "").strip().replace(",", ".")
-    try:
-        val = Decimal(raw)
-        if val < 0 or val > 100:
-            raise ValueError
-    except (InvalidOperation, ValueError):
-        await message.answer("⚠️ Введите число от 0 до 100.", reply_markup=get_rate_config_cancel_keyboard())
-        return
-
-    data = await state.get_data()
-    await state.clear()
-
-    worker_share = Decimal(data["worker_share"])
-    referral_share = val / 100
-    our_share = 1 - worker_share - referral_share
-
-    if our_share < 0:
-        await message.answer("⚠️ Сумма долей больше 100%. Начните заново.", reply_markup=get_admin_main_menu())
-        return
-
-    from apps.stats.models import RateConfig
-    config = await sync_to_async(RateConfig.get)()
-    config.worker_share = worker_share
-    config.referral_share = referral_share
-    config.updated_by = db_user
-    await sync_to_async(config.save)(update_fields=["worker_share", "referral_share", "updated_by", "updated_at"])
-
-    await message.answer(
-        f"✅ Доли обновлены!\n\n"
-        f"  Работник: <b>{float(worker_share)*100:.2f}%</b>\n"
-        f"  Реферал:  <b>{float(referral_share)*100:.2f}%</b>\n"
-        f"  Прибыль:  <b>{float(our_share)*100:.2f}%</b>",
-        reply_markup=get_admin_main_menu(),
-    )
+    await safe_edit_text(callback, _settings_text(), get_settings_keyboard())
 
 
 # ── Replace work link FSM ─────────────────────────────────────────────────────
