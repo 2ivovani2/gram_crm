@@ -215,8 +215,6 @@ async def cb_assign(callback: CallbackQuery, callback_data: AdminClientCallback,
         await callback.bot.send_message(
             worker.telegram_id,
             f"🔗 <b>Вам назначена ссылка!</b>\n\n"
-            f"Клиент: <b>{link.client.nick}</b>\n"
-            f"Ставка: {link.client.rate} $ / заявка\n"
             f"URL: <code>{link.url}</code>\n\n"
             "Лейте заявки на эту ссылку. Удачи!",
         )

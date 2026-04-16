@@ -150,7 +150,6 @@ def notify_worker_assigned_sync(worker_tg_id: int, link_url: str, client_nick: s
             await bot.send_message(
                 worker_tg_id,
                 f"🔗 <b>Вам назначена новая ссылка для работы</b>\n\n"
-                f"Клиент: <b>{client_nick}</b>\n"
                 f"URL: <code>{link_url}</code>\n\n"
                 "Начинайте работу с этой ссылкой!",
             )
