@@ -8,20 +8,19 @@ Architecture
           Django connects via internal Docker hostname; browser needs the public one.
           MEDIA_S3_PUBLIC_URL=http://localhost:9000 rewrites the internal host in URLs.
 
-  Prod → Cloudflare R2 (recommended) / AWS S3 / any S3-compatible service.
-          Bucket policy: private. Signed URLs with 1-hour TTL.
-          MEDIA_S3_PUBLIC_URL is not set — boto3 URLs point directly to the endpoint.
+  Prod → MinIO container (docker-compose.yml, http://minio:9000 internal only).
+          Bucket policy: public-read. No signed URLs (MEDIA_QUERYSTRING_AUTH=false).
+          Port 9000 is NOT exposed on host. Files are served via nginx at /s3/:
+            nginx: https://gramly.tech/s3/* → http://minio:9000/*
+          MEDIA_S3_PUBLIC_URL=https://gramly.tech/s3 rewrites internal Docker hostname.
 
 Both environments use the same backend class. Only env vars differ.
 
 Required env vars (set in .env):
-  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME, AWS_S3_ENDPOINT_URL
-
-Optional env vars:
-  AWS_S3_REGION_NAME      default "auto"
-  MEDIA_QUERYSTRING_AUTH  default true  (set false in dev — MinIO public bucket)
-  MEDIA_QUERYSTRING_EXPIRE default 3600 (signed URL TTL in seconds)
-  MEDIA_S3_PUBLIC_URL      default ""   (set in dev to rewrite internal Docker hostname)
+  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME
+  AWS_S3_ENDPOINT_URL=http://minio:9000
+  MEDIA_S3_PUBLIC_URL        dev: http://localhost:9000  prod: https://gramly.tech/s3
+  MEDIA_QUERYSTRING_AUTH=false  (public bucket, no signed URLs needed)
 """
 from __future__ import annotations
 
@@ -50,7 +49,7 @@ class MediaStorage(S3Boto3Storage):
         raw = super().url(name)
 
         # Swap internal Docker hostname with the public-facing URL.
-        # Only active in dev when MEDIA_S3_PUBLIC_URL is set.
+        # Active in both dev and prod when MEDIA_S3_PUBLIC_URL is set.
         public = getattr(settings, "MEDIA_S3_PUBLIC_URL", "").rstrip("/")
         endpoint = getattr(settings, "AWS_S3_ENDPOINT_URL", None)
         if public and endpoint and raw.startswith(endpoint.rstrip("/")):
