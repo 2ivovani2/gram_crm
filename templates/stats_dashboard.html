@@ -209,6 +209,103 @@ body {
 /* ── Muted empty ─────────────────────────────────────────────────────────────── */
 .empty { color: var(--muted); padding: 20px 0; font-size: 13px; }
 
+/* ── Metrics section ─────────────────────────────────────────────────────────── */
+.section-header {
+  font-size: 11px; font-weight: 700; color: var(--muted2);
+  text-transform: uppercase; letter-spacing: .09em;
+  margin: 36px 0 14px; display: flex; align-items: center; gap: 10px;
+}
+.section-header::before {
+  content: ''; width: 28px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--gold), var(--amber));
+}
+
+/* Conversion period cards */
+.conv-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px; margin-bottom: 20px;
+}
+@media (max-width: 640px) { .conv-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.conv-card {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px 16px;
+  transition: border-color .2s;
+}
+.conv-card:hover { border-color: var(--border-h); }
+.conv-card .c-period { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+.conv-card .c-rate { font-size: 30px; font-weight: 800; color: var(--gold); line-height: 1; letter-spacing: -.5px; }
+.conv-card .c-rate span { font-size: 16px; font-weight: 600; color: var(--muted2); }
+.conv-card .c-row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; color: var(--muted2); }
+.conv-card .c-row b { color: var(--text-2); font-weight: 600; }
+
+/* Retention table */
+.retention-wrap { overflow-x: auto; }
+.retention-table { width: 100%; border-collapse: collapse; min-width: 500px; }
+.retention-table th {
+  text-align: center; color: var(--muted); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 6px 10px; border-bottom: 1px solid var(--border);
+}
+.retention-table th:first-child { text-align: left; }
+.retention-table td {
+  text-align: center; padding: 9px 6px;
+  border-bottom: 1px solid rgba(240,180,41,.06);
+  font-size: 12px; font-weight: 600;
+}
+.retention-table td:first-child { text-align: left; color: var(--text-2); font-size: 12px; }
+.retention-table tr:last-child td { border-bottom: none; }
+.ret-cell { border-radius: 6px; padding: 4px 6px; display: inline-block; min-width: 44px; }
+
+/* Acquisition table */
+.acq-wrap { overflow-x: auto; }
+.acq-table { width: 100%; border-collapse: collapse; min-width: 680px; }
+.acq-table th {
+  text-align: right; color: var(--muted); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 8px 10px; border-bottom: 1px solid var(--border);
+}
+.acq-table th:first-child { text-align: left; }
+.acq-table td {
+  text-align: right; padding: 9px 8px;
+  border-bottom: 1px solid rgba(240,180,41,.06);
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.acq-table td:first-child { text-align: left; color: var(--text-2); font-weight: 600; }
+.acq-table tr:last-child td { border-bottom: none; }
+.acq-table .num-gold { color: var(--gold); font-weight: 700; }
+.acq-table .num-green { color: var(--green); font-weight: 700; }
+.acq-table .num-muted { color: var(--muted2); }
+
+/* Ad spend form */
+.ad-spend-form {
+  display: flex; align-items: flex-end; gap: 10px;
+  flex-wrap: wrap; padding: 14px 16px;
+  background: rgba(240,180,41,.04); border: 1px solid var(--border);
+  border-radius: var(--r); margin-bottom: 16px;
+}
+.ad-spend-form label { font-size: 11px; font-weight: 600; color: var(--muted2); display: block; margin-bottom: 5px; }
+.ad-spend-form input[type="date"],
+.ad-spend-form input[type="number"] {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px; color: var(--text);
+  font-size: 13px; outline: none; width: 160px;
+}
+.ad-spend-form input[type="number"] { width: 130px; }
+.ad-spend-form input:focus { border-color: var(--border-h); }
+.ad-spend-form button {
+  padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
+  background: linear-gradient(135deg, var(--gold), var(--amber));
+  color: #0b0a05; font-weight: 700; font-size: 13px;
+}
+.ad-spend-form button:hover { opacity: .9; }
+
+/* flash messages */
+.flash { padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; margin-bottom: 16px; }
+.flash-ok  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(52,211,153,.2); }
+.flash-err { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(248,113,113,.2); }
+
 @media (max-width: 640px) {
   .layout { padding: 20px 16px 48px; }
   .kpi-card .value { font-size: 22px; }
@@ -335,6 +432,149 @@ body {
     {% endif %}
   </div>
   {% endif %}
+
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+  <!-- PRODUCT METRICS                                                           -->
+  <!-- ══════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Conversion Rate -->
+  <div class="section-header">Конверсия (start → 60 заявок)</div>
+
+  {% if stats_msg %}
+  <div class="flash flash-ok">{{ stats_msg }}</div>
+  {% endif %}
+  {% if stats_error %}
+  <div class="flash flash-err">{{ stats_error }}</div>
+  {% endif %}
+
+  <div class="conv-grid">
+    {% for cp in conversion_periods %}
+    <div class="conv-card">
+      <div class="c-period">
+        {% if cp.period == "day" %}Сегодня
+        {% elif cp.period == "week" %}Неделя
+        {% elif cp.period == "month" %}Месяц
+        {% else %}Всё время
+        {% endif %}
+      </div>
+      <div class="c-rate">{{ cp.rate_pct }}<span>%</span></div>
+      <div class="c-row">
+        <span>Старты <b>{{ cp.starts }}</b></span>
+        <span>Дошли <b>{{ cp.converted }}</b></span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Retention cohorts -->
+  <div class="section-header">Retention (недельные когорты, воркеры)</div>
+
+  <div class="card full-card">
+    {% if retention_cohorts %}
+    <div class="retention-wrap">
+      <table class="retention-table">
+        <thead>
+          <tr>
+            <th>Когорта</th>
+            <th>Воркеров</th>
+            {% for i in retention_col_range %}
+            <th>W{{ i }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for cohort in retention_cohorts %}
+          <tr>
+            <td>{{ cohort.cohort_label }}</td>
+            <td style="text-align:center;color:var(--muted2);font-size:12px">{{ cohort.cohort_size }}</td>
+            {% for pct in cohort.retention %}
+            <td>
+              {% if pct >= 80 %}
+                <span class="ret-cell" style="background:rgba(52,211,153,.18);color:#34d399">{{ pct }}%</span>
+              {% elif pct >= 50 %}
+                <span class="ret-cell" style="background:rgba(240,180,41,.14);color:#f0b429">{{ pct }}%</span>
+              {% elif pct > 0 %}
+                <span class="ret-cell" style="background:rgba(248,113,113,.12);color:#f87171">{{ pct }}%</span>
+              {% else %}
+                <span class="ret-cell" style="color:var(--muted)">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+            {% for i in retention_col_range %}
+              {% if forloop.counter0 >= cohort.retention|length %}
+              <td style="color:var(--muted)">·</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Нет данных — воркеры ещё не активированы</div>
+    {% endif %}
+  </div>
+
+  <!-- Acquisition funnel + CPA/CAC -->
+  <div class="section-header">Воронка найма и рекламные расходы</div>
+
+  <div class="card full-card">
+    <!-- Ad spend form -->
+    <form method="post" action="/stats/" class="ad-spend-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_ad_spend">
+      <div>
+        <label>Неделя (понедельник)</label>
+        <input type="date" name="week_start" required>
+      </div>
+      <div>
+        <label>Расходы на рекламу, ₽</label>
+        <input type="number" name="amount" min="0" step="0.01" placeholder="0.00" required>
+      </div>
+      <div style="padding-bottom:1px">
+        <button type="submit">Сохранить</button>
+      </div>
+    </form>
+
+    {% if acquisition_weeks %}
+    <div class="acq-wrap">
+      <table class="acq-table">
+        <thead>
+          <tr>
+            <th style="text-align:left">Неделя</th>
+            <th>Расходы</th>
+            <th>Старты</th>
+            <th>Акт-ны</th>
+            <th>Conv<br><span style="font-weight:400">акт, %</span></th>
+            <th>≥60 апп</th>
+            <th>CPA</th>
+            <th>CAC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in acquisition_weeks %}
+          <tr>
+            <td>{{ row.week_label }}</td>
+            <td class="{% if row.ad_spend > 0 %}num-gold{% else %}num-muted{% endif %}">
+              {% if row.ad_spend > 0 %}{{ row.ad_spend }} ₽{% else %}—{% endif %}
+            </td>
+            <td class="num-muted">{{ row.starts }}</td>
+            <td class="num-green">{{ row.activated }}</td>
+            <td class="{% if row.activation_conv_pct >= 50 %}num-green{% elif row.activation_conv_pct > 0 %}num-gold{% else %}num-muted{% endif %}">
+              {% if row.starts > 0 %}{{ row.activation_conv_pct }}%{% else %}—{% endif %}
+            </td>
+            <td class="num-gold">{{ row.converted }}</td>
+            <td class="num-muted">{% if row.cpa %}{{ row.cpa }} ₽{% else %}—{% endif %}</td>
+            <td class="num-muted">{% if row.cac %}{{ row.cac }} ₽{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">Нет данных</div>
+    {% endif %}
+  </div>
 
 </div>
 </body>

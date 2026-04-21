@@ -125,6 +125,23 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
     last_activity_at = models.DateTimeField(null=True, blank=True)
 
+    # ── Conversion / Retention metrics ────────────────────────────────────────
+    # first_activity_at: when attracted_count first became > 0 (first application counted)
+    first_activity_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Момент первой заявки (attracted_count > 0 впервые)",
+    )
+    # reached_60_at: when total attracted_count first crossed 60
+    reached_60_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Момент первого достижения 60 заявок (порог конверсии)",
+    )
+    # deactivated_at: when status was set to INACTIVE (for retention cohort analysis)
+    deactivated_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Момент деактивации аккаунта (status=inactive)",
+    )
+
     USERNAME_FIELD = "telegram_id"
     REQUIRED_FIELDS = ["username"]
 
@@ -212,7 +229,8 @@ class User(AbstractUser):
 
     def deactivate(self) -> None:
         self.status = UserStatus.INACTIVE
-        self.save(update_fields=["status", "updated_at"])
+        self.deactivated_at = timezone.now()
+        self.save(update_fields=["status", "deactivated_at", "updated_at"])
 
     def ban(self) -> None:
         self.status = UserStatus.BANNED

@@ -2,6 +2,106 @@
 
 ---
 
+## 2026-04-22 — Аудит всех изменений дня: 4 найденных бага, исправлены
+
+### Найденные и исправленные проблемы
+
+| # | Баг | Файл | Патч |
+|---|-----|------|------|
+| 1 | `UserService.set_status` не устанавливал `deactivated_at` при переводе в INACTIVE → retention когорты не знали когда воркер деактивирован | `apps/users/services.py` | Добавлена установка `deactivated_at = timezone.now()` при `status == INACTIVE` |
+| 2 | `_increment_count` перезаписывал `User.attracted_count = total_all_links` после `recalculate_balance` (которая уже правильно выставляла `active_link.attracted_count`) — создавал несоответствие между bot-путём и admin-путём | `apps/telegram_bot/handlers/join_request.py` | Удалена строка `User.objects.update(attracted_count=total)` — `total` сохранён только для `update_user_metrics` |
+| 3 | `timezone.timedelta` не существует в `django.utils.timezone` — `get_inactive_assignments` упала бы при первом вызове Celery-таска | `apps/clients/services.py` | Добавлен `import datetime`, заменено `timezone.timedelta` → `datetime.timedelta` |
+| 4 | Двойной атрибут `placeholder` на input в форме добавления ссылки при `auto_mode=True` — второй placeholder игнорируется браузером | `templates/stats_clients.html` | Placeholder теперь рендерится через `{% if row.client.auto_mode %}...{% else %}...{% endif %}` |
+
+### Проверено (всё ок)
+- MinIO nginx rewrite + `MINIO_BROWSER=off` — корректны
+- `join_request_router` зарегистрирован до `subscription_router` — ок
+- CRM `notes` поле: форма включает, сервис сохраняет через `form.cleaned_data`, view передаёт полные объекты — ок
+- `report_detail.html` → `report.finance_entry` nullable guard `{% if report.finance_entry and ... %}` — ок
+- Retention table: логика заполнения пустых ячеек через второй цикл — корректна
+- `stats/views.py` POST handler: импорт `Decimal` + `datetime` присутствуют, URL `path("stats/")` принимает POST — ок
+- Все 5 изменённых Python файлов прошли `ast.parse()` без ошибок
+
+---
+
+## 2026-04-22 — CRM: отображение поля «Примечание» в истории и детальном просмотре
+
+### Проблема
+Поле `notes` (Примечание) в `FinanceEntry` и `ApplicationEntry` сохранялось корректно (модель + форма содержат поле), но **нигде не отображалось** в шаблонах истории и детального просмотра.
+
+### Root cause
+Чистая проблема шаблонов — `finance.notes` и `application.notes` просто не были добавлены ни в один из output-шаблонов.
+View `DayDetailView` передаёт полные объекты `finance` / `application` в контекст — данные были там всегда.
+
+### Что исправлено
+
+| Шаблон | Что добавлено |
+|--------|--------------|
+| `templates/crm/day_detail.html` | Блок `📝 Примечание (Cash Flow)` после скрина КБ; блок `📝 Примечание (Заявки)` в секции заявок |
+| `templates/crm/report_detail.html` | Блоки `📝 Примечание (Cash Flow)` и `📝 Примечание (Заявки)` в секции детализации CF |
+| `templates/crm/history.html` | Иконка `📝` в колонке даты строки, если у записи есть хотя бы одно примечание (tooltip «Есть примечание») |
+
+### Как проверить
+1. Открыть `/crm/entry/finance/`, заполнить поле **Примечание**, сохранить.
+2. Открыть `/crm/history/` → строка за этот день должна показывать иконку 📝 рядом с датой.
+3. Кликнуть на строку (день) → `/crm/history/YYYY-MM-DD/` → блок «📝 Примечание (Cash Flow)» под скрином КБ.
+4. Если сформирован отчёт: `/crm/reports/<pk>/` → то же примечание в секции детализации Cash Flow.
+
+### Файлы
+`templates/crm/day_detail.html`, `templates/crm/report_detail.html`, `templates/crm/history.html`
+
+---
+
+## 2026-04-22 — Auto-mode: Telegram invite links + automatic join counting
+
+### Задача
+Добавить автоматическую генерацию Telegram invite links для воркеров и автоподсчёт заявок — без поломки ручного режима.
+
+### Архитектура
+- `Client.auto_mode=True` + `Client.channel_id` — включает авто-режим для клиента
+- При назначении воркера: `AutoModeService.create_invite_link_sync(channel_id)` → `createChatInviteLink(creates_join_request=True)` → уникальная ссылка → `WorkLink.url = invite_link`
+- Бот получает `ChatJoinRequest` event → `handle_chat_join_request` → lookup по `WorkLink.url` → `attracted_count += 1` → авто-апрув
+- В ручном режиме: `auto_mode=False` → ничего не меняется, весь старый код работает как был
+
+### Что реализовано
+| Компонент | Детали |
+|-----------|--------|
+| `Client` model | +6 полей: `channel_id`, `channel_username`, `auto_mode`, `bot_check_status`, `bot_check_detail`, `bot_check_at` |
+| `BotCheckStatus` choices | unchecked / ok / not_admin / no_permissions / no_access |
+| `AutoModeService` | `check_permissions(client)`, `create_invite_link_sync(chat_id, label)`, `revoke_invite_link_sync()` |
+| `AssignmentService.auto_assign/manual_assign` | принимают `invite_url=None`; если задан — используют его вместо `client_link.url` |
+| `handlers/join_request.py` | `chat_join_request` handler: lookup → `select_for_update` increment → approve |
+| `router.py` | `join_request_router` зарегистрирован первым |
+| `ClientsView` | actions: `set_channel`, `check_bot`, `toggle_auto`; `add_link/manual_assign/reassign_worker` — авто-генерация ссылки если `auto_mode` |
+| `stats_clients.html` | авто-режим блок в каждой карточке клиента (шаги 1–3); `⚡авто` бейдж на URL |
+| миграция `0002_client_auto_mode.py` | добавляет 6 полей к Client |
+
+### Fallback
+- `auto_mode=False` → существующий code path без единого изменения
+- Если `create_invite_link_sync` падает → fallback на `client_link.url` с warning в логах
+- Если `bot_check_status != ok` → `toggle_auto(enable=1)` отклоняется с ошибкой
+- Если проверка прав падает и `auto_mode=True` → `auto_mode` автоматически отключается
+
+### Ограничения Telegram API (честно)
+- `ChatJoinRequest` events приходят только если бот — администратор с `can_invite_users`
+- Без включённого `creates_join_request=True` на ссылке — событий нет
+- Статистику по существующим ссылкам (созданным до включения авто-режима) получить нельзя
+
+### Как проверить
+1. **Бот не в канале**: ввести channel_id → нажать «Проверить права» → увидеть красный статус с инструкцией
+2. **Бот добавлен, нет прав**: аналогично — статус `not_admin` / `no_permissions` с описанием
+3. **Бот — администратор**: статус `ok` → появляется кнопка «Включить авто» → нажать
+4. **Добавить ссылку клиенту**: назначение сработает → воркер получит `t.me/+xxxx` вместо ручной ссылки
+5. **Тест join request**: зайти по ссылке воркера → запрос → бот одобряет → в `/stats/clients/` счётчик вырос на 1
+
+### Файлы
+`apps/clients/models.py`, `apps/clients/migrations/0002_client_auto_mode.py`,
+`apps/clients/services.py`, `apps/stats/views.py`,
+`apps/telegram_bot/handlers/join_request.py`, `apps/telegram_bot/router.py`,
+`templates/stats_clients.html`, `CLAUDE.md`
+
+---
+
 ## 2026-04-16 — Fair auto-assignment: min-load + random tiebreak
 
 ### Проблема

@@ -200,6 +200,42 @@ class DailyReport(models.Model):
         return (self.our_profit * self.total_applications).quantize(Decimal("0.01"))
 
 
+CONVERSION_THRESHOLD = 60  # applications needed to count as "converted"
+
+
+class WeeklyAdSpend(models.Model):
+    """
+    Manual admin input: advertising spend per calendar week.
+    Used to compute CPA, CAC, Activation Conversion on /stats.
+
+    week_start is always Monday (Monday = isoweekday 1).
+    """
+    week_start = models.DateField(
+        unique=True,
+        verbose_name="Начало недели (понедельник)",
+        help_text="Дата понедельника этой недели",
+    )
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0"),
+        verbose_name="Рекламные расходы (₽)",
+    )
+    notes = models.TextField(blank=True, verbose_name="Комментарий")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Рекламные расходы (неделя)"
+        verbose_name_plural = "Рекламные расходы (по неделям)"
+        ordering = ["-week_start"]
+
+    def __str__(self) -> str:
+        return f"AdSpend w/{self.week_start}: {self.amount} ₽"
+
+    @property
+    def week_end(self) -> datetime.date:
+        return self.week_start + datetime.timedelta(days=6)
+
+
 class MissedDay(models.Model):
     """
     Tracks calendar days where no DailyReport was submitted within the

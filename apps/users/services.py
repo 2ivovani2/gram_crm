@@ -61,8 +61,13 @@ class UserService:
 
     @staticmethod
     def set_status(user: User, status: str) -> User:
+        update_fields = ["status", "updated_at"]
         user.status = status
-        user.save(update_fields=["status", "updated_at"])
+        # Track deactivation timestamp for retention cohort analysis
+        if status == UserStatus.INACTIVE and not user.deactivated_at:
+            user.deactivated_at = timezone.now()
+            update_fields.append("deactivated_at")
+        user.save(update_fields=update_fields)
         return user
 
     @staticmethod
@@ -200,8 +205,10 @@ class UserService:
         """
         Set attracted_count on the ACTIVE WorkLink.
         Triggers balance recalculation for this user and their referrer.
+        Also updates first_activity_at and reached_60_at milestones.
         Does NOT touch archived WorkLinks.
         """
+        from django.db.models import Sum
         link = UserService.get_or_create_active_work_link(user)
         WorkLink.objects.filter(pk=link.pk).update(attracted_count=count)
 
@@ -211,6 +218,15 @@ class UserService:
             referrer = User.objects.filter(pk=user.referred_by_id).first()
             if referrer:
                 UserService.recalculate_balance(referrer)
+
+        # Update milestone timestamps (first_activity_at, reached_60_at)
+        total = (
+            WorkLink.objects.filter(user=user)
+            .aggregate(total=Sum("attracted_count"))["total"] or 0
+        )
+        from apps.stats.services import update_user_metrics
+        update_user_metrics(user.pk, total)
+
         return User.objects.get(pk=user.pk)
 
     @staticmethod

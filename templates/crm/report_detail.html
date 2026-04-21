@@ -110,6 +110,20 @@
       📎 <a href="{{ report.finance_entry.kb_screenshot.url }}" target="_blank" style="color:var(--gold);text-decoration:none">Скрин с КБ — просмотреть</a>
     </div>
     {% endif %}
+
+    {% if report.finance_entry and report.finance_entry.notes %}
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Cash Flow)</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ report.finance_entry.notes }}</div>
+    </div>
+    {% endif %}
+
+    {% if report.application_entry and report.application_entry.notes %}
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Заявки)</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ report.application_entry.notes }}</div>
+    </div>
+    {% endif %}
   </div>
 
   <!-- ── Raw report text ───────────────────────────────────────────────────── -->

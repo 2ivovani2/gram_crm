@@ -339,6 +339,48 @@ body {
 }
 .btn-reassign-toggle:hover { color: var(--gold); }
 
+/* ── Auto mode panel ─────────────────────────────────────────────────────── */
+.auto-panel {
+  padding: 14px 24px 16px;
+  border-top: 1px solid var(--border);
+  background: rgba(240,180,41,.02);
+}
+.auto-panel-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+}
+.auto-label {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.auto-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 7px; font-size: 11px; font-weight: 600;
+}
+.auto-status-ok       { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(52,211,153,.2); }
+.auto-status-warn     { background: var(--orange-dim); color: var(--orange); border: 1px solid rgba(251,146,60,.2); }
+.auto-status-err      { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(248,113,113,.2); }
+.auto-status-neutral  { background: var(--surface);    color: var(--muted2); border: 1px solid var(--border); }
+.auto-detail {
+  font-size: 12px; color: var(--muted2); margin-bottom: 10px; line-height: 1.5;
+}
+.auto-form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.auto-input {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--r);
+  padding: 7px 12px; font-size: 13px; font-family: "SF Mono","Fira Code",monospace;
+  outline: none; width: 220px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.auto-input::placeholder { color: var(--muted); font-family: inherit; }
+.auto-input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-dim); }
+
+.badge-auto {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  background: rgba(14,165,233,.1); color: #38bdf8; border: 1px solid rgba(14,165,233,.2);
+  vertical-align: middle; margin-left: 4px;
+}
+
 /* Empty states */
 .empty-state { padding: 20px 0 8px; color: var(--muted); font-size: 13px; text-align: center; }
 
@@ -539,7 +581,13 @@ body {
           {% for link in row.all_links %}
           {% with asgn=link.active_assignment %}
           <tr class="data-row{% if no_assign_link_id == link.pk|stringformat:'s' %} highlight-row{% endif %}">
-            <td><div class="url-text" title="{{ link.url }}">{{ link.url|truncatechars:60 }}</div></td>
+            <td>
+              {% with asgn_url=link.active_assignment.work_link.url|default:"" %}
+              <div class="url-text" title="{{ link.url }}">{{ link.url|truncatechars:55 }}
+                {% if row.client.auto_mode and asgn_url and "t.me" in asgn_url %}<span class="badge-auto">⚡авто</span>{% endif %}
+              </div>
+              {% endwith %}
+            </td>
             <td>
               {% if link.status == "active" %}
                 <span class="badge badge-active">Активна</span>
@@ -660,9 +708,73 @@ body {
         {% csrf_token %}
         <input type="hidden" name="action" value="add_link">
         <input type="hidden" name="client_id" value="{{ row.client.pk }}">
-        <input class="field-input" name="url" placeholder="https://link.example.com/..." required>
+        <input class="field-input" name="url" placeholder="{% if row.client.auto_mode %}URL (бот создаст уникальные ссылки автоматически){% else %}https://link.example.com/...{% endif %}" required>
         <button class="btn btn-primary btn-sm" type="submit">+ Добавить ссылку</button>
       </form>
+    </div>
+
+    <!-- Auto mode panel -->
+    <div class="auto-panel">
+      <div class="auto-panel-head">
+        <span class="auto-label">Авто-режим</span>
+        {% if row.client.auto_mode %}
+          <span class="auto-status auto-status-ok">⚡ Включён</span>
+        {% elif row.client.bot_check_status == "ok" %}
+          <span class="auto-status auto-status-neutral">Доступен — не включён</span>
+        {% elif row.client.bot_check_status == "unchecked" %}
+          <span class="auto-status auto-status-neutral">Не настроен</span>
+        {% else %}
+          <span class="auto-status auto-status-err">Недоступен</span>
+        {% endif %}
+      </div>
+
+      {% if row.client.bot_check_detail %}
+      <div class="auto-detail">{{ row.client.bot_check_detail }}
+        {% if row.client.bot_check_at %}<span style="color:var(--muted);margin-left:6px">— {{ row.client.bot_check_at|date:"d.m H:i" }}</span>{% endif %}
+      </div>
+      {% elif not row.client.channel_id %}
+      <div class="auto-detail">Укажите Telegram Chat ID канала, чтобы бот мог генерировать уникальные ссылки для воркеров и автоматически считать заявки.</div>
+      {% endif %}
+
+      <div class="auto-form-row">
+        <!-- Step 1: set channel_id -->
+        <form method="post" action="/stats/clients/" style="display:contents">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="set_channel">
+          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+          <input class="auto-input" name="channel_id" type="text"
+                 value="{{ row.client.channel_id|default:'' }}"
+                 placeholder="-1001234567890">
+          <button class="btn btn-ghost btn-sm" type="submit">Сохранить канал</button>
+        </form>
+
+        {% if row.client.channel_id %}
+        <!-- Step 2: check permissions -->
+        <form method="post" action="/stats/clients/" style="display:contents">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="check_bot">
+          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+          <button class="btn btn-ghost btn-sm" type="submit"
+                  title="Проверить, что бот — администратор с нужными правами">🔍 Проверить права</button>
+        </form>
+
+        <!-- Step 3: toggle auto mode -->
+        {% if row.client.bot_check_status == "ok" %}
+        <form method="post" action="/stats/clients/" style="display:contents">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="toggle_auto">
+          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+          {% if row.client.auto_mode %}
+            <input type="hidden" name="enable" value="0">
+            <button class="btn btn-danger btn-sm" type="submit">Отключить авто</button>
+          {% else %}
+            <input type="hidden" name="enable" value="1">
+            <button class="btn btn-primary btn-sm" type="submit">⚡ Включить авто</button>
+          {% endif %}
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
     </div>
 
   </div>

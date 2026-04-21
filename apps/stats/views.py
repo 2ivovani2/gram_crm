@@ -25,6 +25,7 @@ class StatsDashboardView(View):
 
     def get(self, request, *args, **kwargs):
         from apps.clients.models import Client, ClientLink, LinkAssignment, LinkStatus
+        from apps.stats.services import MetricsService
         from django.db.models import Sum, Count, Q
 
         # ── Worker counts ─────────────────────────────────────────────────────
@@ -88,6 +89,14 @@ class StatsDashboardView(View):
             .order_by("first_name", "telegram_username")[:20]
         )
 
+        # ── Product metrics ───────────────────────────────────────────────────
+        conversion_periods = MetricsService.conversion_by_periods()
+        acquisition_weeks = MetricsService.acquisition_metrics(num_weeks=8)
+        retention_cohorts = MetricsService.retention_cohorts(num_weeks=8)
+
+        # Max retention columns across cohorts (for table header)
+        max_retention_cols = max((len(c["retention"]) for c in retention_cohorts), default=0)
+
         context = {
             "today": timezone.localdate(),
             "total_workers": total_workers,
@@ -104,8 +113,39 @@ class StatsDashboardView(View):
             "top_workers": top_workers,
             "recent_assignments": recent_assignments,
             "idle_workers": idle_workers,
+            # product metrics
+            "conversion_periods": conversion_periods,
+            "acquisition_weeks": acquisition_weeks,
+            "retention_cohorts": retention_cohorts,
+            "max_retention_cols": max_retention_cols,
+            "retention_col_range": list(range(max_retention_cols)),
+            "stats_msg": request.GET.get("msg", ""),
+            "stats_error": request.GET.get("error", ""),
         }
         return render(request, "stats_dashboard.html", context)
+
+    def post(self, request, *args, **kwargs):
+        """Handle ad spend form submission."""
+        from apps.stats.services import MetricsService
+        from django.shortcuts import redirect
+        import datetime
+
+        action = request.POST.get("action", "")
+        if action == "save_ad_spend":
+            week_str = request.POST.get("week_start", "").strip()
+            amount_str = request.POST.get("amount", "0").strip()
+            notes = request.POST.get("notes", "").strip()
+            try:
+                week_start = datetime.date.fromisoformat(week_str)
+                amount = Decimal(amount_str)
+                if amount < 0:
+                    raise ValueError("Сумма не может быть отрицательной")
+                MetricsService.upsert_ad_spend(week_start, amount, notes)
+            except Exception as e:
+                return redirect(f"/stats/?error={e}")
+            return redirect("/stats/?msg=Расходы+сохранены")
+
+        return redirect("/stats/")
 
 
 # ── Clients & Links ───────────────────────────────────────────────────────────
@@ -123,6 +163,9 @@ class ClientsView(View):
       update_rates      — save global worker_rate + referral_rate
       delete_client     — delete client and all its links
       delete_link       — delete a specific link
+      set_channel       — save Telegram channel_id to client (auto mode setup)
+      check_bot         — check bot permissions in client's channel
+      toggle_auto       — enable/disable auto mode (requires bot_check_status=ok)
     """
 
     def _get_workers(self):
@@ -223,7 +266,7 @@ class ClientsView(View):
 
         # ── Add link ──────────────────────────────────────────────────────────
         if action == "add_link":
-            from apps.clients.services import AssignmentService
+            from apps.clients.services import AssignmentService, AutoModeService
             from apps.clients.tasks import notify_worker_assigned_sync
 
             client_id = request.POST.get("client_id", "")
@@ -238,12 +281,25 @@ class ClientsView(View):
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
 
-            assignment = AssignmentService.auto_assign(link)
-            if assignment:
-                notify_worker_assigned_sync(
-                    assignment.worker.telegram_id, link.url, client.nick,
+            # Auto mode: generate unique invite link for the worker
+            invite_url = None
+            if client.auto_mode and client.channel_id:
+                invite_url = AutoModeService.create_invite_link_sync(
+                    client.channel_id, label=f"link_{link.pk}"
                 )
-                msg = f"Ссылка добавлена. Исполнитель назначен: {assignment.worker.display_name}"
+                if not invite_url:
+                    # Fallback — use manual URL, log warning
+                    import logging as _log
+                    _log.getLogger(__name__).warning(
+                        "add_link: invite link generation failed for client %s, using manual URL", client.pk
+                    )
+
+            assignment = AssignmentService.auto_assign(link, invite_url=invite_url)
+            if assignment:
+                worker_url = assignment.work_link.url if assignment.work_link else link.url
+                notify_worker_assigned_sync(assignment.worker.telegram_id, worker_url, client.nick)
+                mode_note = " [авто-ссылка]" if invite_url else ""
+                msg = f"Ссылка добавлена{mode_note}. Исполнитель: {assignment.worker.display_name}"
                 return redirect(f"/stats/clients/?msg={msg}")
             else:
                 params = urlencode({"warn": "Исполнитель не найден — назначьте вручную", "no_assign": link.pk})
@@ -251,7 +307,7 @@ class ClientsView(View):
 
         # ── Manual assign (for unassigned links) ─────────────────────────────
         if action == "manual_assign":
-            from apps.clients.services import AssignmentService
+            from apps.clients.services import AssignmentService, AutoModeService
             from apps.clients.tasks import notify_worker_assigned_sync
 
             link_id = request.POST.get("link_id", "")
@@ -264,19 +320,26 @@ class ClientsView(View):
             except (ClientLink.DoesNotExist, User.DoesNotExist):
                 return redirect("/stats/clients/?error=Ссылка+или+воркер+не+найдены")
 
+            invite_url = None
+            if link.client.auto_mode and link.client.channel_id:
+                invite_url = AutoModeService.create_invite_link_sync(
+                    link.client.channel_id, label=f"wrkr_{worker.pk}"
+                )
+
             try:
-                assignment = AssignmentService.manual_assign(link, worker)
+                assignment = AssignmentService.manual_assign(link, worker, invite_url=invite_url)
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
 
-            notify_worker_assigned_sync(worker.telegram_id, link.url, link.client.nick)
+            worker_url = assignment.work_link.url if assignment.work_link else link.url
+            notify_worker_assigned_sync(worker.telegram_id, worker_url, link.client.nick)
             msg = f"Исполнитель {worker.display_name} назначен на ссылку"
             return redirect(f"/stats/clients/?msg={msg}")
 
         # ── Reassign worker (for already-assigned links) ──────────────────────
         if action == "reassign_worker":
             from apps.clients.models import LinkAssignment
-            from apps.clients.services import AssignmentService
+            from apps.clients.services import AssignmentService, AutoModeService
             from apps.clients.tasks import notify_worker_assigned_sync, notify_worker_unassigned_sync
 
             link_id = request.POST.get("link_id", "")
@@ -293,20 +356,98 @@ class ClientsView(View):
             existing = link.assignments.filter(is_active=True).first()
             old_worker = existing.worker if existing else None
 
+            invite_url = None
+            if link.client.auto_mode and link.client.channel_id:
+                invite_url = AutoModeService.create_invite_link_sync(
+                    link.client.channel_id, label=f"wrkr_{new_worker.pk}"
+                )
+
             try:
-                assignment = AssignmentService.manual_assign(link, new_worker)
+                assignment = AssignmentService.manual_assign(link, new_worker, invite_url=invite_url)
             except Exception as e:
                 return redirect(f"/stats/clients/?error={e}")
 
-            # Notify new worker
-            notify_worker_assigned_sync(new_worker.telegram_id, link.url, link.client.nick)
+            worker_url = assignment.work_link.url if assignment.work_link else link.url
+            notify_worker_assigned_sync(new_worker.telegram_id, worker_url, link.client.nick)
 
-            # Notify old worker (if different from new)
             if old_worker and old_worker.pk != new_worker.pk:
                 notify_worker_unassigned_sync(old_worker.telegram_id, link.url, link.client.nick)
 
             msg = f"Исполнитель сменён: {old_worker.display_name if old_worker else '—'} → {new_worker.display_name}"
             return redirect(f"/stats/clients/?msg={msg}")
+
+        # ── Set channel (auto mode setup step 1) ──────────────────────────────
+        if action == "set_channel":
+            client_id = request.POST.get("client_id", "")
+            channel_id_str = request.POST.get("channel_id", "").strip()
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+
+            if not channel_id_str:
+                # Clear channel
+                client.channel_id = None
+                client.channel_username = ""
+                client.auto_mode = False
+                client.bot_check_status = "unchecked"
+                client.bot_check_detail = ""
+                client.bot_check_at = None
+                client.save(update_fields=[
+                    "channel_id", "channel_username", "auto_mode",
+                    "bot_check_status", "bot_check_detail", "bot_check_at",
+                ])
+                return redirect("/stats/clients/?msg=Канал+удалён,+авто-режим+отключён")
+
+            try:
+                channel_id = int(channel_id_str)
+            except ValueError:
+                return redirect("/stats/clients/?error=Chat+ID+должен+быть+числом+(напр.+-1001234567890)")
+
+            client.channel_id = channel_id
+            client.bot_check_status = "unchecked"
+            client.bot_check_detail = ""
+            client.save(update_fields=["channel_id", "bot_check_status", "bot_check_detail"])
+            return redirect(f"/stats/clients/?msg=Chat+ID+сохранён.+Теперь+проверьте+права+бота.")
+
+        # ── Check bot permissions ──────────────────────────────────────────────
+        if action == "check_bot":
+            from apps.clients.services import AutoModeService
+            client_id = request.POST.get("client_id", "")
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+
+            result = AutoModeService.check_permissions(client)
+            if result["ok"]:
+                return redirect(f"/stats/clients/?msg=Права+подтверждены.+Можно+включить+авто-режим.")
+            else:
+                detail = result.get("detail", "")
+                params = urlencode({"error": f"Проверка не пройдена: {detail}"})
+                return redirect(f"/stats/clients/?{params}")
+
+        # ── Toggle auto mode ───────────────────────────────────────────────────
+        if action == "toggle_auto":
+            from apps.clients.models import BotCheckStatus
+            client_id = request.POST.get("client_id", "")
+            enable = request.POST.get("enable", "0") == "1"
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+
+            if enable and client.bot_check_status != BotCheckStatus.OK:
+                return redirect(
+                    "/stats/clients/?error=Нельзя+включить+авто-режим+—+сначала+проверьте+права+бота"
+                )
+
+            client.auto_mode = enable
+            client.save(update_fields=["auto_mode"])
+            if enable:
+                return redirect("/stats/clients/?msg=Авто-режим+включён.+Новые+назначения+получат+уникальные+ссылки.")
+            else:
+                return redirect("/stats/clients/?msg=Авто-режим+отключён.")
 
         # ── Update attracted_count ────────────────────────────────────────────
         if action == "update_count":

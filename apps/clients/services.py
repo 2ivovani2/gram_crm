@@ -2,8 +2,9 @@
 Business logic for client/link/assignment management.
 
 Key operations:
-  AssignmentService.auto_assign(client_link)
+  AssignmentService.auto_assign(client_link, invite_url=None)
     → find best available worker → create LinkAssignment + replace WorkLink
+    → if invite_url provided, use it as WorkLink.url (auto mode)
     → if none found → return None (caller notifies admins)
 
   AssignmentService.unassign(assignment, reason)
@@ -21,18 +22,29 @@ Key operations:
   JoinService.reject(request, admin_user)
     → close request with REJECTED status
 
+  AutoModeService.check_permissions(client)
+    → async-safe sync wrapper: checks bot admin status + can_invite_users in channel
+    → saves result to client.bot_check_status / bot_check_detail / bot_check_at
+
+  AutoModeService.create_invite_link_sync(chat_id, label)
+    → creates Telegram invite link with creates_join_request=True
+    → returns invite URL string, or None on failure
+
 Auto-assignment rule:
   Pick an ACTIVE worker (role=WORKER or CURATOR) using two-step selection:
     1. Find the minimum active-assignment count across all eligible workers.
     2. Collect all workers sharing that minimum load.
     3. Choose one at random from that pool (fair distribution, no deterministic tie-breaking).
-  Worker gets a new WorkLink set to the client link's URL (count starts at 0).
+  In manual mode: worker gets WorkLink with URL = ClientLink.url.
+  In auto mode:   worker gets WorkLink with URL = unique Telegram invite link.
 """
 from __future__ import annotations
 
 import logging
 import random
 from typing import Optional
+
+import datetime
 
 from django.db import transaction
 from django.utils import timezone
@@ -147,11 +159,13 @@ class AssignmentService:
 
     @staticmethod
     @transaction.atomic
-    def auto_assign(client_link: "ClientLink") -> Optional["LinkAssignment"]:
+    def auto_assign(client_link: "ClientLink", invite_url: Optional[str] = None) -> Optional["LinkAssignment"]:
         """
         Find best available worker, assign to client_link.
         Returns the new LinkAssignment, or None if no worker found.
-        Sets the worker's WorkLink URL to client_link.url.
+
+        invite_url: if provided (auto mode), use this as the worker's WorkLink URL
+                    instead of client_link.url. Should be a unique Telegram invite link.
         """
         from apps.clients.models import LinkAssignment
         from apps.users.services import UserService
@@ -165,8 +179,9 @@ class AssignmentService:
         if not worker:
             return None
 
-        # Replace work link so count starts at 0 for this assignment
-        work_link, _ = UserService.replace_work_link(worker, client_link.url)
+        # In auto mode: WorkLink URL = unique invite link; in manual mode: client link URL
+        url_for_worker = invite_url if invite_url else client_link.url
+        work_link, _ = UserService.replace_work_link(worker, url_for_worker)
 
         assignment = LinkAssignment.objects.create(
             client_link=client_link,
@@ -174,13 +189,18 @@ class AssignmentService:
             work_link=work_link,
             last_count_updated_at=timezone.now(),
         )
-        logger.info("auto_assign: link %s → worker %s (assignment %s)", client_link.pk, worker.pk, assignment.pk)
+        logger.info("auto_assign: link %s → worker %s (assignment %s, auto=%s)",
+                    client_link.pk, worker.pk, assignment.pk, bool(invite_url))
         return assignment
 
     @staticmethod
     @transaction.atomic
-    def manual_assign(client_link: "ClientLink", worker) -> "LinkAssignment":
-        """Admin manually assigns a specific worker to a link."""
+    def manual_assign(client_link: "ClientLink", worker, invite_url: Optional[str] = None) -> "LinkAssignment":
+        """
+        Admin manually assigns a specific worker to a link.
+
+        invite_url: if provided (auto mode), use as WorkLink URL instead of client_link.url.
+        """
         from apps.clients.models import LinkAssignment, UnassignReason
         from apps.users.services import UserService
 
@@ -189,7 +209,8 @@ class AssignmentService:
         if existing:
             AssignmentService.unassign(existing, UnassignReason.REASSIGNED)
 
-        work_link, _ = UserService.replace_work_link(worker, client_link.url)
+        url_for_worker = invite_url if invite_url else client_link.url
+        work_link, _ = UserService.replace_work_link(worker, url_for_worker)
         assignment = LinkAssignment.objects.create(
             client_link=client_link,
             worker=worker,
@@ -250,7 +271,7 @@ class AssignmentService:
     def get_inactive_assignments(days: int = INACTIVITY_DAYS):
         """Return active assignments where last_count_updated_at is older than `days` days."""
         from apps.clients.models import LinkAssignment
-        cutoff = timezone.now() - timezone.timedelta(days=days)
+        cutoff = timezone.now() - datetime.timedelta(days=days)
         return (
             LinkAssignment.objects
             .filter(
@@ -260,3 +281,196 @@ class AssignmentService:
             )
             .select_related("worker", "client_link__client")
         )
+
+
+# ─── Auto-Mode Service ─────────────────────────────────────────────────────────
+
+class AutoModeService:
+    """
+    Handles Telegram invite link generation and bot permission checks.
+
+    Auto mode flow:
+      1. Admin sets client.channel_id (Telegram chat ID)
+      2. check_permissions(client) → verifies bot is admin with can_invite_users
+      3. If OK: admin enables auto_mode on client
+      4. On assignment: create_invite_link_sync(channel_id, label) → unique URL
+      5. WorkLink.url = that unique URL (instead of ClientLink.url)
+      6. Bot handles chat_join_request events → increments WorkLink.attracted_count
+    """
+
+    @staticmethod
+    def check_permissions(client: "Client") -> dict:
+        """
+        Synchronous wrapper: checks bot permissions in client.channel_id.
+        Saves status to client.bot_check_status / bot_check_detail / bot_check_at.
+        Returns dict: {ok: bool, status: str, detail: str}
+        """
+        import asyncio
+        from apps.clients.models import BotCheckStatus
+
+        if not client.channel_id:
+            result = {
+                "ok": False,
+                "status": BotCheckStatus.NO_ACCESS,
+                "detail": "Chat ID не указан. Введите Telegram Chat ID канала.",
+            }
+            _save_check_result(client, result)
+            return result
+
+        try:
+            result = asyncio.run(_async_check_permissions(client.channel_id))
+        except Exception as exc:
+            logger.warning("AutoModeService.check_permissions asyncio.run failed: %s", exc)
+            result = {
+                "ok": False,
+                "status": BotCheckStatus.NO_ACCESS,
+                "detail": f"Ошибка проверки: {exc}",
+            }
+
+        _save_check_result(client, result)
+        return result
+
+    @staticmethod
+    def create_invite_link_sync(chat_id: int, label: str = "") -> Optional[str]:
+        """
+        Create a unique Telegram invite link with creates_join_request=True.
+        Returns the invite URL string, or None on failure.
+        Fails silently — caller falls back to manual link URL.
+        """
+        import asyncio
+        try:
+            return asyncio.run(_async_create_invite_link(chat_id, label))
+        except Exception as exc:
+            logger.warning("AutoModeService.create_invite_link_sync failed chat_id=%s: %s", chat_id, exc)
+            return None
+
+    @staticmethod
+    def revoke_invite_link_sync(chat_id: int, invite_link: str) -> None:
+        """
+        Revoke a previously created invite link (e.g. on worker unassignment).
+        Fails silently — the assignment is already unassigned regardless.
+        """
+        import asyncio
+        try:
+            asyncio.run(_async_revoke_invite_link(chat_id, invite_link))
+        except Exception as exc:
+            logger.warning("AutoModeService.revoke_invite_link_sync failed: %s", exc)
+
+
+def _make_auto_bot():
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from django.conf import settings
+    return Bot(
+        token=settings.TELEGRAM_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+
+async def _async_check_permissions(chat_id: int) -> dict:
+    from apps.clients.models import BotCheckStatus
+    bot = _make_auto_bot()
+    try:
+        # Try to get bot's own info
+        bot_info = await bot.get_me()
+        member = await bot.get_chat_member(chat_id, bot_info.id)
+
+        # Also get chat info for username
+        try:
+            chat = await bot.get_chat(chat_id)
+            chat_username = f"@{chat.username}" if chat.username else chat.title or str(chat_id)
+        except Exception:
+            chat_username = str(chat_id)
+
+        if member.status not in ("administrator", "creator"):
+            return {
+                "ok": False,
+                "status": BotCheckStatus.NOT_ADMIN,
+                "detail": (
+                    f"Бот не является администратором в {chat_username}. "
+                    "Добавьте бота в канал и назначьте администратором."
+                ),
+                "chat_username": chat_username,
+            }
+
+        # Check can_invite_users permission
+        can_invite = getattr(member, "can_invite_users", False)
+        if not can_invite:
+            return {
+                "ok": False,
+                "status": BotCheckStatus.NO_PERMISSIONS,
+                "detail": (
+                    f"Бот — администратор в {chat_username}, но у него нет права "
+                    "«Добавление участников» (can_invite_users). "
+                    "Включите это право в настройках администраторов канала."
+                ),
+                "chat_username": chat_username,
+            }
+
+        return {
+            "ok": True,
+            "status": BotCheckStatus.OK,
+            "detail": f"Бот — администратор в {chat_username} с правом создавать ссылки-приглашения.",
+            "chat_username": chat_username,
+        }
+
+    except Exception as exc:
+        err = str(exc)
+        if "chat not found" in err.lower() or "bad request" in err.lower():
+            detail = (
+                f"Канал с ID {chat_id} не найден. "
+                "Проверьте Chat ID — он должен быть числом, например -1001234567890."
+            )
+        elif "forbidden" in err.lower() or "member" in err.lower():
+            detail = (
+                f"Бот не имеет доступа к каналу {chat_id}. "
+                "Убедитесь, что бот добавлен в канал."
+            )
+        else:
+            detail = f"Не удалось подключиться к каналу: {exc}"
+        return {
+            "ok": False,
+            "status": BotCheckStatus.NO_ACCESS,
+            "detail": detail,
+        }
+    finally:
+        await bot.session.close()
+
+
+async def _async_create_invite_link(chat_id: int, label: str = "") -> Optional[str]:
+    bot = _make_auto_bot()
+    try:
+        link = await bot.create_chat_invite_link(
+            chat_id,
+            name=label[:32] if label else None,   # Telegram label limit: 32 chars
+            creates_join_request=True,             # each click → ChatJoinRequest event
+        )
+        return link.invite_link
+    finally:
+        await bot.session.close()
+
+
+async def _async_revoke_invite_link(chat_id: int, invite_link: str) -> None:
+    bot = _make_auto_bot()
+    try:
+        await bot.revoke_chat_invite_link(chat_id, invite_link)
+    finally:
+        await bot.session.close()
+
+
+def _save_check_result(client: "Client", result: dict) -> None:
+    from apps.clients.models import BotCheckStatus
+    client.bot_check_status = result.get("status", BotCheckStatus.NO_ACCESS)
+    client.bot_check_detail = result.get("detail", "")
+    if result.get("chat_username"):
+        client.channel_username = result["chat_username"]
+    client.bot_check_at = timezone.now()
+    # If status is no longer OK, disable auto mode to avoid silent failures
+    if not result.get("ok") and client.auto_mode:
+        client.auto_mode = False
+        logger.info("AutoModeService: auto_mode disabled for client %s (check failed)", client.pk)
+    client.save(update_fields=[
+        "bot_check_status", "bot_check_detail", "bot_check_at",
+        "channel_username", "auto_mode",
+    ])

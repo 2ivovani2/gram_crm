@@ -29,6 +29,14 @@ class LinkStatus(models.TextChoices):
     PAUSED = "paused", "Приостановлена"
 
 
+class BotCheckStatus(models.TextChoices):
+    UNCHECKED = "unchecked", "Не проверено"
+    OK = "ok", "Права подтверждены"
+    NOT_ADMIN = "not_admin", "Бот не администратор"
+    NO_PERMISSIONS = "no_permissions", "Недостаточно прав"
+    NO_ACCESS = "no_access", "Нет доступа к каналу"
+
+
 class UnassignReason(models.TextChoices):
     INACTIVITY = "inactivity", "Неактивность (3 дня)"
     LINK_DEACTIVATED = "link_deactivated", "Ссылка деактивирована"
@@ -47,6 +55,41 @@ class Client(models.Model):
         help_text="Сколько клиент платит за одну заявку",
     )
     notes = models.TextField(blank=True, verbose_name="Примечания")
+
+    # ── Auto-mode: Telegram invite link generation ────────────────────────────
+    # When auto_mode=True, the bot generates a unique invite link per worker
+    # instead of using the manual URL. Requires bot to be admin in the channel.
+    channel_id = models.BigIntegerField(
+        null=True, blank=True,
+        verbose_name="Telegram Chat ID",
+        help_text="ID канала/группы (число, напр. -1001234567890). Нужен для авто-режима.",
+    )
+    channel_username = models.CharField(
+        max_length=255, blank=True,
+        verbose_name="@username канала",
+        help_text="Для отображения (заполняется автоматически при проверке прав)",
+    )
+    auto_mode = models.BooleanField(
+        default=False,
+        verbose_name="Авто-режим",
+        help_text="Если включён — бот генерирует уникальные invite links для воркеров",
+    )
+    bot_check_status = models.CharField(
+        max_length=20,
+        choices=BotCheckStatus.choices,
+        default=BotCheckStatus.UNCHECKED,
+        verbose_name="Статус проверки бота",
+    )
+    bot_check_detail = models.TextField(
+        blank=True,
+        verbose_name="Детали проверки",
+        help_text="Человекочитаемое объяснение последней проверки прав бота",
+    )
+    bot_check_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Дата последней проверки",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

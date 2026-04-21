@@ -104,6 +104,14 @@
       {% endwith %}
     </div>
     {% endif %}
+
+    {% if finance.notes %}
+    <!-- ── Notes ─────────────────────────────────────────────────────────────── -->
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Cash Flow)</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ finance.notes }}</div>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -121,6 +129,12 @@
         <div style="font-size:22px;font-weight:700">{{ application.applications_earnings|floatformat:2 }} $</div>
       </div>
     </div>
+    {% if application.notes %}
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Заявки)</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ application.notes }}</div>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 

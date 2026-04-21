@@ -62,6 +62,7 @@ tr.clickable-row td:first-child { color: var(--gold); font-weight: 600; }
         <td style="white-space:nowrap">
           {{ entry.date|date:"d.m.Y" }}
           {% if entry.date == today %}<span class="badge badge-blue" style="margin-left:4px;font-size:10px">Сегодня</span>{% endif %}
+          {% if entry.finance.notes or entry.application.notes %}<span title="Есть примечание" style="margin-left:4px;font-size:12px;cursor:default">📝</span>{% endif %}
         </td>
         <td>
           {% if entry.finance %}
