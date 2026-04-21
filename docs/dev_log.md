@@ -2,6 +2,73 @@
 
 ---
 
+## 2026-04-22 — Auto-mode UX: замена ручного Chat ID → умный ввод ссылки/юзернейма
+
+### Проблема
+Старый flow настройки авто-режима требовал от администратора:
+1. Вручную скопировать **числовой Chat ID** канала
+2. Вставить его в поле "Chat ID" → `action=set_channel`
+3. Кликнуть "Проверить бота" → `action=check_bot`
+4. Кликнуть "Включить авто-режим" → `action=toggle_auto`
+
+Это слишком технично — пользователи не знают Chat ID и путались.
+
+### Решение
+Единое поле ввода принимает **любой формат** идентификатора канала: `@username`, `t.me/channel`, `https://t.me/channel`, голый `username`, числовой ID. Система сама разбирает, резолвит через Bot API и проверяет права в одно действие.
+
+### Что изменено
+
+#### `apps/clients/services.py`
+- Добавлен `import datetime` (исправлен `timezone.timedelta` → `datetime.timedelta`)
+- `_parse_channel_input(text)` — нормализует любой формат до `(identifier, kind)`:
+  - `kind = "username"` → `@handle` (из `t.me/channel`, `@channel`, `https://t.me/channel`)
+  - `kind = "numeric"` → числовой Chat ID как int
+  - `kind = "invite"` → приватная ссылка `t.me/+hash` (резолв невозможен без вступления бота)
+  - `kind = "invalid"` → неудалось распознать
+- `_async_resolve_channel(identifier)` — вызывает `bot.get_chat(identifier)`, возвращает `(chat_id, username_or_title)`. Работает для `@username` и numeric ID (не работает для `t.me/+` — это и есть "invite" случай).
+- `AutoModeService.resolve_and_setup(client, channel_input)` — полный flow: parse → если invite → возврат `{"invite_link": True}` → иначе asyncio.run(resolve) → сохранить channel_id/username → asyncio.run(check_permissions) → если OK → `auto_mode=True`. Возвращает `{"ok": True}` / `{"error": "..."}` / `{"invite_link": True}`.
+- `AutoModeService.recheck_and_enable(client)` — перепроверяет права на уже сохранённом `channel_id`, если ОК — включает `auto_mode=True`.
+
+#### `apps/stats/views.py`
+- Новый контекст: `invite_client_id` (из `request.GET`) — передаётся в шаблон, чтобы открыть `<details>` нужного клиента
+- Новые POST actions:
+  - `setup_auto` — вызывает `resolve_and_setup`, при `invite_link=True` редиректит с `?invite_client_id=<pk>`
+  - `recheck_bot` — вызывает `recheck_and_enable`
+  - `disable_auto` — выключает `auto_mode`, канал остаётся настроенным
+  - `reset_auto` — сбрасывает все поля авто-режима (`channel_id`, `channel_username`, `auto_mode`, `bot_check_*`)
+- Старые actions `set_channel`, `check_bot`, `toggle_auto` сохранены для обратной совместимости
+
+#### `templates/stats_clients.html`
+Панель авто-режима переработана под 4 состояния:
+
+| Состояние | Условие | Отображение |
+|-----------|---------|-------------|
+| 1 — Активен | `auto_mode=True` | Зелёный бейдж с именем канала + кнопки "Отключить" / "Сменить канал" |
+| 2 — Проверен, не включён | `bot_check_status=ok`, `auto_mode=False` | Зелёный бейдж + "Включить авто-режим" / "Сменить канал" |
+| 3 — Ошибка | `bot_check_status` = ошибка, `channel_id` есть | Красный бейдж + инструкции по ошибке + "Проверить снова" / "Сменить канал" |
+| 4 — Не настроен | нет `channel_id` | Подсказка + поле ввода (`@channel, t.me/channel...`) + "Подключить канал →" + `<details>` для приватных каналов |
+
+`<details>` для приватных каналов автоматически раскрывается (`open` атрибут), если `invite_client_id` в GET-параметре совпадает с id клиента.
+
+### Приватные каналы (t.me/+ ссылки)
+Bot API `getChat()` не работает с приватными invite-ссылками без вступления бота. Решение:
+1. Пользователь добавляет бота в приватный канал как администратора
+2. В `<details>` вводит числовой Chat ID (можно получить через @userinfobot или пересланное сообщение)
+3. Система проверяет права через `recheck_bot` (или через `setup_auto` с числовым ID)
+
+### Как проверить
+1. Открыть `/stats/clients/` → карточка любого клиента без авто-режима
+2. Ввести `@username` или `t.me/channel` → нажать "Подключить канал →" → должно либо включить авто (если бот уже в канале), либо показать статус ошибки
+3. Ввести `t.me/+privatehash` → должно перебросить на `?invite_client_id=<pk>` и открыть `<details>` с инструкцией
+4. При `bot_check_status=ok` → кнопка "Включить авто-режим" → `auto_mode=True`, бейдж канала зеленеет
+5. "Отключить" → `auto_mode=False`, бейдж остаётся но кнопка меняется на "Включить авто-режим"
+6. "Сменить канал" → `reset_auto` → поле ввода снова пустое
+
+### Файлы
+`apps/clients/services.py`, `apps/stats/views.py`, `templates/stats_clients.html`
+
+---
+
 ## 2026-04-22 — Аудит всех изменений дня: 4 найденных бага, исправлены
 
 ### Найденные и исправленные проблемы

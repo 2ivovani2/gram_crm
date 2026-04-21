@@ -341,12 +341,12 @@ body {
 
 /* ── Auto mode panel ─────────────────────────────────────────────────────── */
 .auto-panel {
-  padding: 14px 24px 16px;
+  padding: 16px 24px 18px;
   border-top: 1px solid var(--border);
-  background: rgba(240,180,41,.02);
+  background: rgba(240,180,41,.025);
 }
 .auto-panel-head {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
 }
 .auto-label {
   font-size: 11px; font-weight: 700; color: var(--muted);
@@ -360,19 +360,62 @@ body {
 .auto-status-warn     { background: var(--orange-dim); color: var(--orange); border: 1px solid rgba(251,146,60,.2); }
 .auto-status-err      { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(248,113,113,.2); }
 .auto-status-neutral  { background: var(--surface);    color: var(--muted2); border: 1px solid var(--border); }
+
+/* Connected channel badge */
+.auto-channel-name {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: var(--r);
+  background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.18);
+  font-size: 13px; font-weight: 600; color: var(--green);
+  margin-bottom: 12px;
+}
+.auto-channel-name.err {
+  background: var(--red-dim); border-color: rgba(248,113,113,.2); color: var(--red);
+}
+
 .auto-detail {
-  font-size: 12px; color: var(--muted2); margin-bottom: 10px; line-height: 1.5;
+  font-size: 13px; color: var(--muted2); margin-bottom: 12px; line-height: 1.6;
+  white-space: pre-wrap;
+}
+.auto-hint {
+  font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.5;
+}
+/* Action instructions block */
+.auto-instructions {
+  background: rgba(248,113,113,.06); border: 1px solid rgba(248,113,113,.15);
+  border-radius: var(--r); padding: 12px 14px; margin-bottom: 12px;
+}
+.auto-instructions p {
+  font-size: 12px; color: var(--text-2); line-height: 1.7; margin: 0;
 }
 .auto-form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .auto-input {
   background: var(--bg); border: 1px solid var(--border);
   color: var(--text); border-radius: var(--r);
-  padding: 7px 12px; font-size: 13px; font-family: "SF Mono","Fira Code",monospace;
-  outline: none; width: 220px;
+  padding: 8px 14px; font-size: 13px; font-family: inherit;
+  outline: none; flex: 1; min-width: 180px; max-width: 300px;
   transition: border-color .15s, box-shadow .15s;
 }
-.auto-input::placeholder { color: var(--muted); font-family: inherit; }
+.auto-input::placeholder { color: var(--muted); }
 .auto-input:focus { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold-dim); }
+
+/* Private channel fallback (expandable) */
+.auto-manual-details {
+  margin-top: 10px;
+}
+.auto-manual-details summary {
+  font-size: 12px; color: var(--muted2); cursor: pointer; user-select: none;
+  padding: 4px 0; list-style: none; display: flex; align-items: center; gap: 5px;
+}
+.auto-manual-details summary::before { content: "▸"; font-size: 10px; }
+.auto-manual-details[open] summary::before { content: "▾"; }
+.auto-manual-details summary:hover { color: var(--gold); }
+.auto-manual-inner {
+  padding: 10px 0 4px;
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+}
+.auto-manual-inner .auto-input { font-family: "SF Mono","Fira Code",monospace; }
+.auto-checked-at { font-size: 11px; color: var(--muted); margin-left: 8px; }
 
 .badge-auto {
   display: inline-flex; align-items: center; gap: 4px;
@@ -719,62 +762,139 @@ body {
         <span class="auto-label">Авто-режим</span>
         {% if row.client.auto_mode %}
           <span class="auto-status auto-status-ok">⚡ Включён</span>
-        {% elif row.client.bot_check_status == "ok" %}
-          <span class="auto-status auto-status-neutral">Доступен — не включён</span>
-        {% elif row.client.bot_check_status == "unchecked" %}
-          <span class="auto-status auto-status-neutral">Не настроен</span>
+        {% elif row.client.bot_check_status == "ok" and row.client.channel_id %}
+          <span class="auto-status auto-status-neutral">Готов — не включён</span>
+        {% elif row.client.bot_check_status != "unchecked" and row.client.channel_id %}
+          <span class="auto-status auto-status-err">Ошибка подключения</span>
         {% else %}
-          <span class="auto-status auto-status-err">Недоступен</span>
+          <span class="auto-status auto-status-neutral">Не настроен</span>
         {% endif %}
       </div>
 
-      {% if row.client.bot_check_detail %}
-      <div class="auto-detail">{{ row.client.bot_check_detail }}
-        {% if row.client.bot_check_at %}<span style="color:var(--muted);margin-left:6px">— {{ row.client.bot_check_at|date:"d.m H:i" }}</span>{% endif %}
-      </div>
-      {% elif not row.client.channel_id %}
-      <div class="auto-detail">Укажите Telegram Chat ID канала, чтобы бот мог генерировать уникальные ссылки для воркеров и автоматически считать заявки.</div>
+      {# ── STATE 1: Active ─────────────────────────────────────────────────── #}
+      {% if row.client.auto_mode %}
+        <div class="auto-channel-name">
+          ✅ {{ row.client.channel_username|default:"Канал подключён" }}
+        </div>
+        <div class="auto-hint">
+          Бот автоматически создаёт уникальные ссылки для воркеров и считает заявки.
+        </div>
+        <div class="auto-form-row">
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="disable_auto">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-danger btn-sm" type="submit">Отключить</button>
+          </form>
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reset_auto">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-ghost btn-sm" type="submit">Сменить канал</button>
+          </form>
+        </div>
+
+      {# ── STATE 2: Permissions OK but not enabled ──────────────────────────── #}
+      {% elif row.client.bot_check_status == "ok" and row.client.channel_id %}
+        <div class="auto-channel-name">
+          ✅ {{ row.client.channel_username|default:"Канал" }}
+        </div>
+        <div class="auto-hint">
+          Бот — администратор с нужными правами. Можно включить авто-режим.
+        </div>
+        <div class="auto-form-row">
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="recheck_bot">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-primary btn-sm" type="submit">⚡ Включить авто-режим</button>
+          </form>
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reset_auto">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-ghost btn-sm" type="submit">Сменить канал</button>
+          </form>
+        </div>
+
+      {# ── STATE 3: Error (check failed) ────────────────────────────────────── #}
+      {% elif row.client.channel_id and row.client.bot_check_status != "unchecked" %}
+        {% if row.client.channel_username %}
+        <div class="auto-channel-name err">
+          📺 {{ row.client.channel_username }}
+        </div>
+        {% endif %}
+        {% if row.client.bot_check_detail %}
+        <div class="auto-instructions">
+          <p>{{ row.client.bot_check_detail }}</p>
+        </div>
+        {% endif %}
+        {% if row.client.bot_check_status == "not_admin" %}
+        <div class="auto-hint">
+          Что нужно сделать: откройте настройки канала → Администраторы → Добавить → найдите бота → дайте право «Добавление участников».
+        </div>
+        {% elif row.client.bot_check_status == "no_permissions" %}
+        <div class="auto-hint">
+          Что нужно сделать: откройте настройки канала → Администраторы → нажмите на бота → включите «Добавление участников».
+        </div>
+        {% endif %}
+        <div class="auto-form-row">
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="recheck_bot">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-primary btn-sm" type="submit">🔄 Проверить снова</button>
+          </form>
+          <form method="post" action="/stats/clients/" style="display:contents">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reset_auto">
+            <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+            <button class="btn btn-ghost btn-sm" type="submit">Сменить канал</button>
+          </form>
+        </div>
+        {% if row.client.bot_check_at %}
+        <div class="auto-hint" style="margin-top:8px;margin-bottom:0">
+          <span class="auto-checked-at">Проверялось: {{ row.client.bot_check_at|date:"d.m H:i" }}</span>
+        </div>
+        {% endif %}
+
+      {# ── STATE 4: Not configured ───────────────────────────────────────────── #}
+      {% else %}
+        <div class="auto-hint">
+          Авто-режим позволяет боту создавать уникальные ссылки для воркеров и считать заявки автоматически. Вставьте ссылку на канал или его @username.
+        </div>
+        <form method="post" action="/stats/clients/">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="setup_auto">
+          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+          <div class="auto-form-row">
+            <input class="auto-input" name="channel_input" type="text"
+                   placeholder="@channel или t.me/channel"
+                   autocomplete="off">
+            <button class="btn btn-primary btn-sm" type="submit">Подключить канал →</button>
+          </div>
+        </form>
+
+        <!-- Fallback: private channel needs numeric Chat ID -->
+        <details class="auto-manual-details" {% if invite_client_id == row.client.pk|stringformat:"s" %}open{% endif %}>
+          <summary>Приватный канал? Введите Chat ID вручную</summary>
+          <div class="auto-manual-inner">
+            {% if invite_client_id == row.client.pk|stringformat:"s" and warn %}
+            <div class="auto-hint" style="width:100%;margin-bottom:8px;color:var(--orange)">{{ warn }}</div>
+            {% endif %}
+            <form method="post" action="/stats/clients/" style="display:contents">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="set_channel">
+              <input type="hidden" name="client_id" value="{{ row.client.pk }}">
+              <input class="auto-input" name="channel_id" type="text"
+                     placeholder="-1001234567890"
+                     value="{{ row.client.channel_id|default:'' }}">
+              <button class="btn btn-ghost btn-sm" type="submit">Сохранить и проверить</button>
+            </form>
+          </div>
+        </details>
       {% endif %}
 
-      <div class="auto-form-row">
-        <!-- Step 1: set channel_id -->
-        <form method="post" action="/stats/clients/" style="display:contents">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="set_channel">
-          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
-          <input class="auto-input" name="channel_id" type="text"
-                 value="{{ row.client.channel_id|default:'' }}"
-                 placeholder="-1001234567890">
-          <button class="btn btn-ghost btn-sm" type="submit">Сохранить канал</button>
-        </form>
-
-        {% if row.client.channel_id %}
-        <!-- Step 2: check permissions -->
-        <form method="post" action="/stats/clients/" style="display:contents">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="check_bot">
-          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
-          <button class="btn btn-ghost btn-sm" type="submit"
-                  title="Проверить, что бот — администратор с нужными правами">🔍 Проверить права</button>
-        </form>
-
-        <!-- Step 3: toggle auto mode -->
-        {% if row.client.bot_check_status == "ok" %}
-        <form method="post" action="/stats/clients/" style="display:contents">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="toggle_auto">
-          <input type="hidden" name="client_id" value="{{ row.client.pk }}">
-          {% if row.client.auto_mode %}
-            <input type="hidden" name="enable" value="0">
-            <button class="btn btn-danger btn-sm" type="submit">Отключить авто</button>
-          {% else %}
-            <input type="hidden" name="enable" value="1">
-            <button class="btn btn-primary btn-sm" type="submit">⚡ Включить авто</button>
-          {% endif %}
-        </form>
-        {% endif %}
-        {% endif %}
-      </div>
     </div>
 
   </div>

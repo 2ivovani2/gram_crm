@@ -217,6 +217,7 @@ class ClientsView(View):
             "error": request.GET.get("error", ""),
             "warn": request.GET.get("warn", ""),
             "no_assign_link_id": request.GET.get("no_assign", ""),
+            "invite_client_id": request.GET.get("invite_client_id", ""),
         })
 
     def post(self, request):
@@ -375,6 +376,82 @@ class ClientsView(View):
 
             msg = f"Исполнитель сменён: {old_worker.display_name if old_worker else '—'} → {new_worker.display_name}"
             return redirect(f"/stats/clients/?msg={msg}")
+
+        # ── Setup auto mode (new UX: parse link → resolve → check → enable) ────
+        if action == "setup_auto":
+            from apps.clients.services import AutoModeService
+
+            client_id = request.POST.get("client_id", "")
+            channel_input = request.POST.get("channel_input", "").strip()
+            if not channel_input:
+                return redirect("/stats/clients/?error=Введите+ссылку+или+@username+канала")
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+
+            result = AutoModeService.resolve_and_setup(client, channel_input)
+            if result.get("invite_link"):
+                # Private channel — redirect showing manual Chat ID fallback for this client
+                params = urlencode({"invite_client_id": client.pk, "warn": result["detail"]})
+                return redirect(f"/stats/clients/?{params}")
+            if result["ok"]:
+                ch = client.channel_username or ""
+                params = urlencode({"msg": f"Авто-режим включён. Канал {ch} подключён."})
+                return redirect(f"/stats/clients/?{params}")
+            else:
+                params = urlencode({"error": result["detail"]})
+                return redirect(f"/stats/clients/?{params}")
+
+        # ── Recheck bot permissions + enable if OK ─────────────────────────────
+        if action == "recheck_bot":
+            from apps.clients.services import AutoModeService
+
+            client_id = request.POST.get("client_id", "")
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+
+            result = AutoModeService.recheck_and_enable(client)
+            if result["ok"]:
+                ch = client.channel_username or ""
+                params = urlencode({"msg": f"Проверка пройдена. Авто-режим включён. Канал: {ch}"})
+                return redirect(f"/stats/clients/?{params}")
+            else:
+                params = urlencode({"error": result["detail"]})
+                return redirect(f"/stats/clients/?{params}")
+
+        # ── Disable auto mode ──────────────────────────────────────────────────
+        if action == "disable_auto":
+            client_id = request.POST.get("client_id", "")
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+            client.auto_mode = False
+            client.save(update_fields=["auto_mode"])
+            return redirect("/stats/clients/?msg=Авто-режим+отключён")
+
+        # ── Reset auto mode (clear all channel settings) ───────────────────────
+        if action == "reset_auto":
+            from apps.clients.models import BotCheckStatus
+            client_id = request.POST.get("client_id", "")
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                return redirect("/stats/clients/?error=Клиент+не+найден")
+            client.channel_id = None
+            client.channel_username = ""
+            client.auto_mode = False
+            client.bot_check_status = BotCheckStatus.UNCHECKED
+            client.bot_check_detail = ""
+            client.bot_check_at = None
+            client.save(update_fields=[
+                "channel_id", "channel_username", "auto_mode",
+                "bot_check_status", "bot_check_detail", "bot_check_at",
+            ])
+            return redirect("/stats/clients/?msg=Настройки+авто-режима+сброшены")
 
         # ── Set channel (auto mode setup step 1) ──────────────────────────────
         if action == "set_channel":

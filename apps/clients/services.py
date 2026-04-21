@@ -283,20 +283,230 @@ class AssignmentService:
         )
 
 
+# ─── Channel input parser ──────────────────────────────────────────────────────
+
+def _parse_channel_input(text: str):
+    """
+    Parse a free-form channel reference into (identifier, kind).
+
+    kind:
+      'username'  — @handle or t.me/handle → pass as "@handle" to getChat
+      'numeric'   — plain numeric chat_id   → pass as int to getChat
+      'invite'    — t.me/+ private link     → cannot resolve via getChat
+      'invalid'   — could not parse
+
+    Examples:
+      "@gramly"            → ("@gramly", "username")
+      "t.me/gramly"        → ("@gramly", "username")
+      "https://t.me/gramly"→ ("@gramly", "username")
+      "gramly"             → ("@gramly", "username")
+      "-1001234567890"     → (-1001234567890, "numeric")
+      "t.me/+AbCdEfG"      → ("t.me/+AbCdEfG", "invite")
+    """
+    import re
+    text = text.strip()
+    if not text:
+        return ("", "invalid")
+
+    # Private invite links — cannot resolve with getChat
+    if "t.me/+" in text or "t.me/joinchat/" in text:
+        return (text, "invite")
+
+    # Strip URL scheme and t.me/ prefix, but stop at first /
+    cleaned = text
+    for prefix in ("https://", "http://"):
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break
+    if cleaned.lower().startswith("t.me/"):
+        cleaned = cleaned[len("t.me/"):]
+    cleaned = cleaned.strip("/")
+
+    # @username (possibly with @ already)
+    if cleaned.startswith("@"):
+        username = cleaned.lstrip("@")
+        if username:
+            return ("@" + username, "username")
+
+    # Numeric Chat ID (possibly negative, e.g. -1001234567890)
+    try:
+        return (int(cleaned), "numeric")
+    except ValueError:
+        pass
+
+    # Bare word — treat as username if it looks like one
+    if re.match(r'^[A-Za-z0-9_]{4,}$', cleaned):
+        return ("@" + cleaned, "username")
+
+    return (text, "invalid")
+
+
+async def _async_resolve_channel(identifier) -> dict:
+    """
+    Call bot.get_chat(identifier) to resolve a username or numeric chat_id.
+    Returns {ok, chat_id, username, detail}.
+    Works for public channels (@username) and any chat the bot is member of (numeric id).
+    Does NOT work for private invite links.
+    """
+    bot = _make_auto_bot()
+    try:
+        chat = await bot.get_chat(identifier)
+        if chat.username:
+            display = f"@{chat.username}"
+        elif chat.title:
+            display = chat.title
+        else:
+            display = str(chat.id)
+        return {"ok": True, "chat_id": chat.id, "username": display}
+    except Exception as exc:
+        err = str(exc).lower()
+        if "chat not found" in err or "bad request" in err:
+            detail = (
+                "Канал не найден. Убедитесь, что ссылка или @username правильные "
+                "и что бот уже добавлен в канал."
+            )
+        elif "forbidden" in err:
+            detail = (
+                "Нет доступа к каналу. "
+                "Добавьте бота в канал как администратора и попробуйте снова."
+            )
+        else:
+            detail = f"Не удалось найти канал: {exc}"
+        return {"ok": False, "chat_id": None, "username": "", "detail": detail}
+    finally:
+        await bot.session.close()
+
+
 # ─── Auto-Mode Service ─────────────────────────────────────────────────────────
 
 class AutoModeService:
     """
     Handles Telegram invite link generation and bot permission checks.
 
-    Auto mode flow:
-      1. Admin sets client.channel_id (Telegram chat ID)
-      2. check_permissions(client) → verifies bot is admin with can_invite_users
-      3. If OK: admin enables auto_mode on client
+    Auto mode flow (new UX):
+      1. Admin pastes channel link / @username / Chat ID in the auto-mode panel
+      2. resolve_and_setup(client, channel_input) → parse → resolve → check → enable
+      3. On success: channel_id saved, bot_check_status=ok, auto_mode=True
       4. On assignment: create_invite_link_sync(channel_id, label) → unique URL
       5. WorkLink.url = that unique URL (instead of ClientLink.url)
       6. Bot handles chat_join_request events → increments WorkLink.attracted_count
     """
+
+    @staticmethod
+    def resolve_and_setup(client: "Client", channel_input: str) -> dict:
+        """
+        All-in-one: parse user input → resolve channel via Telegram API →
+        check bot permissions → enable auto_mode if OK.
+
+        Accepts:
+          @username, t.me/channel, https://t.me/channel, or numeric Chat ID.
+          Private invite links (t.me/+...) cannot be resolved — returns invite_link=True.
+
+        Returns:
+          {ok: bool, invite_link: bool, detail: str}
+        """
+        import asyncio
+        from apps.clients.models import BotCheckStatus
+
+        identifier, kind = _parse_channel_input(channel_input)
+
+        if kind == "invalid":
+            return {
+                "ok": False,
+                "invite_link": False,
+                "detail": (
+                    "Не удалось распознать ввод. "
+                    "Вставьте @username, ссылку t.me/channel или числовой Chat ID."
+                ),
+            }
+
+        if kind == "invite":
+            return {
+                "ok": False,
+                "invite_link": True,
+                "detail": (
+                    "Это приватная ссылка-приглашение — по ней нельзя автоматически определить ID канала. "
+                    "Раскройте блок «Приватный канал» ниже и введите Chat ID вручную "
+                    "(например: −1001234567890). "
+                    "Его можно узнать через бота @userinfobot — перешлите ему любое сообщение из канала."
+                ),
+            }
+
+        # Step 1: Resolve channel → get chat_id and display name
+        try:
+            resolve = asyncio.run(_async_resolve_channel(identifier))
+        except Exception as exc:
+            return {"ok": False, "invite_link": False, "detail": f"Ошибка подключения: {exc}"}
+
+        if not resolve["ok"]:
+            client.bot_check_status = BotCheckStatus.NO_ACCESS
+            client.bot_check_detail = resolve["detail"]
+            client.bot_check_at = timezone.now()
+            client.auto_mode = False
+            client.save(update_fields=["bot_check_status", "bot_check_detail", "bot_check_at", "auto_mode"])
+            return {"ok": False, "invite_link": False, "detail": resolve["detail"]}
+
+        # Save resolved channel info immediately so error states show the channel name
+        client.channel_id = resolve["chat_id"]
+        client.channel_username = resolve["username"]
+        client.save(update_fields=["channel_id", "channel_username"])
+
+        # Step 2: Check bot permissions in the resolved channel
+        try:
+            perm_result = asyncio.run(_async_check_permissions(resolve["chat_id"]))
+        except Exception as exc:
+            client.bot_check_status = BotCheckStatus.NO_ACCESS
+            client.bot_check_detail = f"Ошибка проверки прав: {exc}"
+            client.bot_check_at = timezone.now()
+            client.save(update_fields=["bot_check_status", "bot_check_detail", "bot_check_at"])
+            return {"ok": False, "invite_link": False, "detail": f"Ошибка проверки прав: {exc}"}
+
+        _save_check_result(client, perm_result)
+
+        if perm_result["ok"]:
+            client.auto_mode = True
+            client.save(update_fields=["auto_mode"])
+
+        return {
+            "ok": perm_result["ok"],
+            "invite_link": False,
+            "detail": perm_result.get("detail", ""),
+        }
+
+    @staticmethod
+    def recheck_and_enable(client: "Client") -> dict:
+        """
+        Re-run permission check on the already-saved client.channel_id.
+        Enables auto_mode if the check passes.
+        Called when admin clicks «Проверить снова» after fixing bot permissions.
+        Returns {ok: bool, invite_link: bool, detail: str}
+        """
+        import asyncio
+        from apps.clients.models import BotCheckStatus
+
+        if not client.channel_id:
+            return {
+                "ok": False,
+                "invite_link": False,
+                "detail": "Chat ID канала не указан. Сначала подключите канал.",
+            }
+
+        try:
+            perm_result = asyncio.run(_async_check_permissions(client.channel_id))
+        except Exception as exc:
+            return {"ok": False, "invite_link": False, "detail": f"Ошибка: {exc}"}
+
+        _save_check_result(client, perm_result)
+
+        if perm_result["ok"]:
+            client.auto_mode = True
+            client.save(update_fields=["auto_mode"])
+
+        return {
+            "ok": perm_result["ok"],
+            "invite_link": False,
+            "detail": perm_result.get("detail", ""),
+        }
 
     @staticmethod
     def check_permissions(client: "Client") -> dict:
