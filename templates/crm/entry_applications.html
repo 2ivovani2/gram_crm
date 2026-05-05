@@ -29,13 +29,13 @@
         <div class="form-group">
           <label class="form-label">📋 Количество заявок за день</label>
           <input type="number" name="applications_count" min="0" class="form-input"
-                 value="{{ form.applications_count.value|default:'0' }}" placeholder="0" required/>
+                 value="{% if form.is_bound %}{{ form.applications_count.value }}{% elif existing %}{{ existing.applications_count }}{% else %}0{% endif %}" placeholder="0" required/>
           {% if form.applications_count.errors %}<div class="form-error">{{ form.applications_count.errors.0 }}</div>{% endif %}
         </div>
         <div class="form-group">
           <label class="form-label">💰 Заработок с заявок ($)</label>
           <input type="number" name="applications_earnings" step="0.01" min="0" class="form-input"
-                 value="{{ form.applications_earnings.value|default:'0.00' }}" placeholder="0.00" required/>
+                 value="{% if form.is_bound %}{{ form.applications_earnings.value }}{% elif existing %}{{ existing.applications_earnings }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.applications_earnings.errors %}<div class="form-error">{{ form.applications_earnings.errors.0 }}</div>{% endif %}
         </div>
       </div>
@@ -47,7 +47,7 @@
 
       <div class="form-group">
         <label class="form-label">📝 Примечания</label>
-        <textarea name="notes" rows="3" class="form-textarea" placeholder="Дополнительные комментарии...">{{ form.notes.value|default:'' }}</textarea>
+        <textarea name="notes" rows="3" class="form-textarea" placeholder="Дополнительные комментарии...">{% if form.is_bound %}{{ form.notes.value }}{% elif existing %}{{ existing.notes }}{% endif %}</textarea>
       </div>
 
       <div style="display:flex;gap:12px;margin-top:8px">
@@ -62,11 +62,9 @@
   <!-- Date picker -->
   <div style="margin-top:20px">
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Внести за другую дату:</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input type="date" id="other-date" class="form-input" style="width:auto"
-             value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"/>
-      <button class="btn btn-secondary btn-sm" onclick="goToDate()">Перейти</button>
-    </div>
+    <input type="date" id="other-date" class="form-input" style="width:auto"
+           value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"
+           onchange="goToDate()"/>
   </div>
 </div>
 

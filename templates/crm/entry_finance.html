@@ -141,13 +141,13 @@
         <div class="form-group">
           <label class="form-label">💰 Сумма поступлений ($)</label>
           <input type="number" name="income" step="0.01" min="0" class="form-input"
-                 value="{{ form.income.value|default:'0.00' }}" placeholder="0.00" required/>
+                 value="{% if form.is_bound %}{{ form.income.value }}{% elif existing %}{{ existing.income }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.income.errors %}<div class="form-error">{{ form.income.errors.0 }}</div>{% endif %}
         </div>
         <div class="form-group">
           <label class="form-label">📤 Расходы / выплаты ($)</label>
           <input type="number" name="expenses" step="0.01" min="0" class="form-input"
-                 value="{{ form.expenses.value|default:'0.00' }}" placeholder="0.00" required/>
+                 value="{% if form.is_bound %}{{ form.expenses.value }}{% elif existing %}{{ existing.expenses }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.expenses.errors %}<div class="form-error">{{ form.expenses.errors.0 }}</div>{% endif %}
         </div>
       </div>
@@ -161,13 +161,13 @@
         <div class="form-group">
           <label class="form-label">📈 Заработок с ПП ($)</label>
           <input type="number" name="pp_earnings" step="0.01" min="0" class="form-input"
-                 value="{{ form.pp_earnings.value|default:'0.00' }}" placeholder="0.00" required/>
+                 value="{% if form.is_bound %}{{ form.pp_earnings.value }}{% elif existing %}{{ existing.pp_earnings }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.pp_earnings.errors %}<div class="form-error">{{ form.pp_earnings.errors.0 }}</div>{% endif %}
         </div>
         <div class="form-group">
           <label class="form-label">🏦 Заработок с Привата ($)</label>
           <input type="number" name="privat_earnings" step="0.01" min="0" class="form-input"
-                 value="{{ form.privat_earnings.value|default:'0.00' }}" placeholder="0.00" required/>
+                 value="{% if form.is_bound %}{{ form.privat_earnings.value }}{% elif existing %}{{ existing.privat_earnings }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.privat_earnings.errors %}<div class="form-error">{{ form.privat_earnings.errors.0 }}</div>{% endif %}
         </div>
       </div>
@@ -176,7 +176,7 @@
       <div class="form-group">
         <label class="form-label">💼 Баланс КБ ($)</label>
         <input type="number" name="kb_balance" step="0.01" class="form-input"
-               value="{{ form.kb_balance.value|default:'0.00' }}" placeholder="0.00"
+               value="{% if form.is_bound %}{{ form.kb_balance.value }}{% elif existing %}{{ existing.kb_balance }}{% else %}0.00{% endif %}" placeholder="0.00"
                style="max-width:200px"/>
         <div style="font-size:12px;color:var(--muted2);margin-top:4px">Текущий баланс на счёте КБ</div>
         {% if form.kb_balance.errors %}<div class="form-error">{{ form.kb_balance.errors.0 }}</div>{% endif %}
@@ -234,7 +234,7 @@
       <div class="form-group">
         <label class="form-label">📝 Примечания</label>
         <textarea name="notes" rows="3" class="form-textarea"
-                  placeholder="Дополнительные комментарии...">{{ form.notes.value|default:'' }}</textarea>
+                  placeholder="Дополнительные комментарии...">{% if form.is_bound %}{{ form.notes.value }}{% elif existing %}{{ existing.notes }}{% endif %}</textarea>
       </div>
 
       <div style="display:flex;gap:12px;margin-top:8px">
@@ -249,11 +249,9 @@
   <!-- Date picker for other dates -->
   <div style="margin-top:20px">
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Внести за другую дату:</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input type="date" id="other-date" class="form-input" style="width:auto"
-             value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"/>
-      <button class="btn btn-secondary btn-sm" onclick="goToDate()">Перейти</button>
-    </div>
+    <input type="date" id="other-date" class="form-input" style="width:auto"
+           value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"
+           onchange="goToDate()"/>
   </div>
 </div>
 
