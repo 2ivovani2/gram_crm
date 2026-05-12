@@ -16,12 +16,10 @@
 #   apt install -y docker.io docker-compose-plugin curl git
 #   git clone <repo> && cd full_gramly
 #   cp .env.example .env
+#       → set BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, TELEGRAM_WEBHOOK_SECRET
+#       → set ALLOWED_HOSTS=gramly.tech,www.gramly.tech,crm.gramly.tech, DEBUG=False
 #       → set POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY, DOMAIN, CERTBOT_EMAIL
 #       → set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME
-#   cp spambotcontrol/.env.example spambotcontrol/.env
-#       → set BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, TELEGRAM_WEBHOOK_SECRET,
-#          ALLOWED_HOSTS=gramly.tech,www.gramly.tech,crm.gramly.tech
-#          DEBUG=False, DATABASE_URL=postgres://...:...@postgres:5432/<POSTGRES_DB>
 #
 # Usage: make prod  (or: bash scripts/prod_up.sh)
 
@@ -40,15 +38,15 @@ ok()   { echo "    [OK]   $*"; }
 skip() { echo "    [SKIP] $*"; }
 err()  { echo "    [ERR]  $*" >&2; }
 
-# ── 1. Guard: require BOT_ENV=prod in spambotcontrol/.env ─────────────────────
-if [ ! -f "spambotcontrol/.env" ]; then
-    err "spambotcontrol/.env not found."
-    err "Run: cp spambotcontrol/.env.example spambotcontrol/.env  and fill it in."
+# ── 1. Guard: require BOT_ENV=prod in .env ────────────────────────────────────
+if [ ! -f ".env" ]; then
+    err ".env not found at project root."
+    err "Run: cp .env.example .env  and fill it in."
     exit 1
 fi
-BOT_ENV_VALUE=$(grep -m1 '^BOT_ENV=' spambotcontrol/.env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+BOT_ENV_VALUE=$(grep -m1 '^BOT_ENV=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
 if [ "$BOT_ENV_VALUE" != "prod" ]; then
-    err "BOT_ENV is not 'prod' in spambotcontrol/.env (got: '${BOT_ENV_VALUE:-<empty>}')"
+    err "BOT_ENV is not 'prod' in .env (got: '${BOT_ENV_VALUE:-<empty>}')"
     err "Set BOT_ENV=prod and fill in PROD_BOT_TOKEN, DEBUG=False, ALLOWED_HOSTS etc."
     exit 1
 fi
@@ -147,8 +145,8 @@ WEBHOOK_REGISTERED=false
 if $COMPOSE exec -T web python manage.py setup_webhook --url "$WEBHOOK_URL" 2>&1; then
     WEBHOOK_REGISTERED=true
 else
-    WEBHOOK_SECRET=$(grep -m1 '^TELEGRAM_WEBHOOK_SECRET=' spambotcontrol/.env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
-    PROD_TOKEN=$(grep -m1 '^PROD_BOT_TOKEN=' spambotcontrol/.env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+    WEBHOOK_SECRET=$(grep -m1 '^TELEGRAM_WEBHOOK_SECRET=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+    PROD_TOKEN=$(grep -m1 '^PROD_BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
     echo ""
     echo "  Register webhook manually from another machine:"
     printf "  curl -F \"url=%s\" \\\n" "$WEBHOOK_URL"

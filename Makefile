@@ -3,13 +3,11 @@
 # All commands operate on the unified compose stack at the project root.
 #
 # Dev prerequisites:
-#   cp .env.example .env                            → fill NGROK_*, AWS_*, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY
-#   cp spambotcontrol/.env.example spambotcontrol/.env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, etc.
+#   cp .env.example .env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, SECRET_KEY, NGROK_*, AWS_*, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY
 #
 # Prod prerequisites (on VPS):
 #   apt install -y docker.io docker-compose-plugin curl git
-#   cp .env.example .env                            → fill DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY, AWS_*
-#   cp spambotcontrol/.env.example spambotcontrol/.env  → fill BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, DEBUG=False, etc.
+#   cp .env.example .env  → fill BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, AWS_*
 # ─────────────────────────────────────────────────────────────────────────────
 
 COMPOSE     = docker compose -f docker-compose.yml

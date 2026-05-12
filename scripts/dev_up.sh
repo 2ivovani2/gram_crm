@@ -11,8 +11,8 @@
 #   https://<ngrok>/api/        → autosending FastAPI backend
 #
 # What this script does:
-#   1. Validates BOT_ENV=dev in spambotcontrol/.env
-#   2. Reads NGROK_DOMAIN from root .env
+#   1. Validates BOT_ENV=dev in .env
+#   2. Reads NGROK_DOMAIN from .env
 #   3. Starts all services (nginx included — it's the unified entry point)
 #   4. Waits for web service to become healthy
 #   5. Registers Telegram webhook at https://<ngrok>/bot/webhook/
@@ -20,9 +20,8 @@
 #
 # Prerequisites:
 #   cp .env.example .env
-#       → set NGROK_AUTHTOKEN, NGROK_DOMAIN, POSTGRES_PASSWORD, AWS_*, SPAM_JWT_SECRET_KEY
-#   cp spambotcontrol/.env.example spambotcontrol/.env
 #       → set BOT_ENV=dev, TEST_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, SECRET_KEY
+#       → set NGROK_AUTHTOKEN, NGROK_DOMAIN, POSTGRES_PASSWORD, AWS_*, SPAM_JWT_SECRET_KEY
 #
 # Usage: make dev   (or: bash scripts/dev_up.sh)
 
@@ -40,23 +39,16 @@ log()  { echo "==> $*"; }
 ok()   { echo "    [OK]   $*"; }
 err()  { echo "    [ERR]  $*" >&2; }
 
-# ── Guard: spambotcontrol must be in dev mode ─────────────────────────────────
-if [ ! -f "spambotcontrol/.env" ]; then
-    err "spambotcontrol/.env not found."
-    err "Run: cp spambotcontrol/.env.example spambotcontrol/.env  and fill it in."
-    exit 1
-fi
-BOT_ENV_VALUE=$(grep -m1 '^BOT_ENV=' spambotcontrol/.env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
-if [ "$BOT_ENV_VALUE" = "prod" ]; then
-    err "BOT_ENV=prod detected in spambotcontrol/.env"
-    err "Dev stack uses test bot only. Set BOT_ENV=dev."
-    exit 1
-fi
-
-# ── Guard: root .env must exist ────────────────────────────────────────────────
+# ── Guard: root .env must exist and be in dev mode ────────────────────────────
 if [ ! -f ".env" ]; then
     err ".env not found at project root."
     err "Run: cp .env.example .env  and fill in NGROK_AUTHTOKEN, NGROK_DOMAIN, etc."
+    exit 1
+fi
+BOT_ENV_VALUE=$(grep -m1 '^BOT_ENV=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+if [ "$BOT_ENV_VALUE" = "prod" ]; then
+    err "BOT_ENV=prod detected in .env"
+    err "Dev stack uses test bot only. Set BOT_ENV=dev."
     exit 1
 fi
 
