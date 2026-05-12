@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Вход — Gramly AutoSending</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0b0a05;
+  --surface:  rgba(240,180,41,.04);
+  --border:   rgba(240,180,41,.12);
+  --gold:     #f0b429;
+  --red:      #f87171;
+  --red-dim:  rgba(248,113,113,.10);
+  --text:     #f5f0e2;
+  --muted:    #7a7060;
+  --muted2:   #a09080;
+  --r:        12px;
+}
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 60% at 0% 0%, rgba(240,180,41,.055) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 50% at 100% 100%, rgba(224,125,10,.04) 0%, transparent 65%);
+}
+.card {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 36px 32px;
+  text-align: center;
+}
+.logo {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+.logo-icon {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #f0b429 0%, #e07d0a 100%);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.logo-name {
+  font-size: 20px; font-weight: 700;
+  letter-spacing: -0.04em; color: var(--text);
+}
+.logo-sub {
+  font-size: 13px; color: var(--muted2); margin-bottom: 28px;
+}
+h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px; }
+.subtitle { font-size: 13px; color: var(--muted2); line-height: 1.5; margin-bottom: 28px; }
+.widget-wrap {
+  display: flex; justify-content: center;
+  min-height: 44px; margin-bottom: 16px;
+}
+.error {
+  font-size: 12px; color: var(--red);
+  background: var(--red-dim);
+  border: 1px solid rgba(248,113,113,.25);
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-align: left;
+  margin-bottom: 12px;
+}
+.footer {
+  margin-top: 28px; font-size: 11px; color: var(--muted);
+  line-height: 1.5;
+}
+.footer a { color: var(--muted2); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">💛</div>
+    <span class="logo-name">Gramly</span>
+  </div>
+  <div class="logo-sub">AutoSending</div>
+
+  <h1>Войти в систему</h1>
+  <p class="subtitle">Используй свой Telegram-аккаунт</p>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <div class="widget-wrap">
+    {% if bot_username %}
+    <script
+      src="https://telegram.org/js/telegram-widget.js?22"
+      data-telegram-login="{{ bot_username }}"
+      data-size="large"
+      data-auth-url="{{ callback_url }}"
+      data-request-access="write"
+      async>
+    </script>
+    {% else %}
+    <div style="color:var(--red);font-size:13px">Конфигурация не завершена</div>
+    {% endif %}
+  </div>
+
+  <p class="footer">
+    Часть экосистемы <a href="/">Gramly</a>
+    &nbsp;·&nbsp;
+    <a href="/crm/login/">CRM</a>
+    &nbsp;·&nbsp;
+    <a href="/docs/">Документация</a>
+  </p>
+</div>
+</body>
+</html>

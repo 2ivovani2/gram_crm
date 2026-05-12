@@ -6,7 +6,11 @@ Session key: crm_user_id (shared with CRM — if logged into CRM, docs works too
 """
 from __future__ import annotations
 
+import json
 import logging
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from django.conf import settings
 from django.shortcuts import redirect, render
@@ -140,3 +144,60 @@ class DocsGuideView(DocsLoginMixin, View):
 class DocsFAQView(DocsLoginMixin, View):
     def get(self, request):
         return render(request, "docs/faq.html", self.get_docs_context(request))
+
+
+# ─── Spam app auth relay ──────────────────────────────────────────────────────
+# Telegram Login Widget only works when served from the bot's registered domain.
+# Bot domain = gramly.tech, but spam app lives on spam.gramly.tech.
+# Flow: gramly.tech/spam-login/ → widget auth → gramly.tech/spam-auth/callback/
+#       → call spam-backend for JWT → redirect spam.gramly.tech/auth/callback/?token=JWT
+
+class SpamLoginView(View):
+    """Show Telegram Login Widget on gramly.tech so the bot domain check passes."""
+
+    def get(self, request):
+        bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "")
+        callback_url = request.build_absolute_uri(reverse("spam_auth_callback"))
+        return render(request, "spam_login.html", {
+            "bot_username": bot_username,
+            "callback_url": callback_url,
+        })
+
+
+class SpamAuthCallbackView(View):
+    """Receive Telegram auth data, exchange for JWT at spam-backend, redirect to spam app."""
+
+    def get(self, request):
+        tg_data = {k: v for k, v in request.GET.items()}
+
+        spam_backend_url = getattr(settings, "SPAM_BACKEND_INTERNAL_URL", "http://spam-backend:8000")
+        spam_app_url     = getattr(settings, "SPAM_APP_URL", "https://spam.gramly.tech")
+
+        payload = json.dumps(tg_data).encode()
+        req = urllib.request.Request(
+            f"{spam_backend_url}/api/auth/telegram",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            logger.warning("SpamAuthRelay: spam-backend returned %s: %s", exc.code, body)
+            return render(request, "spam_login.html", {
+                "bot_username": getattr(settings, "TELEGRAM_BOT_USERNAME", ""),
+                "callback_url": request.build_absolute_uri(reverse("spam_auth_callback")),
+                "error": "Ошибка авторизации. Попробуйте ещё раз.",
+            })
+        except Exception as exc:
+            logger.error("SpamAuthRelay: unexpected error: %s", exc)
+            return render(request, "spam_login.html", {
+                "bot_username": getattr(settings, "TELEGRAM_BOT_USERNAME", ""),
+                "callback_url": request.build_absolute_uri(reverse("spam_auth_callback")),
+                "error": "Сервис временно недоступен.",
+            })
+
+        jwt_token = result.get("access_token") or result.get("token", "")
+        return redirect(f"{spam_app_url}/auth/callback/?token={urllib.parse.quote(jwt_token)}")
