@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Stop the local dev stack.
-# Attempts to delete the test bot webhook before stopping containers
-# so Telegram doesn't keep retrying a dead ngrok URL.
-#
-# Usage: bash scripts/dev_down.sh   (or: make dev-down)
+# Stop the unified Gramly dev stack and remove the Telegram webhook.
+# Usage: make dev-down
 
 set -Eeuo pipefail
 
@@ -13,22 +10,15 @@ cd "$PROJECT_DIR"
 
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.ngrok.yml"
 
-log()  { echo "==> $*"; }
-ok()   { echo "    [OK]   $*"; }
-skip() { echo "    [SKIP] $*"; }
+log() { echo "==> $*"; }
+ok()  { echo "    [OK]   $*"; }
 
-# ── 1. Remove webhook (best-effort: skip if web container is not running) ─────
-log "Removing Telegram webhook from test bot ..."
-if $COMPOSE exec -T web python manage.py setup_webhook --delete 2>/dev/null; then
-    ok "Webhook removed."
-else
-    skip "Web container is not running — webhook not removed."
-    skip "Telegram will retry until the URL expires; it is safe to ignore."
-fi
+log "Removing Telegram webhook..."
+$COMPOSE exec -T web python manage.py setup_webhook --delete 2>/dev/null \
+    && ok "Webhook deleted." \
+    || ok "Webhook was not set or web container is not running."
 
-# ── 2. Stop and remove containers ─────────────────────────────────────────────
-log "Stopping all dev services ..."
+log "Stopping services..."
 $COMPOSE down
 
-echo ""
-echo "==> Dev stack stopped."
+ok "Dev stack stopped."

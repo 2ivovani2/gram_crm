@@ -1,68 +1,87 @@
-.PHONY: dev dev-down prod prod-down prod-renew-cert logs logs-prod minio-console webhook-info webhook-info-prod crm-setup crm-setup-prod help
+# ─────────────────────────────────────────────────────────────────────────────
+# Gramly — root Makefile
+# All commands operate on the unified compose stack at the project root.
+#
+# Dev prerequisites:
+#   cp .env.example .env                            → fill NGROK_*, AWS_*, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY
+#   cp spambotcontrol/.env.example spambotcontrol/.env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, etc.
+#
+# Prod prerequisites (on VPS):
+#   apt install -y docker.io docker-compose-plugin curl git
+#   cp .env.example .env                            → fill DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY, AWS_*
+#   cp spambotcontrol/.env.example spambotcontrol/.env  → fill BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, DEBUG=False, etc.
+# ─────────────────────────────────────────────────────────────────────────────
 
-COMPOSE_DEV = docker compose \
-	-f docker-compose.yml \
-	-f docker-compose.dev.yml \
-	-f docker-compose.ngrok.yml
+COMPOSE     = docker compose -f docker-compose.yml
+COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.ngrok.yml
+DOMAIN     ?= gramly.tech
 
-COMPOSE_PROD = docker compose \
-	-f docker-compose.yml
+.PHONY: dev dev-down \
+        prod prod-down prod-build \
+        logs logs-web logs-spam \
+        cert-renew webhook-set webhook-info webhook-del \
+        crm-setup ps shell-web shell-spam
 
-# ── Dev targets ───────────────────────────────────────────────────────────────
+# ── Dev (local, one command) ──────────────────────────────────────────────────
 
-## Start local dev stack (webhook-only, test bot, ngrok tunnel)
 dev:
 	@bash scripts/dev_up.sh
 
-## Stop local dev stack and remove test bot webhook
 dev-down:
 	@bash scripts/dev_down.sh
 
-## Follow logs of web + celery_worker (dev)
-logs:
-	$(COMPOSE_DEV) logs -f web celery_worker
+# ── Production (VPS, one command) ────────────────────────────────────────────
 
-## Open MinIO console in browser (dev only — local S3 UI at localhost:9001)
-minio-console:
-	@echo "MinIO Console: http://localhost:9001"
-	@open http://localhost:9001 2>/dev/null || xdg-open http://localhost:9001 2>/dev/null || true
-
-# ── Prod targets ──────────────────────────────────────────────────────────────
-
-## Start production stack (Let's Encrypt SSL, registers webhook)
 prod:
 	@bash scripts/prod_up.sh
 
-## Stop production stack and remove prod bot webhook
 prod-down:
 	@bash scripts/prod_down.sh
 
-## Follow logs of web + celery_worker (prod)
-logs-prod:
-	$(COMPOSE_PROD) logs -f web celery_worker
+prod-build:
+	$(COMPOSE) build --pull
 
-## Force Let's Encrypt certificate renewal
-prod-renew-cert:
-	$(COMPOSE_PROD) exec certbot certbot renew --force-renewal
+# ── Let's Encrypt renewal ─────────────────────────────────────────────────────
 
-# ── Shared targets ────────────────────────────────────────────────────────────
+cert-renew:
+	$(COMPOSE) exec certbot certbot renew --quiet
 
-## Show current Telegram webhook info (dev bot)
+# ── Logs ──────────────────────────────────────────────────────────────────────
+
+logs:
+	$(COMPOSE) logs -f web celery_worker
+
+logs-web:
+	$(COMPOSE) logs -f web
+
+logs-spam:
+	$(COMPOSE) logs -f spam-backend spam-frontend
+
+# ── Webhook management ────────────────────────────────────────────────────────
+
+webhook-set:
+	$(COMPOSE) exec web python manage.py setup_webhook \
+		--url https://$(DOMAIN)/bot/webhook/
+
 webhook-info:
-	$(COMPOSE_DEV) exec web python manage.py setup_webhook --info
+	$(COMPOSE) exec web python manage.py setup_webhook --info
 
-## Show current Telegram webhook info (prod bot)
-webhook-info-prod:
-	$(COMPOSE_PROD) exec web python manage.py setup_webhook --info
+webhook-del:
+	$(COMPOSE) exec web python manage.py setup_webhook --delete
 
-## Setup CRM workspace for dev. Add owner: make crm-setup OWNER=<telegram_id>
+# ── CRM first-run setup ───────────────────────────────────────────────────────
+
 crm-setup:
-	$(COMPOSE_DEV) exec web python manage.py setup_crm $(if $(OWNER),--add-owner $(OWNER),)
+	@[ "$(OWNER)" ] || (echo "Usage: make crm-setup OWNER=<telegram_id>"; exit 1)
+	$(COMPOSE) exec web python manage.py setup_crm --owner $(OWNER)
 
-## Setup CRM workspace for prod. Add owner: make crm-setup-prod OWNER=<telegram_id>
-crm-setup-prod:
-	$(COMPOSE_PROD) exec web python manage.py setup_crm $(if $(OWNER),--add-owner $(OWNER),)
+# ── Utility ───────────────────────────────────────────────────────────────────
 
-## Show available targets
-help:
-	@grep -E '^##' Makefile | sed 's/^## //'
+ps:
+	$(COMPOSE) ps
+
+shell-web:
+	$(COMPOSE) exec web bash
+
+shell-spam:
+	$(COMPOSE) exec spam-backend bash

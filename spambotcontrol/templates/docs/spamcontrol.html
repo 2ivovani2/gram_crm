@@ -1,0 +1,169 @@
+{% extends "docs/base.html" %}
+{% block title %}Кампании и рассылки{% endblock %}
+{% block nav_spam %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">Кампании</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Кампании и рассылки</h1>
+<p class="page-lead">Кампания — центральный объект AutoSending. Она связывает аккаунты, каналы и шаблоны сообщений в единый процесс рассылки. Здесь описано всё об управлении кампаниями.</p>
+
+<h2 class="section-title"><span class="icon">🗂️</span> Как устроена кампания</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">👤</div>
+    <div class="card-title">Аккаунты</div>
+    <div class="card-text">Telegram-профили, от имени которых отправляются сообщения. У одной кампании может быть несколько аккаунтов — они работают параллельно.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📢</div>
+    <div class="card-title">Каналы</div>
+    <div class="card-text">Telegram-каналы или чаты назначения. Система перебирает каналы поочерёдно для каждого аккаунта.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">💬</div>
+    <div class="card-title">Шаблоны</div>
+    <div class="card-text">Тексты сообщений. При каждой отправке система выбирает случайный шаблон из прикреплённого набора.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">⏱️</div>
+    <div class="card-title">Задержка</div>
+    <div class="card-text">Диапазон паузы между отправками (в секундах). Случайное значение из диапазона min–max. Это защищает аккаунты от блокировки.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">➕</span> Создание кампании</h2>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Откройте раздел «Кампании»</div>
+      <div class="step-text">В левом меню выберите «Кампании» → нажмите кнопку «Создать кампанию».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Заполните параметры</div>
+      <div class="step-text">
+        <strong>Название</strong> — произвольное, для вашего удобства.<br>
+        <strong>Задержка мин/макс</strong> — рекомендуем 30–120 секунд. Слишком короткая задержка увеличивает риск блокировки аккаунта.
+      </div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Выберите аккаунты, каналы и шаблоны</div>
+      <div class="step-text">Из списков выберите нужные объекты. Каждый аккаунт и каждый канал могут быть в нескольких кампаниях одновременно.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Сохраните и запустите</div>
+      <div class="step-text">После сохранения кампания будет в статусе <span class="badge badge-amber">idle</span>. Нажмите «Запустить» — статус изменится на <span class="badge badge-green">running</span> и начнётся отправка.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">🔄</span> Статусы кампании</h2>
+
+<div class="table-wrap"><table class="role-table">
+  <thead><tr><th>Статус</th><th>Что означает</th><th>Действие</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge badge-amber">idle</span></td>
+      <td>Кампания создана, не запущена</td>
+      <td>Нажмите «Запустить»</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-green">running</span></td>
+      <td>Кампания активна — идёт отправка</td>
+      <td>Нажмите «Остановить» для паузы</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-blue">stopped</span></td>
+      <td>Кампания остановлена вручную</td>
+      <td>Можно запустить снова</td>
+    </tr>
+  </tbody>
+</table></div>
+
+<h2 class="section-title"><span class="icon">📊</span> Мониторинг в реальном времени</h2>
+<p>Dashboard отображает статистику и ленту событий с задержкой в несколько секунд:</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">📈</div>
+    <div class="card-title">Счётчики</div>
+    <div class="card-text">Число активных аккаунтов, запущенных кампаний и суммарное количество отправленных сообщений за всё время.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">⚡</div>
+    <div class="card-title">График активности</div>
+    <div class="card-text">График успешных отправок по времени — показывает интенсивность работы кампаний.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📋</div>
+    <div class="card-title">Лента событий</div>
+    <div class="card-text">Каждое действие каждого аккаунта: вступление в канал, отправка сообщения, ошибка — с временем и деталями.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">⚠️</span> Управление ошибками</h2>
+<p>В ленте событий на Dashboard ошибки подсвечиваются красным. Наиболее частые причины:</p>
+
+<div class="table-wrap"><table class="role-table">
+  <thead><tr><th>Ошибка</th><th>Причина</th><th>Что делать</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>FloodWaitError</code></td>
+      <td>Telegram требует паузу — слишком частые отправки</td>
+      <td>Увеличьте задержку в настройках кампании</td>
+    </tr>
+    <tr>
+      <td><code>UserBannedInChannel</code></td>
+      <td>Аккаунт забанен в конкретном канале</td>
+      <td>Уберите канал из списка или замените аккаунт</td>
+    </tr>
+    <tr>
+      <td><code>SessionExpired</code></td>
+      <td>Сессия аккаунта устарела — нужна повторная верификация</td>
+      <td>В разделе «Аккаунты» пройдите верификацию повторно</td>
+    </tr>
+    <tr>
+      <td><code>AccountBanned</code></td>
+      <td>Аккаунт заблокирован Telegram</td>
+      <td>Удалите аккаунт из кампании, добавьте новый</td>
+    </tr>
+  </tbody>
+</table></div>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Рекомендованные настройки задержки</div>
+    Для комфортной долгосрочной работы: задержка <strong>60–180 секунд</strong>, не более 1–2 аккаунтов на канал в одной кампании. Это существенно увеличивает срок жизни аккаунтов.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">✏️</span> Редактирование кампании</h2>
+<p>Кампанию можно редактировать в любой момент — даже во время работы. Изменения применятся при следующем цикле отправки:</p>
+<ul style="margin:0 0 16px 20px;font-size:14.5px;color:var(--text2);line-height:2.1">
+  <li>Добавить или убрать аккаунты из кампании</li>
+  <li>Добавить или убрать каналы</li>
+  <li>Добавить или убрать шаблоны сообщений</li>
+  <li>Изменить задержку</li>
+</ul>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Удаление кампании</div>
+    При удалении кампании удаляются её настройки, но не сами аккаунты, каналы и шаблоны — они продолжают существовать как независимые объекты.
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,188 @@
+{% extends "docs/base.html" %}
+{% block title %}AutoSending: быстрый старт{% endblock %}
+{% block nav_guide %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">AutoSending: старт</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">AutoSending: быстрый старт</h1>
+<p class="page-lead">Полный цикл от первого входа до запущенной кампании. Пройдите шаги по порядку — это займёт около 10 минут.</p>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Перед началом</div>
+    Вам понадобятся API credentials для каждого Telegram-аккаунта: <strong>api_id</strong> и <strong>api_hash</strong>. Их можно получить на <code>my.telegram.org</code> в разделе «API development tools».
+  </div>
+</div>
+
+<!-- ── Шаг 1 ──────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">1️⃣</span> Вход в систему</h2>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Откройте AutoSending</div>
+      <div class="step-text">Перейдите по ссылке в боковом меню «AutoSending ↗» или напрямую на <code>/spam/</code>. Вас перенаправят на страницу входа.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Войдите через Telegram</div>
+      <div class="step-text">Нажмите кнопку «Войти через Telegram». Telegram откроет окно подтверждения — нажмите «Confirm». Вход произойдёт автоматически.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Попадёте на Dashboard</div>
+      <div class="step-text">Главная страница показывает статистику в реальном времени: активные аккаунты, запущенные кампании, число отправленных сообщений и живую ленту событий.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Шаг 2 ──────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">2️⃣</span> Добавление Telegram-аккаунтов</h2>
+<p>Аккаунты — это Telegram-профили, от имени которых будут отправляться сообщения. Добавьте хотя бы один перед созданием кампании.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в раздел «Аккаунты»</div>
+      <div class="step-text">В левом меню выберите «Аккаунты» → нажмите кнопку «Добавить аккаунт».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Введите API credentials</div>
+      <div class="step-text">Заполните поля: <strong>api_id</strong>, <strong>api_hash</strong> и <strong>номер телефона</strong> (в формате +7...). Эти данные берутся из <code>my.telegram.org</code>.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Пройдите верификацию</div>
+      <div class="step-text">Система отправит код подтверждения на указанный номер. Введите код — аккаунт перейдёт в статус <span class="badge badge-green">active</span>. Если включена двухфакторная аутентификация — введите пароль.</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout warn">
+  <span class="callout-icon">⚠️</span>
+  <div class="callout-body">
+    <div class="callout-title">Статус аккаунта важен</div>
+    Только аккаунты со статусом <strong>active</strong> участвуют в кампаниях. Аккаунты в статусе <strong>pending</strong> или <strong>error</strong> отправлять сообщения не могут.
+  </div>
+</div>
+
+<!-- ── Шаг 3 ──────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">3️⃣</span> Добавление каналов</h2>
+<p>Каналы — это Telegram-каналы или чаты, в которые будут отправляться сообщения.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в раздел «Каналы»</div>
+      <div class="step-text">В левом меню выберите «Каналы» → нажмите «Добавить канал».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Введите ссылку на канал</div>
+      <div class="step-text">Вставьте ссылку в формате <code>https://t.me/channelname</code> или <code>@channelname</code>. Система автоматически определит название канала и его ID.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Добавьте нужное количество каналов</div>
+      <div class="step-text">Можно добавить любое число каналов. Один канал может использоваться сразу в нескольких кампаниях.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Шаг 4 ──────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">4️⃣</span> Создание шаблонов сообщений</h2>
+<p>Шаблоны — это тексты, которые будут отправляться в каналы. Система выбирает их случайно из прикреплённого к кампании набора.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в раздел «Сообщения»</div>
+      <div class="step-text">В левом меню выберите «Сообщения» → нажмите «Создать шаблон».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Напишите текст сообщения</div>
+      <div class="step-text">Введите текст. Поддерживается обычный текст и базовое форматирование Telegram. Рекомендуется создавать несколько разных шаблонов — это снижает вероятность бана за одинаковые сообщения.</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Совет по шаблонам</div>
+    Создайте 3–5 разных шаблонов с одним смыслом, но разными словами. Кампания будет автоматически чередовать их — это выглядит естественнее.
+  </div>
+</div>
+
+<!-- ── Шаг 5 ──────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">5️⃣</span> Создание и запуск кампании</h2>
+<p>Кампания объединяет аккаунты, каналы и шаблоны сообщений в один работающий процесс.</p>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в раздел «Кампании»</div>
+      <div class="step-text">В левом меню выберите «Кампании» → нажмите «Создать кампанию».</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Задайте параметры</div>
+      <div class="step-text">Введите название, выберите аккаунты, каналы и шаблоны сообщений. Настройте задержку между сообщениями (минимум и максимум в секундах).</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Запустите кампанию</div>
+      <div class="step-text">Нажмите «Запустить» — кампания перейдёт в статус <span class="badge badge-green">running</span>. Аккаунты начнут отправку сообщений в указанные каналы с заданными задержками.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">Следите за результатами на Dashboard</div>
+      <div class="step-text">На главной странице в реальном времени обновляется счётчик отправленных сообщений и лента событий с каждым действием каждого аккаунта.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Итог ────────────────────────────────────────────────────────────────── -->
+<h2 class="section-title"><span class="icon">✅</span> Краткое резюме</h2>
+
+<div class="table-wrap"><table class="role-table">
+  <thead><tr><th>Шаг</th><th>Раздел</th><th>Что делаем</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1</strong></td><td>—</td><td>Войти через Telegram</td></tr>
+    <tr><td><strong>2</strong></td><td>Аккаунты</td><td>Добавить Telegram-аккаунты с api_id + api_hash + телефон</td></tr>
+    <tr><td><strong>3</strong></td><td>Каналы</td><td>Добавить каналы / чаты для рассылки</td></tr>
+    <tr><td><strong>4</strong></td><td>Сообщения</td><td>Создать 3–5 шаблонов текстов</td></tr>
+    <tr><td><strong>5</strong></td><td>Кампании</td><td>Создать кампанию, связать всё вместе, запустить</td></tr>
+    <tr><td><strong>6</strong></td><td>Dashboard</td><td>Следить за лентой событий и счётчиком отправок</td></tr>
+  </tbody>
+</table></div>
+
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "docs/base.html" %}
+{% block title %}Документация{% endblock %}
+{% block nav_index %}active{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Документация Gramly</h1>
+<p class="page-lead">Руководства по CRM и AutoSending — двум продуктам единой Telegram-экосистемы. Выберите нужный раздел или начните с быстрого старта AutoSending.</p>
+
+<div class="nav-cards-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:36px">
+
+  <a href="/docs/guide/" class="nav-card" style="border-color:rgba(240,180,41,.25);background:rgba(240,180,41,.04);grid-column:1/-1">
+    <div class="nav-card-icon" style="background:linear-gradient(135deg,var(--gold),var(--amber));color:#0b0a05">🚀</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title" style="color:var(--gold)">AutoSending: быстрый старт — читать первым</div>
+      <div class="nav-card-desc">Как подключить Telegram-аккаунты, добавить каналы, создать шаблоны сообщений и запустить первую кампанию. Весь цикл от старта до первой отправки.</div>
+    </div>
+  </a>
+
+  <a href="/docs/spamcontrol/" class="nav-card">
+    <div class="nav-card-icon">📢</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Кампании и рассылки</div>
+      <div class="nav-card-desc">Создание кампаний, управление аккаунтами и каналами, настройка задержек и мониторинг отправок в реальном времени</div>
+    </div>
+  </a>
+
+  <a href="/docs/rates/" class="nav-card">
+    <div class="nav-card-icon">⚙️</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Аккаунты и настройки</div>
+      <div class="nav-card-desc">Жизненный цикл аккаунта, статусы, лимиты, API-credentials и лучшие практики безопасной работы</div>
+    </div>
+  </a>
+
+  <a href="/docs/crm/" class="nav-card">
+    <div class="nav-card-icon">📊</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Работа с CRM</div>
+      <div class="nav-card-desc">Как вносить данные, читать отчёты, управлять пространствами и участниками</div>
+    </div>
+  </a>
+
+  <a href="/docs/faq/" class="nav-card">
+    <div class="nav-card-icon">❓</div>
+    <div class="nav-card-body">
+      <div class="nav-card-title">Частые вопросы</div>
+      <div class="nav-card-desc">Ответы на распространённые вопросы по AutoSending и CRM</div>
+    </div>
+  </a>
+
+</div>
+
+<h2 class="section-title"><span class="icon">🗺️</span> Как устроена система</h2>
+<p>Gramly — это два независимых инструмента, которые работают в одной экосистеме с единым входом через Telegram:</p>
+
+<div class="card-grid" style="margin-top:16px">
+  <div class="card">
+    <div class="card-icon">📤</div>
+    <div class="card-title">AutoSending</div>
+    <div class="card-text">Инструмент для автоматической Telegram-рассылки. Вы добавляете Telegram-аккаунты, задаёте каналы и шаблоны сообщений, запускаете кампанию — система рассылает самостоятельно с нужными задержками.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📊</div>
+    <div class="card-title">CRM (GRAMLY)</div>
+    <div class="card-text">Инструмент для ежедневного финансового учёта. Вносите данные по Cash Flow и заявкам — система автоматически считает итоги, формирует отчёты и уведомляет о пропущенных дедлайнах.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">👥</span> Кто чем пользуется</h2>
+
+<div class="table-wrap"><table class="role-table">
+  <thead>
+    <tr>
+      <th>Роль</th>
+      <th>AutoSending</th>
+      <th>CRM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="role-name">Владелец / Owner</span></td>
+      <td>Полный доступ — аккаунты, кампании, настройки</td>
+      <td>Полный доступ — все разделы, участники, планы</td>
+    </tr>
+    <tr>
+      <td><span class="role-name">Finance</span></td>
+      <td>—</td>
+      <td>Внесение Cash Flow данных</td>
+    </tr>
+    <tr>
+      <td><span class="role-name">Applications</span></td>
+      <td>—</td>
+      <td>Внесение данных по заявкам</td>
+    </tr>
+  </tbody>
+</table></div>
+
+<div class="callout tip">
+  <span class="callout-icon">💡</span>
+  <div class="callout-body">
+    <div class="callout-title">Единая авторизация</div>
+    Один вход через Telegram — и вы авторизованы сразу в обоих продуктах. Если уже вошли в CRM — документация открывается без повторного входа.
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dev overrides
+# • Targets the lightweight "dev" stage in each Dockerfile
+# • Bind-mounts source → hot-reload without rebuilding the image
+# • Exposes ports directly on the host (no nginx layer)
+# • No restart policy · no resource limits
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: autosending
+
+services:
+  backend:
+    build:
+      target: dev
+    # Source bind-mount → uvicorn --reload picks up every file change
+    # data/ lives inside the bind-mounted backend/ dir → accessible on host at backend/data/
+    volumes:
+      - ../../backend:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../backend/.env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  frontend:
+    build:
+      target: dev
+    # Mount the whole frontend/ so jsconfig.json, next.config.js etc. are visible.
+    # Anonymous volume on node_modules shields the image's copy from being overwritten.
+    volumes:
+      - ../../frontend:/app
+      - /app/node_modules   # image's node_modules, not host's
+      - /app/.next          # isolate .next cache inside the container
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../../backend/.env
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"   # avoids inotify issues inside Docker

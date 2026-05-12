@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Base — shared definitions across dev and prod.
+# All relative paths here are resolved from *this file's directory* (docker/compose/),
+# so "../../" reaches the project root.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: autosending
+
+volumes:
+  app_data:       # SQLite DB · Telethon sessions · log files
+    driver: local
+
+networks:
+  internal:
+    driver: bridge
+
+services:
+  backend:
+    build:
+      context: ../..                     # project root (build context)
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - app_data:/app/data
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: docker/frontend.Dockerfile
+    networks:
+      - internal
+    depends_on:
+      - backend

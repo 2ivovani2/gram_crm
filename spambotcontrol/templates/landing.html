@@ -1,0 +1,1139 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gramly — CRM и Telegram-автоматизация</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<!-- Lottie player for animated illustrations -->
+<script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0b0a05;
+  --bg2:       #131108;
+  --surface:   rgba(240,180,41,.04);
+  --surface-h: rgba(240,180,41,.07);
+  --border:    rgba(240,180,41,.1);
+  --border-h:  rgba(240,180,41,.3);
+  --gold:      #f0b429;
+  --gold-glow: rgba(240,180,41,.22);
+  --amber:     #e07d0a;
+  --amber-dim: rgba(224,125,10,.12);
+  --green:     #4ade80;
+  --red:       #f87171;
+  --text:      #f5f0e2;
+  --text2:     #c8bfa2;
+  --muted:     #7a7060;
+  --muted2:    #a09080;
+  --r:         12px;
+  --r-lg:      18px;
+  --r-xl:      24px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scroll animations ─────────────────────────────────────────────────────── */
+@keyframes fadeUp   { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:none; } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes floatY   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+@keyframes floatYs  { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-6px) rotate(2deg)} }
+@keyframes pulse    { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.7)} }
+@keyframes shimmer  { to { background-position:200% center; } }
+@keyframes spin     { to { transform:rotate(360deg); } }
+@keyframes blink    { 0%,90%,100%{transform:scaleY(1)} 95%{transform:scaleY(.1)} }
+@keyframes bounce   { 0%,100%{transform:translateY(0) scaleY(1)} 50%{transform:translateY(-12px) scaleY(.95)} }
+
+.reveal { opacity:0; transform:translateY(20px); transition: opacity .55s ease, transform .55s ease; }
+.reveal.visible { opacity:1; transform:none; }
+
+/* ── Backgrounds ───────────────────────────────────────────────────────────── */
+.bg-fixed {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  overflow: hidden;
+}
+.bg-glow-1 {
+  position: absolute;
+  width: 900px; height: 900px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.055) 0%, transparent 65%);
+  top: -350px; left: -250px;
+  animation: floatY 18s ease-in-out infinite;
+}
+.bg-glow-2 {
+  position: absolute;
+  width: 700px; height: 700px;
+  background: radial-gradient(ellipse, rgba(224,125,10,.04) 0%, transparent 65%);
+  bottom: -200px; right: -200px;
+  animation: floatY 22s 4s ease-in-out infinite reverse;
+}
+.bg-dots {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(240,180,41,.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, black 20%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 65% at 50% 0%, black 20%, transparent 100%);
+}
+
+.wrap { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ── Nav ───────────────────────────────────────────────────────────────────── */
+nav {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px; padding: 0 clamp(20px, 4vw, 56px);
+  background: rgba(11,10,5,.88);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--text);
+  font-weight: 800; font-size: .9rem; letter-spacing: -.025em;
+  flex-shrink: 0;
+}
+.logo-mark {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--amber) 100%);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 16px var(--gold-glow);
+  font-size: 17px;
+}
+
+.nav-center { display: flex; align-items: center; gap: 2px; }
+.nav-link {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; color: var(--muted2);
+  border-radius: 8px; font-size: .8rem; font-weight: 500; text-decoration: none;
+  transition: color .18s, background .18s;
+}
+.nav-link svg { opacity: .6; transition: opacity .18s; }
+.nav-link:hover { color: var(--text); background: var(--surface-h); }
+.nav-link:hover svg { opacity: 1; }
+
+/* ── Nav divider ─── */
+.nav-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+.nav-right { display: flex; align-items: center; gap: 6px; }
+.nav-btn {
+  display: flex; align-items: center; gap: 6px; padding: 7px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted2); border-radius: 8px;
+  font-size: .8rem; font-weight: 600; text-decoration: none;
+  transition: all .18s; white-space: nowrap;
+}
+.nav-btn svg { opacity: .7; transition: opacity .18s; }
+.nav-btn:hover { background: var(--surface-h); border-color: var(--border-h); color: var(--text); }
+.nav-btn:hover svg { opacity: 1; }
+.nav-btn-primary {
+  background: linear-gradient(135deg, var(--gold) 0%, var(--amber) 100%);
+  color: #0b0a05; border: none;
+  box-shadow: 0 2px 14px var(--gold-glow);
+}
+.nav-btn-primary svg { opacity: 1; }
+.nav-btn-primary:hover {
+  color: #0b0a05;
+  box-shadow: 0 4px 22px rgba(240,180,41,.45);
+  transform: translateY(-1px);
+}
+
+/* ── Hero ──────────────────────────────────────────────────────────────────── */
+.hero {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(32px, 5vw, 72px); align-items: center;
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: clamp(64px, 10vh, 112px) clamp(20px, 4vw, 56px) clamp(48px, 8vh, 88px);
+}
+
+.hero-content { display: flex; flex-direction: column; }
+
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 14px 5px 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 100px; font-size: .72rem; font-weight: 700;
+  color: var(--gold); margin-bottom: 22px; align-self: flex-start;
+  animation: fadeUp .5s ease both;
+}
+.eyebrow-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--gold); box-shadow: 0 0 8px var(--gold);
+  animation: pulse 2.5s ease infinite;
+}
+
+.hero-h1 {
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 900; line-height: 1.07; letter-spacing: -.04em;
+  color: var(--text); margin-bottom: 20px;
+  animation: fadeUp .5s .05s ease both;
+}
+.hero-h1 .grad {
+  background: linear-gradient(90deg, var(--gold) 0%, var(--amber) 50%, var(--gold) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 5s linear infinite;
+}
+
+.hero-sub {
+  font-size: clamp(.88rem, 1.4vw, 1rem);
+  color: var(--muted2); line-height: 1.8;
+  max-width: 440px; margin-bottom: 36px;
+  animation: fadeUp .5s .1s ease both;
+}
+
+.hero-btns {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  animation: fadeUp .5s .16s ease both;
+}
+
+.btn-hero-primary {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 28px;
+  background: var(--gold); color: #0b0a05;
+  border-radius: var(--r); font-size: .9rem; font-weight: 700;
+  text-decoration: none; overflow: hidden;
+  transition: transform .2s, box-shadow .2s;
+  box-shadow: 0 4px 24px var(--gold-glow);
+}
+.btn-hero-primary::after {
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(135deg, rgba(255,255,255,.22), transparent 60%);
+  opacity:0; transition: opacity .2s;
+}
+.btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(240,180,41,.45); }
+.btn-hero-primary:hover::after { opacity:1; }
+.btn-hero-primary:active { transform: translateY(0); }
+
+.btn-hero-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 13px 22px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted2); border-radius: var(--r);
+  font-size: .9rem; font-weight: 600; text-decoration: none;
+  transition: background .2s, border-color .2s, color .2s, transform .2s;
+}
+.btn-hero-secondary:hover {
+  background: var(--surface-h); border-color: var(--border-h);
+  color: var(--text); transform: translateY(-2px);
+}
+
+/* ── Hero Visual (Lottie + dashboard) ─────────────────────────────────────── */
+.hero-visual {
+  position: relative;
+  animation: fadeUp .55s .22s ease both;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+
+/* ── Cubigator-style animated character ────────────────────────────────────── */
+/* Drop your Cubigator .lottie or .json into static/ and swap out the CSS below */
+.lottie-wrap {
+  position: relative;
+  width: 100%; max-width: 280px;
+  margin: 0 auto;
+}
+
+.lottie-wrap lottie-player {
+  width: 100%; height: 240px;
+}
+
+/* lottie-wrap centers the player */
+.lottie-wrap lottie-player { display: block; margin: 0 auto; }
+
+/* Floating particles around character */
+.sparkle {
+  position: absolute;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: .7;
+}
+.sparkle-1 { top: 10%; left: 5%;  animation: floatYs 3.5s ease-in-out infinite; }
+.sparkle-2 { top: 20%; right: 8%; width:5px; height:5px; background:var(--amber); animation: floatYs 4.2s .8s ease-in-out infinite; }
+.sparkle-3 { bottom: 25%; left: 10%; width:6px; height:6px; animation: floatYs 3.8s 1.4s ease-in-out infinite; }
+.sparkle-star {
+  position: absolute;
+  color: var(--gold); font-size: 14px;
+  animation: floatYs 4s .3s ease-in-out infinite;
+}
+.sparkle-star.s1 { top: 5%;  right: 15%; }
+.sparkle-star.s2 { bottom: 20%; right: 5%; font-size: 10px; animation-delay: 1.2s; }
+
+/* ── Dashboard mockup ─────────────────────────────────────────────────────── */
+.mock-window {
+  background: rgba(19,17,8,.97);
+  border: 1px solid rgba(240,180,41,.14);
+  border-radius: var(--r-xl); overflow: hidden;
+  box-shadow:
+    0 40px 80px rgba(0,0,0,.6),
+    0 0 0 1px rgba(240,180,41,.05),
+    inset 0 1px 0 rgba(255,255,255,.04);
+  width: 100%;
+}
+.mock-titlebar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(240,180,41,.08);
+  background: rgba(0,0,0,.3);
+}
+.mock-dots { display: flex; gap: 6px; }
+.mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+.mock-dot.r { background: #ff5f57; } .mock-dot.y { background: #ffbd2e; } .mock-dot.g { background: #28ca42; }
+.mock-label { font-size: .68rem; font-weight: 600; color: var(--muted); margin: 0 auto; }
+
+.mock-body { padding: 14px; }
+.mock-kpi { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; margin-bottom: 12px; }
+.mock-kpi-item {
+  padding: 10px 11px; border-radius: 9px;
+  background: rgba(240,180,41,.04); border: 1px solid rgba(240,180,41,.1);
+}
+.mock-kpi-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+.mock-kpi-val { font-size: .95rem; font-weight: 800; line-height: 1; }
+.c-gold  { color: var(--gold); }
+.c-green { color: var(--green); }
+.c-amber { color: var(--amber); }
+
+.mock-chart { display: flex; align-items: flex-end; gap: 4px; height: 50px; margin-bottom: 12px; padding: 0 2px; }
+.mock-bar {
+  flex: 1; border-radius: 3px 3px 0 0;
+  background: linear-gradient(to top, rgba(240,180,41,.25), rgba(240,180,41,.45));
+}
+.mock-bar.hi {
+  background: linear-gradient(to top, var(--gold), #f5c844);
+  box-shadow: 0 0 10px rgba(240,180,41,.3);
+}
+
+.mock-rows { display: flex; flex-direction: column; gap: 5px; }
+.mock-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: 8px;
+  background: rgba(240,180,41,.03); border: 1px solid rgba(240,180,41,.07);
+}
+.mock-av {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .6rem; font-weight: 700; flex-shrink: 0;
+}
+.mock-name { flex: 1; font-size: .68rem; color: var(--muted2); }
+.mock-badge {
+  font-size: .6rem; font-weight: 700; padding: 2px 7px; border-radius: 100px;
+}
+.mock-badge.ok  { background: rgba(74,222,128,.12); color: var(--green); }
+.mock-badge.amt { background: rgba(240,180,41,.12); color: var(--gold); }
+
+/* Floating pills */
+.pill {
+  position: absolute;
+  background: rgba(19,17,8,.96); border: 1px solid;
+  border-radius: 100px; padding: 7px 14px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: .7rem; font-weight: 600; color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,.45); white-space: nowrap;
+}
+.pill-1 { bottom: -14px; left: -16px; border-color: rgba(74,222,128,.28); animation: floatY 4s ease-in-out infinite; }
+.pill-2 { top: 16px; right: -16px; border-radius: var(--r); border-color: rgba(240,180,41,.28); animation: floatY 5s 1s ease-in-out infinite; }
+.pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s ease infinite; }
+
+/* ── Metrics strip ─────────────────────────────────────────────────────────── */
+.metrics {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(48px,7vh,80px);
+}
+.metrics-inner {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  background: var(--border); gap: 1px;
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden;
+}
+.metric {
+  background: var(--bg2); padding: 22px 20px; text-align: center;
+  transition: background .2s;
+}
+.metric:hover { background: rgba(240,180,41,.05); }
+.metric-v {
+  font-size: 1.55rem; font-weight: 800; letter-spacing: -.03em;
+  color: var(--text); line-height: 1; margin-bottom: 5px;
+}
+.metric-v em { font-style: normal; color: var(--gold); }
+.metric-l { font-size: .63rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ── Section header ─────────────────────────────────────────────────────────── */
+.sec-head { text-align: center; margin-bottom: 52px; }
+.sec-tag {
+  display: inline-block; margin-bottom: 14px;
+  padding: 4px 14px; border-radius: 100px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: .7rem; font-weight: 700; color: var(--gold);
+  text-transform: uppercase; letter-spacing: .1em;
+}
+.sec-h2 {
+  font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+  font-weight: 800; letter-spacing: -.03em; color: var(--text); line-height: 1.12;
+}
+.sec-h2 em { font-style: normal; color: var(--gold); }
+.sec-p { font-size: .95rem; color: var(--muted2); margin-top: 14px; line-height: 1.7; max-width: 520px; margin-left: auto; margin-right: auto; }
+
+/* ── Features grid ──────────────────────────────────────────────────────────── */
+.features {
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,96px);
+  max-width: 1200px; margin: 0 auto; width: 100%;
+}
+.feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+.feat-card {
+  position: relative; overflow: hidden;
+  padding: 28px 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  transition: border-color .25s, background .25s, transform .25s, box-shadow .25s;
+  display: flex; flex-direction: column;
+}
+.feat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg, transparent, rgba(240,180,41,.35), transparent);
+  opacity: 0; transition: opacity .3s;
+}
+.feat-card:hover {
+  border-color: rgba(240,180,41,.22); background: rgba(240,180,41,.04);
+  transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,.35);
+}
+.feat-card:hover::before { opacity: 1; }
+.feat-num { font-size: .62rem; font-weight: 800; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 14px; }
+.feat-ico {
+  width: 42px; height: 42px; border-radius: 11px; margin-bottom: 16px;
+  background: var(--surface-h); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .2s, background .2s;
+}
+.feat-card:hover .feat-ico { background: var(--surface); border-color: rgba(240,180,41,.25); }
+.feat-ico svg { width: 20px; height: 20px; fill: none; stroke: var(--gold); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.feat-h3 { font-size: .95rem; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+.feat-p  { font-size: .82rem; color: var(--muted2); line-height: 1.7; }
+
+/* ── Highlight sections ─────────────────────────────────────────────────────── */
+.highlight-section {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,96px);
+}
+.hl-card {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: clamp(32px,5vw,64px); align-items: center;
+  padding: clamp(40px,5vw,60px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: inset 0 1px 0 rgba(240,180,41,.04);
+}
+.hl-card.reverse { }
+.hl-card::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 60% 50% at 100% 0%, rgba(240,180,41,.05), transparent 60%);
+}
+.hl-card.reverse::before {
+  background: radial-gradient(ellipse 60% 50% at 0% 100%, rgba(240,180,41,.05), transparent 60%);
+}
+.hl-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 18px; padding: 5px 14px 5px 10px;
+  background: var(--surface-h); border: 1px solid var(--border);
+  border-radius: 100px; font-size: .72rem; font-weight: 700; color: var(--gold);
+  align-self: flex-start;
+}
+.hl-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px var(--gold); animation: pulse 2s ease infinite; }
+.hl-h2 {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-weight: 800; letter-spacing: -.03em; line-height: 1.15;
+  color: var(--text); margin-bottom: 16px;
+}
+.hl-h2 span { color: var(--gold); }
+.hl-p { font-size: .92rem; color: var(--muted2); line-height: 1.78; margin-bottom: 24px; max-width: 400px; }
+.hl-bullets { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+.hl-bullet {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: .85rem; color: var(--text2);
+}
+.hl-bullet-dot {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+  background: var(--surface-h); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--gold);
+}
+.hl-btns { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ── Mini mockup (right side of hl-card) ─────────────────────────────────── */
+.hl-mock {
+  position: relative; z-index: 1;
+}
+.hl-mock-win {
+  background: rgba(19,17,8,.97);
+  border: 1px solid rgba(240,180,41,.14);
+  border-radius: 20px; overflow: hidden;
+  box-shadow: 0 28px 64px rgba(0,0,0,.5), 0 0 0 1px rgba(240,180,41,.04);
+}
+.hl-mock-hdr {
+  padding: 11px 15px;
+  background: rgba(240,180,41,.05);
+  border-bottom: 1px solid rgba(240,180,41,.1);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.hl-mock-title { font-size: .7rem; font-weight: 700; color: var(--gold); }
+.hl-mock-date  { font-size: .63rem; color: var(--muted); }
+.hl-mock-body  { padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+.hl-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 13px; border-radius: 10px;
+  background: rgba(240,180,41,.03); border: 1px solid rgba(240,180,41,.07);
+}
+.hl-row-lbl { font-size: .73rem; color: var(--muted2); }
+.hl-row-val { font-size: .85rem; font-weight: 700; }
+.pos { color: var(--green); } .neg { color: var(--red); } .hl { color: var(--gold); }
+
+/* ── How it works ─────────────────────────────────────────────────────────── */
+.how {
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,96px);
+  max-width: 1000px; margin: 0 auto; width: 100%;
+}
+.how-steps { display: flex; flex-direction: column; gap: 0; }
+.how-step {
+  display: flex; gap: 28px; align-items: flex-start;
+  padding: 28px 0; border-bottom: 1px solid var(--border);
+  transition: all .2s;
+}
+.how-step:last-child { border-bottom: none; }
+.how-step:hover { padding-left: 6px; }
+.how-num-wrap {
+  display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
+}
+.how-num {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold), var(--amber));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 800; color: #0b0a05;
+  box-shadow: 0 4px 16px var(--gold-glow); flex-shrink: 0;
+}
+.how-line { flex: 1; width: 1px; background: var(--border); margin-top: 8px; }
+.how-step:last-child .how-line { display: none; }
+.how-body { padding-top: 10px; }
+.how-h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.how-p  { font-size: .875rem; color: var(--muted2); line-height: 1.7; }
+
+/* ── Lottie empty/success states container ────────────────────────────────── */
+.lottie-small {
+  width: 80px; height: 80px; margin-bottom: 12px;
+}
+
+/* ── CTA ───────────────────────────────────────────────────────────────────── */
+.cta {
+  max-width: 1200px; margin: 0 auto; width: 100%;
+  padding: 0 clamp(20px,4vw,56px) clamp(64px,10vh,112px);
+}
+.cta-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(135deg, rgba(240,180,41,.06) 0%, rgba(224,125,10,.06) 100%);
+  border: 1px solid rgba(240,180,41,.2);
+  border-radius: 32px; padding: clamp(48px,7vw,72px);
+  text-align: center;
+  box-shadow: 0 0 100px rgba(240,180,41,.05), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.cta-card::before {
+  content:''; position:absolute;
+  width: 600px; height: 600px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.08) 0%, transparent 65%);
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  pointer-events: none;
+}
+.cta-eyebrow {
+  display: inline-block; margin-bottom: 20px;
+  padding: 4px 14px; border-radius: 100px;
+  background: var(--surface-h); border: 1px solid var(--border);
+  font-size: .7rem; font-weight: 700; color: var(--gold);
+  text-transform: uppercase; letter-spacing: .1em;
+  position: relative;
+}
+.cta-h2 {
+  font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 800;
+  letter-spacing: -.04em; color: var(--text); margin-bottom: 16px;
+  line-height: 1.1; position: relative;
+}
+.cta-h2 .grad {
+  background: linear-gradient(90deg, var(--gold) 0%, var(--amber) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.cta-p { font-size: .95rem; color: var(--muted2); line-height: 1.7; max-width: 440px; margin: 0 auto 36px; position: relative; }
+.cta-btns { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; position: relative; }
+
+.btn-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 30px;
+  background: var(--gold); color: #0b0a05;
+  border-radius: var(--r-lg); font-size: .9rem; font-weight: 700;
+  text-decoration: none; box-shadow: 0 4px 24px var(--gold-glow);
+  transition: transform .2s, box-shadow .2s, background .2s;
+}
+.btn-cta:hover {
+  background: #f5c040; transform: translateY(-2px);
+  box-shadow: 0 8px 36px rgba(240,180,41,.5);
+}
+.btn-cta-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 13px 24px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--muted2); border-radius: var(--r-lg);
+  font-size: .9rem; font-weight: 600; text-decoration: none;
+  transition: all .2s;
+}
+.btn-cta-ghost:hover { background: var(--surface-h); border-color: var(--border-h); color: var(--text); transform: translateY(-2px); }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 28px clamp(20px,4vw,56px);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  font-size: .8rem; color: var(--muted);
+}
+.footer-logo { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted2); text-decoration: none; }
+.footer-links { display: flex; align-items: center; gap: 20px; }
+.footer-links a { color: var(--muted); text-decoration: none; transition: color .15s; }
+.footer-links a:hover { color: var(--gold); }
+
+/* ── Animations utility ──────────────────────────────────────────────────── */
+.anim-d1 { animation-delay: .1s !important; }
+.anim-d2 { animation-delay: .2s !important; }
+.anim-d3 { animation-delay: .3s !important; }
+
+/* ── Hero character glow ─────────────────────────────────────────────────── */
+.hero-char-glow {
+  position: absolute; inset: -32px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.13) 0%, transparent 66%);
+  pointer-events: none; border-radius: 50%;
+}
+
+/* ── CTA split layout (character left, text right) ───────────────────────── */
+.cta-inner {
+  display: grid; grid-template-columns: auto 1fr;
+  gap: clamp(28px,5vw,60px); align-items: center;
+  position: relative;
+}
+.cta-char-col {
+  position: relative; display: flex;
+  justify-content: center; align-items: center;
+}
+.cta-char-col::before {
+  content:''; position:absolute; inset:-28px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.2) 0%, transparent 65%);
+  pointer-events: none;
+}
+.cta-text-col { text-align: left; }
+.cta-text-col .cta-eyebrow { display: inline-block; }
+.cta-text-col .cta-h2 { text-align: left; }
+.cta-text-col .cta-p   { text-align: left; margin-left: 0; margin-right: 0; }
+.cta-text-col .cta-btns { justify-content: flex-start; }
+
+/* ── Highlight section — character column ────────────────────────────────── */
+.hl-char-col {
+  display: flex; justify-content: center; align-items: center;
+  position: relative; min-height: 280px;
+}
+.hl-char-col::before {
+  content:''; position:absolute; inset:-24px;
+  background: radial-gradient(ellipse, rgba(240,180,41,.1) 0%, transparent 65%);
+  pointer-events: none; border-radius: 50%;
+}
+
+/* ── Floating status pills (for character sections) ─────────────────────── */
+.char-pill {
+  position: absolute;
+  background: rgba(19,17,8,.96); border: 1px solid;
+  border-radius: 100px; padding: 7px 14px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: .7rem; font-weight: 600; color: var(--text);
+  box-shadow: 0 8px 28px rgba(0,0,0,.45); white-space: nowrap;
+  pointer-events: none;
+}
+.char-pill-1 { bottom: 16px; left: -8px; border-color: rgba(74,222,128,.28); animation: floatY 4s ease-in-out infinite; }
+.char-pill-2 { top: 20px; right: -8px; flex-direction: column; align-items: flex-start; border-radius: 12px; border-color: rgba(240,180,41,.28); animation: floatY 5.5s 1s ease-in-out infinite; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; text-align: center; }
+  .hero-content { align-items: center; }
+  .hero-sub { max-width: 100%; }
+  .hero-btns { justify-content: center; }
+  .hero-visual { max-width: 460px; margin: 0 auto; }
+  .hl-card { grid-template-columns: 1fr; }
+  .hl-card .hl-mock { order: -1; }
+  .cta-inner { grid-template-columns: 1fr; }
+  .cta-char-col { margin: 0 auto 8px; }
+  .cta-text-col { text-align: center; }
+  .cta-text-col .cta-h2 { text-align: center; }
+  .cta-text-col .cta-p   { text-align: center; margin: 0 auto 36px; }
+  .cta-text-col .cta-btns { justify-content: center; }
+}
+@media (max-width: 700px) {
+  .feat-grid { grid-template-columns: 1fr 1fr; }
+  .metrics-inner { grid-template-columns: 1fr 1fr; }
+  .nav-center { display: none; }
+}
+@media (max-width: 480px) {
+  .feat-grid { grid-template-columns: 1fr; }
+  nav { padding: 0 16px; }
+  .hero { padding: 48px 16px 36px; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-fixed">
+  <div class="bg-glow-1"></div>
+  <div class="bg-glow-2"></div>
+</div>
+<div class="bg-dots"></div>
+
+<div class="wrap">
+
+<!-- ── Nav ─────────────────────────────────────────────────────────────────── -->
+<nav>
+  <a href="/" class="logo">
+    <div class="logo-mark">💛</div>
+    Gramly
+  </a>
+
+  <div class="nav-center">
+    <a href="/docs/" class="nav-link">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      Документация
+    </a>
+    <a href="/crm/login/" class="nav-link">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      CRM
+    </a>
+    <a href="https://spam.gramly.tech/" class="nav-link">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.5a19.79 19.79 0 01-3-8.63A2 2 0 012.18 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 9.1a16 16 0 006 6l.62-.62a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      AutoSending
+    </a>
+  </div>
+
+  <div class="nav-right">
+    <a href="https://spam.gramly.tech/" class="nav-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      AutoSending
+    </a>
+    <a href="/crm/login/" class="nav-btn nav-btn-primary">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      Войти в CRM
+    </a>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="eyebrow">
+      <div class="eyebrow-dot"></div>
+      Gramly — Telegram-экосистема
+    </div>
+
+    <h1 class="hero-h1">
+      CRM и автоматизация<br>
+      <span class="grad">в одном месте</span>
+    </h1>
+
+    <p class="hero-sub">
+      Gramly объединяет финансовый учёт, управление командой
+      и Telegram-автоматизацию рассылок в единой системе.
+      Один вход — два мощных инструмента.
+    </p>
+
+    <div class="hero-btns">
+      <a href="/crm/login/" class="btn-hero-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Открыть CRM
+      </a>
+      <a href="https://spam.gramly.tech/" class="btn-hero-secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        AutoSending
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Hero visual: character + dashboard mockup ──────────────────────── -->
+  <div class="hero-visual">
+    <div class="lottie-wrap" style="position:relative; margin-bottom: 16px;">
+      <div class="hero-char-glow"></div>
+      <lottie-player
+        src="{% static 'animations/croc_full.json' %}"
+        background="transparent"
+        speed="1"
+        style="width:320px;height:320px;margin:0 auto;position:relative;z-index:1"
+        loop autoplay
+      ></lottie-player>
+      <div class="sparkle sparkle-1"></div>
+      <div class="sparkle sparkle-2"></div>
+      <div class="sparkle sparkle-3"></div>
+      <div class="sparkle-star s1">✦</div>
+      <div class="sparkle-star s2">✦</div>
+    </div>
+
+    <!-- Dashboard mockup — autosending stats -->
+    <div style="position:relative;width:100%;">
+      <div class="mock-window">
+        <div class="mock-titlebar">
+          <div class="mock-dots"><div class="mock-dot r"></div><div class="mock-dot y"></div><div class="mock-dot g"></div></div>
+          <span class="mock-label">Gramly AutoSending — Dashboard</span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-kpi">
+            <div class="mock-kpi-item"><div class="mock-kpi-lbl">Аккаунтов</div><div class="mock-kpi-val c-gold">4</div></div>
+            <div class="mock-kpi-item"><div class="mock-kpi-lbl">Кампаний</div><div class="mock-kpi-val c-green">2</div></div>
+            <div class="mock-kpi-item"><div class="mock-kpi-lbl">Отправлено</div><div class="mock-kpi-val c-amber">1 847</div></div>
+          </div>
+          <div class="mock-chart">
+            <div class="mock-bar" style="height:30%"></div>
+            <div class="mock-bar" style="height:55%"></div>
+            <div class="mock-bar" style="height:45%"></div>
+            <div class="mock-bar hi" style="height:85%"></div>
+            <div class="mock-bar" style="height:65%"></div>
+            <div class="mock-bar" style="height:95%"></div>
+            <div class="mock-bar hi" style="height:100%"></div>
+          </div>
+          <div class="mock-rows">
+            <div class="mock-row">
+              <div class="mock-av" style="background:rgba(240,180,41,.15);color:#f0b429">A</div>
+              <span class="mock-name">@account_01</span>
+              <span class="mock-badge ok">✓ online</span>
+            </div>
+            <div class="mock-row">
+              <div class="mock-av" style="background:rgba(74,222,128,.1);color:#4ade80">C</div>
+              <span class="mock-name">Кампания «Весна»</span>
+              <span class="mock-badge amt">running</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pill pill-1">
+        <div class="pill-dot"></div>
+        <span>2 кампании активны</span>
+      </div>
+      <div class="pill pill-2" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;border-radius:12px">
+        <span style="font-size:.62rem;color:var(--muted)">Сегодня</span>
+        <span style="font-weight:800;color:var(--gold);font-size:.9rem">+312 сообщений</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Metrics strip ────────────────────────────────────────────────────────── -->
+<div class="metrics reveal">
+  <div class="metrics-inner">
+    <div class="metric">
+      <div class="metric-v">2 <em>продукта</em></div>
+      <div class="metric-l">CRM + AutoSending</div>
+    </div>
+    <div class="metric">
+      <div class="metric-v">Telegram<em>‑first</em></div>
+      <div class="metric-l">Единый вход везде</div>
+    </div>
+    <div class="metric">
+      <div class="metric-v">Real<em>‑time</em></div>
+      <div class="metric-l">Дашборд и аналитика</div>
+    </div>
+    <div class="metric">
+      <div class="metric-v"><em>∞</em> аккаунтов</div>
+      <div class="metric-l">Параллельных кампаний</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Features ──────────────────────────────────────────────────────────────── -->
+<section class="features reveal">
+  <div class="sec-head">
+    <div class="sec-tag">Возможности</div>
+    <h2 class="sec-h2">Всё для <em>Telegram-бизнеса</em></h2>
+    <p class="sec-p">CRM для финансового учёта и AutoSending для автоматизации рассылок — одна экосистема, единый вход.</p>
+  </div>
+
+  <div class="feat-grid">
+    <div class="feat-card">
+      <div class="feat-num">01</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      </div>
+      <h3 class="feat-h3">GRAMLY CRM</h3>
+      <p class="feat-p">Ежедневный финансовый учёт: Cash Flow, заявки, еженедельные планы, авто-отчёты в Telegram и Excel-экспорт всей истории.</p>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-num">02</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </div>
+      <h3 class="feat-h3">AutoSending</h3>
+      <p class="feat-p">Telegram-автоматизация: управление несколькими аккаунтами, подписка на каналы, шаблоны сообщений, запуск и мониторинг кампаний.</p>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-num">03</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      </div>
+      <h3 class="feat-h3">Мульти-аккаунт</h3>
+      <p class="feat-p">Несколько Telegram-аккаунтов работают параллельно. Верификация по коду, смена профиля, синхронизация статусов в реальном времени.</p>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-num">04</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      </div>
+      <h3 class="feat-h3">Аналитика и отчёты</h3>
+      <p class="feat-p">Дашборд с live-обновлением, история активности, Excel-экспорт по CRM, еженедельные планы с прогресс-трекингом.</p>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-num">05</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.5a19.79 19.79 0 01-3-8.63A2 2 0 012.18 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 9.1a16 16 0 006 6l.62-.62a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      </div>
+      <h3 class="feat-h3">Единая авторизация</h3>
+      <p class="feat-p">Telegram Login Widget во всей системе. Один аккаунт — вход в CRM и AutoSending. Никаких паролей, HMAC-верификация на бэкенде.</p>
+    </div>
+
+    <div class="feat-card">
+      <div class="feat-num">06</div>
+      <div class="feat-ico">
+        <svg viewBox="0 0 24 24"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </div>
+      <h3 class="feat-h3">Telegram-уведомления</h3>
+      <p class="feat-p">Автоматические отчёты CRM, дедлайн-напоминания и статусы кампаний приходят прямо в Telegram — без e-mail, без лишних инструментов.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── CRM Highlight ──────────────────────────────────────────────────────────── -->
+<section class="highlight-section reveal">
+  <div class="hl-card">
+    <div class="hl-content">
+      <div class="hl-tag"><div class="hl-tag-dot"></div> GRAMLY CRM</div>
+      <h2 class="hl-h2">Финансовый учёт<br><span>в одном окне</span></h2>
+      <p class="hl-p">
+        Cash Flow, ПП, Привата, Баланс КБ — всё заносится ежедневно.
+        Автоматический сводный отчёт в Telegram, дедлайн-напоминания, еженедельный план.
+      </p>
+      <div class="hl-bullets">
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Ежедневный Cash Flow: поступления, расходы, балансы</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Авто-генерация сводного отчёта в Telegram</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Недельные планы с прогресс-трекингом</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Excel-экспорт всей истории по рабочим пространствам</div>
+      </div>
+      <div class="hl-btns">
+        <a href="/crm/login/" class="btn-cta" style="padding:11px 22px;font-size:.85rem">Открыть CRM →</a>
+        <a href="/docs/crm/" class="btn-cta-ghost" style="padding:10px 18px;font-size:.85rem">Документация</a>
+      </div>
+    </div>
+
+    <div class="hl-mock">
+      <div class="hl-mock-win">
+        <div class="hl-mock-hdr">
+          <span class="hl-mock-title">💛 GRAMLY CRM — Cash Flow</span>
+          <span class="hl-mock-date">сегодня, 14:22</span>
+        </div>
+        <div class="hl-mock-body">
+          <div class="hl-row"><span class="hl-row-lbl">Поступления</span><span class="hl-row-val pos">+4 200 $</span></div>
+          <div class="hl-row"><span class="hl-row-lbl">Расходы</span><span class="hl-row-val neg">−1 380 $</span></div>
+          <div class="hl-row"><span class="hl-row-lbl">ПП</span><span class="hl-row-val hl">2 100 $</span></div>
+          <div class="hl-row"><span class="hl-row-lbl">Привата</span><span class="hl-row-val hl">1 450 $</span></div>
+          <div class="hl-row"><span class="hl-row-lbl">Баланс КБ</span><span class="hl-row-val" style="color:var(--muted2)">8 740 $</span></div>
+          <div style="padding:8px 0;display:flex;align-items:center;gap:8px;font-size:.72rem;color:var(--green)">
+            <div style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0"></div>
+            Оба блока внесены — отчёт сформирован
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AutoSending Highlight ─────────────────────────────────────────────────── -->
+<section class="highlight-section reveal">
+  <div class="hl-card reverse">
+    <div class="hl-mock hl-char-col" style="order:-1">
+      <lottie-player
+        src="{% static 'animations/croc_03.json' %}"
+        background="transparent"
+        speed="1"
+        style="width:260px;height:260px;margin:0 auto;position:relative;z-index:1"
+        loop autoplay
+      ></lottie-player>
+      <div class="char-pill char-pill-1">
+        <div style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0"></div>
+        4 аккаунта онлайн
+      </div>
+      <div class="char-pill char-pill-2">
+        <span style="font-size:.6rem;color:var(--muted);line-height:1.2">Кампания</span>
+        <span style="font-weight:800;color:var(--gold);font-size:.82rem">✓ Running</span>
+      </div>
+    </div>
+
+    <div class="hl-content">
+      <div class="hl-tag"><div class="hl-tag-dot"></div> AutoSending</div>
+      <h2 class="hl-h2">Telegram-рассылки<br><span>под контролем</span></h2>
+      <p class="hl-p">
+        Добавляй Telegram-аккаунты, настраивай каналы и шаблоны сообщений.
+        Запускай кампании с настраиваемыми задержками и следи за активностью в реальном времени.
+      </p>
+      <div class="hl-bullets">
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Несколько аккаунтов параллельно, верификация по коду</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Каналы, шаблоны сообщений, настройка задержек</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> Live-мониторинг: отправлено, ошибки, статус аккаунта</div>
+        <div class="hl-bullet"><div class="hl-bullet-dot">✓</div> История активности с фильтрацией по кампании</div>
+      </div>
+      <div class="hl-btns">
+        <a href="https://spam.gramly.tech/" class="btn-cta" style="padding:11px 22px;font-size:.85rem">Открыть AutoSending →</a>
+        <a href="/docs/autosending/" class="btn-cta-ghost" style="padding:10px 18px;font-size:.85rem">Документация</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How it works ─────────────────────────────────────────────────────────── -->
+<section class="how reveal" style="position:relative">
+  <lottie-player
+    src="{% static 'animations/croc_03.json' %}"
+    background="transparent"
+    speed="1"
+    style="position:absolute;top:4px;right:clamp(0px,2vw,24px);width:76px;height:76px;opacity:0.55;pointer-events:none"
+    loop autoplay
+  ></lottie-player>
+  <div class="sec-head">
+    <div class="sec-tag">Как это работает</div>
+    <h2 class="sec-h2">Запуск за <em>5 минут</em></h2>
+  </div>
+
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="how-num-wrap">
+        <div class="how-num">1</div>
+        <div class="how-line"></div>
+      </div>
+      <div class="how-body">
+        <h3 class="how-h3">Войди через Telegram</h3>
+        <p class="how-p">Один вход через Telegram Login Widget — работает и в CRM, и в AutoSending. Никаких паролей, авторизация через твой Telegram-аккаунт.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-num-wrap">
+        <div class="how-num">2</div>
+        <div class="how-line"></div>
+      </div>
+      <div class="how-body">
+        <h3 class="how-h3">Добавь Telegram-аккаунты в AutoSending</h3>
+        <p class="how-p">Введи номер телефона, получи код подтверждения — аккаунт готов к работе. Добавляй столько, сколько нужно для параллельных кампаний.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-num-wrap">
+        <div class="how-num">3</div>
+        <div class="how-line"></div>
+      </div>
+      <div class="how-body">
+        <h3 class="how-h3">Настрой каналы, шаблоны и кампанию</h3>
+        <p class="how-p">Добавь каналы для рассылки, создай шаблоны сообщений. Запусти кампанию — система автоматически распределит работу по аккаунтам с заданными задержками.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-num-wrap">
+        <div class="how-num">4</div>
+      </div>
+      <div class="how-body">
+        <h3 class="how-h3">Вноси финансы в CRM и смотри отчёты</h3>
+        <p class="how-p">Ежедневно вноси Cash Flow в CRM. Система автоматически формирует сводный отчёт, считает итоги по неделе и отправляет уведомления в Telegram.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA ──────────────────────────────────────────────────────────────────── -->
+<section class="cta reveal">
+  <div class="cta-card">
+    <div class="cta-inner">
+
+      <div class="cta-char-col">
+        <lottie-player
+          src="{% static 'animations/croc_wave.json' %}"
+          background="transparent"
+          speed="1"
+          style="width:280px;height:280px;position:relative;z-index:1"
+          loop autoplay
+        ></lottie-player>
+      </div>
+
+      <div class="cta-text-col">
+        <div class="cta-eyebrow">Готово к работе</div>
+        <h2 class="cta-h2">Начни прямо <span class="grad">сейчас</span></h2>
+        <p class="cta-p">
+          Войди в CRM для финансового учёта или запусти AutoSending для Telegram-рассылок.
+          Оба инструмента уже настроены и работают.
+        </p>
+        <div class="cta-btns">
+          <a href="/crm/login/" class="btn-cta">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+            </svg>
+            Открыть CRM
+          </a>
+          <a href="https://spam.gramly.tech/" class="btn-cta-ghost">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            AutoSending
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ────────────────────────────────────────────────────────────────── -->
+<footer>
+  <a href="/" class="footer-logo">
+    <span style="font-size:18px">💛</span>
+    Gramly
+  </a>
+  <div class="footer-links">
+    <a href="/crm/login/">CRM</a>
+    <a href="https://spam.gramly.tech/">AutoSending</a>
+    <a href="/docs/">Документация</a>
+  </div>
+  <span>© 2025 Gramly</span>
+</footer>
+
+</div><!-- /wrap -->
+
+<script>
+const reveals = document.querySelectorAll('.reveal');
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); } });
+}, { threshold: 0.08 });
+reveals.forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

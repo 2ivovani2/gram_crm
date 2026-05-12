@@ -1,0 +1,171 @@
+{% extends "docs/base.html" %}
+{% block title %}Аккаунты и настройки{% endblock %}
+{% block nav_rates %}active{% endblock %}
+{% block breadcrumb %}<span class="sep">/</span><span class="current">Аккаунты</span>{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Аккаунты и настройки</h1>
+<p class="page-lead">Telegram-аккаунты — основной рабочий инструмент AutoSending. Здесь описано, как их добавлять, какие статусы бывают, как продлить жизнь аккаунта и что делать при ошибках.</p>
+
+<h2 class="section-title"><span class="icon">🔑</span> API Credentials</h2>
+<p>Для добавления аккаунта нужны три данных:</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">🔢</div>
+    <div class="card-title">api_id</div>
+    <div class="card-text">Числовой идентификатор приложения. Уникален для каждого аккаунта. Получить на <code>my.telegram.org</code>.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🗝️</div>
+    <div class="card-title">api_hash</div>
+    <div class="card-text">Секретный хеш приложения — строка из 32 символов. Там же, на <code>my.telegram.org</code>.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📱</div>
+    <div class="card-title">Номер телефона</div>
+    <div class="card-text">Номер, на который зарегистрирован Telegram-аккаунт. Формат: <code>+7XXXXXXXXXX</code>.</div>
+  </div>
+</div>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">Откройте my.telegram.org</div>
+      <div class="step-text">Войдите под нужным Telegram-аккаунтом. Это важно — api_id и api_hash привязаны именно к этому аккаунту.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">Перейдите в «API development tools»</div>
+      <div class="step-text">Заполните форму создания приложения (название и платформа — любые). После создания вы увидите <strong>App api_id</strong> и <strong>App api_hash</strong>.</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">Сохраните и добавьте в AutoSending</div>
+      <div class="step-text">Скопируйте api_id и api_hash. В разделе «Аккаунты» нажмите «Добавить аккаунт» и заполните форму.</div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">🔄</span> Жизненный цикл аккаунта</h2>
+
+<div class="table-wrap"><table class="role-table">
+  <thead><tr><th>Статус</th><th>Что означает</th><th>Что делать</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge badge-amber">pending</span></td>
+      <td>Аккаунт добавлен, ожидает верификации по SMS-коду</td>
+      <td>Ввести код из SMS / Telegram</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-green">active</span></td>
+      <td>Аккаунт верифицирован, готов к работе</td>
+      <td>Добавить в кампанию</td>
+    </tr>
+    <tr>
+      <td><span class="badge" style="background:rgba(14,165,233,.12);color:#38bdf8">working</span></td>
+      <td>Аккаунт участвует в активной кампании</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><span class="badge" style="background:rgba(248,113,113,.12);color:var(--red)">error</span></td>
+      <td>Ошибка авторизации или блокировка</td>
+      <td>Проверить детали ошибки, пройти верификацию повторно или удалить</td>
+    </tr>
+    <tr>
+      <td><span class="badge" style="background:rgba(120,120,120,.15);color:#a0a0a0">banned</span></td>
+      <td>Аккаунт заблокирован Telegram</td>
+      <td>Удалить аккаунт, добавить новый</td>
+    </tr>
+  </tbody>
+</table></div>
+
+<h2 class="section-title"><span class="icon">🛡️</span> Как продлить жизнь аккаунтов</h2>
+<p>Telegram отслеживает подозрительную активность. Следование этим правилам существенно снижает риск блокировки:</p>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">⏱️</div>
+    <div class="card-title">Адекватная задержка</div>
+    <div class="card-text">Не менее 30–60 секунд между отправками. Задержка 60–180 секунд — оптимальный баланс скорости и безопасности.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">💬</div>
+    <div class="card-title">Разные шаблоны</div>
+    <div class="card-text">Используйте 3–5+ разных шаблонов. Одинаковые сообщения от разных аккаунтов — один из главных триггеров бана.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">📊</div>
+    <div class="card-title">Следите за ошибками</div>
+    <div class="card-text">При <code>FloodWaitError</code> — увеличьте задержку немедленно. Игнорирование этих ошибок ведёт к бану.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔁</div>
+    <div class="card-title">Ротация аккаунтов</div>
+    <div class="card-text">Не нагружайте один аккаунт бесконечно. При появлении ошибок — дайте аккаунту отдых или замените новым.</div>
+  </div>
+</div>
+
+<div class="callout danger">
+  <span class="callout-icon">🚫</span>
+  <div class="callout-body">
+    <div class="callout-title">Что гарантированно приводит к бану</div>
+    Задержка менее 10 секунд, один и тот же текст во всех сообщениях, отправка в сотни каналов подряд без пауз, одновременная работа одного аккаунта в слишком большом числе кампаний.
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">📋</span> Управление аккаунтами</h2>
+
+<div class="card-grid">
+  <div class="card">
+    <div class="card-icon">👁️</div>
+    <div class="card-title">Просмотр аккаунта</div>
+    <div class="card-text">В списке аккаунтов видно: статус, номер телефона, имя в Telegram, количество отправленных сообщений и число ошибок за всё время.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🔄</div>
+    <div class="card-title">Повторная верификация</div>
+    <div class="card-text">Если аккаунт перешёл в статус <strong>error</strong> из-за истёкшей сессии — нажмите «Верифицировать» и введите новый код из Telegram.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">🗑️</div>
+    <div class="card-title">Удаление аккаунта</div>
+    <div class="card-text">При удалении аккаунт автоматически убирается из всех кампаний, в которых участвовал. Данные по отправленным сообщениям сохраняются в логах.</div>
+  </div>
+  <div class="card">
+    <div class="card-icon">⏸️</div>
+    <div class="card-title">Деактивация</div>
+    <div class="card-text">Флаг «Активен/Неактивен» позволяет временно исключить аккаунт из всех кампаний без удаления. Включите обратно когда нужно.</div>
+  </div>
+</div>
+
+<h2 class="section-title"><span class="icon">⚙️</span> Параметры кампании</h2>
+<p>Основные настройки кампании, влияющие на поведение рассылки:</p>
+
+<div class="table-wrap"><table class="role-table">
+  <thead><tr><th>Параметр</th><th>Описание</th><th>Рекомендация</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Задержка мин (сек)</strong></td>
+      <td>Минимальная пауза между отправками одного аккаунта</td>
+      <td>Не менее 30 сек</td>
+    </tr>
+    <tr>
+      <td><strong>Задержка макс (сек)</strong></td>
+      <td>Максимальная пауза — система выбирает случайное значение из диапазона</td>
+      <td>120–180 сек для устойчивой работы</td>
+    </tr>
+    <tr>
+      <td><strong>Комментировать посты</strong></td>
+      <td>Если включено — аккаунт пишет в комментарии к постам канала, а не в сам канал</td>
+      <td>Использовать для каналов с открытыми комментариями</td>
+    </tr>
+  </tbody>
+</table></div>
+
+{% endblock %}
