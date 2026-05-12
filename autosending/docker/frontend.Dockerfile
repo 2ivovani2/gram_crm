@@ -47,7 +47,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
 
-RUN npm run build
+RUN npm run build && mkdir -p public
 
 
 # ─────────────────────────────────────────────────────────────────────────────
