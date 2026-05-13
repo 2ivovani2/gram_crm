@@ -166,10 +166,21 @@ class LoginView(TemplateView):
     template_name = "crm/login.html"
 
     def get(self, request):
-        if request.session.get("crm_user_id"):
-            return redirect("crm:dashboard")
         from django.conf import settings
         from django.urls import reverse
+
+        # Enforce canonical host — Telegram Widget checks window.location.hostname
+        # against the bot domain registered in BotFather (= settings.DOMAIN).
+        # If this page is reached from crm.gramly.tech or any other host, redirect
+        # to the canonical host so the widget never appears on the wrong domain.
+        canonical = getattr(settings, "DOMAIN", "gramly.tech")
+        current_host = request.get_host().split(":")[0]
+        if not settings.DEBUG and current_host != canonical:
+            return redirect(f"https://{canonical}/crm/login/")
+
+        if request.session.get("crm_user_id"):
+            return redirect("crm:dashboard")
+
         bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "") or ""
         error = None
         if not bot_username:
@@ -179,6 +190,7 @@ class LoginView(TemplateView):
                 "Добавьте имя бота (без @) и перезапустите сервис."
             )
             logger.error("TELEGRAM_BOT_USERNAME is not set — CRM login widget will not work")
+
         # Must be absolute HTTPS URL — Telegram's OAuth server validates the domain
         # and redirects the popup to this URL. A relative path causes oauth.telegram.org
         # to redirect to its own domain → 404 → silent failure → user back on login.

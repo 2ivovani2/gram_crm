@@ -28,7 +28,7 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
         return
 
     from django.conf import settings
-    crm_url  = getattr(settings, "CRM_URL",  "https://crm.gramly.tech/crm/login/")
+    crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
     docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
 
     await message.answer(

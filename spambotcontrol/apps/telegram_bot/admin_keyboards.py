@@ -34,7 +34,7 @@ def _add_pagination_users(b: InlineKeyboardBuilder, page: int, total: int) -> No
 
 def get_admin_main_menu() -> InlineKeyboardMarkup:
     from django.conf import settings
-    crm_url  = getattr(settings, "CRM_URL",  "https://crm.gramly.tech/crm/")
+    crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
     docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
 
     b = InlineKeyboardBuilder()
