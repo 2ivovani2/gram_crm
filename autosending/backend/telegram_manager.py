@@ -94,6 +94,10 @@ async def verify_auth_code(phone: str, code: str, password: Optional[str] = None
     me = await client.get_me()
     session_file = _session_path(phone) + ".session"
     del _pending_auth[phone]
+    # Disconnect auth client so the session SQLite file is released.
+    # get_client() will open a fresh connection when needed — two open
+    # connections to the same SQLite file cause "database is locked".
+    await client.disconnect()
 
     return {
         "user_id": me.id,
