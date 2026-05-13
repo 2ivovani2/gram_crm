@@ -22,7 +22,7 @@ SESSION_COOKIE_DOMAIN = f".{_domain}"
 CSRF_COOKIE_DOMAIN    = f".{_domain}"
 
 # Bot-facing URLs for CRM and docs links
-CRM_URL  = f"https://crm.{_domain}/crm/login/"
+CRM_URL  = f"https://{_domain}/crm/login/"
 DOCS_URL = f"https://{_domain}/docs/"
 
 # Spam app relay: internal Docker hostname for backend, public URL for redirect
