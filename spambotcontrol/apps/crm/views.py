@@ -49,10 +49,13 @@ class CRMLoginMixin:
     """
 
     def dispatch(self, request, *args, **kwargs):
+        from django.conf import settings as _s
+        _login_url = f"https://{getattr(_s, 'DOMAIN', 'gramly.tech')}/crm/login/"
+
         # 1. Session check
         user_id = request.session.get("crm_user_id")
         if not user_id:
-            return redirect("crm:login")
+            return redirect(_login_url)
 
         # 2. Load user
         from apps.users.models import User
@@ -60,7 +63,7 @@ class CRMLoginMixin:
             request.crm_user = User.objects.get(pk=user_id)
         except User.DoesNotExist:
             del request.session["crm_user_id"]
-            return redirect("crm:login")
+            return redirect(_login_url)
 
         # 3. Resolve workspace + membership (None for non-members)
         workspace, membership = self._resolve_workspace_and_membership(request)
@@ -248,7 +251,10 @@ class TelegramAuthCallbackView(View):
         request.session["crm_user_id"] = user.pk
         request.session["crm_user_name"] = user.display_name
         logger.info("CRM login: user %s (tg_id=%s)", user.display_name, telegram_id)
-        return redirect("crm:dashboard")
+        # Redirect to crm subdomain so the canonical CRM URL is crm.gramly.tech.
+        # Session cookie is set for .gramly.tech so it works on both domains.
+        domain = getattr(settings, "DOMAIN", "gramly.tech")
+        return redirect(f"https://crm.{domain}/crm/dashboard/")
 
 
 class LogoutView(View):
