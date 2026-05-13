@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import Sidebar from "@/components/Sidebar";
-import { Menu } from "lucide-react";
+import { Menu, Bell, LifeBuoy, ChevronRight } from "lucide-react";
 
 const PUBLIC_PATHS = ["/", "/login"];
 
@@ -13,14 +13,14 @@ const CRUMB_MAP = {
   "/dashboard/channels":  "Каналы",
   "/dashboard/messages":  "Шаблоны",
   "/dashboard/campaigns": "Кампании",
-  "/dashboard/help":      "Помощь",
+  "/dashboard/help":      "Документация",
 };
 
 function getBreadcrumb(pathname) {
   for (const [prefix, label] of Object.entries(CRUMB_MAP)) {
     if (pathname.startsWith(prefix)) return label;
   }
-  return "Дашборд";
+  return "Обзор";
 }
 
 export default function AppShell({ children }) {
@@ -38,10 +38,9 @@ export default function AppShell({ children }) {
   }
 
   const crumb = getBreadcrumb(pathname);
-  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : "??";
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div style={{ display: "flex", minHeight: "100vh", position: "relative" }}>
       {/* Mobile overlay */}
       <div
         className={`sidebar-overlay${sidebarOpen ? " open" : ""}`}
@@ -50,8 +49,19 @@ export default function AppShell({ children }) {
 
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
 
-      <main className="main" style={{ flex: 1, marginLeft: "var(--sidebar-w)", minHeight: "100vh", minWidth: 0, display: "flex", flexDirection: "column" }}>
-        {/* Topbar */}
+      <main
+        className="main"
+        style={{
+          flex: 1,
+          marginLeft: "var(--sidebar-w)",
+          minHeight: "100vh",
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          zIndex: 1,
+        }}
+      >
         <header className="topbar">
           <button
             className="topbar-burger"
@@ -62,21 +72,32 @@ export default function AppShell({ children }) {
           </button>
 
           <nav className="topbar-crumb">
-            <span>AutoSending</span>
-            <span>›</span>
-            <span style={{ color: "var(--text-2)" }}>{crumb}</span>
+            <a href="/dashboard">AutoSending</a>
+            <ChevronRight size={13} className="sep" />
+            <span className="cur">{crumb}</span>
           </nav>
 
-          <div style={{ flex: 1 }} />
-
-          <div className="topbar-user">
-            <div className="topbar-user-avatar">{initials}</div>
-            <span className="topbar-uname">{user?.username}</span>
+          <div className="topbar-actions">
+            <button className="btn-icon" title="Уведомления" style={{ position: "relative" }}>
+              <Bell size={15} />
+              <span
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  right: 6,
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--coral)",
+                  border: "1.5px solid var(--bg-1)",
+                }}
+              />
+            </button>
+            <button className="btn-icon" title="Помощь"><LifeBuoy size={15} /></button>
           </div>
         </header>
 
-        {/* Page content */}
-        <div style={{ padding: "28px 32px", maxWidth: 1080, margin: "0 auto", width: "100%" }}>
+        <div style={{ padding: "32px var(--gutter) 56px", maxWidth: "var(--content-max)", margin: "0 auto", width: "100%" }}>
           {children}
         </div>
       </main>

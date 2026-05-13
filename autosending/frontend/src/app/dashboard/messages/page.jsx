@@ -2,7 +2,10 @@
 import { useEffect, useState } from "react";
 import { getMessages, addMessage, updateMessage, deleteMessage } from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, Trash2, Edit2, Check, X, MessageSquare, ToggleRight, ToggleLeft, RefreshCw } from "lucide-react";
+import {
+  Plus, Trash2, Edit3, Check, X, MessageSquare,
+  RefreshCw, PenLine, Tag, Eye, Copy, Sparkles, FlaskConical,
+} from "lucide-react";
 
 function MessageCard({ msg, onSave, onDelete, onToggle }) {
   const [editing, setEditing] = useState(false);
@@ -26,89 +29,122 @@ function MessageCard({ msg, onSave, onDelete, onToggle }) {
     <div
       className="card animate-fade-in"
       style={{
-        opacity: !editing && !msg.is_active ? 0.55 : 1,
-        borderColor: editing ? "var(--accent-border)" : undefined,
-        boxShadow: editing ? "0 0 0 3px var(--accent-bg)" : undefined,
-        transition: "opacity 200ms",
+        opacity: !editing && !msg.is_active ? 0.6 : 1,
+        borderColor: editing ? "var(--gold-edge)" : undefined,
+        boxShadow: editing ? "0 0 0 3px var(--gold-tint), var(--shadow-2)" : undefined,
+        transition: "opacity 200ms, box-shadow 200ms, border-color 200ms",
       }}
     >
-      {editing ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <textarea
-            rows={4}
-            className="inp"
-            style={{ resize: "none" }}
-            value={text}
-            onChange={e => setText(e.target.value)}
-            autoFocus
-          />
-          <input className="inp" placeholder="Категория (необязательно)"
-            value={cat} onChange={e => setCat(e.target.value)} />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={save} disabled={saving} className="btn-primary" style={{ height: 30, fontSize: 12 }}>
-              {saving ? <RefreshCw size={11} style={{ animation: "spin 0.65s linear infinite" }} /> : <Check size={11} />}
-              Сохранить
-            </button>
-            <button onClick={cancel} className="btn-ghost" style={{ height: 30, fontSize: 12 }}>
-              <X size={11} /> Отмена
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <pre style={{ fontSize: 13, whiteSpace: "pre-wrap", fontFamily: "var(--sans)", lineHeight: 1.6, color: "var(--text-2)", wordBreak: "break-word" }}>
-              {msg.content}
-            </pre>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
-              {msg.category && (
-                <span
-                  style={{
-                    padding: "2px 8px",
-                    background: "var(--violet-bg)",
-                    border: "1px solid var(--violet-border)",
-                    borderRadius: "100px",
-                    fontSize: 11,
-                    fontWeight: 500,
-                    color: "var(--violet)",
-                  }}
-                >
-                  #{msg.category}
-                </span>
-              )}
-              <span style={{ fontSize: 11, color: "var(--text-4)" }}>
-                Использовано: <strong style={{ color: "var(--text-3)", fontWeight: 500 }}>{msg.use_count}×</strong>
-              </span>
-              <span style={{ fontSize: 11, color: msg.is_active ? "var(--green)" : "var(--text-4)" }}>
-                {msg.is_active ? "Активен" : "Неактивен"}
-              </span>
+      <div className="card-body">
+        {editing ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <textarea
+              rows={4}
+              className="inp"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              autoFocus
+            />
+            <div style={{ position: "relative" }}>
+              <Tag size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
+              <input className="inp" style={{ paddingLeft: 36 }} placeholder="Категория (необязательно)"
+                value={cat} onChange={e => setCat(e.target.value)} />
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={cancel} className="btn-ghost btn-sm">
+                <X size={12} /> Отмена
+              </button>
+              <button onClick={save} disabled={saving} className="btn-primary btn-sm">
+                {saving ? <RefreshCw size={12} style={{ animation: "spin 0.7s linear infinite" }} /> : <Check size={12} strokeWidth={2.5} />}
+                Сохранить
+              </button>
             </div>
           </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {msg.category && (
+                  <span
+                    style={{
+                      padding: "2px 9px",
+                      background: "var(--plum-tint)",
+                      border: "1px solid var(--plum-edge)",
+                      borderRadius: 100,
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: "var(--plum)",
+                    }}
+                  >
+                    #{msg.category}
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>
+                  использован {msg.use_count}×
+                </span>
+              </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
-            <button
-              className="btn-icon"
-              onClick={() => onToggle(msg.id, !msg.is_active)}
-              title="Переключить"
-              style={{ color: msg.is_active ? "var(--accent)" : "var(--text-4)" }}
+              <button
+                onClick={() => onToggle(msg.id, !msg.is_active)}
+                title={msg.is_active ? "Деактивировать" : "Активировать"}
+                style={{
+                  width: 32, height: 18,
+                  background: msg.is_active ? "linear-gradient(180deg, var(--emerald), #6fa67c)" : "var(--surface-3)",
+                  border: `1px solid ${msg.is_active ? "rgba(142,201,154,0.5)" : "var(--line-3)"}`,
+                  borderRadius: 10, position: "relative", cursor: "pointer", flexShrink: 0,
+                  padding: 0,
+                }}
+              >
+                <div style={{
+                  width: 12, height: 12, borderRadius: "50%", background: "#fafaf9",
+                  position: "absolute", top: 2, left: 2,
+                  transform: msg.is_active ? "translateX(14px)" : "none",
+                  transition: "transform 200ms cubic-bezier(0.34,1.56,0.64,1)",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                }} />
+              </button>
+            </div>
+
+            <p
+              style={{
+                fontSize: 13.5,
+                whiteSpace: "pre-wrap",
+                fontFamily: "var(--sans)",
+                lineHeight: 1.6,
+                color: "var(--ink-2)",
+                wordBreak: "break-word",
+                margin: 0,
+              }}
             >
-              {msg.is_active ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
-            </button>
-            <button className="btn-icon" onClick={() => setEditing(true)} title="Редактировать">
-              <Edit2 size={13} />
-            </button>
-            <button
-              className="btn-icon"
-              onClick={() => onDelete(msg.id)}
-              title="Удалить"
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--red-bg)"; e.currentTarget.style.color = "var(--red)"; e.currentTarget.style.borderColor = "var(--red-border)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = ""; e.currentTarget.style.color = ""; e.currentTarget.style.borderColor = ""; }}
+              {msg.content}
+            </p>
+
+            <div
+              style={{
+                display: "flex", gap: 4,
+                marginTop: 14, paddingTop: 12,
+                borderTop: "1px solid var(--line-1)",
+                justifyContent: "flex-end",
+              }}
             >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </div>
-      )}
+              <button className="btn-icon" style={{ width: 30, height: 30 }} title="Дублировать"><Copy size={12} /></button>
+              <button className="btn-icon" style={{ width: 30, height: 30 }} title="Редактировать" onClick={() => setEditing(true)}>
+                <Edit3 size={12} />
+              </button>
+              <button
+                className="btn-icon"
+                style={{ width: 30, height: 30 }}
+                onClick={() => onDelete(msg.id)}
+                title="Удалить"
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--coral-tint)"; e.currentTarget.style.color = "var(--coral)"; e.currentTarget.style.borderColor = "var(--coral-edge)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = ""; e.currentTarget.style.color = ""; e.currentTarget.style.borderColor = ""; }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -145,35 +181,51 @@ export default function MessagesPage() {
   const active = messages.filter(m => m.is_active).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 2 }}>
-          Шаблоны
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--text-3)" }}>
-          {messages.length} шаблонов — {active} активных · случайная ротация без повторений
-        </p>
+      <div className="page-head">
+        <div>
+          <h1 className="page-title">Шаблоны сообщений</h1>
+          <p className="page-sub">
+            {messages.length} шаблон{messages.length === 1 ? "" : "ов"} · {active} активны · случайная ротация без повторов
+          </p>
+        </div>
+        <div className="page-actions" style={{ display: "flex", gap: 8 }}>
+          <button className="btn-ghost"><Sparkles size={14} /> AI-генератор</button>
+          <button className="btn-ghost"><FlaskConical size={14} /> A/B-тест</button>
+        </div>
       </div>
 
-      {/* Add form */}
-      <div className="card">
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-3)", marginBottom: 10 }}>Новый шаблон</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Composer */}
+      <div className="card card-no-hover">
+        <div style={{ padding: "18px 22px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600, color: "var(--ink-1)" }}>
+              <PenLine size={14} style={{ color: "var(--ink-3)" }} />
+              Новый шаблон
+            </div>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>
+              {text.length}/1024
+            </span>
+          </div>
           <textarea
             rows={4}
             className="inp"
-            style={{ resize: "none" }}
-            placeholder={"Введите текст сообщения...\n\nДобавьте несколько вариантов для разнообразия."}
+            placeholder={"Введите текст сообщения. Шаблоны выбираются случайно — добавьте 3–5 разных по тону и длине вариантов для естественности."}
             value={text}
             onChange={e => setText(e.target.value)}
           />
-          <div style={{ display: "flex", gap: 8 }}>
-            <input className="inp" style={{ flex: 1 }} placeholder="Категория (необязательно)"
-              value={cat} onChange={e => setCat(e.target.value)} />
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <div style={{ position: "relative", flex: 1, maxWidth: 280 }}>
+              <Tag size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
+              <input className="inp" style={{ paddingLeft: 36 }} placeholder="Категория · необязательно"
+                value={cat} onChange={e => setCat(e.target.value)} />
+            </div>
+            <div style={{ flex: 1 }} />
+            <button className="btn-ghost" disabled={!text.trim()}><Eye size={13} /> Предпросмотр</button>
             <button onClick={handleAdd} disabled={adding || !text.trim()} className="btn-primary">
-              {adding ? <RefreshCw size={12} style={{ animation: "spin 0.65s linear infinite" }} /> : <Plus size={13} />}
-              {adding ? "Добавление…" : "Добавить"}
+              {adding ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Plus size={14} />}
+              {adding ? "Добавление…" : "Добавить шаблон"}
             </button>
           </div>
         </div>
@@ -181,23 +233,29 @@ export default function MessagesPage() {
 
       {/* List */}
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="skeleton" style={{ height: 100, borderRadius: "var(--r-lg)" }} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 12 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 160, borderRadius: "var(--r-lg)" }} />
           ))}
         </div>
       ) : messages.length === 0 ? (
-        <div className="card">
+        <div className="card card-no-hover">
           <div className="empty">
-            <div className="empty-icon"><MessageSquare size={18} /></div>
-            <span className="empty-title">Нет шаблонов</span>
-            <span className="empty-sub">Добавьте 3–5 вариантов для лучшей ротации</span>
+            <div className="empty-icon"><MessageSquare size={22} /></div>
+            <span className="empty-title">Пока ни одного шаблона</span>
+            <span className="empty-sub">Добавьте 3–5 вариантов для естественной ротации</span>
           </div>
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 12 }}>
           {messages.map(msg => (
-            <MessageCard key={msg.id} msg={msg} onSave={handleSave} onDelete={handleDelete} onToggle={handleToggle} />
+            <MessageCard
+              key={msg.id}
+              msg={msg}
+              onSave={handleSave}
+              onDelete={handleDelete}
+              onToggle={handleToggle}
+            />
           ))}
         </div>
       )}

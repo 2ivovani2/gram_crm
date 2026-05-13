@@ -12,10 +12,14 @@ const LABELS = {
   info:    "Инфо",
 };
 
-export default function StatusBadge({ status }) {
+export default function StatusBadge({ status, pulse }) {
+  const cls = `badge badge-${status ?? "offline"}`;
   return (
-    <span className={`badge badge-${status ?? "offline"}`}>
-      <span className="badge-dot" />
+    <span className={cls}>
+      {pulse
+        ? <span className="live-dot" />
+        : <span className="badge-dot" />
+      }
       {LABELS[status] ?? status ?? "—"}
     </span>
   );

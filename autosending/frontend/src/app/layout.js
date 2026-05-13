@@ -11,27 +11,28 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="ru">
-      <body style={{ background: "var(--bg)", color: "var(--text-1)", minHeight: "100vh" }}>
+      <body style={{ background: "var(--bg)", color: "var(--ink-1)", minHeight: "100vh" }}>
         <AuthProvider>
           <AppShell>{children}</AppShell>
         </AuthProvider>
 
         <Toaster
           position="bottom-right"
-          gutter={8}
+          gutter={10}
           toastOptions={{
             duration: 3500,
             style: {
-              background: "var(--surface)",
-              color:       "var(--text-1)",
-              border:      "1px solid var(--border-2)",
-              borderRadius:"var(--r)",
-              fontSize:    "13px",
-              padding:     "10px 14px",
-              boxShadow:   "0 8px 24px oklch(0.04 0.002 255 / 0.6)",
+              background: "linear-gradient(180deg, #15161a, #0e0f12)",
+              color:        "var(--ink-1)",
+              border:       "1px solid var(--line-3)",
+              borderRadius: "10px",
+              fontSize:     "13px",
+              padding:      "11px 14px",
+              boxShadow:    "var(--shadow-3)",
+              fontFamily:   "var(--sans)",
             },
-            success: { iconTheme: { primary: "var(--green)",  secondary: "var(--green-bg)" } },
-            error:   { iconTheme: { primary: "var(--red)",    secondary: "var(--red-bg)" } },
+            success: { iconTheme: { primary: "var(--emerald)", secondary: "var(--emerald-tint)" } },
+            error:   { iconTheme: { primary: "var(--coral)",   secondary: "var(--coral-tint)" } },
           }}
         />
       </body>

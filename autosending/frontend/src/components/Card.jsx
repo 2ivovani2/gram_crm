@@ -1,15 +1,16 @@
 import clsx from "clsx";
 
-export default function Card({ children, className = "", ...props }) {
+export default function Card({ children, className = "", noHover = false, ...props }) {
   return (
     <div
       className={clsx(
-        "glass rounded-2xl p-5 animate-fade-in transition-all duration-200",
+        "card animate-fade-in",
+        noHover && "card-no-hover",
         className
       )}
       {...props}
     >
-      {children}
+      <div className="card-body">{children}</div>
     </div>
   );
 }

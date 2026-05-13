@@ -5,16 +5,18 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, Users, Hash, MessageSquare, Zap,
-  HelpCircle, LogOut, Send,
+  HelpCircle, LogOut, Send, Search, Settings,
 } from "lucide-react";
 
 const NAV = [
-  { href: "/dashboard",           icon: LayoutDashboard, label: "Дашборд" },
+  { href: "/dashboard",           icon: LayoutDashboard, label: "Обзор" },
   { href: "/dashboard/accounts",  icon: Users,           label: "Аккаунты" },
   { href: "/dashboard/channels",  icon: Hash,            label: "Каналы" },
   { href: "/dashboard/messages",  icon: MessageSquare,   label: "Шаблоны" },
   { href: "/dashboard/campaigns", icon: Zap,             label: "Кампании" },
-  { href: "/dashboard/help",      icon: HelpCircle,      label: "Помощь" },
+];
+const NAV_SUPPORT = [
+  { href: "/dashboard/help",      icon: HelpCircle,      label: "Документация" },
 ];
 
 function isActive(pathname, href) {
@@ -28,15 +30,33 @@ export default function Sidebar({ open, onClose }) {
   const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : "??";
 
   return (
-    <div id="sidebar" className={`sidebar${open ? " open" : ""}`}>
+    <aside id="sidebar" className={`sidebar${open ? " open" : ""}`}>
       <Link href="/dashboard" className="sidebar-logo">
         <div className="sidebar-mark">
-          <Send size={12} color="var(--p-fg)" strokeWidth={2.5} />
+          <Send size={14} strokeWidth={2.2} style={{ color: "var(--on-gold)", position: "relative", zIndex: 1 }} />
         </div>
-        <span className="sidebar-wordmark">AutoSending</span>
+        <div>
+          <span className="sidebar-wordmark">AutoSending</span>
+          <span className="sidebar-wordmark-tag">PRO</span>
+        </div>
       </Link>
 
+      <div className="sidebar-search">
+        <div className="inp-wrap" style={{ position: "relative" }}>
+          <Search
+            size={13}
+            style={{
+              position: "absolute", left: 11, top: "50%",
+              transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none",
+            }}
+          />
+          <input className="inp" placeholder="Поиск…" />
+          <span className="sidebar-kbd"><span>⌘</span><span>K</span></span>
+        </div>
+      </div>
+
       <nav className="sidebar-nav">
+        <div className="sidebar-section">Workspace</div>
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = isActive(pathname, href);
           return (
@@ -46,7 +66,23 @@ export default function Sidebar({ open, onClose }) {
               onClick={onClose}
               className={`sidebar-link${active ? " sidebar-link-active" : ""}`}
             >
-              <Icon size={14} strokeWidth={active ? 2 : 1.75} />
+              <Icon size={15} strokeWidth={active ? 2 : 1.7} />
+              {label}
+            </Link>
+          );
+        })}
+
+        <div className="sidebar-section">Поддержка</div>
+        {NAV_SUPPORT.map(({ href, icon: Icon, label }) => {
+          const active = isActive(pathname, href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              onClick={onClose}
+              className={`sidebar-link${active ? " sidebar-link-active" : ""}`}
+            >
+              <Icon size={15} strokeWidth={active ? 2 : 1.7} />
               {label}
             </Link>
           );
@@ -55,11 +91,14 @@ export default function Sidebar({ open, onClose }) {
 
       <div className="sidebar-user">
         <div className="sidebar-avatar">{initials}</div>
-        <span className="sidebar-uname">{user?.username}</span>
+        <div className="sidebar-uname-wrap">
+          <span className="sidebar-uname">{user?.username}</span>
+          <span className="sidebar-uplan">PRO · workspace</span>
+        </div>
         <button className="sidebar-logout" onClick={logout} title="Выйти">
-          <LogOut size={12} />
+          <LogOut size={13} />
         </button>
       </div>
-    </div>
+    </aside>
   );
 }
