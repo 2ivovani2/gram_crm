@@ -1,135 +1,148 @@
 {% extends "crm/base.html" %}
-{% block title %}Cash Flow — GRAMLY CRM{% endblock %}
+{% block title %}Cash Flow — Gramly CRM{% endblock %}
 {% block page_title %}Внести данные — Cash Flow{% endblock %}
 {% block nav_finance %}active{% endblock %}
 
 {% block content %}
 <style>
-/* ── File upload zone ─────────────────────────────────────────────── */
+/* ── File upload zone ─────────────────────────────────────────── */
 .upload-zone {
   position: relative;
-  border: 2px dashed var(--border);
+  border: 1.5px dashed var(--line);
   border-radius: var(--r);
-  padding: 28px 24px;
+  padding: 32px 26px;
   text-align: center;
   cursor: pointer;
   transition: border-color .2s, background .2s;
-  background: var(--surface);
+  background: var(--bg-2);
   outline: none;
 }
 .upload-zone:hover,
 .upload-zone.drag-over {
-  border-color: var(--gold);
-  background: rgba(240,180,41,.04);
+  border-color: var(--accent);
+  background: var(--accent-tint);
 }
 .upload-zone.has-file {
   border-style: solid;
-  border-color: rgba(34,197,94,.4);
-  background: rgba(34,197,94,.04);
+  border-color: var(--success-line);
+  background: var(--success-soft);
 }
 .upload-zone.has-file:hover {
-  border-color: rgba(239,68,68,.4);
-  background: rgba(239,68,68,.04);
+  border-color: rgba(154,52,52,.3);
+  background: var(--danger-soft);
 }
 .upload-zone input[type="file"] {
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: pointer; z-index: 2;
 }
-/* hide native input when file already chosen (clicks go to zone's own handler) */
 .upload-zone.has-file input[type="file"] { pointer-events: none; }
 
 .upload-icon {
-  font-size: 32px; margin-bottom: 10px; line-height: 1;
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 12px;
+  color: var(--accent);
   transition: transform .2s;
 }
 .upload-zone:hover .upload-icon,
-.upload-zone.drag-over .upload-icon { transform: translateY(-3px); }
-.upload-zone.has-file .upload-icon { font-size: 24px; margin-bottom: 6px; }
+.upload-zone.drag-over .upload-icon { transform: translateY(-2px); }
 
 .upload-title {
-  font-size: 14px; font-weight: 600; color: var(--text);
-  margin-bottom: 4px;
+  font-size: 14px; font-weight: 600; color: var(--ink);
+  margin-bottom: 5px; letter-spacing: -.01em;
 }
 .upload-sub {
-  font-size: 12px; color: var(--muted2); line-height: 1.5;
+  font-size: 12.5px; color: var(--muted);
+  line-height: 1.55; font-weight: 500;
 }
 .upload-sub kbd {
   display: inline-flex; align-items: center;
-  padding: 1px 6px; border-radius: 4px;
-  background: var(--surface-h); border: 1px solid var(--border);
-  font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted2);
-  line-height: 1.6;
+  padding: 2px 7px; border-radius: 5px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 11px; font-family: 'SF Mono', ui-monospace, monospace;
+  color: var(--ink-2); line-height: 1.4; font-weight: 600;
 }
 
-/* ── File preview (shown after selection) ───────────────────────── */
+/* ── File preview ───────────────────────────────────────── */
 .upload-preview {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px;
-  background: rgba(34,197,94,.06); border: 1px solid rgba(34,197,94,.2);
-  border-radius: var(--r); margin-top: 10px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-line);
+  border-radius: var(--r);
+  margin-top: 12px;
   animation: fadeIn .2s ease;
 }
-@keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .upload-preview-thumb {
-  width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
-  background: var(--surface); border: 1px solid var(--border);
+  width: 52px; height: 52px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; flex-shrink: 0; overflow: hidden;
+  color: var(--muted);
+  flex-shrink: 0;
+  overflow: hidden;
 }
 .upload-preview-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .upload-preview-info { flex: 1; min-width: 0; text-align: left; }
 .upload-preview-name {
-  font-size: 13px; font-weight: 600; color: var(--text);
+  font-size: 13.5px; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  letter-spacing: -.01em;
 }
-.upload-preview-size { font-size: 11.5px; color: var(--muted2); margin-top: 2px; }
+.upload-preview-size { font-size: 11.5px; color: var(--muted); margin-top: 2px; font-weight: 500; }
 .upload-preview-clear {
-  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
-  background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.2);
-  color: var(--red); font-size: 16px; line-height: 1;
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid rgba(154,52,52,.18);
+  color: var(--danger); font-size: 14px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all .15s; user-select: none;
+  flex-shrink: 0;
 }
-.upload-preview-clear:hover { background: rgba(239,68,68,.2); border-color: rgba(239,68,68,.4); }
+.upload-preview-clear:hover { background: var(--danger-soft); }
 
-/* ── Existing file chip ─────────────────────────────────────────── */
+/* ── Existing file chip ───────────────────────────── */
 .existing-file-chip {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 12px; border-radius: var(--r);
-  background: var(--surface-h); border: 1px solid var(--border);
-  font-size: 12.5px; color: var(--muted2); margin-bottom: 10px;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 8px 14px; border-radius: var(--r);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-soft);
+  font-size: 12.5px; color: var(--accent-ink);
+  margin-bottom: 12px; font-weight: 500;
 }
-.existing-file-chip a { color: var(--gold); text-decoration: none; font-weight: 500; }
-.existing-file-chip a:hover { text-decoration: underline; }
+.existing-file-chip a { color: var(--accent); text-decoration: underline; font-weight: 600; }
 
-/* ── Paste toast ────────────────────────────────────────────────── */
+/* ── Paste toast ─────────────────────────────────── */
 .paste-toast {
   position: fixed; bottom: 24px; right: 24px; z-index: 1000;
-  padding: 10px 16px; border-radius: var(--r);
-  background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3);
-  color: var(--green); font-size: 13px; font-weight: 500;
-  display: flex; align-items: center; gap: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  padding: 11px 18px; border-radius: var(--r);
+  background: var(--ink); color: #FBFAF5;
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: var(--shadow-lg);
   animation: toastIn .25s ease;
-  pointer-events: none;
 }
-@keyframes toastIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 </style>
 
-<div style="max-width:600px">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
-    <a href="{% url 'crm:dashboard' %}" style="color:var(--muted);text-decoration:none;font-size:13px">← Дашборд</a>
-    <span style="color:var(--border)">/</span>
-    <span style="font-size:13px;color:var(--muted2)">{{ entry_date|date:"d.m.Y" }}</span>
+<div style="max-width:640px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;font-size:13px;font-weight:500">
+    <a href="{% url 'crm:dashboard' %}" style="color:var(--muted);text-decoration:none">← Дашборд</a>
+    <span style="color:var(--line)">/</span>
+    <span style="color:var(--ink-2)">{{ entry_date|date:"d.m.Y" }}</span>
     {% if existing %}<span class="badge badge-amber">Редактирование</span>{% else %}<span class="badge badge-blue">Новая запись</span>{% endif %}
   </div>
 
-  <div class="card">
+  <div class="card" style="padding:28px 30px">
     <div style="margin-bottom:24px">
-      <h2 style="font-size:18px;font-weight:700;margin-bottom:4px">💳 Cash Flow и финансы</h2>
-      <p style="font-size:13px;color:var(--muted2)">
-        Данные за <strong>{{ entry_date|date:"d F Y" }}</strong>.
-        После сохранения — автоматически сформируется отчёт (если заявки тоже внесены).
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;letter-spacing:-.02em;margin-bottom:8px;color:var(--ink);line-height:1.1">Cash Flow и финансы</h2>
+      <p style="font-size:13.5px;color:var(--muted);line-height:1.6;font-weight:500">
+        Данные за <strong style="color:var(--ink-2)">{{ entry_date|date:"d F Y" }}</strong>. После сохранения сводный отчёт сформируется автоматически, если заявки тоже внесены.
       </p>
     </div>
 
@@ -139,100 +152,101 @@
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="form-group">
-          <label class="form-label">💰 Сумма поступлений ($)</label>
+          <label class="form-label">Сумма поступлений ($)</label>
           <input type="number" name="income" step="0.01" min="0" class="form-input"
                  value="{% if form.is_bound %}{{ form.income.value }}{% elif existing %}{{ existing.income }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.income.errors %}<div class="form-error">{{ form.income.errors.0 }}</div>{% endif %}
         </div>
         <div class="form-group">
-          <label class="form-label">📤 Расходы / выплаты ($)</label>
+          <label class="form-label">Расходы / выплаты ($)</label>
           <input type="number" name="expenses" step="0.01" min="0" class="form-input"
                  value="{% if form.is_bound %}{{ form.expenses.value }}{% elif existing %}{{ existing.expenses }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.expenses.errors %}<div class="form-error">{{ form.expenses.errors.0 }}</div>{% endif %}
         </div>
       </div>
 
-      <div style="background:var(--surface-h);border-radius:var(--r);padding:12px 16px;margin-bottom:18px;font-size:13px">
-        <span style="color:var(--muted)">Сальдо = </span>
-        <span id="balance-preview" style="font-weight:700;color:var(--green)">0.00 $</span>
+      <div style="background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
+        <span style="color:var(--muted);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">Сальдо</span>
+        <span id="balance-preview" style="font-weight:700;color:var(--success);font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">0.00 $</span>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="form-group">
-          <label class="form-label">📈 Заработок с ПП ($)</label>
+          <label class="form-label">Заработок с ПП ($)</label>
           <input type="number" name="pp_earnings" step="0.01" min="0" class="form-input"
                  value="{% if form.is_bound %}{{ form.pp_earnings.value }}{% elif existing %}{{ existing.pp_earnings }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.pp_earnings.errors %}<div class="form-error">{{ form.pp_earnings.errors.0 }}</div>{% endif %}
         </div>
         <div class="form-group">
-          <label class="form-label">🏦 Заработок с Привата ($)</label>
+          <label class="form-label">Заработок с Привата ($)</label>
           <input type="number" name="privat_earnings" step="0.01" min="0" class="form-input"
                  value="{% if form.is_bound %}{{ form.privat_earnings.value }}{% elif existing %}{{ existing.privat_earnings }}{% else %}0.00{% endif %}" placeholder="0.00" required/>
           {% if form.privat_earnings.errors %}<div class="form-error">{{ form.privat_earnings.errors.0 }}</div>{% endif %}
         </div>
       </div>
 
-      <!-- ── Баланс КБ ─────────────────────────────────────────────── -->
       <div class="form-group">
-        <label class="form-label">💼 Баланс КБ ($)</label>
+        <label class="form-label">Баланс КБ ($)</label>
         <input type="number" name="kb_balance" step="0.01" class="form-input"
                value="{% if form.is_bound %}{{ form.kb_balance.value }}{% elif existing %}{{ existing.kb_balance }}{% else %}0.00{% endif %}" placeholder="0.00"
-               style="max-width:200px"/>
-        <div style="font-size:12px;color:var(--muted2);margin-top:4px">Текущий баланс на счёте КБ</div>
+               style="max-width:220px"/>
+        <div class="form-help">Текущий баланс на счёте КБ</div>
         {% if form.kb_balance.errors %}<div class="form-error">{{ form.kb_balance.errors.0 }}</div>{% endif %}
       </div>
 
-      <!-- ── Screenshot upload ─────────────────────────────────────── -->
+      <!-- ── Screenshot upload ──────────────────────────────────── -->
       <div class="form-group">
-        <label class="form-label" style="margin-bottom:8px">📎 Скрин с КБ</label>
+        <label class="form-label" style="margin-bottom:8px">Скрин с КБ</label>
 
         {% if existing and existing.kb_screenshot %}
         <div class="existing-file-chip" id="existing-chip">
-          <span>📄</span>
-          <span>Текущий файл:</span>
-          <a href="{{ existing.kb_screenshot.url }}" target="_blank">просмотреть</a>
-          <span style="color:var(--muted)">— загрузите новый, чтобы заменить</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.6 9.6a5.5 5.5 0 01-7.8-7.8l9.6-9.6a3.7 3.7 0 015.2 5.2l-9.6 9.6a1.8 1.8 0 01-2.6-2.6l8.7-8.7"/></svg>
+          Текущий файл: <a href="{{ existing.kb_screenshot.url }}" target="_blank">просмотреть</a>
+          <span style="color:var(--muted);font-weight:500">— загрузите новый, чтобы заменить</span>
         </div>
         {% endif %}
 
-        <!-- Drop zone -->
-        <div class="upload-zone" id="upload-zone" tabindex="0"
-             role="button" aria-label="Загрузить скриншот">
-          <input type="file" name="kb_screenshot" id="kb-file-input"
-                 accept="image/*,.pdf" tabindex="-1"/>
+        <div class="upload-zone" id="upload-zone" tabindex="0" role="button" aria-label="Загрузить скриншот">
+          <input type="file" name="kb_screenshot" id="kb-file-input" accept="image/*,.pdf" tabindex="-1"/>
 
           <div id="upload-idle">
-            <div class="upload-icon">🖼️</div>
+            <div class="upload-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+              </svg>
+            </div>
             <div class="upload-title">Перетащите файл или нажмите для выбора</div>
             <div class="upload-sub">
-              JPG, PNG, PDF&nbsp;&nbsp;·&nbsp;&nbsp;вставьте из буфера <kbd>Ctrl+V</kbd>
+              JPG, PNG, PDF&nbsp;&nbsp;·&nbsp;&nbsp;вставьте из буфера <kbd>Ctrl</kbd> <kbd>V</kbd>
             </div>
           </div>
 
           <div id="upload-dragover" style="display:none">
-            <div class="upload-icon">📂</div>
-            <div class="upload-title" style="color:var(--gold)">Отпустите, чтобы прикрепить</div>
+            <div class="upload-icon" style="background:var(--accent-tint);border-color:var(--accent-soft)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            </div>
+            <div class="upload-title" style="color:var(--accent)">Отпустите, чтобы прикрепить</div>
           </div>
         </div>
 
-        <!-- Preview (hidden until file chosen) -->
         <div class="upload-preview" id="upload-preview" style="display:none">
-          <div class="upload-preview-thumb" id="preview-thumb">📄</div>
+          <div class="upload-preview-thumb" id="preview-thumb">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+          </div>
           <div class="upload-preview-info">
             <div class="upload-preview-name" id="preview-name">—</div>
             <div class="upload-preview-size" id="preview-size"></div>
           </div>
-          <div class="upload-preview-clear" id="preview-clear" title="Удалить">✕</div>
+          <div class="upload-preview-clear" id="preview-clear" title="Удалить">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </div>
         </div>
 
-        {% if form.kb_screenshot.errors %}
-        <div class="form-error">{{ form.kb_screenshot.errors.0 }}</div>
-        {% endif %}
+        {% if form.kb_screenshot.errors %}<div class="form-error">{{ form.kb_screenshot.errors.0 }}</div>{% endif %}
       </div>
-      <!-- ── / Screenshot upload ─────────────────────────────────── -->
 
       <div class="form-group">
-        <label class="form-label">📝 Примечания</label>
+        <label class="form-label">Примечания</label>
         <textarea name="notes" rows="3" class="form-textarea"
                   placeholder="Дополнительные комментарии...">{% if form.is_bound %}{{ form.notes.value }}{% elif existing %}{{ existing.notes }}{% endif %}</textarea>
       </div>
@@ -241,29 +255,26 @@
         <button type="submit" class="btn btn-primary">
           {% if existing %}Сохранить изменения{% else %}Внести данные{% endif %}
         </button>
-        <a href="{% url 'crm:dashboard' %}" class="btn btn-secondary">Отмена</a>
+        <a href="{% url 'crm:dashboard' %}" class="btn btn-ghost">Отмена</a>
       </div>
     </form>
   </div>
 
-  <!-- Date picker for other dates -->
-  <div style="margin-top:20px">
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Внести за другую дату:</div>
-    <input type="date" id="other-date" class="form-input" style="width:auto"
-           value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}"
-           onchange="goToDate()"/>
+  <div style="margin-top:22px">
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em;font-weight:600">Внести за другую дату</div>
+    <input type="date" id="other-date" class="form-input" style="width:auto;min-width:200px"
+           value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}" onchange="goToDate()"/>
   </div>
 </div>
 
 <script>
-// ── Balance preview ────────────────────────────────────────────────
 function updateBalance() {
   const income   = parseFloat(document.querySelector('[name=income]').value)   || 0;
   const expenses = parseFloat(document.querySelector('[name=expenses]').value) || 0;
   const balance  = income - expenses;
   const el = document.getElementById('balance-preview');
   el.textContent = (balance >= 0 ? '+' : '') + balance.toFixed(2) + ' $';
-  el.style.color = balance >= 0 ? 'var(--green)' : 'var(--red)';
+  el.style.color = balance >= 0 ? 'var(--success)' : 'var(--danger)';
 }
 document.querySelector('[name=income]').addEventListener('input', updateBalance);
 document.querySelector('[name=expenses]').addEventListener('input', updateBalance);
@@ -274,7 +285,6 @@ function goToDate() {
   if (date) window.location.href = '{% url "crm:entry_finance" %}?date=' + date;
 }
 
-// ── File upload zone ───────────────────────────────────────────────
 const zone      = document.getElementById('upload-zone');
 const fileInput = document.getElementById('kb-file-input');
 const preview   = document.getElementById('upload-preview');
@@ -295,82 +305,54 @@ function showPreview(file) {
   if (!file) return;
   nameEl.textContent = file.name;
   sizeEl.textContent = formatSize(file.size);
-
-  // Thumbnail: image preview or file-type icon
   if (file.type.startsWith('image/')) {
     const reader = new FileReader();
-    reader.onload = e => {
-      thumbEl.innerHTML = `<img src="${e.target.result}" alt="preview"/>`;
-    };
+    reader.onload = e => { thumbEl.innerHTML = `<img src="${e.target.result}" alt="preview"/>`; };
     reader.readAsDataURL(file);
   } else {
-    thumbEl.textContent = file.type === 'application/pdf' ? '📄' : '📎';
+    thumbEl.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';
   }
-
   zone.classList.add('has-file');
   idle.style.display = 'none';
   preview.style.display = 'flex';
-
-  // hide existing-file chip (it's being replaced)
   const chip = document.getElementById('existing-chip');
   if (chip) chip.style.display = 'none';
 }
 
 function clearFile() {
-  // Reset file input
   const dt = new DataTransfer();
   fileInput.files = dt.files;
-
   zone.classList.remove('has-file');
   idle.style.display = '';
   preview.style.display = 'none';
-  thumbEl.innerHTML = '📄';
   nameEl.textContent = '—';
   sizeEl.textContent = '';
-
   const chip = document.getElementById('existing-chip');
   if (chip) chip.style.display = '';
 }
 
-// Native file input change
 fileInput.addEventListener('change', () => {
   if (fileInput.files.length) showPreview(fileInput.files[0]);
   else clearFile();
 });
-
-// Clear button
 clearBtn.addEventListener('click', e => { e.stopPropagation(); clearFile(); });
-
-// Keyboard activation (Enter/Space on zone)
 zone.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    fileInput.click();
-  }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
 });
-
-// Drag-and-drop
 zone.addEventListener('dragenter', e => {
-  e.preventDefault();
-  zone.classList.add('drag-over');
-  idle.style.display = 'none';
-  dragover.style.display = '';
+  e.preventDefault(); zone.classList.add('drag-over');
+  idle.style.display = 'none'; dragover.style.display = '';
 });
-zone.addEventListener('dragover',  e => { e.preventDefault(); });
+zone.addEventListener('dragover',  e => e.preventDefault());
 zone.addEventListener('dragleave', e => {
-  // Only fire when leaving the zone itself (not its children)
   if (!zone.contains(e.relatedTarget)) {
     zone.classList.remove('drag-over');
-    idle.style.display = '';
-    dragover.style.display = 'none';
+    idle.style.display = ''; dragover.style.display = 'none';
   }
 });
 zone.addEventListener('drop', e => {
-  e.preventDefault();
-  zone.classList.remove('drag-over');
-  idle.style.display = '';
-  dragover.style.display = 'none';
-
+  e.preventDefault(); zone.classList.remove('drag-over');
+  idle.style.display = ''; dragover.style.display = 'none';
   const files = e.dataTransfer.files;
   if (files.length) {
     const dt = new DataTransfer();
@@ -379,38 +361,29 @@ zone.addEventListener('drop', e => {
     showPreview(files[0]);
   }
 });
-
-// ── Clipboard paste (Ctrl+V anywhere on page) ─────────────────────
 document.addEventListener('paste', e => {
-  // Don't intercept if user is typing in a text field
   const tag = document.activeElement.tagName.toLowerCase();
   if (tag === 'input' || tag === 'textarea') return;
-
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
-
   for (const item of items) {
     if (item.kind === 'file') {
       const file = item.getAsFile();
       if (!file) continue;
-
-      // Inject into native file input via DataTransfer
       const dt = new DataTransfer();
       dt.items.add(file);
       fileInput.files = dt.files;
       showPreview(file);
-
       showPasteToast(file.name || 'скриншот из буфера');
       e.preventDefault();
       break;
     }
   }
 });
-
 function showPasteToast(filename) {
   const t = document.createElement('div');
   t.className = 'paste-toast';
-  t.innerHTML = `<span>📋</span><span>Вставлено: <strong>${filename}</strong></span>`;
+  t.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/></svg> Вставлено: <strong>${filename}</strong>`;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2800);
 }

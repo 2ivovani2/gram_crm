@@ -1,11 +1,11 @@
 {% extends "crm/base.html" %}
-{% block title %}Дашборд — GRAMLY CRM{% endblock %}
+{% block title %}Дашборд — Gramly CRM{% endblock %}
 {% block page_title %}Дашборд{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
 {% block topbar_actions %}
 {% if is_owner %}
-<span style="font-size:12px;color:var(--muted)">{{ now_msk|date:"d M Y, H:i" }} МСК</span>
+<span style="font-size:12.5px;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums">{{ now_msk|date:"d M Y · H:i" }} МСК</span>
 {% endif %}
 {% endblock %}
 
@@ -15,156 +15,170 @@
 
 <!-- ══ OWNER VIEW ═══════════════════════════════════════════════════════════ -->
 
-<!-- ── Today's status ──────────────────────────────────────────────────────── -->
+<!-- ── Today's status ─────────────────────────────────────────────────────── -->
 <div class="section-hdr">
-  <h2>Статус за сегодня — {{ status.today|date:"d.m.Y" }}</h2>
+  <h2>Статус за сегодня <span style="color:var(--muted);font-weight:500;font-size:14px;margin-left:4px">— {{ status.today|date:"d.m.Y" }}</span></h2>
   {% if status.both_done %}
-  <span class="badge badge-green">✅ Все данные внесены</span>
+  <span class="badge badge-green">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+    Все данные внесены
+  </span>
   {% else %}
-  <span class="badge badge-amber">⏳ Ожидание данных</span>
+  <span class="badge badge-amber">Ожидание данных</span>
   {% endif %}
 </div>
 
 <div class="entry-status-grid">
   <!-- Finance -->
   <div class="entry-status-card {% if status.finance_done %}done{% else %}pending{% endif %}">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between">
-      <div>
-        <div class="entry-status-title">💳 Cash Flow</div>
-        <div class="entry-status-who">Финансовый аналитик</div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:10px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 11h20M6 15h2"/>
+          </svg>
+        </div>
+        <div>
+          <div class="entry-status-title">Cash Flow</div>
+          <div class="entry-status-who">Финансовый аналитик</div>
+        </div>
       </div>
-      <div class="entry-status-icon">{% if status.finance_done %}✅{% else %}⏳{% endif %}</div>
+      {% if status.finance_done %}
+      <span class="badge badge-green">Внесено</span>
+      {% else %}
+      <span class="badge badge-amber">Ожидает</span>
+      {% endif %}
     </div>
+
     {% if status.finance_entry %}
-    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
-      <div style="color:var(--muted2)">
-        Поступления: <span style="color:var(--green);font-weight:600">+{{ status.finance_entry.income }} $</span>
-      </div>
-      <div style="color:var(--muted2)">
-        Расходы: <span style="color:var(--red);font-weight:600">−{{ status.finance_entry.expenses }} $</span>
-      </div>
-      <div style="color:var(--muted2)">
-        ПП: <span style="font-weight:600;color:var(--text)">{{ status.finance_entry.pp_earnings }} $</span> &nbsp;
-        Привата: <span style="font-weight:600;color:var(--text)">{{ status.finance_entry.privat_earnings }} $</span>
-      </div>
-      <div style="font-size:11px;color:var(--muted)">Внёс: {{ status.finance_entry.submitted_by.display_name }}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;padding:14px 16px;background:var(--bg-2);border-radius:var(--r-sm)">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Поступления</span><span style="color:var(--success);font-weight:700;font-variant-numeric:tabular-nums">+{{ status.finance_entry.income }} $</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Расходы</span><span style="color:var(--danger);font-weight:700;font-variant-numeric:tabular-nums">−{{ status.finance_entry.expenses }} $</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">ПП</span><span style="color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.finance_entry.pp_earnings }} $</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Привата</span><span style="color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.finance_entry.privat_earnings }} $</span></div>
     </div>
-    <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-secondary btn-sm" style="align-self:flex-start">
-      Редактировать
-    </a>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11.5px">
+      <span style="color:var(--muted);font-weight:500">Внёс: <span style="color:var(--ink-2)">{{ status.finance_entry.submitted_by.display_name }}</span></span>
+      <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-ghost btn-sm">Редактировать →</a>
+    </div>
     {% else %}
-    <div style="font-size:13px;color:var(--muted)">Данные ещё не внесены</div>
-    <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">
-      Внести данные
-    </a>
+    <div style="font-size:13.5px;color:var(--muted);font-weight:500">Данные ещё не внесены за сегодня.</div>
+    <a href="{% url 'crm:entry_finance' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">Внести данные</a>
     {% endif %}
   </div>
 
   <!-- Applications -->
   <div class="entry-status-card {% if status.apps_done %}done{% else %}pending{% endif %}">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between">
-      <div>
-        <div class="entry-status-title">📋 Заявки</div>
-        <div class="entry-status-who">Менеджер по заявкам</div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:10px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>
+          </svg>
+        </div>
+        <div>
+          <div class="entry-status-title">Заявки</div>
+          <div class="entry-status-who">Менеджер по заявкам</div>
+        </div>
       </div>
-      <div class="entry-status-icon">{% if status.apps_done %}✅{% else %}⏳{% endif %}</div>
+      {% if status.apps_done %}
+      <span class="badge badge-green">Внесено</span>
+      {% else %}
+      <span class="badge badge-amber">Ожидает</span>
+      {% endif %}
     </div>
+
     {% if status.app_entry %}
-    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
-      <div style="color:var(--muted2)">
-        Заявок: <span style="color:var(--gold);font-weight:600">{{ status.app_entry.applications_count }} шт.</span>
-      </div>
-      <div style="color:var(--muted2)">
-        Заработок: <span style="font-weight:600;color:var(--text)">{{ status.app_entry.applications_earnings }} $</span>
-      </div>
-      <div style="font-size:11px;color:var(--muted)">Внёс: {{ status.app_entry.submitted_by.display_name }}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;padding:14px 16px;background:var(--bg-2);border-radius:var(--r-sm)">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Количество</span><span style="color:var(--accent-ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.app_entry.applications_count }}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Заработок</span><span style="color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.app_entry.applications_earnings }} $</span></div>
     </div>
-    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-secondary btn-sm" style="align-self:flex-start">
-      Редактировать
-    </a>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11.5px">
+      <span style="color:var(--muted);font-weight:500">Внёс: <span style="color:var(--ink-2)">{{ status.app_entry.submitted_by.display_name }}</span></span>
+      <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-ghost btn-sm">Редактировать →</a>
+    </div>
     {% else %}
-    <div style="font-size:13px;color:var(--muted)">Данные ещё не внесены</div>
-    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">
-      Внести данные
-    </a>
+    <div style="font-size:13.5px;color:var(--muted);font-weight:500">Данные ещё не внесены за сегодня.</div>
+    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">Внести данные</a>
     {% endif %}
   </div>
 </div>
 
-<!-- ── Today's report (if generated) ──────────────────────────────────────── -->
+<!-- ── Today's report (if generated) ───────────────────────────────────── -->
 {% if status.report %}
-<div class="card card-green" style="margin-bottom:24px">
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
-    <div style="flex:1">
-      <div class="card-title" style="color:var(--green)">Сводный отчёт за сегодня</div>
-      <div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+<div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,var(--surface-2) 0%,var(--accent-tint) 100%);border-color:var(--accent-soft)">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></div>
+        <span style="font-size:11px;font-weight:700;color:var(--accent-ink);text-transform:uppercase;letter-spacing:.12em">Сводный отчёт за сегодня</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:18px">
         <div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Сальдо</div>
-          <div style="font-size:20px;font-weight:700;color:{% if status.report.cash_flow_balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">Сальдо</div>
+          <div style="font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:{% if status.report.cash_flow_balance >= 0 %}var(--success){% else %}var(--danger){% endif %}">
             {% if status.report.cash_flow_balance >= 0 %}+{% endif %}{{ status.report.cash_flow_balance|floatformat:2 }} $
           </div>
         </div>
         <div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">ПП</div>
-          <div style="font-size:20px;font-weight:700;color:var(--text)">{{ status.report.pp_earnings|floatformat:2 }} $</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">ПП</div>
+          <div style="font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--ink)">{{ status.report.pp_earnings|floatformat:2 }} $</div>
         </div>
         <div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Привата</div>
-          <div style="font-size:20px;font-weight:700;color:var(--text)">{{ status.report.privat_earnings|floatformat:2 }} $</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">Привата</div>
+          <div style="font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--ink)">{{ status.report.privat_earnings|floatformat:2 }} $</div>
         </div>
         <div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Заявки</div>
-          <div style="font-size:20px;font-weight:700;color:var(--gold)">{{ status.report.applications_count }} шт.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">Заявки</div>
+          <div style="font-size:24px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--accent)">{{ status.report.applications_count }} <span style="font-size:14px;color:var(--muted)">шт.</span></div>
         </div>
       </div>
     </div>
-    <a href="{% url 'crm:report_detail' status.report.pk %}" class="btn btn-secondary btn-sm">
-      Полный отчёт →
-    </a>
+    <a href="{% url 'crm:report_detail' status.report.pk %}" class="btn btn-secondary btn-sm">Полный отчёт →</a>
   </div>
 </div>
 {% endif %}
 
-<!-- ── Weekly plan progress ────────────────────────────────────────────────── -->
+<!-- ── Weekly plan progress ────────────────────────────────────────────── -->
 {% if plan %}
 <div class="card" style="margin-bottom:24px">
-  <div class="section-hdr" style="margin-bottom:14px">
-    <h2 style="font-size:15px">Прогресс недельного плана</h2>
-    <span style="font-size:12px;color:var(--muted)">Неделя с {{ plan.week_start|date:"d.m" }}</span>
+  <div class="section-hdr" style="margin-bottom:18px">
+    <h2 style="font-size:16px">Прогресс недельного плана</h2>
+    <span style="font-size:12px;color:var(--muted);font-weight:500">Неделя с {{ plan.week_start|date:"d.m" }}</span>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
     {% with pp_pct=status.report.pp_plan_pct|default:0 %}
     <div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
-        <span style="color:var(--muted2)">ПП</span>
-        <span style="font-weight:700;color:var(--text)">{{ pp_pct|floatformat:1 }}%</span>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px">
+        <span style="color:var(--ink-2);font-weight:600">ПП</span>
+        <span style="font-weight:700;color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ pp_pct|floatformat:1 }}%</span>
       </div>
-      <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
-        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--gold);border-radius:3px;transition:width .4s"></div>
+      <div style="height:8px;background:var(--bg-2);border-radius:6px;overflow:hidden;border:1px solid var(--line-2)">
+        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:6px;transition:width .6s cubic-bezier(.4,.0,.2,1)"></div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.pp_plan }} $</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px;font-weight:500">План: <span style="color:var(--ink-2);font-weight:600">{{ plan.pp_plan }} $</span></div>
     </div>
     {% endwith %}
     {% with prv_pct=status.report.privat_plan_pct|default:0 %}
     <div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
-        <span style="color:var(--muted2)">Привата</span>
-        <span style="font-weight:700;color:var(--text)">{{ prv_pct|floatformat:1 }}%</span>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px">
+        <span style="color:var(--ink-2);font-weight:600">Привата</span>
+        <span style="font-weight:700;color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ prv_pct|floatformat:1 }}%</span>
       </div>
-      <div style="height:6px;background:var(--surface-h);border-radius:3px;overflow:hidden">
-        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--amber);border-radius:3px;transition:width .4s"></div>
+      <div style="height:8px;background:var(--bg-2);border-radius:6px;overflow:hidden;border:1px solid var(--line-2)">
+        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--ink);border-radius:6px;transition:width .6s cubic-bezier(.4,.0,.2,1)"></div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">План: {{ plan.privat_plan }} $</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px;font-weight:500">План: <span style="color:var(--ink-2);font-weight:600">{{ plan.privat_plan }} $</span></div>
     </div>
     {% endwith %}
   </div>
 </div>
 {% endif %}
 
-<!-- ── Recent reports ──────────────────────────────────────────────────────── -->
+<!-- ── Recent reports ────────────────────────────────────────────────── -->
 <div class="section-hdr">
   <h2>Последние отчёты</h2>
-  <a href="{% url 'crm:history' %}" class="btn btn-secondary btn-sm">Вся история →</a>
+  <a href="{% url 'crm:history' %}" class="btn btn-ghost btn-sm">Вся история →</a>
 </div>
 
 {% if recent %}
@@ -184,72 +198,79 @@
     <tbody>
       {% for r in recent %}
       <tr>
-        <td style="font-weight:600;color:var(--text)">{{ r.date|date:"d.m.Y" }}</td>
+        <td style="font-weight:600;color:var(--ink)">{{ r.date|date:"d.m.Y" }}</td>
         <td>
-          <span style="font-weight:700;color:{% if r.cash_flow_balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+          <span style="font-weight:700;font-variant-numeric:tabular-nums;color:{% if r.cash_flow_balance >= 0 %}var(--success){% else %}var(--danger){% endif %}">
             {% if r.cash_flow_balance >= 0 %}+{% endif %}{{ r.cash_flow_balance|floatformat:2 }} $
           </span>
         </td>
-        <td>{{ r.pp_earnings|floatformat:2 }}</td>
-        <td>{{ r.privat_earnings|floatformat:2 }}</td>
+        <td style="font-variant-numeric:tabular-nums">{{ r.pp_earnings|floatformat:2 }}</td>
+        <td style="font-variant-numeric:tabular-nums">{{ r.privat_earnings|floatformat:2 }}</td>
         <td><span class="badge badge-blue">{{ r.applications_count }} шт.</span></td>
         <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:60px;height:4px;background:var(--surface-h);border-radius:2px;overflow:hidden">
-              <div style="height:100%;width:{{ r.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--gold);border-radius:2px"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:72px;height:5px;background:var(--bg-2);border-radius:3px;overflow:hidden;border:1px solid var(--line-2)">
+              <div style="height:100%;width:{{ r.pp_plan_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:3px"></div>
             </div>
-            <span style="font-size:12px">{{ r.pp_plan_pct|floatformat:1 }}%</span>
+            <span style="font-size:12.5px;color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums">{{ r.pp_plan_pct|floatformat:1 }}%</span>
           </div>
         </td>
-        <td><a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--gold);font-size:12.5px;text-decoration:none">→ Подробнее</a></td>
+        <td><a href="{% url 'crm:report_detail' r.pk %}" style="color:var(--accent);font-size:12.5px;text-decoration:none;font-weight:600">Открыть →</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-<div class="card" style="text-align:center;padding:40px">
-  <div style="font-size:40px;margin-bottom:12px">📊</div>
-  <div style="font-size:14px;color:var(--muted2)">Отчётов пока нет.</div>
-  <div style="font-size:12px;color:var(--muted);margin-top:4px">Отчёт формируется автоматически, когда оба блока данных внесены.</div>
+<div class="card" style="text-align:center;padding:56px 32px">
+  <div style="width:48px;height:48px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--muted)">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 5-6"/></svg>
+  </div>
+  <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:6px">Отчётов пока нет</div>
+  <div style="font-size:13px;color:var(--muted);max-width:340px;margin:0 auto;line-height:1.6">Отчёт формируется автоматически, когда оба блока данных за день внесены.</div>
 </div>
 {% endif %}
 
 {% else %}
 
 <!-- ══ LIMITED VIEW (non-owner) ══════════════════════════════════════════════ -->
-<div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-  <div style="max-width:420px;text-align:center;padding:24px">
-    <div style="font-size:56px;margin-bottom:20px">👋</div>
-    <h2 style="font-size:22px;font-weight:800;margin-bottom:10px;color:var(--text)">
-      Добро пожаловать, {{ crm_user.display_name }}
+<div style="display:flex;align-items:center;justify-content:center;min-height:70vh">
+  <div style="max-width:460px;text-align:center;padding:24px">
+    <div style="width:64px;height:64px;border-radius:18px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;color:var(--accent);box-shadow:var(--shadow-sm)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </div>
+    <h2 style="font-family:'Instrument Serif',serif;font-size:36px;font-weight:400;letter-spacing:-.02em;margin-bottom:12px;color:var(--ink);line-height:1.05">
+      Добро пожаловать,<br><em style="font-style:italic">{{ crm_user.display_name }}</em>
     </h2>
-    <p style="font-size:14px;color:var(--muted2);line-height:1.7;margin-bottom:28px">
-      Вы успешно авторизованы в GRAMLY CRM.<br>
-      Полный доступ к данным и управлению доступен только владельцам рабочего пространства.
+    <p style="font-size:14.5px;color:var(--muted);line-height:1.65;margin-bottom:28px">
+      Вы успешно авторизованы в Gramly CRM. Полный доступ к данным и управлению доступен только владельцам рабочего пространства.
     </p>
-    <div class="card" style="text-align:left;margin-bottom:24px;padding:16px 20px">
-      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+    <div class="card" style="text-align:left;margin-bottom:24px;padding:20px 22px">
+      <div style="font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px">
         Что доступно вам
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;color:var(--text-2)">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--green);font-size:15px">✓</span> Авторизация через Telegram
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;color:var(--ink-2);font-weight:500">
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          Авторизация через Telegram
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="color:var(--green);font-size:15px">✓</span> Просмотр этой страницы
+        <div style="display:flex;align-items:center;gap:10px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+          Просмотр этой страницы
         </div>
-        <div style="display:flex;align-items:center;gap:8px;color:var(--muted)">
-          <span style="font-size:15px">✗</span> Финансовые данные и отчёты
+        <div style="display:flex;align-items:center;gap:10px;color:var(--muted2)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          Финансовые данные и отчёты
         </div>
-        <div style="display:flex;align-items:center;gap:8px;color:var(--muted)">
-          <span style="font-size:15px">✗</span> Ввод данных и управление
+        <div style="display:flex;align-items:center;gap:10px;color:var(--muted2)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          Ввод данных и управление
         </div>
       </div>
     </div>
-    <p style="font-size:13px;color:var(--muted)">
+    <p style="font-size:13px;color:var(--muted);font-weight:500">
       Для получения доступа обратитесь к<br>
-      <strong style="color:var(--text-2)">владельцу рабочего пространства.</strong>
+      <strong style="color:var(--ink-2)">владельцу рабочего пространства.</strong>
     </p>
   </div>
 </div>

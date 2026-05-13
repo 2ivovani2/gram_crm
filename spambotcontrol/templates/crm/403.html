@@ -1,13 +1,20 @@
 {% extends "crm/base.html" %}
-{% block title %}Нет доступа — GRAMLY CRM{% endblock %}
+{% block title %}Нет доступа — Gramly CRM{% endblock %}
 {% block page_title %}Доступ запрещён{% endblock %}
 {% block content %}
-<div style="text-align:center;padding:60px 20px">
-  <div style="font-size:56px;margin-bottom:16px">🚫</div>
-  <h2 style="font-size:22px;font-weight:800;margin-bottom:10px">Нет прав</h2>
-  <p style="font-size:14px;color:var(--muted2);max-width:360px;margin:0 auto 24px">
-    Эта страница доступна только Главному администратору пространства.
-  </p>
-  <a href="{% url 'crm:dashboard' %}" class="btn btn-secondary">← На дашборд</a>
+<div style="display:flex;align-items:center;justify-content:center;min-height:70vh">
+  <div style="max-width:400px;text-align:center;padding:24px">
+    <div style="width:64px;height:64px;border-radius:18px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 24px;color:var(--danger);box-shadow:var(--shadow-sm)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0110 0v4"/>
+      </svg>
+    </div>
+    <h2 style="font-family:'Instrument Serif',serif;font-size:34px;font-weight:400;letter-spacing:-.02em;margin-bottom:12px;color:var(--ink);line-height:1.05">Нет прав</h2>
+    <p style="font-size:14.5px;color:var(--muted);max-width:360px;margin:0 auto 28px;line-height:1.65">
+      Эта страница доступна только Главному администратору пространства.
+    </p>
+    <a href="{% url 'crm:dashboard' %}" class="btn btn-secondary">← На дашборд</a>
+  </div>
 </div>
 {% endblock %}

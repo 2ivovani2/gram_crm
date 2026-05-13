@@ -5,101 +5,132 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Вход — Gramly AutoSending</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:       #0b0a05;
-  --surface:  rgba(240,180,41,.04);
-  --border:   rgba(240,180,41,.12);
-  --gold:     #f0b429;
-  --red:      #f87171;
-  --red-dim:  rgba(248,113,113,.10);
-  --text:     #f5f0e2;
-  --muted:    #7a7060;
-  --muted2:   #a09080;
-  --r:        12px;
+  --bg:#F4EFE5; --surface:#FBFAF5; --surface-2:#FFFFFF;
+  --ink:#1A1714; --ink-2:#3B342C;
+  --muted:#7A6F60; --muted2:#9D9182;
+  --line:#E5DBC8; --line-2:#EEE6D4;
+  --accent:#8A5A1F; --accent-tint:#FBF3DE; --accent-soft:#F4E6C6; --accent-ink:#4E3010;
+  --danger:#9A3434; --danger-soft:#F2DEDC;
 }
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  background: var(--bg); color: var(--ink);
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; letter-spacing: -.005em;
+  -webkit-font-smoothing: antialiased; overflow: hidden;
 }
 body::before {
-  content: '';
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 70% 60% at 0% 0%, rgba(240,180,41,.055) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 50% at 100% 100%, rgba(224,125,10,.04) 0%, transparent 65%);
+    radial-gradient(ellipse 70% 60% at 0% 0%, rgba(138,90,31,.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 100% 100%, rgba(138,90,31,.05) 0%, transparent 60%);
 }
+body::after {
+  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(26,23,20,.025) .9px, transparent .9px);
+  background-size: 22px 22px; opacity: .5;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(16px) scale(.99); }
+  to   { opacity: 1; transform: none; }
+}
+
 .card {
   position: relative; z-index: 1;
-  width: 100%; max-width: 360px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 36px 32px;
+  width: 100%; max-width: 400px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 40px 36px;
   text-align: center;
+  box-shadow: 0 1px 0 rgba(26,23,20,.02), 0 32px 80px -16px rgba(26,23,20,.18);
+  animation: cardIn .55s cubic-bezier(.2,.8,.3,1) both;
 }
 .logo {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 12px;
   margin-bottom: 8px;
 }
 .logo-icon {
-  width: 32px; height: 32px;
-  background: linear-gradient(135deg, #f0b429 0%, #e07d0a 100%);
-  border-radius: 8px;
+  width: 38px; height: 38px;
+  background: var(--ink);
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
+  position: relative; overflow: hidden;
 }
+.logo-icon::after {
+  content:''; position: absolute; inset: 1px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #2A241E, #1A1714);
+}
+.logo-icon svg { position: relative; z-index: 1; }
 .logo-name {
-  font-size: 20px; font-weight: 700;
-  letter-spacing: -0.04em; color: var(--text);
+  font-size: 22px; font-weight: 800;
+  letter-spacing: -.025em; color: var(--ink);
 }
 .logo-sub {
-  font-size: 13px; color: var(--muted2); margin-bottom: 28px;
+  font-size: 12.5px; color: var(--muted);
+  margin-bottom: 32px; font-weight: 500;
 }
-h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px; }
-.subtitle { font-size: 13px; color: var(--muted2); line-height: 1.5; margin-bottom: 28px; }
+
+h1 {
+  font-family: 'Instrument Serif', serif;
+  font-size: 30px; font-weight: 400;
+  letter-spacing: -.02em; margin-bottom: 10px;
+  line-height: 1.05; color: var(--ink);
+}
+h1 em { font-style: italic; color: var(--accent); }
+.subtitle {
+  font-size: 13.5px; color: var(--muted);
+  line-height: 1.6; margin-bottom: 28px;
+  font-weight: 500;
+}
 .widget-wrap {
   display: flex; justify-content: center;
   min-height: 44px; margin-bottom: 16px;
+  padding: 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
 }
 .error {
-  font-size: 12px; color: var(--red);
-  background: var(--red-dim);
-  border: 1px solid rgba(248,113,113,.25);
-  border-radius: 6px;
-  padding: 8px 12px;
+  font-size: 12.5px; color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid rgba(154,52,52,.2);
+  border-radius: 10px;
+  padding: 10px 14px;
   text-align: left;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  font-weight: 500;
 }
 .footer {
-  margin-top: 28px; font-size: 11px; color: var(--muted);
-  line-height: 1.5;
+  margin-top: 28px; font-size: 11.5px; color: var(--muted);
+  line-height: 1.6; font-weight: 500;
 }
-.footer a { color: var(--muted2); text-decoration: none; }
+.footer a { color: var(--ink-2); text-decoration: none; font-weight: 600; }
+.footer a:hover { color: var(--accent); }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">
-    <div class="logo-icon">💛</div>
+    <div class="logo-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9994B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+      </svg>
+    </div>
     <span class="logo-name">Gramly</span>
   </div>
   <div class="logo-sub">AutoSending</div>
 
-  <h1>Войти в систему</h1>
+  <h1>Войти в <em>систему</em></h1>
   <p class="subtitle">Используй свой Telegram-аккаунт</p>
 
-  {% if error %}
-  <div class="error">{{ error }}</div>
-  {% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
   <div class="widget-wrap">
     {% if bot_username %}
@@ -112,15 +143,15 @@ h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 
       async>
     </script>
     {% else %}
-    <div style="color:var(--red);font-size:13px">Конфигурация не завершена</div>
+    <div style="color:var(--danger);font-size:13px;font-weight:500">Конфигурация не завершена</div>
     {% endif %}
   </div>
 
   <p class="footer">
     Часть экосистемы <a href="/">Gramly</a>
-    &nbsp;·&nbsp;
+    <span style="color:var(--line);margin:0 6px">·</span>
     <a href="/crm/login/">CRM</a>
-    &nbsp;·&nbsp;
+    <span style="color:var(--line);margin:0 6px">·</span>
     <a href="/docs/">Документация</a>
   </p>
 </div>

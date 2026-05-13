@@ -4,25 +4,25 @@
 {% block breadcrumb %}<span class="sep">/</span><span class="current">Аккаунты</span>{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Аккаунты и настройки</h1>
+<h1 class="page-title">Аккаунты и <em>настройки</em></h1>
 <p class="page-lead">Telegram-аккаунты — основной рабочий инструмент AutoSending. Здесь описано, как их добавлять, какие статусы бывают, как продлить жизнь аккаунта и что делать при ошибках.</p>
 
-<h2 class="section-title"><span class="icon">🔑</span> API Credentials</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 11-7.8 7.8 5.5 5.5 0 017.8-7.8zm0 0L15.5 7l3 3L22 6l-3-3"/></svg></span> API Credentials</h2>
 <p>Для добавления аккаунта нужны три данных:</p>
 
 <div class="card-grid">
   <div class="card">
-    <div class="card-icon">🔢</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></div>
     <div class="card-title">api_id</div>
     <div class="card-text">Числовой идентификатор приложения. Уникален для каждого аккаунта. Получить на <code>my.telegram.org</code>.</div>
   </div>
   <div class="card">
-    <div class="card-icon">🗝️</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 11-7.8 7.8 5.5 5.5 0 017.8-7.8zm0 0L15.5 7l3 3L22 6l-3-3"/></svg></div>
     <div class="card-title">api_hash</div>
     <div class="card-text">Секретный хеш приложения — строка из 32 символов. Там же, на <code>my.telegram.org</code>.</div>
   </div>
   <div class="card">
-    <div class="card-icon">📱</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></div>
     <div class="card-title">Номер телефона</div>
     <div class="card-text">Номер, на который зарегистрирован Telegram-аккаунт. Формат: <code>+7XXXXXXXXXX</code>.</div>
   </div>
@@ -52,7 +52,7 @@
   </div>
 </div>
 
-<h2 class="section-title"><span class="icon">🔄</span> Жизненный цикл аккаунта</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0115-6.7L21 8M21 3v5h-5M21 12a9 9 0 01-15 6.7L3 16M3 21v-5h5"/></svg></span> Жизненный цикл аккаунта</h2>
 
 <div class="table-wrap"><table class="role-table">
   <thead><tr><th>Статус</th><th>Что означает</th><th>Что делать</th></tr></thead>
@@ -68,83 +68,83 @@
       <td>Добавить в кампанию</td>
     </tr>
     <tr>
-      <td><span class="badge" style="background:rgba(14,165,233,.12);color:#38bdf8">working</span></td>
+      <td><span class="badge badge-purple">working</span></td>
       <td>Аккаунт участвует в активной кампании</td>
       <td>—</td>
     </tr>
     <tr>
-      <td><span class="badge" style="background:rgba(248,113,113,.12);color:var(--red)">error</span></td>
+      <td><span class="badge" style="background:var(--danger-soft);color:var(--danger);border:1px solid rgba(154,52,52,.18)">error</span></td>
       <td>Ошибка авторизации или блокировка</td>
       <td>Проверить детали ошибки, пройти верификацию повторно или удалить</td>
     </tr>
     <tr>
-      <td><span class="badge" style="background:rgba(120,120,120,.15);color:#a0a0a0">banned</span></td>
+      <td><span class="badge" style="background:var(--bg-2);color:var(--muted);border:1px solid var(--line-2)">banned</span></td>
       <td>Аккаунт заблокирован Telegram</td>
       <td>Удалить аккаунт, добавить новый</td>
     </tr>
   </tbody>
 </table></div>
 
-<h2 class="section-title"><span class="icon">🛡️</span> Как продлить жизнь аккаунтов</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Как продлить жизнь аккаунтов</h2>
 <p>Telegram отслеживает подозрительную активность. Следование этим правилам существенно снижает риск блокировки:</p>
 
 <div class="card-grid">
   <div class="card">
-    <div class="card-icon">⏱️</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
     <div class="card-title">Адекватная задержка</div>
-    <div class="card-text">Не менее 30–60 секунд между отправками. Задержка 60–180 секунд — оптимальный баланс скорости и безопасности.</div>
+    <div class="card-text">Не менее 30–60 секунд между отправками. 60–180 секунд — оптимальный баланс скорости и безопасности.</div>
   </div>
   <div class="card">
-    <div class="card-icon">💬</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.4 8.4 0 01-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.4 8.4 0 013.8-.9h.5a8.5 8.5 0 018 8v.5z"/></svg></div>
     <div class="card-title">Разные шаблоны</div>
     <div class="card-text">Используйте 3–5+ разных шаблонов. Одинаковые сообщения от разных аккаунтов — один из главных триггеров бана.</div>
   </div>
   <div class="card">
-    <div class="card-icon">📊</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 5-6"/></svg></div>
     <div class="card-title">Следите за ошибками</div>
     <div class="card-text">При <code>FloodWaitError</code> — увеличьте задержку немедленно. Игнорирование этих ошибок ведёт к бану.</div>
   </div>
   <div class="card">
-    <div class="card-icon">🔁</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4M20 7H10a6 6 0 00-6 6M8 21l-4-4 4-4M4 17h10a6 6 0 006-6"/></svg></div>
     <div class="card-title">Ротация аккаунтов</div>
     <div class="card-text">Не нагружайте один аккаунт бесконечно. При появлении ошибок — дайте аккаунту отдых или замените новым.</div>
   </div>
 </div>
 
 <div class="callout danger">
-  <span class="callout-icon">🚫</span>
+  <div class="callout-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg></div>
   <div class="callout-body">
     <div class="callout-title">Что гарантированно приводит к бану</div>
     Задержка менее 10 секунд, один и тот же текст во всех сообщениях, отправка в сотни каналов подряд без пауз, одновременная работа одного аккаунта в слишком большом числе кампаний.
   </div>
 </div>
 
-<h2 class="section-title"><span class="icon">📋</span> Управление аккаунтами</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span> Управление аккаунтами</h2>
 
 <div class="card-grid">
   <div class="card">
-    <div class="card-icon">👁️</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></div>
     <div class="card-title">Просмотр аккаунта</div>
     <div class="card-text">В списке аккаунтов видно: статус, номер телефона, имя в Telegram, количество отправленных сообщений и число ошибок за всё время.</div>
   </div>
   <div class="card">
-    <div class="card-icon">🔄</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0115-6.7L21 8M21 3v5h-5"/></svg></div>
     <div class="card-title">Повторная верификация</div>
     <div class="card-text">Если аккаунт перешёл в статус <strong>error</strong> из-за истёкшей сессии — нажмите «Верифицировать» и введите новый код из Telegram.</div>
   </div>
   <div class="card">
-    <div class="card-icon">🗑️</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></div>
     <div class="card-title">Удаление аккаунта</div>
     <div class="card-text">При удалении аккаунт автоматически убирается из всех кампаний, в которых участвовал. Данные по отправленным сообщениям сохраняются в логах.</div>
   </div>
   <div class="card">
-    <div class="card-icon">⏸️</div>
+    <div class="card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></div>
     <div class="card-title">Деактивация</div>
     <div class="card-text">Флаг «Активен/Неактивен» позволяет временно исключить аккаунт из всех кампаний без удаления. Включите обратно когда нужно.</div>
   </div>
 </div>
 
-<h2 class="section-title"><span class="icon">⚙️</span> Параметры кампании</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5"/></svg></span> Параметры кампании</h2>
 <p>Основные настройки кампании, влияющие на поведение рассылки:</p>
 
 <div class="table-wrap"><table class="role-table">

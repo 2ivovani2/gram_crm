@@ -4,154 +4,107 @@
 {% block breadcrumb %}<span class="sep">/</span><span class="current">FAQ</span>{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Частые вопросы</h1>
+<h1 class="page-title">Частые <em>вопросы</em></h1>
 <p class="page-lead">Ответы на распространённые вопросы по AutoSending и CRM. Если вашего вопроса нет — обратитесь к разработчику.</p>
 
-<h2 class="section-title"><span class="icon">🔐</span> Вход и авторизация</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span> Вход и авторизация</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Не получается войти в AutoSending через Telegram<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Убедитесь, что в браузере разрешены всплывающие окна — Telegram Widget открывается в popup. Если окно не появляется, попробуйте отключить блокировщик рекламы на странице входа. Также проверьте, что у вас установлено приложение Telegram или доступна Telegram Web.
-  </div>
+  <summary class="faq-q">Не получается войти в AutoSending через Telegram<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Убедитесь, что в браузере разрешены всплывающие окна — Telegram Widget открывается в popup. Если окно не появляется, попробуйте отключить блокировщик рекламы на странице входа. Также проверьте, что у вас установлено приложение Telegram или доступна Telegram Web.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Войдите через CRM или AutoSending — нужно входить в оба?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Нет. Сессия единая — если вы уже вошли в CRM, то в документации и в AutoSending вы тоже авторизованы. Повторный вход не нужен.
-  </div>
+  <summary class="faq-q">Войдите через CRM или AutoSending — нужно входить в оба?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Нет. Сессия единая — если вы уже вошли в CRM, то в документации и в AutoSending вы тоже авторизованы. Повторный вход не нужен.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Система говорит «вы не зарегистрированы»<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Ваш Telegram-аккаунт должен быть в базе системы. Если вы впервые входите — администратор должен предоставить вам доступ. Напишите администратору ваш Telegram ID (можно узнать через бота <code>@userinfobot</code>).
-  </div>
+  <summary class="faq-q">Система говорит «вы не зарегистрированы»<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Ваш Telegram-аккаунт должен быть в базе системы. Если вы впервые входите — администратор должен предоставить вам доступ. Напишите администратору ваш Telegram ID (можно узнать через бота <code>@userinfobot</code>).</div>
 </details>
 
-<h2 class="section-title"><span class="icon">📱</span> Аккаунты</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span> Аккаунты</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Где взять api_id и api_hash?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Откройте <code>my.telegram.org</code>, войдите под нужным Telegram-аккаунтом, перейдите в раздел «API development tools». Создайте приложение (название любое) — вы получите <strong>App api_id</strong> и <strong>App api_hash</strong>. Важно: каждый аккаунт имеет свои уникальные credentials.
-  </div>
+  <summary class="faq-q">Где взять api_id и api_hash?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Откройте <code>my.telegram.org</code>, войдите под нужным Telegram-аккаунтом, перейдите в раздел «API development tools». Создайте приложение (название любое) — вы получите <strong>App api_id</strong> и <strong>App api_hash</strong>. Важно: каждый аккаунт имеет свои уникальные credentials.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Аккаунт завис в статусе «pending»<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Статус <strong>pending</strong> означает, что система ожидает ввода кода подтверждения. Откройте список аккаунтов, найдите нужный и нажмите «Верифицировать» — введите код, который пришёл в Telegram на указанный номер. Если код устарел — Telegram пришлёт новый при повторном запросе.
-  </div>
+  <summary class="faq-q">Аккаунт завис в статусе «pending»<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Статус <strong>pending</strong> означает, что система ожидает ввода кода подтверждения. Откройте список аккаунтов, найдите нужный и нажмите «Верифицировать» — введите код, который пришёл в Telegram на указанный номер. Если код устарел — Telegram пришлёт новый при повторном запросе.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Аккаунт перешёл в статус «error». Что делать?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Статус <strong>error</strong> чаще всего означает истёкшую сессию. В разделе «Аккаунты» нажмите кнопку «Верифицировать» рядом с аккаунтом — пройдите верификацию заново. Если ошибка повторяется — возможно, аккаунт заблокирован Telegram. Проверьте через официальное приложение.
-  </div>
+  <summary class="faq-q">Аккаунт перешёл в статус «error» — что делать?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Статус <strong>error</strong> чаще всего означает истёкшую сессию. В разделе «Аккаунты» нажмите кнопку «Верифицировать» рядом с аккаунтом — пройдите верификацию заново. Если ошибка повторяется — возможно, аккаунт заблокирован Telegram. Проверьте через официальное приложение.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Можно использовать один аккаунт в нескольких кампаниях?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Технически — да. Но один аккаунт одновременно в двух активных кампаниях увеличивает частоту его отправок. Следите, чтобы итоговая задержка оставалась разумной — иначе FloodWaitError не заставит себя ждать.
-  </div>
+  <summary class="faq-q">Можно использовать один аккаунт в нескольких кампаниях?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Технически — да. Но один аккаунт одновременно в двух активных кампаниях увеличивает частоту его отправок. Следите, чтобы итоговая задержка оставалась разумной — иначе FloodWaitError не заставит себя ждать.</div>
 </details>
 
-<h2 class="section-title"><span class="icon">📢</span> Кампании и рассылка</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/></svg></span> Кампании и рассылка</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Запустил кампанию, но отправок нет<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Проверьте несколько вещей: (1) все привязанные к кампании аккаунты имеют статус <strong>active</strong> или <strong>working</strong>; (2) добавлены каналы и шаблоны сообщений; (3) сама кампания в статусе <strong>running</strong> (не <strong>idle</strong> или <strong>stopped</strong>). Откройте Dashboard — лента событий покажет, что происходит.
-  </div>
+  <summary class="faq-q">Запустил кампанию, но отправок нет<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Проверьте несколько вещей: (1) все привязанные к кампании аккаунты имеют статус <strong>active</strong> или <strong>working</strong>; (2) добавлены каналы и шаблоны сообщений; (3) сама кампания в статусе <strong>running</strong> (не <strong>idle</strong> или <strong>stopped</strong>). Откройте Dashboard — лента событий покажет, что происходит.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">В ленте событий много ошибок FloodWaitError<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Telegram запрашивает паузу — аккаунты отправляют слишком часто. Остановите кампанию, увеличьте задержку (попробуйте 90–180 секунд), запустите снова. FloodWaitError содержит время ожидания — система автоматически выдерживает его, но частые ошибки сигнализируют о слишком агрессивных настройках.
-  </div>
+  <summary class="faq-q">В ленте событий много ошибок FloodWaitError<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Telegram запрашивает паузу — аккаунты отправляют слишком часто. Остановите кампанию, увеличьте задержку (попробуйте 90–180 секунд), запустите снова. FloodWaitError содержит время ожидания — система автоматически выдерживает его, но частые ошибки сигнализируют о слишком агрессивных настройках.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Как остановить кампанию немедленно?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    В разделе «Кампании» нажмите кнопку «Остановить» рядом с нужной кампанией. Статус изменится на <strong>stopped</strong>, текущие отправки завершатся. Запустить снова можно в любой момент кнопкой «Запустить».
-  </div>
+  <summary class="faq-q">Как остановить кампанию немедленно?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">В разделе «Кампании» нажмите кнопку «Остановить» рядом с нужной кампанией. Статус изменится на <strong>stopped</strong>, текущие отправки завершатся. Запустить снова можно в любой момент кнопкой «Запустить».</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Можно ли добавить каналы в уже запущенную кампанию?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Да. Редактировать кампанию можно в любое время — добавлять и убирать аккаунты, каналы, шаблоны. Изменения применятся при следующем цикле работы кампании.
-  </div>
+  <summary class="faq-q">Можно ли добавить каналы в уже запущенную кампанию?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Да. Редактировать кампанию можно в любое время — добавлять и убирать аккаунты, каналы, шаблоны. Изменения применятся при следующем цикле работы кампании.</div>
 </details>
 
-<h2 class="section-title"><span class="icon">📊</span> CRM</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 5-6"/></svg></span> CRM</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Вошёл в CRM, но вижу только экран «нет доступа»<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Вы вошли в систему, но ваш аккаунт не добавлен ни в одно рабочее пространство. Обратитесь к администратору — он добавит вас через раздел <strong>Администрирование → Участники</strong>.
-  </div>
+  <summary class="faq-q">Вошёл в CRM, но вижу только экран «нет доступа»<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Вы вошли в систему, но ваш аккаунт не добавлен ни в одно рабочее пространство. Обратитесь к администратору — он добавит вас через раздел <strong>Администрирование → Участники</strong>.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Отчёт за день не сформировался автоматически<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Отчёт формируется только когда внесены <em>оба</em> блока данных за один день: Cash Flow и Заявки. Проверьте в разделе «История» — у нужной даты должны быть оба зелёных значка. Если один отсутствует — внесите недостающие данные, отчёт сформируется автоматически.
-  </div>
+  <summary class="faq-q">Отчёт за день не сформировался автоматически<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Отчёт формируется только когда внесены <em>оба</em> блока данных за один день: Cash Flow и Заявки. Проверьте в разделе «История» — у нужной даты должны быть оба зелёных значка. Если один отсутствует — внесите недостающие данные, отчёт сформируется автоматически.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Можно изменить данные после того, как отчёт уже сформирован?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Да. В разделе «История» нажмите на дату → в детальном отчёте есть кнопки «Редактировать финансы» и «Редактировать заявки». После изменений нажмите «Переформировать» — отчёт пересчитается.
-  </div>
+  <summary class="faq-q">Можно изменить данные после того, как отчёт уже сформирован?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Да. В разделе «История» нажмите на дату → в детальном отчёте есть кнопки «Редактировать финансы» и «Редактировать заявки». После изменений нажмите «Переформировать» — отчёт пересчитается.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Что такое «пропуск дедлайна» в CRM?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Данные за каждый день нужно внести до полуночи по Москве. Если к 00:05 МСК данные не внесены — система фиксирует пропуск и уведомляет владельцев пространства в Telegram. Данные всё равно можно внести задним числом — это не блокирует работу.
-  </div>
+  <summary class="faq-q">Что такое «пропуск дедлайна» в CRM?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Данные за каждый день нужно внести до полуночи по Москве. Если к 00:05 МСК данные не внесены — система фиксирует пропуск и уведомляет владельцев пространства в Telegram. Данные всё равно можно внести задним числом — это не блокирует работу.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">Как добавить нового участника в CRM?<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    В CRM: <strong>Администрирование → Участники → поле «Добавить участника»</strong>. Введите Telegram ID человека и выберите роль. Важно: человек должен сначала запустить бота системы — иначе его аккаунт не будет в базе.
-  </div>
+  <summary class="faq-q">Как добавить нового участника в CRM?<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">В CRM: <strong>Администрирование → Участники → поле «Добавить участника»</strong>. Введите Telegram ID человека и выберите роль. Важно: человек должен сначала запустить бота системы — иначе его аккаунт не будет в базе.</div>
 </details>
 
-<h2 class="section-title"><span class="icon">🔧</span> Что-то не работает</h2>
+<h2 class="section-title"><span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 010 1.4l-8 8a1 1 0 11-1.4-1.4l8-8a1 1 0 011.4 0zM18 13l3 3-3 3M3 11l3-3 3 3"/></svg></span> Что-то не работает</h2>
 
 <details class="faq-item">
-  <summary class="faq-q">Dashboard не обновляется, данные не меняются<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Dashboard обновляется автоматически каждые 10 секунд. Нажмите кнопку «Обновить» вручную. Если данные всё равно не появляются — проверьте, что кампания действительно запущена (статус <strong>running</strong>) и аккаунты активны.
-  </div>
+  <summary class="faq-q">Dashboard не обновляется, данные не меняются<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Dashboard обновляется автоматически каждые 10 секунд. Нажмите кнопку «Обновить» вручную. Если данные всё равно не появляются — проверьте, что кампания действительно запущена (статус <strong>running</strong>) и аккаунты активны.</div>
 </details>
 
 <details class="faq-item">
-  <summary class="faq-q">AutoSending не открывается / страница недоступна<span class="faq-arrow">›</span></summary>
-  <div class="faq-a">
-    Напишите администратору — он проверит статус серверов. Если вы сами являетесь администратором, проверьте логи контейнеров командой <code>make logs-spam</code>.
-  </div>
+  <summary class="faq-q">AutoSending не открывается — страница недоступна<span class="faq-arrow"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span></summary>
+  <div class="faq-a">Напишите администратору — он проверит статус серверов. Если вы сами являетесь администратором, проверьте логи контейнеров командой <code>make logs-spam</code>.</div>
 </details>
 
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.querySelectorAll('.faq-item').forEach(item => {
-  item.addEventListener('toggle', () => {
-    const arrow = item.querySelector('.faq-arrow');
-    if (arrow) arrow.style.transform = item.open ? 'rotate(90deg)' : '';
-  });
-});
-</script>
 {% endblock %}

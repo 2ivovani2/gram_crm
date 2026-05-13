@@ -1,16 +1,16 @@
 {% extends "crm/base.html" %}
-{% block title %}Участники — GRAMLY CRM{% endblock %}
+{% block title %}Участники — Gramly CRM{% endblock %}
 {% block page_title %}Управление участниками{% endblock %}
 {% block nav_members %}active{% endblock %}
 
 {% block content %}
 <div style="display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:flex-start">
 
-  <!-- ── Members list ────────────────────────────────────────────────────── -->
+  <!-- ── Members list ─────────────────────────────────────── -->
   <div>
     <div class="section-hdr">
       <h2>Участники пространства</h2>
-      <span style="font-size:13px;color:var(--muted)">{{ members|length }} участников</span>
+      <span style="font-size:13px;color:var(--muted);font-weight:500">{{ members|length }} участников</span>
     </div>
 
     <div class="table-wrap">
@@ -28,17 +28,22 @@
           {% for m in members %}
           <tr>
             <td>
-              <div style="font-weight:600;color:var(--text)">{{ m.user.display_name }}</div>
-              {% if m.user.telegram_username %}
-              <div style="font-size:11px;color:var(--muted)">@{{ m.user.telegram_username }}</div>
-              {% endif %}
+              <div style="display:flex;align-items:center;gap:11px">
+                <div style="width:34px;height:34px;border-radius:50%;background:var(--ink);color:#FBFAF5;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;flex-shrink:0;letter-spacing:-.02em">{{ m.user.display_name|first|upper }}</div>
+                <div>
+                  <div style="font-weight:600;color:var(--ink);letter-spacing:-.01em">{{ m.user.display_name }}</div>
+                  {% if m.user.telegram_username %}
+                  <div style="font-size:11.5px;color:var(--muted);font-weight:500">@{{ m.user.telegram_username }}</div>
+                  {% endif %}
+                </div>
+              </div>
             </td>
-            <td style="font-family:monospace;font-size:12px;color:var(--muted2)">{{ m.user.telegram_id }}</td>
+            <td style="font-family:'SF Mono',ui-monospace,monospace;font-size:12px;color:var(--muted);font-weight:500">{{ m.user.telegram_id }}</td>
             <td>
-              {% if m.role == 'owner' %}<span class="badge badge-blue">👑 Владелец</span>
-              {% elif m.role == 'finance' %}<span class="badge badge-green">💳 Финансы</span>
-              {% elif m.role == 'applications' %}<span class="badge badge-amber">📋 Заявки</span>
-              {% else %}<span class="badge badge-muted">👁 Наблюдатель</span>{% endif %}
+              {% if m.role == 'owner' %}<span class="badge badge-blue">Владелец</span>
+              {% elif m.role == 'finance' %}<span class="badge badge-green">Финансы</span>
+              {% elif m.role == 'applications' %}<span class="badge badge-amber">Заявки</span>
+              {% else %}<span class="badge badge-muted">Наблюдатель</span>{% endif %}
             </td>
             <td>
               {% if m.is_active %}<span class="badge badge-green">Активен</span>
@@ -46,13 +51,12 @@
             </td>
             <td>
               {% if m.user.pk != crm_user.pk %}
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <!-- Role change inline form -->
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
                 <form method="post" style="display:inline">
                   {% csrf_token %}
                   <input type="hidden" name="action" value="change_role"/>
                   <input type="hidden" name="user_id" value="{{ m.user.pk }}"/>
-                  <select name="role" class="form-select" style="padding:4px 8px;font-size:12px;width:auto" onchange="this.form.submit()">
+                  <select name="role" class="form-select" style="padding:5px 28px 5px 10px;font-size:12px;width:auto;font-weight:500" onchange="this.form.submit()">
                     <option value="owner" {% if m.role == 'owner' %}selected{% endif %}>Владелец</option>
                     <option value="finance" {% if m.role == 'finance' %}selected{% endif %}>Финансы</option>
                     <option value="applications" {% if m.role == 'applications' %}selected{% endif %}>Заявки</option>
@@ -64,14 +68,12 @@
                   {% csrf_token %}
                   <input type="hidden" name="action" value="deactivate"/>
                   <input type="hidden" name="member_id" value="{{ m.pk }}"/>
-                  <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Отозвать доступ?')">
-                    Отозвать
-                  </button>
+                  <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Отозвать доступ?')">Отозвать</button>
                 </form>
                 {% endif %}
               </div>
               {% else %}
-              <span style="font-size:12px;color:var(--muted)">Это вы</span>
+              <span style="font-size:12px;color:var(--muted);font-weight:500">Это вы</span>
               {% endif %}
             </td>
           </tr>
@@ -81,9 +83,9 @@
     </div>
   </div>
 
-  <!-- ── Add member ──────────────────────────────────────────────────────── -->
-  <div class="card" style="position:sticky;top:76px">
-    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Добавить участника</div>
+  <!-- ── Add member ────────────────────────────────────── -->
+  <div class="card" style="position:sticky;top:78px;padding:24px 26px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:18px;color:var(--ink);letter-spacing:-.02em">Добавить участника</div>
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="action" value="add"/>
@@ -102,24 +104,33 @@
       <div class="form-group">
         <label class="form-label">Роль</label>
         <select name="role" class="form-select">
-          <option value="owner">👑 Главный админ (Владелец)</option>
-          <option value="finance">💳 Финансовый аналитик</option>
-          <option value="applications" selected>📋 Менеджер по заявкам</option>
-          <option value="viewer">👁 Наблюдатель</option>
+          <option value="owner">Главный админ — Владелец</option>
+          <option value="finance">Финансовый аналитик</option>
+          <option value="applications" selected>Менеджер по заявкам</option>
+          <option value="viewer">Наблюдатель</option>
         </select>
       </div>
 
-      <button type="submit" class="btn btn-primary" style="width:100%">Добавить участника</button>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Добавить участника</button>
     </form>
 
-    <div style="margin-top:16px;padding:12px;background:var(--gold-dim);border-radius:var(--r);font-size:12px;color:var(--muted2);line-height:1.6">
-      <strong style="color:var(--gold)">Роли:</strong><br>
-      👑 <strong>Владелец</strong> — полный доступ, получает все отчёты<br>
-      💳 <strong>Финансы</strong> — вносит Cash Flow данные<br>
-      📋 <strong>Заявки</strong> — вносит данные по заявкам<br>
-      👁 <strong>Наблюдатель</strong> — только просмотр
+    <div style="margin-top:18px;padding:14px 16px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);font-size:12.5px;color:var(--ink-2);line-height:1.65;font-weight:500">
+      <div style="font-weight:700;color:var(--ink);margin-bottom:8px;letter-spacing:-.01em">Роли в системе</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div><strong style="color:var(--accent)">Владелец</strong> — полный доступ, получает все отчёты</div>
+        <div><strong style="color:var(--success)">Финансы</strong> — вносит Cash Flow данные</div>
+        <div><strong style="color:#6E4A0E">Заявки</strong> — вносит данные по заявкам</div>
+        <div><strong style="color:var(--muted)">Наблюдатель</strong> — только просмотр</div>
+      </div>
     </div>
   </div>
 
 </div>
+
+<style>
+@media (max-width: 1024px) {
+  [style*="grid-template-columns:1fr 360px"] { grid-template-columns: 1fr !important; }
+  [style*="position:sticky"] { position: static !important; }
+}
+</style>
 {% endblock %}

@@ -1,22 +1,28 @@
 {% extends "crm/base.html" %}
-{% block title %}{{ date|date:"d.m.Y" }} — GRAMLY CRM{% endblock %}
+{% block title %}{{ date|date:"d.m.Y" }} — Gramly CRM{% endblock %}
 {% block page_title %}{{ date|date:"d F Y" }}{% endblock %}
 
 {% block topbar_actions %}
-<a href="{% url 'crm:history' %}" class="btn btn-secondary btn-sm">← История</a>
+<a href="{% url 'crm:history' %}" class="btn btn-ghost btn-sm">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+  История
+</a>
 {% endblock %}
 
 {% block content %}
-<div style="max-width:700px">
+<div style="max-width:720px">
 
-  <!-- ── Header ──────────────────────────────────────────────────────────────── -->
-  <div class="card" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(240,180,41,.06),rgba(224,125,10,.04));border-color:rgba(240,180,41,.2)">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+  <!-- ── Header ───────────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:22px;padding:26px 28px;background:linear-gradient(135deg,var(--surface-2) 0%,var(--accent-tint) 100%);border-color:var(--accent-soft)">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px">
       <div>
-        <div style="font-size:12px;color:var(--gold);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">Данные за день</div>
-        <div style="font-size:26px;font-weight:800;letter-spacing:-.5px">{{ date|date:"d F Y" }}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></div>
+          <span style="font-size:11px;color:var(--accent-ink);font-weight:700;letter-spacing:.12em;text-transform:uppercase">Данные за день</span>
+        </div>
+        <div style="font-family:'Instrument Serif',serif;font-size:32px;font-weight:400;letter-spacing:-.02em;color:var(--ink);line-height:1.05">{{ date|date:"d F Y" }}</div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
         {% if finance %}<span class="badge badge-green">CF ✓</span>{% else %}<span class="badge badge-muted">CF —</span>{% endif %}
         {% if application %}<span class="badge badge-green">Заявки ✓</span>{% else %}<span class="badge badge-muted">Заявки —</span>{% endif %}
         {% if report %}<span class="badge badge-blue">Отчёт ✓</span>{% else %}<span class="badge badge-muted">Нет отчёта</span>{% endif %}
@@ -25,19 +31,21 @@
   </div>
 
   {% if not finance and not application %}
-  <!-- ── No data ──────────────────────────────────────────────────────────────── -->
-  <div class="card" style="text-align:center;padding:48px">
-    <div style="font-size:40px;margin-bottom:12px">📭</div>
-    <div style="font-size:15px;font-weight:600;color:var(--text-2)">Данные за этот день не внесены</div>
+  <!-- ── No data ────────────────────────────────────────────────────── -->
+  <div class="card" style="text-align:center;padding:60px 32px">
+    <div style="width:48px;height:48px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--muted)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
+    </div>
+    <div style="font-size:15px;font-weight:600;color:var(--ink)">Данные за этот день не внесены</div>
   </div>
   {% else %}
 
-  <!-- ── KPIs ────────────────────────────────────────────────────────────────── -->
-  <div class="kpi-grid" style="margin-bottom:20px">
+  <!-- ── KPIs ─────────────────────────────────────────────────────────── -->
+  <div class="kpi-grid" style="margin-bottom:22px">
     {% if finance %}
     <div class="card {% if finance.balance >= 0 %}card-green{% else %}card-red{% endif %}">
       <div class="card-title">Сальдо Cash Flow</div>
-      <div class="card-value" style="color:{% if finance.balance >= 0 %}var(--green){% else %}var(--red){% endif %}">
+      <div class="card-value" style="color:{% if finance.balance >= 0 %}var(--success){% else %}var(--danger){% endif %}">
         {% if finance.balance >= 0 %}+{% endif %}{{ finance.balance|floatformat:2 }} $
       </div>
       <div class="card-sub">Доход − Расходы</div>
@@ -46,17 +54,17 @@
       <div class="card-title">Заработок с ПП</div>
       <div class="card-value">{{ finance.pp_earnings|floatformat:2 }} $</div>
     </div>
-    <div class="card card-amber">
+    <div class="card card-accent">
       <div class="card-title">Заработок с Привата</div>
       <div class="card-value">{{ finance.privat_earnings|floatformat:2 }} $</div>
     </div>
-    <div class="card card-accent">
+    <div class="card card-amber">
       <div class="card-title">Баланс КБ</div>
       <div class="card-value">{{ finance.kb_balance|floatformat:2 }} $</div>
     </div>
     {% endif %}
     {% if application %}
-    <div class="card card-amber">
+    <div class="card card-accent">
       <div class="card-title">Заявки за день</div>
       <div class="card-value">{{ application.applications_count }}</div>
       <div class="card-sub">{{ application.applications_earnings|floatformat:2 }} $</div>
@@ -65,74 +73,71 @@
   </div>
 
   {% if finance %}
-  <!-- ── Cash Flow detail ─────────────────────────────────────────────────────── -->
-  <div class="card" style="margin-bottom:20px">
-    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Cash Flow</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div style="padding:14px;background:var(--green-dim);border:1px solid rgba(34,197,94,.2);border-radius:var(--r)">
-        <div style="font-size:11px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Поступления</div>
-        <div style="font-size:22px;font-weight:700;color:var(--green)">+{{ finance.income|floatformat:2 }} $</div>
+  <!-- ── Cash Flow detail ───────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:22px;padding:24px 26px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:18px;color:var(--ink);letter-spacing:-.02em">Cash Flow</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="padding:16px 18px;background:var(--success-soft);border:1px solid var(--success-line);border-radius:var(--r)">
+        <div style="font-size:10.5px;color:#2C5234;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Поступления</div>
+        <div style="font-size:24px;font-weight:700;color:#2C5234;font-variant-numeric:tabular-nums;letter-spacing:-.03em">+{{ finance.income|floatformat:2 }} $</div>
       </div>
-      <div style="padding:14px;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);border-radius:var(--r)">
-        <div style="font-size:11px;color:var(--red);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Расходы / выплаты</div>
-        <div style="font-size:22px;font-weight:700;color:var(--red)">−{{ finance.expenses|floatformat:2 }} $</div>
+      <div style="padding:16px 18px;background:var(--danger-soft);border:1px solid rgba(154,52,52,.18);border-radius:var(--r)">
+        <div style="font-size:10.5px;color:var(--danger);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Расходы / выплаты</div>
+        <div style="font-size:24px;font-weight:700;color:var(--danger);font-variant-numeric:tabular-nums;letter-spacing:-.03em">−{{ finance.expenses|floatformat:2 }} $</div>
       </div>
     </div>
 
-    <!-- ── Баланс КБ ──────────────────────────────────────────────────────────── -->
-    <div style="margin-top:12px;padding:10px 14px;background:var(--surface-h);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:12px;color:var(--muted2);font-weight:600">💼 Баланс КБ</span>
-      <span style="font-size:18px;font-weight:700;color:var(--gold)">{{ finance.kb_balance|floatformat:2 }} $</span>
+    <!-- Баланс КБ -->
+    <div style="margin-top:8px;padding:14px 18px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:12.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em">Баланс КБ</span>
+      <span style="font-size:20px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ finance.kb_balance|floatformat:2 }} $</span>
     </div>
 
     {% if finance.kb_screenshot %}
-    <!-- ── Screenshot ─────────────────────────────────────────────────────────── -->
-    <div style="border-top:1px solid var(--border);padding-top:14px">
-      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:10px">📎 Скрин с КБ</div>
+    <div style="border-top:1px solid var(--line-2);padding-top:18px;margin-top:18px">
+      <div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Скрин с КБ</div>
       {% with fname=finance.kb_screenshot.name %}
       {% if fname|lower|slice:"-4:" == ".pdf" %}
-        <a href="{{ finance.kb_screenshot.url }}" target="_blank" class="btn btn-secondary btn-sm">📄 Открыть PDF</a>
+        <a href="{{ finance.kb_screenshot.url }}" target="_blank" class="btn btn-secondary btn-sm">Открыть PDF →</a>
       {% else %}
         <a href="{{ finance.kb_screenshot.url }}" target="_blank" style="display:block;max-width:100%">
           <img src="{{ finance.kb_screenshot.url }}" alt="Скрин КБ"
-               style="max-width:100%;max-height:420px;border-radius:var(--r);border:1px solid var(--border);cursor:zoom-in">
+               style="max-width:100%;max-height:420px;border-radius:var(--r);border:1px solid var(--line);cursor:zoom-in;box-shadow:var(--shadow-sm)">
         </a>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">
-          Нажмите на изображение, чтобы открыть в полном размере
-        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:8px;font-weight:500">Нажмите на изображение, чтобы открыть в полном размере</div>
       {% endif %}
       {% endwith %}
     </div>
     {% endif %}
 
     {% if finance.notes %}
-    <!-- ── Notes ─────────────────────────────────────────────────────────────── -->
-    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
-      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Cash Flow)</div>
-      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ finance.notes }}</div>
+    <div style="border-top:1px solid var(--line-2);padding-top:18px;margin-top:18px">
+      <div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Примечание · Cash Flow</div>
+      <div style="font-size:14px;color:var(--ink-2);line-height:1.65;white-space:pre-wrap;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);padding:14px 16px;font-weight:500">{{ finance.notes }}</div>
     </div>
     {% endif %}
   </div>
   {% endif %}
 
   {% if application %}
-  <!-- ── Applications detail ──────────────────────────────────────────────────── -->
-  <div class="card" style="margin-bottom:20px">
-    <div style="font-size:15px;font-weight:700;margin-bottom:16px">Заявки</div>
+  <!-- ── Applications detail ────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:22px;padding:24px 26px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:18px;color:var(--ink);letter-spacing:-.02em">Заявки</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div style="padding:14px;background:var(--surface-h);border-radius:var(--r)">
-        <div style="font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Количество</div>
-        <div style="font-size:22px;font-weight:700">{{ application.applications_count }}</div>
+      <div style="padding:16px 18px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r)">
+        <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Количество</div>
+        <div style="font-size:24px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em">{{ application.applications_count }}</div>
       </div>
-      <div style="padding:14px;background:var(--surface-h);border-radius:var(--r)">
-        <div style="font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Заработок</div>
-        <div style="font-size:22px;font-weight:700">{{ application.applications_earnings|floatformat:2 }} $</div>
+      <div style="padding:16px 18px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r)">
+        <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Заработок</div>
+        <div style="font-size:24px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em">{{ application.applications_earnings|floatformat:2 }} $</div>
       </div>
     </div>
     {% if application.notes %}
-    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
-      <div style="font-size:13px;color:var(--muted2);font-weight:600;margin-bottom:8px">📝 Примечание (Заявки)</div>
-      <div style="font-size:14px;color:var(--text-2);line-height:1.6;white-space:pre-wrap;background:var(--surface-h);border-radius:var(--r);padding:12px 14px">{{ application.notes }}</div>
+    <div style="border-top:1px solid var(--line-2);padding-top:18px;margin-top:18px">
+      <div style="font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.08em">Примечание · Заявки</div>
+      <div style="font-size:14px;color:var(--ink-2);line-height:1.65;white-space:pre-wrap;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);padding:14px 16px;font-weight:500">{{ application.notes }}</div>
     </div>
     {% endif %}
   </div>
@@ -140,25 +145,25 @@
 
   {% endif %}
 
-  <!-- ── Actions ──────────────────────────────────────────────────────────────── -->
+  <!-- ── Actions ────────────────────────────────────────────────────── -->
   {% if is_owner %}
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <a href="{% url 'crm:entry_finance' %}?date={{ date|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
-      {% if finance %}✏️ Изменить CF{% else %}➕ Внести CF{% endif %}
+      {% if finance %}Изменить CF{% else %}Внести CF{% endif %}
     </a>
     <a href="{% url 'crm:entry_apps' %}?date={{ date|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
-      {% if application %}✏️ Изменить заявки{% else %}➕ Внести заявки{% endif %}
+      {% if application %}Изменить заявки{% else %}Внести заявки{% endif %}
     </a>
     {% if report %}
-    <a href="{% url 'crm:report_detail' report.pk %}" class="btn btn-secondary btn-sm">📄 Открыть отчёт</a>
+    <a href="{% url 'crm:report_detail' report.pk %}" class="btn btn-secondary btn-sm">Открыть отчёт</a>
     <form method="post" action="{% url 'crm:generate_report' date|date:'Y-m-d' %}" style="display:inline">
       {% csrf_token %}
-      <button type="submit" class="btn btn-secondary btn-sm">🔄 Пересформировать</button>
+      <button type="submit" class="btn btn-secondary btn-sm">Пересформировать</button>
     </form>
     {% elif finance and application %}
     <form method="post" action="{% url 'crm:generate_report' date|date:'Y-m-d' %}" style="display:inline">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary btn-sm">📊 Сформировать отчёт</button>
+      <button type="submit" class="btn btn-primary btn-sm">Сформировать отчёт →</button>
     </form>
     {% endif %}
   </div>

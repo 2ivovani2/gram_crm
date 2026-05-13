@@ -3,155 +3,175 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Вход — Документация GRAMLY</title>
+<title>Вход — Документация Gramly</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:       #0b0a05;
-  --surface:  rgba(240,180,41,.04);
-  --border:   rgba(240,180,41,.12);
-  --border-h: rgba(240,180,41,.28);
-  --gold:     #f0b429;
-  --gold-dim: rgba(240,180,41,.12);
-  --gold-glow:rgba(240,180,41,.20);
-  --amber:    #e07d0a;
-  --red:      #f87171;
-  --red-dim:  rgba(248,113,113,.10);
-  --text:     #f5f0e2;
-  --muted:    #7a7060;
-  --muted2:   #a09080;
-  --r:        12px;
-  --r-lg:     20px;
+  --bg:#F4EFE5; --bg-2:#EDE6D6;
+  --surface:#FBFAF5; --surface-2:#FFFFFF;
+  --ink:#1A1714; --ink-2:#3B342C;
+  --muted:#7A6F60; --muted2:#9D9182;
+  --line:#E5DBC8; --line-2:#EEE6D4;
+  --accent:#8A5A1F; --accent-hi:#A06B27;
+  --accent-soft:#F4E6C6; --accent-tint:#FBF3DE; --accent-ink:#4E3010;
+  --danger:#9A3434; --danger-soft:#F2DEDC;
 }
-html { scroll-behavior: smooth; }
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background: var(--bg); color: var(--text);
+  font-family: 'Manrope', system-ui, sans-serif;
+  background: var(--bg); color: var(--ink);
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   -webkit-font-smoothing: antialiased; overflow: hidden;
+  letter-spacing: -.005em;
 }
-.bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
-.bg-glow-1 {
-  position: absolute; width: 700px; height: 700px;
-  background: radial-gradient(ellipse, rgba(240,180,41,.06) 0%, transparent 65%);
-  top: -250px; left: -180px;
-  animation: bgFloat 12s ease-in-out infinite;
+body::before {
+  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 800px 600px at 0% 0%, rgba(138,90,31,.08) 0%, transparent 60%),
+    radial-gradient(ellipse 600px 500px at 100% 100%, rgba(138,90,31,.06) 0%, transparent 60%);
 }
-.bg-glow-2 {
-  position: absolute; width: 500px; height: 500px;
-  background: radial-gradient(ellipse, rgba(224,125,10,.05) 0%, transparent 65%);
-  bottom: -150px; right: -100px;
-  animation: bgFloat 16s ease-in-out infinite reverse;
+body::after {
+  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(26,23,20,.025) .9px, transparent .9px);
+  background-size: 22px 22px; opacity: .55;
 }
-@keyframes bgFloat {
-  0%,100% { transform: translate(0,0) scale(1); }
-  50%      { transform: translate(20px,-20px) scale(1.05); }
-}
-.bg-grid {
-  position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, rgba(240,180,41,.08) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 20%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 20%, transparent 100%);
-}
-.login-wrap { position: relative; z-index: 1; width: 100%; max-width: 420px; padding: 24px; }
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(24px) scale(.98); }
+  from { opacity: 0; transform: translateY(20px) scale(.99); }
   to   { opacity: 1; transform: none; }
 }
-.login-card {
-  background: rgba(19,17,8,.92);
-  border: 1px solid var(--border);
-  border-radius: 24px; padding: 40px 36px;
-  backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px);
-  box-shadow: 0 32px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(240,180,41,.05);
-  animation: cardIn .45s cubic-bezier(.2,.8,.3,1) both;
-}
-.brand { display: flex; align-items: center; gap: 13px; margin-bottom: 32px; }
-.brand-icon {
-  width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0;
-  background: linear-gradient(135deg, var(--gold) 0%, var(--amber) 100%);
-  display: flex; align-items: center; justify-content: center; font-size: 24px;
-  box-shadow: 0 4px 20px var(--gold-glow);
-}
-.brand-name { font-size: 22px; font-weight: 800; letter-spacing: -.5px; }
-.brand-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+@keyframes dotPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.7); } }
 
-h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8px; }
-.subtitle { font-size: 14px; color: var(--muted2); line-height: 1.65; margin-bottom: 30px; }
+.login-wrap { position: relative; z-index: 1; width: 100%; max-width: 460px; padding: 24px; }
+.login-card {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 24px; padding: 44px 40px;
+  box-shadow: 0 1px 0 rgba(26,23,20,.02), 0 32px 80px -16px rgba(26,23,20,.18);
+  animation: cardIn .55s cubic-bezier(.2,.8,.3,1) both;
+}
+.brand {
+  display: flex; align-items: center; gap: 14px;
+  padding-bottom: 28px; margin-bottom: 28px;
+  border-bottom: 1px solid var(--line-2);
+}
+.brand-icon {
+  width: 48px; height: 48px; border-radius: 14px;
+  background: var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; position: relative; overflow: hidden;
+}
+.brand-icon::after {
+  content:''; position: absolute; inset: 1px; border-radius: 13px;
+  background: linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
+}
+.brand-icon svg { position: relative; z-index: 1; }
+.brand-name { font-size: 22px; font-weight: 800; letter-spacing: -.025em; color: var(--ink); }
+.brand-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+
+h1 {
+  font-family: 'Instrument Serif', serif;
+  font-size: 38px; font-weight: 400;
+  letter-spacing: -.02em; line-height: 1.05;
+  color: var(--ink); margin-bottom: 12px;
+}
+h1 em { font-style: italic; color: var(--accent); }
+.subtitle {
+  font-size: 14.5px; color: var(--muted);
+  line-height: 1.65; margin-bottom: 32px;
+  max-width: 360px; font-weight: 500;
+}
 
 .tg-widget-wrap {
   display: flex; justify-content: center;
-  margin-bottom: 24px; padding: 20px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  margin-bottom: 24px; padding: 24px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  position: relative;
 }
-.divider {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 20px; color: var(--muted); font-size: 12px;
+.tg-widget-wrap::before {
+  content:'Безопасный вход через Telegram';
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: var(--surface-2); padding: 0 12px;
+  font-size: 10.5px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .12em;
 }
-.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
 .how-it-works {
-  background: var(--gold-dim); border: 1px solid rgba(240,180,41,.18);
-  border-radius: var(--r); padding: 16px 18px; margin-bottom: 24px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px; padding: 20px 22px;
+  margin-bottom: 24px;
 }
-.how-title { font-size: 12px; font-weight: 700; color: var(--gold); margin-bottom: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.how-title {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  margin-bottom: 14px; text-transform: uppercase; letter-spacing: .12em;
+  display: flex; align-items: center; gap: 8px;
+}
+.how-title::before {
+  content:''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); animation: dotPulse 2.5s ease infinite;
+}
 .how-step {
-  display: flex; align-items: flex-start; gap: 10px;
-  margin-bottom: 10px; font-size: 13px; color: var(--muted2); line-height: 1.5;
+  display: flex; align-items: flex-start; gap: 12px;
+  margin-bottom: 11px; font-size: 13.5px;
+  color: var(--ink-2); line-height: 1.55; font-weight: 500;
 }
 .how-step:last-child { margin-bottom: 0; }
 .how-num {
-  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; margin-top: 1px;
-  background: var(--gold); color: #0b0a05;
-  font-size: 10px; font-weight: 800;
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  background: var(--ink); color: #FBFAF5;
+  font-size: 10.5px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
+  letter-spacing: -.02em;
 }
+
 .error-box {
-  background: var(--red-dim); border: 1px solid rgba(248,113,113,.25);
-  border-radius: var(--r); padding: 12px 14px;
-  font-size: 13px; color: var(--red); margin-bottom: 20px;
-  display: flex; align-items: flex-start; gap: 8px;
+  background: var(--danger-soft);
+  border: 1px solid rgba(154,52,52,.2);
+  border-radius: 12px; padding: 13px 15px;
+  font-size: 13px; color: var(--danger); margin-bottom: 22px;
+  display: flex; align-items: flex-start; gap: 10px; font-weight: 500;
 }
-.footer-note { font-size: 11.5px; color: var(--muted); text-align: center; line-height: 1.6; }
+
+.footer-note {
+  font-size: 11.5px; color: var(--muted);
+  text-align: center; line-height: 1.65; font-weight: 500;
+}
+.footer-note strong { color: var(--ink-2); font-weight: 600; }
 
 @media (max-width: 480px) {
   .login-wrap { padding: 16px; }
-  .login-card { padding: 28px 20px; border-radius: 18px; }
-  h1 { font-size: 20px; }
+  .login-card { padding: 32px 24px; border-radius: 18px; }
+  h1 { font-size: 30px; }
 }
 </style>
 </head>
 <body>
-<div class="bg-layer">
-  <div class="bg-glow-1"></div>
-  <div class="bg-glow-2"></div>
-</div>
-<div class="bg-grid"></div>
-
 <div class="login-wrap">
   <div class="login-card">
 
     <div class="brand">
-      <div class="brand-icon">📖</div>
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9994B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+        </svg>
+      </div>
       <div>
         <div class="brand-name">Документация</div>
-        <div class="brand-sub">GRAMLY · CRM + AutoSending</div>
+        <div class="brand-sub">Gramly · CRM + AutoSending</div>
       </div>
     </div>
 
-    <h1>Войти</h1>
+    <h1>Войти<br>в <em>документацию</em></h1>
     <p class="subtitle">
-      Вход через Telegram — безопасно и без паролей.
-      Нажмите кнопку ниже и подтвердите в мессенджере.
+      Вход через Telegram — безопасно и без паролей. Нажмите кнопку и подтвердите вход в мессенджере.
     </p>
 
     {% if error %}
     <div class="error-box">
-      <span>⚠️</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:1px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
       <span>{{ error }}</span>
     </div>
     {% endif %}
@@ -167,13 +187,11 @@ h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8p
       ></script>
     </div>
 
-    <div class="divider">Как это работает</div>
-
     <div class="how-it-works">
       <div class="how-title">Процесс входа</div>
       <div class="how-step">
         <div class="how-num">1</div>
-        <span>Нажмите «Войти через Telegram» — откроется Telegram</span>
+        <span>Нажмите «Войти через Telegram» — откроется мессенджер</span>
       </div>
       <div class="how-step">
         <div class="how-num">2</div>
@@ -181,13 +199,13 @@ h1 { font-size: 24px; font-weight: 800; letter-spacing: -.5px; margin-bottom: 8p
       </div>
       <div class="how-step">
         <div class="how-num">3</div>
-        <span>Готово — вы попадёте в документацию</span>
+        <span>Вы попадёте в документацию</span>
       </div>
     </div>
 
     <p class="footer-note">
       Доступно для всех зарегистрированных участников системы.<br>
-      Если не можете войти — запустите бота командой /start.
+      Если не можете войти — запустите бота командой <strong>/start</strong>.
     </p>
 
   </div>
