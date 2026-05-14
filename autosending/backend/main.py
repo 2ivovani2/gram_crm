@@ -23,7 +23,7 @@ from auth import (
 from config import setup_logging
 from database import (
     Account, ActivityLog, Campaign, Channel,
-    MessageTemplate, User, get_db, init_db,
+    MessageTemplate, User, get_db, init_db, SessionLocal,
 )
 import scheduler
 import telegram_manager as tm
@@ -35,6 +35,19 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Reset campaigns stuck in "running" from a previous crashed/restarted process
+    db = SessionLocal()
+    try:
+        stuck = db.query(Campaign).filter(Campaign.status == "running").all()
+        for c in stuck:
+            c.status = "stopped"
+            if not c.stopped_at:
+                c.stopped_at = datetime.utcnow()
+        if stuck:
+            db.commit()
+            logger.info(f"Reset {len(stuck)} stuck campaign(s) to 'stopped' on startup")
+    finally:
+        db.close()
     logger.info("AutoSending backend started — DB ready")
     yield
     logger.info("AutoSending backend shutting down")
@@ -507,6 +520,12 @@ async def delete_message(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _campaign_dict(c: Campaign, db: Session) -> dict:
+    is_running = scheduler.is_running(c.id)
+    round_stats = scheduler.get_round_stats(c.id) if is_running else {}
+    errors_count = db.query(func.count(ActivityLog.id)).filter(
+        ActivityLog.campaign_id == c.id,
+        ActivityLog.status == "error",
+    ).scalar() or 0
     return {
         "id":               c.id,
         "name":             c.name,
@@ -518,7 +537,9 @@ def _campaign_dict(c: Campaign, db: Session) -> dict:
         "started_at":       c.started_at,
         "stopped_at":       c.stopped_at,
         "total_sent":       c.total_sent,
-        "is_running":       scheduler.is_running(c.id),
+        "errors_count":     errors_count,
+        "is_running":       is_running,
+        "round_stats":      round_stats,
         "account_ids":      [a.id  for a in c.accounts],
         "channel_ids":      [ch.id for ch in c.channels],
         "message_ids":      [m.id  for m in c.messages],
@@ -599,6 +620,11 @@ async def stop_campaign(
     if not camp:
         raise HTTPException(404, "Campaign not found")
     scheduler.stop_campaign(campaign_id)
+    # Update DB immediately so the next poll sees "stopped" without waiting for workers to drain
+    if camp.status == "running":
+        camp.status = "stopped"
+        camp.stopped_at = datetime.utcnow()
+        db.commit()
     return {"ok": True, "status": "stopped"}
 
 
@@ -666,13 +692,11 @@ async def get_stats(
 ):
     uid = current_user.id
 
-    # Single aggregated query for account counts
     account_stats = db.query(
         func.count(Account.id).label("total"),
         func.count(Account.id).filter(Account.status.in_(["online", "working"])).label("online"),
     ).filter(Account.user_id == uid).one()
 
-    # Single aggregated query for campaign counts + messages_sent
     campaign_stats = db.query(
         func.count(Campaign.id).label("total"),
         func.count(Campaign.id).filter(Campaign.status == "running").label("running"),
@@ -682,6 +706,34 @@ async def get_stats(
     total_channels = db.query(func.count(Channel.id)).filter(Channel.user_id == uid).scalar()
     total_messages = db.query(func.count(MessageTemplate.id)).filter(MessageTemplate.user_id == uid).scalar()
 
+    # Today's activity (UTC midnight boundary)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    sent_today = db.query(func.count(ActivityLog.id)).filter(
+        ActivityLog.user_id == uid,
+        ActivityLog.action_type == "send_message",
+        ActivityLog.status == "success",
+        ActivityLog.timestamp >= today_start,
+    ).scalar() or 0
+    errors_today = db.query(func.count(ActivityLog.id)).filter(
+        ActivityLog.user_id == uid,
+        ActivityLog.status == "error",
+        ActivityLog.timestamp >= today_start,
+    ).scalar() or 0
+
+    # Per-running-campaign live stats
+    running_details = []
+    for camp in db.query(Campaign).filter(Campaign.user_id == uid, Campaign.status == "running").all():
+        rs = scheduler.get_round_stats(camp.id)
+        running_details.append({
+            "id":         camp.id,
+            "name":       camp.name,
+            "total_sent": camp.total_sent,
+            "round":      rs.get("round", 0),
+            "cooldown":   rs.get("cooldown", 0),
+            "active":     rs.get("active", 0),
+            "skip_forever": rs.get("skip_forever", 0),
+        })
+
     return {
         "total_accounts":    account_stats.total,
         "online_accounts":   account_stats.online,
@@ -690,4 +742,7 @@ async def get_stats(
         "total_campaigns":   campaign_stats.total,
         "running_campaigns": campaign_stats.running,
         "messages_sent":     campaign_stats.messages_sent,
+        "sent_today":        sent_today,
+        "errors_today":      errors_today,
+        "running_details":   running_details,
     }

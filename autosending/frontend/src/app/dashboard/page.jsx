@@ -104,12 +104,12 @@ function LogRow({ entry }) {
 }
 
 const METRIC_DEFS = [
-  { key: "messages_sent",     label: "Отправлено всего",  icon: Send,          accent: false },
-  { key: "running_campaigns", label: "Активных кампаний", icon: Zap,           accent: true  },
-  { key: "online_accounts",   label: "Аккаунтов онлайн",  icon: Activity,      accent: false, format: (s) => `${s.online_accounts}/${s.total_accounts}` },
-  { key: "total_channels",    label: "Каналов",            icon: Hash,          accent: false },
-  { key: "total_messages",    label: "Шаблонов",           icon: MessageSquare, accent: false },
-  { key: "total_accounts",    label: "Всего аккаунтов",   icon: Users,         accent: false },
+  { key: "sent_today",        label: "Отправлено сегодня", icon: Send,          accent: true  },
+  { key: "running_campaigns", label: "Активных кампаний",  icon: Zap,           accent: false },
+  { key: "online_accounts",   label: "Аккаунтов онлайн",   icon: Activity,      accent: false, format: (s) => `${s.online_accounts}/${s.total_accounts}` },
+  { key: "errors_today",      label: "Ошибок сегодня",     icon: AlertCircle,   accent: false },
+  { key: "messages_sent",     label: "Всего отправлено",   icon: TrendingUp,    accent: false },
+  { key: "total_channels",    label: "Каналов",             icon: Hash,          accent: false },
 ];
 
 export default function Dashboard() {
@@ -155,9 +155,9 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, []);
 
-  const sentToday = logs.filter(l => l.action_type === "send_message" && l.status === "success").length;
+  const sentToday = stats?.sent_today ?? logs.filter(l => l.action_type === "send_message" && l.status === "success").length;
   const joinOk    = logs.filter(l => l.action_type === "join_channel" && l.status === "success").length;
-  const errors    = logs.filter(l => l.status === "error").length;
+  const errors    = stats?.errors_today ?? logs.filter(l => l.status === "error").length;
 
   return (
     <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -203,6 +203,45 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* Live campaign breakdown */}
+      {isLive && stats?.running_details?.length > 0 && (
+        <div className="card card-no-hover" style={{ borderColor: "var(--gold-edge)", background: "linear-gradient(180deg, var(--gold-tint), rgba(232,201,138,0.005))" }}>
+          <div className="section-head">
+            <div className="section-title">
+              <Zap size={15} />
+              Активные кампании
+            </div>
+            <span className="badge badge-success"><span className="live-dot" />LIVE</span>
+          </div>
+          <div style={{ padding: "0 0 8px" }}>
+            {stats.running_details.map(rd => (
+              <div key={rd.id} style={{ display: "grid", gridTemplateColumns: "1fr repeat(4,auto)", alignItems: "center", gap: 16, padding: "12px 22px", borderBottom: "1px solid var(--line-1)" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-1)" }}>{rd.name}</div>
+                  {rd.round > 0 && <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>Раунд {rd.round}</div>}
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--emerald)", fontFamily: "var(--mono)" }}>{rd.total_sent}</div>
+                  <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>отправлено</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>{rd.active}</div>
+                  <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>активных</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--amber)", fontFamily: "var(--mono)" }}>{rd.cooldown}</div>
+                  <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>FloodWait</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{rd.skip_forever}</div>
+                  <div style={{ fontSize: 10, color: "var(--ink-4)", marginTop: 1 }}>пропущено</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Chart */}
       <div className="card card-no-hover">

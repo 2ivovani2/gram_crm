@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 _running: Dict[int, asyncio.Task] = {}
 _stop_events: Dict[int, asyncio.Event] = {}
 
+# campaign_id → latest round summary, updated every round
+# {"round": int, "sent": int, "cooldown": int, "skip_forever": int, "active": int, "ts": float}
+_round_stats: Dict[int, dict] = {}
+
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -278,6 +282,15 @@ async def _account_worker(
                 f"sent={sent_this_round} cooldown={on_cooldown} "
                 f"skip_forever={skipped_forever} active={active_channels}"
             )
+            prev = _round_stats.get(campaign_id, {})
+            _round_stats[campaign_id] = {
+                "round":        max(round_num, prev.get("round", 0)),
+                "sent":         prev.get("sent", 0) + sent_this_round,
+                "cooldown":     on_cooldown,
+                "skip_forever": len(skip_forever),
+                "active":       active_channels,
+                "ts":           time.time(),
+            }
 
             if stop.is_set():
                 break
@@ -338,22 +351,32 @@ async def _run_campaign(campaign_id: int):
         for i, a in enumerate(accounts_snap)
     ]
 
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    db2 = SessionLocal()
     try:
-        camp = db2.query(Campaign).filter(Campaign.id == campaign_id).first()
-        if camp:
-            camp.status = "stopped"
-            camp.stopped_at = datetime.utcnow()
-        db2.commit()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+    except asyncio.CancelledError:
+        # Task was hard-cancelled — cancel workers and wait for them to clean up
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     finally:
-        db2.close()
+        # Always runs: after graceful stop, hard cancel, or exception
+        db2 = SessionLocal()
+        try:
+            camp = db2.query(Campaign).filter(Campaign.id == campaign_id).first()
+            if camp and camp.status == "running":
+                camp.status = "stopped"
+                camp.stopped_at = datetime.utcnow()
+            db2.commit()
+        finally:
+            db2.close()
 
-    _running.pop(campaign_id, None)
-    _stop_events.pop(campaign_id, None)
-    logger.info(f"Campaign {campaign_id} finished")
+        _running.pop(campaign_id, None)
+        _stop_events.pop(campaign_id, None)
+        _round_stats.pop(campaign_id, None)
+        logger.info(f"Campaign {campaign_id} finished")
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -370,13 +393,20 @@ def start_campaign(campaign_id: int) -> bool:
 
 
 def stop_campaign(campaign_id: int) -> bool:
+    found = False
     if campaign_id in _stop_events:
         _stop_events[campaign_id].set()
+        found = True
     if campaign_id in _running:
         _running[campaign_id].cancel()
-        return True
-    return False
+        found = True
+    return found
 
 
 def is_running(campaign_id: int) -> bool:
-    return campaign_id in _running
+    task = _running.get(campaign_id)
+    return task is not None and not task.done()
+
+
+def get_round_stats(campaign_id: int) -> dict:
+    return _round_stats.get(campaign_id, {})

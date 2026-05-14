@@ -513,10 +513,40 @@ export default function CampaignsPage() {
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                         <span style={{ fontSize: 10.5, color: "var(--ink-5)", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Отправлено</span>
-                        <span className="t-numeric" style={{ fontSize: 17, color: "var(--ink-1)", lineHeight: 1 }}>
+                        <span className="t-numeric" style={{ fontSize: 17, color: "var(--emerald)", lineHeight: 1 }}>
                           {(camp.total_sent ?? 0).toLocaleString("ru-RU")}
                         </span>
                       </div>
+
+                      {(camp.errors_count ?? 0) > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                          <span style={{ fontSize: 10.5, color: "var(--ink-5)", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Ошибок</span>
+                          <span className="t-numeric" style={{ fontSize: 17, color: "var(--coral)", lineHeight: 1 }}>
+                            {(camp.errors_count).toLocaleString("ru-RU")}
+                          </span>
+                        </div>
+                      )}
+
+                      {camp.is_running && camp.round_stats?.round > 0 && (
+                        <div style={{ display: "flex", gap: 12, background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 8, padding: "6px 12px" }}>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--ink-2)" }}>{camp.round_stats.active}</div>
+                            <div style={{ fontSize: 9.5, color: "var(--ink-5)", marginTop: 1 }}>каналов</div>
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--amber)" }}>{camp.round_stats.cooldown}</div>
+                            <div style={{ fontSize: 9.5, color: "var(--ink-5)", marginTop: 1 }}>flood</div>
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--ink-4)" }}>{camp.round_stats.skip_forever}</div>
+                            <div style={{ fontSize: 9.5, color: "var(--ink-5)", marginTop: 1 }}>пропущено</div>
+                          </div>
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 11, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--gold-hi)" }}>#{camp.round_stats.round}</div>
+                            <div style={{ fontSize: 9.5, color: "var(--ink-5)", marginTop: 1 }}>раунд</div>
+                          </div>
+                        </div>
+                      )}
 
                       {camp.started_at && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
