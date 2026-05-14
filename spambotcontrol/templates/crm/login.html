@@ -9,70 +9,106 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:          #F4EFE5;
-  --bg-2:        #EDE6D6;
+  --bg:          #EFE8DA;
+  --bg-2:        #E8E0CE;
   --surface:     #FBFAF5;
   --surface-2:   #FFFFFF;
   --ink:         #1A1714;
   --ink-2:       #3B342C;
   --muted:       #7A6F60;
   --muted2:      #9D9182;
-  --line:        #E5DBC8;
-  --line-2:      #EEE6D4;
+  --line:        rgba(26,23,20,.10);
+  --line-2:      rgba(26,23,20,.06);
   --accent:      #8A5A1F;
   --accent-hi:   #A06B27;
   --accent-soft: #F4E6C6;
-  --accent-tint: #FBF3DE;
+  --accent-tint: rgba(201,153,75,.14);
   --accent-ink:  #4E3010;
-  --accent-glow: rgba(138,90,31,.18);
+  --accent-glow: rgba(138,90,31,.28);
   --danger:      #9A3434;
-  --danger-soft: #F2DEDC;
+  --danger-soft: rgba(154,52,52,.12);
+  --glass-stroke: rgba(255,255,255,.55);
 }
 body {
   font-family: 'Manrope', system-ui, sans-serif;
   background: var(--bg); color: var(--ink);
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  -webkit-font-smoothing: antialiased; overflow: hidden;
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-font-smoothing: antialiased;
   letter-spacing: -.005em;
   position: relative;
+  overflow: hidden;
+  font-feature-settings: "ss01","cv11";
 }
 
-/* Background — warm paper texture, subtle gradient orbs */
+/* Cinematic colored orbs */
 body::before {
-  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  content:''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 800px 600px at 0% 0%, rgba(138,90,31,.08) 0%, transparent 60%),
-    radial-gradient(ellipse 600px 500px at 100% 100%, rgba(138,90,31,.06) 0%, transparent 60%);
+    radial-gradient(ellipse 50% 40% at 15% 20%, rgba(201,153,75,.40) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 35% at 88% 12%, rgba(138,90,31,.30) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 80% 92%, rgba(160,107,39,.22) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 35% at 10% 85%, rgba(232,197,126,.30) 0%, transparent 60%);
+  filter: blur(70px) saturate(120%);
+  animation: orb-drift 22s ease-in-out infinite alternate;
 }
 body::after {
   content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, rgba(26,23,20,.025) .9px, transparent .9px);
-  background-size: 22px 22px;
-  opacity: .55;
+  background-image: radial-gradient(circle, rgba(26,23,20,.035) .9px, transparent .9px);
+  background-size: 22px 22px; opacity: .5;
 }
 
+@keyframes orb-drift {
+  0%   { transform: translate3d(0,0,0) scale(1); }
+  100% { transform: translate3d(-30px, 25px, 0) scale(1.05); }
+}
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(20px) scale(.99); }
+  from { opacity: 0; transform: translateY(24px) scale(.98); }
   to   { opacity: 1; transform: none; }
 }
 @keyframes dotPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: .4; transform: scale(.7); }
+  50%      { opacity: .35; transform: scale(.6); }
 }
 
 .login-wrap {
   position: relative; z-index: 1;
-  width: 100%; max-width: 460px; padding: 24px;
+  width: 100%; max-width: 480px;
+  padding: 24px;
 }
+
+/* ── Liquid glass card ──────────────────────────────── */
 .login-card {
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 44px 40px;
+  position: relative;
+  background: rgba(255,255,255,.55);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 28px;
+  padding: 48px 44px;
   box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.6),
+    inset 0 -1px 0 rgba(26,23,20,.04),
     0 1px 0 rgba(26,23,20,.02),
-    0 32px 80px -16px rgba(26,23,20,.18);
-  animation: cardIn .55s cubic-bezier(.2,.8,.3,1) both;
+    0 32px 80px -20px rgba(26,23,20,.28),
+    0 16px 40px -16px rgba(138,90,31,.18);
+  animation: cardIn .65s cubic-bezier(.2,.8,.3,1) both;
+  overflow: hidden;
+}
+.login-card::before {
+  content: ''; position: absolute; inset: -1px;
+  border-radius: inherit; pointer-events: none;
+  background: radial-gradient(600px circle at var(--mx,30%) var(--my,20%),
+              rgba(201,153,75,.14) 0%, transparent 40%);
+  opacity: 0; transition: opacity .5s;
+}
+.login-card:hover::before { opacity: 1; }
+.login-card::after {
+  /* glossy top highlight */
+  content: ''; position: absolute;
+  top: 0; left: 10%; right: 10%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+  pointer-events: none;
 }
 
 /* Brand */
@@ -81,133 +117,173 @@ body::after {
   padding-bottom: 28px;
   margin-bottom: 28px;
   border-bottom: 1px solid var(--line-2);
+  position: relative;
 }
 .brand-icon {
-  width: 48px; height: 48px;
+  width: 50px; height: 50px;
   border-radius: 14px;
-  background: var(--ink);
-  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(201,153,75,.55) 0%, transparent 60%),
+    linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
+  display: grid; place-items: center;
   flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow:
+    0 8px 20px -6px rgba(26,23,20,.35),
+    inset 0 1px 0 rgba(255,255,255,.14);
 }
-.brand-icon::after {
-  content:''; position: absolute; inset: 1px;
-  border-radius: 13px;
-  background: linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
+.brand-name {
+  font-size: 22px; font-weight: 800;
+  letter-spacing: -.025em; color: var(--ink);
 }
-.brand-icon svg { position: relative; z-index: 1; }
-.brand-name { font-size: 22px; font-weight: 800; letter-spacing: -.025em; color: var(--ink); }
-.brand-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+.brand-sub {
+  font-size: 12px; color: var(--muted);
+  margin-top: 2px; font-weight: 500;
+  letter-spacing: .005em;
+}
 
 /* Title */
 h1 {
   font-family: 'Instrument Serif', serif;
-  font-size: 38px; font-weight: 400;
-  letter-spacing: -.02em;
-  line-height: 1.05;
+  font-size: 44px; font-weight: 400;
+  letter-spacing: -.025em;
+  line-height: 1.04;
   color: var(--ink);
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
-h1 em { font-style: italic; color: var(--accent); }
+h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, #A06B27 0%, #8A5A1F 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+}
 .subtitle {
-  font-size: 14.5px; color: var(--muted); line-height: 1.65;
-  margin-bottom: 32px; max-width: 360px; font-weight: 500;
+  font-size: 14.5px; color: var(--muted);
+  line-height: 1.65;
+  margin-bottom: 32px;
+  max-width: 360px;
+  font-weight: 500;
 }
 
-/* Widget */
+/* Widget wrapper — inner glass */
 .tg-widget-wrap {
   display: flex; justify-content: center;
   margin-bottom: 24px;
-  padding: 24px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  padding: 26px;
+  background: rgba(255,255,255,.45);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 18px;
   position: relative;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.6),
+    0 1px 2px rgba(26,23,20,.03);
 }
 .tg-widget-wrap::before {
   content:'Безопасный вход через Telegram';
   position: absolute;
   top: -10px; left: 50%; transform: translateX(-50%);
-  background: var(--surface-2);
-  padding: 0 12px;
+  background: rgba(239,232,218,.9);
+  backdrop-filter: blur(8px);
+  padding: 2px 14px;
   font-size: 10.5px;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
 }
 
-/* How */
+/* How it works panel */
 .how-it-works {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px 22px;
+  background: rgba(255,255,255,.35);
+  backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 16px;
+  padding: 22px 24px;
   margin-bottom: 24px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6);
 }
 .how-title {
   font-size: 11px; font-weight: 700;
   color: var(--muted);
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   text-transform: uppercase;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
   display: flex; align-items: center; gap: 8px;
 }
 .how-title::before {
   content:''; width: 6px; height: 6px;
-  border-radius: 50%; background: var(--accent);
-  animation: dotPulse 2.5s ease infinite;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-tint), 0 0 12px var(--accent-glow);
+  animation: dotPulse 2.4s ease infinite;
 }
 .how-step {
-  display: flex; align-items: flex-start; gap: 12px;
-  margin-bottom: 11px; font-size: 13.5px;
-  color: var(--ink-2); line-height: 1.55;
+  display: flex; align-items: flex-start; gap: 14px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.55;
   font-weight: 500;
 }
 .how-step:last-child { margin-bottom: 0; }
 .how-num {
-  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-  background: var(--ink); color: #FBFAF5;
-  font-size: 10.5px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(201,153,75,.55) 0%, transparent 60%),
+    linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
+  color: #FBFAF5;
+  font-size: 11px; font-weight: 700;
+  display: grid; place-items: center;
   letter-spacing: -.02em;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 2px 8px -2px rgba(26,23,20,.25);
 }
 
 /* Error */
 .error-box {
   background: var(--danger-soft);
-  border: 1px solid rgba(154,52,52,.2);
-  border-radius: 12px; padding: 13px 15px;
-  font-size: 13px; color: var(--danger); margin-bottom: 22px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(154,52,52,.28);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-size: 13px;
+  color: var(--danger);
+  margin-bottom: 22px;
   display: flex; align-items: flex-start; gap: 10px;
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
 }
 
 /* Footer */
 .footer-note {
   font-size: 11.5px; color: var(--muted);
-  text-align: center; line-height: 1.65;
+  text-align: center;
+  line-height: 1.65;
   font-weight: 500;
 }
-.footer-note strong { color: var(--ink-2); font-weight: 600; }
+.footer-note strong { color: var(--ink-2); font-weight: 700; }
 
 @media (max-width: 480px) {
   .login-wrap { padding: 16px; }
-  .login-card { padding: 32px 24px; border-radius: 18px; }
-  h1 { font-size: 30px; }
+  .login-card { padding: 36px 26px; border-radius: 22px; }
+  h1 { font-size: 32px; }
 }
 </style>
 </head>
 <body>
 <div class="login-wrap">
-  <div class="login-card">
+  <div class="login-card" id="login-card">
 
     <div class="brand">
       <div class="brand-icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-          <path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5v-9z" stroke="#C9994B" stroke-width="1.6" stroke-linejoin="round"/>
-          <path d="M12 12l9-4.5M12 12v9M12 12L3 7.5" stroke="#C9994B" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5v-9z" stroke="#E8C57E" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M12 12l9-4.5M12 12v9M12 12L3 7.5" stroke="#E8C57E" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>
       </div>
       <div>
@@ -262,5 +338,17 @@ h1 em { font-style: italic; color: var(--accent); }
 
   </div>
 </div>
+
+<script>
+// Cursor-follow inner glow
+const card = document.getElementById('login-card');
+if (card) {
+  card.addEventListener('pointermove', (e) => {
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--mx', ((e.clientX - r.left) / r.width  * 100) + '%');
+    card.style.setProperty('--my', ((e.clientY - r.top)  / r.height * 100) + '%');
+  });
+}
+</script>
 </body>
 </html>

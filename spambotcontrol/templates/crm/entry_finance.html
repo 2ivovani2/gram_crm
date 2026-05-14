@@ -5,31 +5,45 @@
 
 {% block content %}
 <style>
-/* ── File upload zone ─────────────────────────────────────────── */
+/* ── Glass file upload zone ─────────────────────────────────────── */
 .upload-zone {
-  position: relative;
-  border: 1.5px dashed var(--line);
+  position: relative; overflow: hidden;
+  border: 1.5px dashed rgba(26,23,20,.18);
   border-radius: var(--r);
-  padding: 32px 26px;
+  padding: 36px 26px;
   text-align: center;
   cursor: pointer;
-  transition: border-color .2s, background .2s;
-  background: var(--bg-2);
+  transition: border-color .25s, background .25s, box-shadow .25s;
+  background: rgba(255,255,255,.35);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   outline: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+}
+.upload-zone::before {
+  content: ''; position: absolute; inset: -1px; pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(380px circle at var(--mx,50%) var(--my,50%),
+              rgba(201,153,75,.16) 0%, transparent 40%);
+  opacity: 0; transition: opacity .3s;
 }
 .upload-zone:hover,
 .upload-zone.drag-over {
   border-color: var(--accent);
-  background: var(--accent-tint);
+  background: rgba(201,153,75,.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 0 0 4px var(--accent-glow);
 }
+.upload-zone:hover::before { opacity: 1; }
 .upload-zone.has-file {
   border-style: solid;
   border-color: var(--success-line);
-  background: var(--success-soft);
+  background: rgba(63,110,72,.08);
 }
 .upload-zone.has-file:hover {
-  border-color: rgba(154,52,52,.3);
-  background: var(--danger-soft);
+  border-color: rgba(154,52,52,.4);
+  background: rgba(154,52,52,.06);
 }
 .upload-zone input[type="file"] {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -38,21 +52,28 @@
 .upload-zone.has-file input[type="file"] { pointer-events: none; }
 
 .upload-icon {
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 12px;
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-stroke);
+  display: grid; place-items: center;
+  margin: 0 auto 14px;
   color: var(--accent);
-  transition: transform .2s;
+  transition: transform .25s, box-shadow .25s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 4px 12px -4px rgba(26,23,20,.12);
 }
 .upload-zone:hover .upload-icon,
-.upload-zone.drag-over .upload-icon { transform: translateY(-2px); }
+.upload-zone.drag-over .upload-icon {
+  transform: translateY(-3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 10px 24px -8px var(--accent-glow);
+}
 
 .upload-title {
-  font-size: 14px; font-weight: 600; color: var(--ink);
-  margin-bottom: 5px; letter-spacing: -.01em;
+  font-size: 14.5px; font-weight: 700; color: var(--ink);
+  margin-bottom: 6px; letter-spacing: -.01em;
 }
 .upload-sub {
   font-size: 12.5px; color: var(--muted);
@@ -60,74 +81,108 @@
 }
 .upload-sub kbd {
   display: inline-flex; align-items: center;
-  padding: 2px 7px; border-radius: 5px;
-  background: var(--surface); border: 1px solid var(--line);
-  font-size: 11px; font-family: 'SF Mono', ui-monospace, monospace;
-  color: var(--ink-2); line-height: 1.4; font-weight: 600;
+  padding: 2px 8px; border-radius: 6px;
+  background: rgba(255,255,255,.65);
+  border: 1px solid var(--glass-stroke);
+  font-size: 11px;
+  font-family: 'SF Mono', ui-monospace, monospace;
+  color: var(--ink-2); line-height: 1.4; font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(26,23,20,.04);
 }
 
-/* ── File preview ───────────────────────────────────────── */
+/* ── File preview ──────────────────────────────────────── */
 .upload-preview {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 16px;
-  background: var(--success-soft);
+  background: rgba(63,110,72,.10);
+  backdrop-filter: blur(12px);
   border: 1px solid var(--success-line);
   border-radius: var(--r);
   margin-top: 12px;
-  animation: fadeIn .2s ease;
+  animation: fadeIn .25s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
 }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .upload-preview-thumb {
-  width: 52px; height: 52px;
-  border-radius: 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  display: flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-stroke);
+  display: grid; place-items: center;
   color: var(--muted);
   flex-shrink: 0;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
 }
 .upload-preview-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .upload-preview-info { flex: 1; min-width: 0; text-align: left; }
 .upload-preview-name {
-  font-size: 13.5px; font-weight: 600; color: var(--ink);
+  font-size: 13.5px; font-weight: 700; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   letter-spacing: -.01em;
 }
 .upload-preview-size { font-size: 11.5px; color: var(--muted); margin-top: 2px; font-weight: 500; }
 .upload-preview-clear {
-  width: 30px; height: 30px; border-radius: 8px;
-  background: var(--surface);
-  border: 1px solid rgba(154,52,52,.18);
-  color: var(--danger); font-size: 14px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all .15s; user-select: none;
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(154,52,52,.22);
+  color: var(--danger);
+  display: grid; place-items: center;
+  cursor: pointer; transition: all .18s; user-select: none;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
 }
-.upload-preview-clear:hover { background: var(--danger-soft); }
+.upload-preview-clear:hover {
+  background: var(--danger-soft);
+  border-color: rgba(154,52,52,.4);
+}
 
-/* ── Existing file chip ───────────────────────────── */
+/* ── Existing file chip ──────────────────────────────── */
 .existing-file-chip {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 8px 14px; border-radius: var(--r);
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 9px 15px;
+  border-radius: var(--r);
   background: var(--accent-tint);
-  border: 1px solid var(--accent-soft);
-  font-size: 12.5px; color: var(--accent-ink);
-  margin-bottom: 12px; font-weight: 500;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(201,153,75,.30);
+  font-size: 12.5px;
+  color: var(--accent-ink);
+  margin-bottom: 12px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
 }
-.existing-file-chip a { color: var(--accent); text-decoration: underline; font-weight: 600; }
+.existing-file-chip a {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 700;
+}
 
-/* ── Paste toast ─────────────────────────────────── */
+/* ── Paste toast — glass on dark ─────────────────────── */
 .paste-toast {
-  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
-  padding: 11px 18px; border-radius: var(--r);
-  background: var(--ink); color: #FBFAF5;
+  position: fixed; bottom: 28px; right: 28px; z-index: 1000;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: rgba(20,17,27,.75);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #FBFAF5;
   font-size: 13px; font-weight: 600;
   display: flex; align-items: center; gap: 10px;
-  box-shadow: var(--shadow-lg);
-  animation: toastIn .25s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 18px 48px -16px rgba(0,0,0,.5),
+    0 8px 24px -10px var(--accent-glow);
+  animation: toastIn .3s cubic-bezier(.2,.7,.2,1);
 }
-@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.paste-toast strong { color: #E8C57E; font-weight: 700; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
 </style>
 
 <div style="max-width:640px">
@@ -138,10 +193,10 @@
     {% if existing %}<span class="badge badge-amber">Редактирование</span>{% else %}<span class="badge badge-blue">Новая запись</span>{% endif %}
   </div>
 
-  <div class="card" style="padding:28px 30px">
-    <div style="margin-bottom:24px">
-      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;letter-spacing:-.02em;margin-bottom:8px;color:var(--ink);line-height:1.1">Cash Flow и финансы</h2>
-      <p style="font-size:13.5px;color:var(--muted);line-height:1.6;font-weight:500">
+  <div class="card" style="padding:30px 32px">
+    <div style="margin-bottom:26px">
+      <h2 style="font-family:'Instrument Serif',serif;font-size:32px;font-weight:400;letter-spacing:-.025em;margin-bottom:10px;color:var(--ink);line-height:1.06">Cash Flow и финансы</h2>
+      <p style="font-size:13.5px;color:var(--muted);line-height:1.65;font-weight:500">
         Данные за <strong style="color:var(--ink-2)">{{ entry_date|date:"d F Y" }}</strong>. После сохранения сводный отчёт сформируется автоматически, если заявки тоже внесены.
       </p>
     </div>
@@ -165,9 +220,9 @@
         </div>
       </div>
 
-      <div style="background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
-        <span style="color:var(--muted);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em">Сальдо</span>
-        <span id="balance-preview" style="font-weight:700;color:var(--success);font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">0.00 $</span>
+      <div style="background:rgba(255,255,255,.45);backdrop-filter:blur(14px);border:1px solid var(--glass-stroke);border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;box-shadow:inset 0 1px 0 rgba(255,255,255,.5)">
+        <span style="color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.12em">Сальдо</span>
+        <span id="balance-preview" style="font-weight:700;color:var(--success);font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.025em">0.00 $</span>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -222,7 +277,7 @@
           </div>
 
           <div id="upload-dragover" style="display:none">
-            <div class="upload-icon" style="background:var(--accent-tint);border-color:var(--accent-soft)">
+            <div class="upload-icon" style="background:var(--accent-tint);border-color:rgba(201,153,75,.32)">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             </div>
             <div class="upload-title" style="color:var(--accent)">Отпустите, чтобы прикрепить</div>
@@ -260,8 +315,8 @@
     </form>
   </div>
 
-  <div style="margin-top:22px">
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em;font-weight:600">Внести за другую дату</div>
+  <div style="margin-top:24px">
+    <div style="font-size:11.5px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.12em;font-weight:700">Внести за другую дату</div>
     <input type="date" id="other-date" class="form-input" style="width:auto;min-width:200px"
            value="{{ entry_date|date:'Y-m-d' }}" max="{% now 'Y-m-d' %}" onchange="goToDate()"/>
   </div>
@@ -360,6 +415,12 @@ zone.addEventListener('drop', e => {
     fileInput.files = dt.files;
     showPreview(files[0]);
   }
+});
+/* Cursor-follow inner glow on upload zone */
+zone.addEventListener('pointermove', (e) => {
+  const r = zone.getBoundingClientRect();
+  zone.style.setProperty('--mx', ((e.clientX - r.left)/r.width*100) + '%');
+  zone.style.setProperty('--my', ((e.clientY - r.top)/r.height*100) + '%');
 });
 document.addEventListener('paste', e => {
   const tag = document.activeElement.tagName.toLowerCase();

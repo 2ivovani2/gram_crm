@@ -9,104 +9,176 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #F4EFE5; --bg-2: #EDE6D6;
-  --surface: #FBFAF5; --surface-2: #FFFFFF;
-  --ink: #1A1714; --ink-2: #3B342C;
-  --muted: #7A6F60; --muted2: #9D9182;
-  --line: #E5DBC8; --line-2: #EEE6D4;
-  --accent: #8A5A1F; --accent-tint: #FBF3DE;
-  --accent-soft: #F4E6C6; --accent-ink: #4E3010;
+  --bg:          #EFE8DA;
+  --surface:     #FBFAF5; --surface-2: #FFFFFF;
+  --ink:         #1A1714; --ink-2: #3B342C;
+  --muted:       #7A6F60; --muted2: #9D9182;
+  --line:        rgba(26,23,20,.10);
+  --line-2:      rgba(26,23,20,.06);
+  --accent:      #8A5A1F; --accent-hi: #A06B27;
+  --accent-soft: #F4E6C6;
+  --accent-tint: rgba(201,153,75,.14);
+  --accent-ink:  #4E3010;
+  --accent-glow: rgba(138,90,31,.28);
+  --glass-stroke: rgba(255,255,255,.55);
 }
 body {
-  font-family: 'Manrope', sans-serif; background: var(--bg); color: var(--ink);
-  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  font-family: 'Manrope', sans-serif;
+  background: var(--bg); color: var(--ink);
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
   -webkit-font-smoothing: antialiased; overflow: hidden;
   letter-spacing: -.005em;
+  position: relative;
+  font-feature-settings: "ss01","cv11";
 }
 body::before {
-  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  content:''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 800px 600px at 0% 0%, rgba(138,90,31,.07) 0%, transparent 60%),
-    radial-gradient(ellipse 600px 500px at 100% 100%, rgba(138,90,31,.05) 0%, transparent 60%);
+    radial-gradient(ellipse 50% 40% at 14% 20%, rgba(201,153,75,.38) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 38% at 88% 14%, rgba(138,90,31,.28) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 80% 90%, rgba(160,107,39,.20) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 35% at 10% 88%, rgba(232,197,126,.26) 0%, transparent 60%);
+  filter: blur(70px) saturate(120%);
+  animation: orb-drift 24s ease-in-out infinite alternate;
 }
 body::after {
   content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, rgba(26,23,20,.025) .9px, transparent .9px);
+  background-image: radial-gradient(circle, rgba(26,23,20,.035) .9px, transparent .9px);
   background-size: 22px 22px; opacity: .5;
 }
-
+@keyframes orb-drift {
+  0%   { transform: translate3d(0,0,0) scale(1); }
+  100% { transform: translate3d(-30px,20px,0) scale(1.05); }
+}
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(20px) scale(.99); }
+  from { opacity: 0; transform: translateY(22px) scale(.97); }
   to   { opacity: 1; transform: none; }
 }
+
 .card {
-  position: relative; z-index: 1;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 52px 44px;
+  position: relative; z-index: 1; overflow: hidden;
+  background: rgba(255,255,255,.55);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--glass-stroke);
+  border-radius: 28px;
+  padding: 56px 46px;
   text-align: center;
-  max-width: 440px; width: calc(100% - 32px);
-  box-shadow: 0 1px 0 rgba(26,23,20,.02), 0 32px 80px -16px rgba(26,23,20,.18);
-  animation: cardIn .55s cubic-bezier(.2,.8,.3,1) both;
+  max-width: 460px; width: calc(100% - 32px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.6),
+    inset 0 -1px 0 rgba(26,23,20,.04),
+    0 32px 80px -20px rgba(26,23,20,.28),
+    0 16px 40px -16px var(--accent-glow);
+  animation: cardIn .6s cubic-bezier(.2,.8,.3,1) both;
 }
+.card::before {
+  content:''; position: absolute; inset: -1px; pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(540px circle at var(--mx,30%) var(--my,20%),
+              rgba(201,153,75,.16) 0%, transparent 40%);
+  opacity: 0; transition: opacity .4s;
+}
+.card:hover::before { opacity: 1; }
+.card::after {
+  content:''; position: absolute; top: 0; left: 12%; right: 12%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+  pointer-events: none;
+}
+
 .icon-wrap {
-  width: 72px; height: 72px; border-radius: 20px;
-  background: var(--bg); border: 1px solid var(--line);
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 24px; color: var(--accent);
-  box-shadow: 0 4px 12px rgba(26,23,20,.04);
+  width: 78px; height: 78px;
+  border-radius: 22px;
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-stroke);
+  display: grid; place-items: center;
+  margin: 0 auto 26px;
+  color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    0 8px 20px -6px rgba(26,23,20,.12),
+    0 0 0 6px rgba(201,153,75,.10);
 }
+
 h1 {
   font-family: 'Instrument Serif', serif;
-  font-size: 38px; font-weight: 400;
-  letter-spacing: -.02em;
-  line-height: 1.05;
-  margin-bottom: 14px; color: var(--ink);
+  font-size: 40px; font-weight: 400;
+  letter-spacing: -.025em;
+  line-height: 1.04;
+  margin-bottom: 16px;
+  color: var(--ink);
+}
+h1 em {
+  font-style: italic;
+  background: linear-gradient(135deg, #A06B27, #8A5A1F);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
 }
 p {
   font-size: 14.5px; color: var(--muted);
-  line-height: 1.7; margin-bottom: 32px;
+  line-height: 1.7;
+  margin-bottom: 36px;
   font-weight: 500;
 }
-p strong { color: var(--ink); font-weight: 600; }
+p strong { color: var(--ink); font-weight: 700; }
 
-.btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.btns {
+  display: flex; gap: 10px;
+  justify-content: center; flex-wrap: wrap;
+}
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 22px; border-radius: 12px;
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-family: 'Manrope', sans-serif;
   font-size: 13.5px; font-weight: 600;
-  cursor: pointer; text-decoration: none;
-  transition: all .18s;
+  cursor: pointer;
+  text-decoration: none;
   border: 1px solid transparent;
   letter-spacing: -.005em;
+  transition: transform .2s cubic-bezier(.2,.7,.2,1), box-shadow .25s, background .2s, border-color .2s;
 }
 .btn-ghost {
-  background: var(--surface);
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(10px);
   color: var(--ink-2);
-  border-color: var(--line);
+  border-color: var(--glass-stroke);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(26,23,20,.04);
 }
-.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-ghost:hover {
+  border-color: rgba(138,90,31,.4);
+  color: var(--accent);
+  background: rgba(201,153,75,.10);
+}
 .btn-primary {
-  background: var(--ink);
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(201,153,75,.32) 0%, transparent 60%),
+    linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
   color: #FBFAF5;
-  box-shadow: 0 2px 4px rgba(26,23,20,.06), 0 8px 16px -4px rgba(26,23,20,.12);
+  border-color: rgba(255,255,255,.06);
+  box-shadow:
+    0 8px 22px -8px rgba(26,23,20,.45),
+    inset 0 1px 0 rgba(255,255,255,.12);
 }
 .btn-primary:hover {
-  background: #2A241E;
   transform: translateY(-1px);
+  box-shadow:
+    0 14px 32px -10px rgba(26,23,20,.5),
+    inset 0 1px 0 rgba(255,255,255,.14);
 }
 </style>
 </head>
 <body>
-<div class="card">
+<div class="card" id="card">
   <div class="icon-wrap">
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="11" width="18" height="11" rx="2"/>
       <path d="M7 11V7a5 5 0 0110 0v4"/>
     </svg>
   </div>
-  <h1>Нет доступа к CRM</h1>
+  <h1>Нет <em>доступа</em><br>к CRM</h1>
   <p>
     Вы авторизованы как <strong>{{ user.display_name }}</strong>, но у вас нет доступа ни к одному рабочему пространству. Обратитесь к главному администратору для получения доступа.
   </p>
@@ -118,5 +190,14 @@ p strong { color: var(--ink); font-weight: 600; }
     <a href="{% url 'landing' %}" class="btn btn-primary">На главную →</a>
   </div>
 </div>
+
+<script>
+const card = document.getElementById('card');
+card.addEventListener('pointermove', (e) => {
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', ((e.clientX - r.left)/r.width*100)+'%');
+  card.style.setProperty('--my', ((e.clientY - r.top)/r.height*100)+'%');
+});
+</script>
 </body>
 </html>
