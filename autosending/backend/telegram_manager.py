@@ -19,6 +19,7 @@ from typing import Dict, Optional, Set
 from telethon import TelegramClient
 from telethon.errors import (
     ChannelPrivateError,
+    ChatAdminRequiredError,
     ChatWriteForbiddenError,
     FloodWaitError,
     InviteRequestSentError,
@@ -292,8 +293,8 @@ async def send_message_to(
     except UserBannedInChannelError:
         logger.error(f"[{account_id}] Banned in {url}")
         return {"ok": False, "reason": "banned"}
-    except ChatWriteForbiddenError:
-        logger.warning(f"[{account_id}] Write forbidden in {url} (broadcast channel?)")
+    except (ChatWriteForbiddenError, ChatAdminRequiredError):
+        logger.warning(f"[{account_id}] Write forbidden in {url} (broadcast/admin-only channel)")
         return {"ok": False, "reason": "forbidden"}
     except UserNotParticipantError:
         logger.warning(f"[{account_id}] Not a participant: {url}")
@@ -305,6 +306,10 @@ async def send_message_to(
         if "not part of" in msg.lower() or "not participant" in msg.lower():
             _member_cache.get(account_id, set()).discard(url)
             return {"ok": False, "reason": "not_member"}
+        # Broadcast/admin-only channels wrapped as generic exceptions
+        if "admin privileges" in msg.lower() or "chat_admin_required" in msg.lower():
+            logger.warning(f"[{account_id}] Admin-only channel {url} — skipping permanently")
+            return {"ok": False, "reason": "forbidden"}
         logger.error(f"[{account_id}] send error → {url}: {e}")
         return {"ok": False, "reason": "error", "detail": msg}
 
