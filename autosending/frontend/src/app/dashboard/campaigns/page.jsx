@@ -552,7 +552,7 @@ export default function CampaignsPage() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                           <span style={{ fontSize: 10.5, color: "var(--ink-5)", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Запущена</span>
                           <span style={{ fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>
-                            {new Date(camp.started_at).toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            {new Date(camp.started_at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                           </span>
                         </div>
                       )}

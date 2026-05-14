@@ -15,9 +15,11 @@ const ActivityChart = dynamic(() => import("@/components/ActivityChart"), {
   loading: () => <div style={{ height: 220 }} />,
 });
 
+const MSK = { timeZone: "Europe/Moscow" };
+
 function formatTime(ts) {
   if (!ts) return "—";
-  return new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(ts).toLocaleTimeString("ru-RU", { ...MSK, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 function formatRel(ts) {
   if (!ts) return "—";
