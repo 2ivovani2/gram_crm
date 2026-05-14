@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { getChannels, addChannel, toggleChannel, deleteChannel } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
@@ -130,7 +131,8 @@ function ImportModal({ onClose, existingChannels, onImported }) {
     onImported(); onClose();
   };
 
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-xl animate-in">
         <div className="modal-header">
@@ -293,7 +295,8 @@ function ImportModal({ onClose, existingChannels, onImported }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
