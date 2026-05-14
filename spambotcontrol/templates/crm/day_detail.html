@@ -20,7 +20,7 @@
           <div style="width:6px;height:6px;border-radius:50%;background:var(--accent)"></div>
           <span style="font-size:11px;color:var(--accent-ink);font-weight:700;letter-spacing:.12em;text-transform:uppercase">Данные за день</span>
         </div>
-        <div style="font-family:'Instrument Serif',serif;font-size:32px;font-weight:400;letter-spacing:-.02em;color:var(--ink);line-height:1.05">{{ date|date:"d F Y" }}</div>
+        <div style="font-family:'Space Grotesk',system-ui,sans-serif;font-size:32px;font-weight:600;letter-spacing:-.02em;color:var(--ink);line-height:1.05">{{ date|date:"d F Y" }}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         {% if finance %}<span class="badge badge-green">CF ✓</span>{% else %}<span class="badge badge-muted">CF —</span>{% endif %}
@@ -79,8 +79,8 @@
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div style="padding:16px 18px;background:var(--success-soft);border:1px solid var(--success-line);border-radius:var(--r)">
-        <div style="font-size:10.5px;color:#2C5234;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Поступления</div>
-        <div style="font-size:24px;font-weight:700;color:#2C5234;font-variant-numeric:tabular-nums;letter-spacing:-.03em">+{{ finance.income|floatformat:2 }} $</div>
+        <div style="font-size:10.5px;color:var(--success);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Поступления</div>
+        <div style="font-size:24px;font-weight:700;color:var(--success);font-variant-numeric:tabular-nums;letter-spacing:-.03em">+{{ finance.income|floatformat:2 }} $</div>
       </div>
       <div style="padding:16px 18px;background:var(--danger-soft);border:1px solid rgba(154,52,52,.18);border-radius:var(--r)">
         <div style="font-size:10.5px;color:var(--danger);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Расходы / выплаты</div>

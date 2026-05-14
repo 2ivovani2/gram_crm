@@ -29,7 +29,7 @@
           <tr>
             <td>
               <div style="display:flex;align-items:center;gap:11px">
-                <div style="width:34px;height:34px;border-radius:50%;background:var(--ink);color:#FBFAF5;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;flex-shrink:0;letter-spacing:-.02em">{{ m.user.display_name|first|upper }}</div>
+                <div style="width:34px;height:34px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;flex-shrink:0;letter-spacing:-.02em">{{ m.user.display_name|first|upper }}</div>
                 <div>
                   <div style="font-weight:600;color:var(--ink);letter-spacing:-.01em">{{ m.user.display_name }}</div>
                   {% if m.user.telegram_username %}
@@ -119,7 +119,7 @@
       <div style="display:flex;flex-direction:column;gap:6px">
         <div><strong style="color:var(--accent)">Владелец</strong> — полный доступ, получает все отчёты</div>
         <div><strong style="color:var(--success)">Финансы</strong> — вносит Cash Flow данные</div>
-        <div><strong style="color:#6E4A0E">Заявки</strong> — вносит данные по заявкам</div>
+        <div><strong style="color:var(--yellow)">Заявки</strong> — вносит данные по заявкам</div>
         <div><strong style="color:var(--muted)">Наблюдатель</strong> — только просмотр</div>
       </div>
     </div>

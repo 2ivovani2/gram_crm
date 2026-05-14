@@ -5,182 +5,275 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Вход — Gramly AutoSending</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:#EFE8DA; --surface:#FBFAF5; --surface-2:#FFFFFF;
-  --ink:#1A1714; --ink-2:#3B342C;
-  --muted:#7A6F60; --muted2:#9D9182;
-  --line: rgba(26,23,20,.10);
-  --line-2: rgba(26,23,20,.06);
-  --accent:#8A5A1F; --accent-tint:rgba(201,153,75,.14);
-  --accent-soft:#F4E6C6; --accent-ink:#4E3010;
-  --accent-glow: rgba(138,90,31,.28);
-  --danger:#9A3434; --danger-soft:rgba(154,52,52,.12);
-  --glass-stroke: rgba(255,255,255,.55);
+  --void: #07080A;
+  --ink-2: #111317;
+  --ink-3: #1A1D24;
+  --paper: #FAFAFB;
+  --muted:   rgba(250,250,251,.55);
+  --muted-2: rgba(250,250,251,.35);
+  --muted-3: rgba(250,250,251,.22);
+  --line:    rgba(250,250,251,.08);
+  --line-hi: rgba(250,250,251,.18);
+  --brass: #FFB84D; --brass-soft:#FFD485;
+  --brass-glow: rgba(255,184,77,.32);
+  --live: #7CE2FF; --live-soft: rgba(124,226,255,.18);
+  --ok: #4ADE80;
+  --err: #FF6B6B; --err-soft: rgba(255,107,107,.12);
+  --display:'Space Grotesk',system-ui,sans-serif;
+  --sans:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',ui-monospace,monospace;
 }
 body {
-  font-family: 'Manrope', system-ui, sans-serif;
-  background: var(--bg); color: var(--ink);
+  font-family: var(--sans);
+  background: var(--void); color: var(--paper);
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
+  -webkit-font-smoothing: antialiased; letter-spacing: -.005em;
+  position: relative; overflow: hidden;
   padding: 24px;
-  letter-spacing: -.005em;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-  position: relative;
-  font-feature-settings: "ss01","cv11";
 }
+::selection { background: var(--brass); color: var(--void); }
+
 body::before {
-  content:''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(ellipse 50% 40% at 12% 18%, rgba(201,153,75,.40) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 35% at 88% 18%, rgba(138,90,31,.28) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 80% 88%, rgba(160,107,39,.22) 0%, transparent 60%);
-  filter: blur(70px) saturate(120%);
-  animation: orb-drift 22s ease-in-out infinite alternate;
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(250,250,251,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(250,250,251,.04) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
 }
 body::after {
-  content:''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, rgba(26,23,20,.035) .9px, transparent .9px);
-  background-size: 22px 22px; opacity: .45;
+  content: ''; position: fixed; inset: -10%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse 50% 40% at 20% 30%, rgba(255,184,77,.20) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 70%, rgba(124,226,255,.10) 0%, transparent 60%);
+  filter: blur(40px);
+  animation: orb 22s ease-in-out infinite alternate;
 }
-@keyframes orb-drift {
-  0%   { transform: translate3d(0,0,0) scale(1); }
-  100% { transform: translate3d(-30px, 20px, 0) scale(1.05); }
-}
+@keyframes orb   { 100% { transform: translate3d(-30px, 24px, 0) scale(1.05); } }
+@keyframes pulse { 0%,100% { opacity:1; transform: scale(1); } 50% { opacity:.4; transform: scale(.6); } }
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(18px) scale(.98); }
-  to   { opacity: 1; transform: none; }
+  from { opacity:0; transform: translateY(22px) scale(.98); }
+  to   { opacity:1; transform: none; }
 }
 
+.top-bar, .bottom-bar {
+  position: fixed; left: 0; right: 0; z-index: 10;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 28px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--muted-2);
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.top-bar { top: 0; }
+.bottom-bar { bottom: 0; color: var(--muted-3); font-size: 10.5px; }
+.top-bar .brand-mini {
+  display: flex; align-items: center; gap: 10px; color: var(--paper);
+}
+.top-bar .brand-mini .g {
+  width: 18px; height: 18px; border-radius: 4px;
+  background: var(--brass); position: relative;
+  box-shadow: 0 0 12px var(--brass-glow);
+}
+.top-bar .brand-mini .g::before {
+  content:''; position: absolute; inset: 3px;
+  background: var(--ink-3); border-radius: 2px;
+}
+.top-bar .brand-mini .g::after {
+  content:''; position: absolute; width: 4px; height: 4px;
+  background: var(--brass); border-radius: 50%;
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+}
+.top-bar .status {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--ok);
+}
+.top-bar .status .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(74,222,128,.18), 0 0 12px rgba(74,222,128,.5);
+  animation: pulse 2.2s ease infinite;
+}
+.bottom-bar .ln { width: 36px; height: 1px; background: linear-gradient(90deg, transparent, var(--brass), transparent); }
+.bottom-bar .l { display: flex; align-items: center; gap: 12px; }
+
 .card {
-  position: relative; z-index: 1;
+  position: relative; z-index: 1; overflow: hidden;
   width: 100%; max-width: 420px;
-  background: rgba(255,255,255,.55);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  border: 1px solid var(--glass-stroke);
-  border-radius: 24px;
-  padding: 44px 38px;
+  background: rgba(11,12,15,.7);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 40px 36px 32px;
   text-align: center;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.6),
-    inset 0 -1px 0 rgba(26,23,20,.04),
-    0 32px 80px -20px rgba(26,23,20,.28),
-    0 16px 40px -16px var(--accent-glow);
+    inset 0 1px 0 rgba(255,255,255,.05),
+    0 32px 80px -20px rgba(0,0,0,.6),
+    0 16px 40px -16px var(--brass-glow);
   animation: cardIn .6s cubic-bezier(.2,.8,.3,1) both;
-  overflow: hidden;
 }
 .card::before {
-  content:''; position: absolute; inset: -1px; border-radius: inherit;
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent 20%, var(--brass) 50%, transparent 80%);
   pointer-events: none;
-  background: radial-gradient(500px circle at var(--mx,30%) var(--my,20%),
-              rgba(201,153,75,.14) 0%, transparent 40%);
-  opacity: 0; transition: opacity .4s;
 }
-.card:hover::before { opacity: 1; }
 .card::after {
-  content:''; position: absolute; top: 0; left: 12%; right: 12%; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
-  pointer-events: none;
+  content: ''; position: absolute; inset: -1px;
+  pointer-events: none; border-radius: inherit;
+  background: radial-gradient(500px circle at var(--mx,30%) var(--my,20%),
+              rgba(255,184,77,.10) 0%, transparent 40%);
+  opacity: 0; transition: opacity .5s;
 }
+.card:hover::after { opacity: 1; }
 
 .logo {
   display: inline-flex; align-items: center; gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
-.logo-icon {
-  width: 40px; height: 40px;
-  border-radius: 12px;
-  background:
-    radial-gradient(120% 120% at 0% 0%, rgba(201,153,75,.55) 0%, transparent 60%),
-    linear-gradient(135deg, #2A241E 0%, #1A1714 100%);
-  display: grid; place-items: center;
-  border: 1px solid rgba(255,255,255,.08);
-  box-shadow: 0 6px 18px -6px rgba(26,23,20,.35), inset 0 1px 0 rgba(255,255,255,.12);
+.logo-glyph {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--brass);
+  position: relative;
+  box-shadow: 0 4px 14px -4px var(--brass-glow), inset 0 1px 0 rgba(255,255,255,.3);
+}
+.logo-glyph::before {
+  content: ''; position: absolute; inset: 6px;
+  background: var(--ink-3); border-radius: 3px;
+}
+.logo-glyph::after {
+  content: ''; position: absolute; width: 6px; height: 6px;
+  background: var(--brass); border-radius: 50%;
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  box-shadow: 0 0 6px var(--brass-soft);
 }
 .logo-name {
-  font-size: 22px; font-weight: 800;
-  letter-spacing: -.025em; color: var(--ink);
+  font-family: var(--display);
+  font-size: 22px; font-weight: 600;
+  letter-spacing: -.025em;
+  color: var(--paper);
 }
 .logo-sub {
-  font-size: 12.5px; color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px; color: var(--brass);
   margin-bottom: 32px;
-  font-weight: 600;
-  letter-spacing: .02em;
+  letter-spacing: .18em;
+  text-transform: uppercase;
 }
 
 h1 {
-  font-family: 'Instrument Serif', serif;
-  font-size: 34px; font-weight: 400;
-  letter-spacing: -.025em;
-  margin-bottom: 12px;
+  font-family: var(--display);
+  font-size: 32px; font-weight: 600;
+  letter-spacing: -.03em;
   line-height: 1.04;
-  color: var(--ink);
+  color: var(--paper);
+  margin-bottom: 12px;
 }
-h1 em {
-  font-style: italic;
-  background: linear-gradient(135deg, #A06B27 0%, #8A5A1F 100%);
-  -webkit-background-clip: text; background-clip: text;
-  color: transparent;
-}
+h1 .accent { color: var(--brass); }
 .subtitle {
+  font-family: var(--sans);
   font-size: 13.5px; color: var(--muted);
-  line-height: 1.65; margin-bottom: 28px;
-  font-weight: 500;
+  line-height: 1.6;
+  margin-bottom: 28px;
 }
+
 .widget-wrap {
+  position: relative;
   display: flex; justify-content: center;
   min-height: 44px;
   margin-bottom: 16px;
-  padding: 20px;
-  background: rgba(255,255,255,.45);
-  backdrop-filter: blur(20px) saturate(150%);
-  border: 1px solid var(--glass-stroke);
-  border-radius: 16px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(26,23,20,.03);
-}
-.error {
-  font-size: 12.5px; color: var(--danger);
-  background: var(--danger-soft);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(154,52,52,.28);
+  padding: 22px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 11px 14px;
+}
+.widget-wrap::before {
+  content: '// telegram_auth';
+  position: absolute;
+  top: -10px; left: 16px;
+  padding: 2px 10px;
+  background: var(--void);
+  font-family: var(--mono);
+  font-size: 10px; color: var(--brass);
+  letter-spacing: .12em;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.widget-wrap::after {
+  content: 'SECURE';
+  position: absolute;
+  top: -10px; right: 16px;
+  padding: 2px 10px;
+  background: var(--void);
+  font-family: var(--mono);
+  font-size: 9px; color: var(--ok);
+  letter-spacing: .18em;
+  border: 1px solid rgba(74,222,128,.3);
+  border-radius: 4px;
+}
+
+.error {
+  font-family: var(--mono);
+  font-size: 11.5px; color: var(--err);
+  background: var(--err-soft);
+  border: 1px solid rgba(255,107,107,.3);
+  border-radius: 8px;
+  padding: 10px 14px;
   text-align: left;
   margin-bottom: 14px;
-  font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.4);
+  font-weight: 500;
+  letter-spacing: -.005em;
 }
-.footer {
+
+.foot {
   margin-top: 28px;
-  font-size: 11.5px; color: var(--muted);
-  line-height: 1.6; font-weight: 500;
+  font-family: var(--mono);
+  font-size: 10.5px; color: var(--muted-2);
+  line-height: 1.6;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
-.footer a {
-  color: var(--ink-2);
-  text-decoration: none;
-  font-weight: 700;
-  transition: color .15s;
+.foot a {
+  color: var(--paper); text-decoration: none;
+  font-weight: 500;
+  transition: color .2s;
 }
-.footer a:hover { color: var(--accent); }
+.foot a:hover { color: var(--brass); }
+.foot .sep { color: var(--muted-3); margin: 0 6px; }
+
+@media (max-width: 540px) {
+  .top-bar, .bottom-bar { padding: 14px 18px; font-size: 9.5px; }
+  .card { padding: 32px 22px 26px; border-radius: 14px; }
+  h1 { font-size: 26px; }
+}
 </style>
 </head>
 <body>
+
+<div class="top-bar">
+  <span class="brand-mini">
+    <span class="g"></span>
+    <span>Gramly · AutoSending</span>
+  </span>
+  <span class="status">
+    <span class="dot"></span>
+    <span>all systems operational</span>
+  </span>
+</div>
+
 <div class="card" id="card">
   <div class="logo">
-    <div class="logo-icon">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#E8C57E" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-      </svg>
-    </div>
+    <span class="logo-glyph"></span>
     <span class="logo-name">Gramly</span>
   </div>
-  <div class="logo-sub">AutoSending</div>
+  <div class="logo-sub">AutoSending_</div>
 
-  <h1>Войти в <em>систему</em></h1>
+  <h1>Войти<br>в <span class="accent">систему.</span></h1>
   <p class="subtitle">Используй свой Telegram-аккаунт</p>
 
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
@@ -196,28 +289,34 @@ h1 em {
       async>
     </script>
     {% else %}
-    <div style="color:var(--danger);font-size:13px;font-weight:500">Конфигурация не завершена</div>
+    <div style="color:var(--err);font-family:var(--mono);font-size:12px;letter-spacing:.05em">config_error</div>
     {% endif %}
   </div>
 
-  <p class="footer">
-    Часть экосистемы <a href="/">Gramly</a>
-    <span style="color:var(--line);margin:0 6px">·</span>
+  <p class="foot">
+    part_of <a href="/">Gramly</a>
+    <span class="sep">·</span>
     <a href="/crm/login/">CRM</a>
-    <span style="color:var(--line);margin:0 6px">·</span>
-    <a href="/docs/">Документация</a>
+    <span class="sep">·</span>
+    <a href="/docs/">docs</a>
   </p>
+</div>
+
+<div class="bottom-bar">
+  <span class="l">
+    <span class="ln"></span>
+    <span>protocol_ hmac-sha256</span>
+  </span>
+  <span>v 2.0 · 2025</span>
 </div>
 
 <script>
 const card = document.getElementById('card');
-if (card) {
-  card.addEventListener('pointermove', (e) => {
-    const r = card.getBoundingClientRect();
-    card.style.setProperty('--mx', ((e.clientX - r.left) / r.width  * 100) + '%');
-    card.style.setProperty('--my', ((e.clientY - r.top)  / r.height * 100) + '%');
-  });
-}
+card.addEventListener('pointermove', (e) => {
+  const r = card.getBoundingClientRect();
+  card.style.setProperty('--mx', ((e.clientX - r.left)/r.width*100) + '%');
+  card.style.setProperty('--my', ((e.clientY - r.top) /r.height*100) + '%');
+});
 </script>
 </body>
 </html>
