@@ -223,7 +223,16 @@ async def add_account(
                 .filter(Account.phone == data.phone, Account.user_id == current_user.id)
                 .first())
     if existing:
-        raise HTTPException(400, "Телефон уже добавлен")
+        if existing.status != "error":
+            raise HTTPException(400, "Телефон уже добавлен")
+        # Session expired — reset the account so user can re-authorize
+        existing.api_id   = data.api_id
+        existing.api_hash = data.api_hash
+        existing.status   = "pending"
+        await tm.disconnect_client(existing.id)
+        db.commit()
+        db.refresh(existing)
+        return _account_dict(existing)
 
     acc = Account(
         api_id=  data.api_id,
