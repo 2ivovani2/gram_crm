@@ -60,7 +60,25 @@ def _session_path(phone: str) -> str:
 # ── Auth flow ──────────────────────────────────────────────────────────────────
 
 async def send_auth_code(api_id: int, api_hash: str, phone: str) -> dict:
+    # Close any previous pending auth client for this phone (re-send case)
+    if phone in _pending_auth:
+        try:
+            await _pending_auth[phone]["client"].disconnect()
+        except Exception:
+            pass
+        del _pending_auth[phone]
+
     path = _session_path(phone)
+    session_file = Path(path + ".session")
+
+    # Remove stale/invalid session file so Telethon starts clean
+    if session_file.exists():
+        try:
+            session_file.unlink()
+            logger.info(f"Removed stale session file for {phone}")
+        except Exception as e:
+            logger.warning(f"Could not remove session file for {phone}: {e}")
+
     client = TelegramClient(path, api_id, api_hash, receive_updates=False)
     await client.connect()
 
@@ -69,13 +87,14 @@ async def send_auth_code(api_id: int, api_hash: str, phone: str) -> dict:
         return {"status": "already_authorized"}
 
     result = await client.send_code_request(phone)
+    logger.info(f"Auth code sent to {phone}, type={type(result.type).__name__}")
     _pending_auth[phone] = {
         "client": client,
         "phone_code_hash": result.phone_code_hash,
         "api_id": api_id,
         "api_hash": api_hash,
     }
-    return {"status": "code_sent"}
+    return {"status": "code_sent", "code_type": type(result.type).__name__}
 
 
 async def verify_auth_code(phone: str, code: str, password: Optional[str] = None) -> dict:
