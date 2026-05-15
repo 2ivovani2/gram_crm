@@ -133,6 +133,20 @@ async def get_client(account) -> Optional[TelegramClient]:
     return client
 
 
+async def reconnect_client(account) -> Optional[TelegramClient]:
+    """Force-close and reconnect the client. Call after 'disconnected' errors."""
+    aid = account.id
+    if aid in _active_clients:
+        try:
+            await _active_clients[aid].disconnect()
+        except Exception:
+            pass
+        del _active_clients[aid]
+    # Member cache stays — we're still a member of those channels
+    logger.info(f"Reconnecting client for {account.phone}")
+    return await get_client(account)
+
+
 async def disconnect_client(account_id: int):
     if account_id in _active_clients:
         try:
@@ -232,6 +246,9 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
         return {"ok": False, "reason": "flood_wait", "seconds": e.seconds}
     except Exception as e:
         msg = str(e)
+        if "Cannot send requests while disconnected" in msg or "disconnected" in msg.lower():
+            logger.warning(f"[{account_id}] Client disconnected on join {url}")
+            return {"ok": False, "reason": "disconnected"}
         if "expired" in msg.lower() or "invalid" in msg.lower():
             return {"ok": False, "reason": "expired"}
         logger.warning(f"[{account_id}] Could not join {url}: {e}")
@@ -302,6 +319,9 @@ async def send_message_to(
         return {"ok": False, "reason": "not_member"}
     except Exception as e:
         msg = str(e)
+        if "Cannot send requests while disconnected" in msg or "disconnected" in msg.lower():
+            logger.warning(f"[{account_id}] Client disconnected on send to {url}")
+            return {"ok": False, "reason": "disconnected"}
         # Invite-link channels where get_entity fails after join — rare edge case
         if "not part of" in msg.lower() or "not participant" in msg.lower():
             _member_cache.get(account_id, set()).discard(url)

@@ -146,6 +146,7 @@ services:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/autosending"
       JWT_SECRET_KEY: ${SPAM_JWT_SECRET_KEY}
       TELEGRAM_BOT_TOKEN: ${PROD_BOT_TOKEN}
+      ADMIN_CHAT_ID: ${ADMIN_CHAT_ID:-}
     volumes:
       - spam_sessions:/app/data/sessions
       - spam_logs:/app/data/logs

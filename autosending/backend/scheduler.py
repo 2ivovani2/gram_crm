@@ -10,15 +10,37 @@ Architecture:
 """
 
 import asyncio
+import json
 import logging
 import math
+import os
 import random
 import time
+import urllib.request
 from datetime import datetime
 from typing import Dict, Set
 
 from database import Account, ActivityLog, Campaign, SessionLocal
 import telegram_manager as tm
+
+_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
+_ADMIN_CHAT = os.getenv("ADMIN_CHAT_ID", "").strip()
+
+
+async def _alert(text: str):
+    """Send a Telegram message to the admin. Fire-and-forget, never raises."""
+    if not _BOT_TOKEN or not _ADMIN_CHAT:
+        return
+    try:
+        payload = json.dumps({"chat_id": _ADMIN_CHAT, "text": text, "parse_mode": "HTML"}).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        await asyncio.to_thread(urllib.request.urlopen, req, 5)
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +151,11 @@ async def _account_worker(
         if not account:
             return
         phone = account.phone
+        # Keep a plain snapshot for reconnection after db.close()
+        acc_snap = type("A", (), {
+            "id": account.id, "phone": account.phone,
+            "api_id": account.api_id, "api_hash": account.api_hash,
+        })()
 
         client = await tm.get_client(account)
         if not client:
@@ -152,6 +179,8 @@ async def _account_worker(
 
     used_msg_indices: list = []
     peer_flood_until: float = 0.0  # account-level flood, entire worker pauses
+    zero_send_rounds: int = 0      # consecutive rounds with 0 sent
+    reconnect_attempts: int = 0    # total reconnects this session
 
     round_num = 0
 
@@ -195,6 +224,9 @@ async def _account_worker(
 
                     if join_res["ok"]:
                         _log(account_id, campaign_id, url, None, "join_channel", "success")
+                    elif join_res["reason"] == "disconnected":
+                        logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
+                        break  # break channel loop → reconnect at top of round loop
                     elif join_res["reason"] == "flood_wait":
                         secs = join_res["seconds"]
                         jitter = random.uniform(5, 30)
@@ -233,6 +265,10 @@ async def _account_worker(
                     _log(account_id, campaign_id, url, msg_text, "send_message", "success")
                     _increment_sent(account_id, campaign_id)
 
+                elif send_res["reason"] == "disconnected":
+                    logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
+                    break  # break channel loop → reconnect at top of round loop
+
                 elif send_res["reason"] == "flood_wait":
                     secs = send_res["seconds"]
                     jitter = random.uniform(5, 30)
@@ -246,6 +282,10 @@ async def _account_worker(
                     peer_flood_until = now + pause
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "flood_wait", f"PeerFlood — worker paused {pause:.0f}s")
+                    await _alert(
+                        f"🚫 <b>PeerFlood</b> — аккаунт <code>{phone}</code>\n"
+                        f"Кампания #{campaign_id}. Пауза {pause:.0f}с (~{pause/60:.0f} мин)"
+                    )
                     break  # exit channel loop, sleep handled at top
 
                 elif send_res["reason"] == "banned":
@@ -275,6 +315,27 @@ async def _account_worker(
                 # Human-like inter-channel pause (normally distributed 5–30s)
                 await _sleep(_human_delay(5, 30), stop)
 
+            # ── Reconnect if client dropped ────────────────────────────────
+            if not client.is_connected():
+                reconnect_attempts += 1
+                logger.warning(f"[Cmp{campaign_id}][{phone}] client disconnected, reconnecting (#{reconnect_attempts})")
+                await _alert(
+                    f"🔌 <b>Клиент отключился</b> — <code>{phone}</code>\n"
+                    f"Кампания #{campaign_id}, раунд {round_num}. Переподключаю…"
+                )
+                new_client = await tm.reconnect_client(acc_snap)
+                if new_client:
+                    client = new_client
+                    logger.info(f"[Cmp{campaign_id}][{phone}] reconnected OK (#{reconnect_attempts})")
+                    await _alert(f"✅ <b>Переподключился</b> — <code>{phone}</code>. Продолжаю рассылку.")
+                else:
+                    logger.error(f"[Cmp{campaign_id}][{phone}] reconnect failed — stopping worker")
+                    await _alert(
+                        f"❌ <b>Не удалось переподключиться</b> — <code>{phone}</code>\n"
+                        f"Кампания #{campaign_id} остановлена. Проверь сессию аккаунта."
+                    )
+                    return
+
             active_channels = len(channels) - len(skip_forever)
             on_cooldown = sum(1 for cd in flood_cooldowns.values() if cd > time.monotonic())
             logger.info(
@@ -291,6 +352,18 @@ async def _account_worker(
                 "active":       active_channels,
                 "ts":           time.time(),
             }
+
+            # Alert if 0 sends for too many rounds in a row (not counting cooldown-only rounds)
+            if sent_this_round == 0 and on_cooldown < len(channels) * 0.9:
+                zero_send_rounds += 1
+                if zero_send_rounds == 5:
+                    await _alert(
+                        f"⚠️ <b>Низкая эффективность</b> — <code>{phone}</code>\n"
+                        f"Кампания #{campaign_id}: 5 раундов без отправок.\n"
+                        f"Активных: {active_channels}, FloodWait: {on_cooldown}, Пропущено: {len(skip_forever)}"
+                    )
+            else:
+                zero_send_rounds = 0
 
             if stop.is_set():
                 break
@@ -375,8 +448,14 @@ async def _run_campaign(campaign_id: int):
 
         _running.pop(campaign_id, None)
         _stop_events.pop(campaign_id, None)
-        _round_stats.pop(campaign_id, None)
-        logger.info(f"Campaign {campaign_id} finished")
+        stats = _round_stats.pop(campaign_id, {})
+        total = stats.get("sent", 0)
+        logger.info(f"Campaign {campaign_id} finished — total sent: {total}")
+        await _alert(
+            f"🏁 <b>Кампания #{campaign_id} завершена</b>\n"
+            f"Отправлено: <b>{total}</b> сообщений\n"
+            f"Пропущено навсегда: {stats.get('skip_forever', '?')}"
+        )
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
