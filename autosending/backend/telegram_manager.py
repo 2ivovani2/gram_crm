@@ -175,6 +175,16 @@ async def disconnect_client(account_id: int):
         del _active_clients[account_id]
 
 
+def delete_session_file(phone: str):
+    session_file = Path(_session_path(phone) + ".session")
+    if session_file.exists():
+        try:
+            session_file.unlink()
+            logger.info(f"Deleted session file for {phone}")
+        except Exception as e:
+            logger.warning(f"Could not delete session file for {phone}: {e}")
+
+
 # ── Profile ────────────────────────────────────────────────────────────────────
 
 async def update_profile(account, first_name: str = "", last_name: str = "", bio: str = ""):

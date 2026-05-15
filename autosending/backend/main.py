@@ -259,6 +259,7 @@ async def delete_account(
     if not acc:
         raise HTTPException(404, "Account not found")
     await tm.disconnect_client(account_id)
+    tm.delete_session_file(acc.phone)
     db.delete(acc)
     db.commit()
     return {"ok": True}
