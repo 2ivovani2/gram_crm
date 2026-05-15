@@ -160,6 +160,14 @@ async def _account_worker(
         client = await tm.get_client(account)
         if not client:
             logger.error(f"[Cmp{campaign_id}][{phone}] not authorized — skipping")
+            account.status = "error"
+            db.commit()
+            await _alert(
+                f"❌ <b>Сессия недействительна</b> — <code>{phone}</code>\n"
+                f"Кампания #{campaign_id}: аккаунт не авторизован. "
+                f"Удали и добавь заново через «Добавить аккаунт».",
+                user_tg_id,
+            )
             return
 
         account.status = "working"
