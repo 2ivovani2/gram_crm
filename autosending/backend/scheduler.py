@@ -23,16 +23,15 @@ from typing import Dict, Set
 from database import Account, ActivityLog, Campaign, SessionLocal
 import telegram_manager as tm
 
-_BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
-_ADMIN_CHAT = os.getenv("ADMIN_CHAT_ID", "").strip()
+_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 
-async def _alert(text: str):
-    """Send a Telegram message to the admin. Fire-and-forget, never raises."""
-    if not _BOT_TOKEN or not _ADMIN_CHAT:
+async def _alert(text: str, chat_id: int | None):
+    """Send a Telegram message to the user who owns the campaign. Fire-and-forget."""
+    if not _BOT_TOKEN or not chat_id:
         return
     try:
-        payload = json.dumps({"chat_id": _ADMIN_CHAT, "text": text, "parse_mode": "HTML"}).encode()
+        payload = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode()
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage",
             data=payload,
@@ -137,6 +136,7 @@ async def _account_worker(
     comment_mode: bool,
     stop: asyncio.Event,
     start_offset: float,
+    user_tg_id: int | None = None,
 ):
     # Stagger accounts so they don't all hit Telegram at the same moment
     if start_offset > 0:
@@ -284,7 +284,8 @@ async def _account_worker(
                          "flood_wait", f"PeerFlood — worker paused {pause:.0f}s")
                     await _alert(
                         f"🚫 <b>PeerFlood</b> — аккаунт <code>{phone}</code>\n"
-                        f"Кампания #{campaign_id}. Пауза {pause:.0f}с (~{pause/60:.0f} мин)"
+                        f"Кампания #{campaign_id}. Пауза {pause:.0f}с (~{pause/60:.0f} мин)",
+                        user_tg_id,
                     )
                     break  # exit channel loop, sleep handled at top
 
@@ -321,18 +322,23 @@ async def _account_worker(
                 logger.warning(f"[Cmp{campaign_id}][{phone}] client disconnected, reconnecting (#{reconnect_attempts})")
                 await _alert(
                     f"🔌 <b>Клиент отключился</b> — <code>{phone}</code>\n"
-                    f"Кампания #{campaign_id}, раунд {round_num}. Переподключаю…"
+                    f"Кампания #{campaign_id}, раунд {round_num}. Переподключаю…",
+                    user_tg_id,
                 )
                 new_client = await tm.reconnect_client(acc_snap)
                 if new_client:
                     client = new_client
                     logger.info(f"[Cmp{campaign_id}][{phone}] reconnected OK (#{reconnect_attempts})")
-                    await _alert(f"✅ <b>Переподключился</b> — <code>{phone}</code>. Продолжаю рассылку.")
+                    await _alert(
+                        f"✅ <b>Переподключился</b> — <code>{phone}</code>. Продолжаю рассылку.",
+                        user_tg_id,
+                    )
                 else:
                     logger.error(f"[Cmp{campaign_id}][{phone}] reconnect failed — stopping worker")
                     await _alert(
                         f"❌ <b>Не удалось переподключиться</b> — <code>{phone}</code>\n"
-                        f"Кампания #{campaign_id} остановлена. Проверь сессию аккаунта."
+                        f"Кампания #{campaign_id} остановлена. Проверь сессию аккаунта.",
+                        user_tg_id,
                     )
                     return
 
@@ -360,7 +366,8 @@ async def _account_worker(
                     await _alert(
                         f"⚠️ <b>Низкая эффективность</b> — <code>{phone}</code>\n"
                         f"Кампания #{campaign_id}: 5 раундов без отправок.\n"
-                        f"Активных: {active_channels}, FloodWait: {on_cooldown}, Пропущено: {len(skip_forever)}"
+                        f"Активных: {active_channels}, FloodWait: {on_cooldown}, Пропущено: {len(skip_forever)}",
+                        user_tg_id,
                     )
             else:
                 zero_send_rounds = 0
@@ -407,6 +414,9 @@ async def _run_campaign(campaign_id: int):
         messages_snap = [{"content": m.content} for m in camp.messages if m.is_active]
         min_d, max_d = camp.min_delay, camp.max_delay
         comment = camp.comment_on_posts
+        # User's Telegram ID — used to send alerts directly to the campaign owner
+        user_tg_id = camp.user.telegram_id if camp.user else None
+        camp_name  = camp.name
     finally:
         db.close()
 
@@ -419,6 +429,7 @@ async def _run_campaign(campaign_id: int):
                 a["id"], channels_snap, messages_snap,
                 campaign_id, min_d, max_d, comment, stop,
                 start_offset=i * random.uniform(10, 25),
+                user_tg_id=user_tg_id,
             )
         )
         for i, a in enumerate(accounts_snap)
@@ -452,9 +463,10 @@ async def _run_campaign(campaign_id: int):
         total = stats.get("sent", 0)
         logger.info(f"Campaign {campaign_id} finished — total sent: {total}")
         await _alert(
-            f"🏁 <b>Кампания #{campaign_id} завершена</b>\n"
+            f"🏁 <b>«{camp_name}» завершена</b>\n"
             f"Отправлено: <b>{total}</b> сообщений\n"
-            f"Пропущено навсегда: {stats.get('skip_forever', '?')}"
+            f"Пропущено навсегда: {stats.get('skip_forever', '?')}",
+            user_tg_id,
         )
 
 
