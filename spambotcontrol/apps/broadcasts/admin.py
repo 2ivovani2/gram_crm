@@ -1,6 +1,6 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import Broadcast, BroadcastDeliveryLog
+from .models import Broadcast, BroadcastDeliveryLog  # noqa: F401 (BroadcastDeliveryLog used in inline)
 
 
 class DeliveryLogInline(TabularInline):
@@ -22,8 +22,3 @@ class BroadcastAdmin(ModelAdmin):
     inlines = [DeliveryLogInline]
 
 
-@admin.register(BroadcastDeliveryLog)
-class BroadcastDeliveryLogAdmin(ModelAdmin):
-    list_display = ("broadcast", "user", "status", "sent_at")
-    list_filter = ("status",)
-    readonly_fields = ("broadcast", "user", "status", "error_message", "sent_at")

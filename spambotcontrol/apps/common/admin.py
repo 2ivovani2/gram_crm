@@ -1,7 +1,9 @@
 from django.contrib import admin
+from django.contrib.auth.models import Group
 
-# Common admin configuration — kept minimal.
-# The primary management interface is the Telegram admin panel.
-admin.site.site_header = "SpamBotControl — Django Admin"
-admin.site.site_title = "SpamBotControl"
-admin.site.index_title = "Technical admin panel (superuser only)"
+admin.site.site_header = "Gramly Admin"
+admin.site.site_title = "Gramly"
+admin.site.index_title = "Панель управления"
+
+# Group is unused — auth is Telegram-based
+admin.site.unregister(Group)

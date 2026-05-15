@@ -40,7 +40,6 @@ class UserAdmin(ModelAdmin, BaseUserAdmin):
         ("Работа и метрики", {"fields": ("work_url", "attracted_count", "personal_rate", "referral_rate", "balance")}),
         ("Начисления (расчёт)", {"fields": ("earnings_breakdown_display",)}),
         ("Timestamps", {"fields": ("created_at", "updated_at", "last_activity_at")}),
-        ("Auth (internal)", {"fields": ("username", "password"), "classes": ("collapse",)}),
     )
 
     add_fieldsets = (

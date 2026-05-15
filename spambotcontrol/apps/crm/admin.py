@@ -39,14 +39,6 @@ class WorkspaceAdmin(ModelAdmin):
             )
 
 
-@admin.register(WorkspaceMembership)
-class WorkspaceMembershipAdmin(ModelAdmin):
-    list_display  = ["user", "workspace", "role", "is_active", "joined_at"]
-    list_filter   = ["workspace", "role", "is_active"]
-    search_fields = ["user__first_name", "user__telegram_username"]
-    autocomplete_fields = ["user"]
-
-
 @admin.register(WeeklyPlan)
 class WeeklyPlanAdmin(ModelAdmin):
     list_display  = ["workspace", "week_start", "pp_plan", "privat_plan"]
