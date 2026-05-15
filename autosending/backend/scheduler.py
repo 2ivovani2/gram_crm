@@ -190,12 +190,32 @@ async def _account_worker(
     zero_send_rounds: int = 0      # consecutive rounds with 0 sent
     reconnect_attempts: int = 0    # total reconnects this session
 
+    # Work/rest rotation — randomized per worker so accounts don't all rest simultaneously
+    _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
+    rest_num = 0
+
     round_num = 0
 
     try:
         while not stop.is_set():
             round_num += 1
             now = time.monotonic()
+
+            # ── Work/rest rotation ─────────────────────────────────────────
+            if now >= _work_session_end:
+                rest_secs = random.uniform(25 * 60, 50 * 60)
+                rest_num += 1
+                logger.info(f"[Cmp{campaign_id}][{phone}] Rest #{rest_num} — sleeping {rest_secs/60:.0f} min")
+                await _alert(
+                    f"😴 <b>Аккаунт отдыхает</b> — <code>{phone}</code>\n"
+                    f"Кампания #{campaign_id}. Пауза {rest_secs/60:.0f} мин, затем продолжит.",
+                    user_tg_id,
+                )
+                await _sleep(rest_secs, stop)
+                if stop.is_set():
+                    break
+                _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
+                logger.info(f"[Cmp{campaign_id}][{phone}] Resuming after rest #{rest_num}")
 
             # Account-level PeerFlood cooldown
             if peer_flood_until > now:
