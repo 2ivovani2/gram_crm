@@ -179,6 +179,18 @@ async def get_client(account) -> Optional[TelegramClient]:
     if not await client.is_user_authorized():
         logger.warning(f"Account {account.phone} session not authorized")
         await client.disconnect()
+        # Mark account as error in DB so the UI reflects reality immediately
+        try:
+            from database import SessionLocal, Account as AccountModel
+            _db = SessionLocal()
+            _acc = _db.query(AccountModel).filter(AccountModel.id == account.id).first()
+            if _acc and _acc.status not in ("error", "pending"):
+                _acc.status = "error"
+                _db.commit()
+        except Exception as _e:
+            logger.warning(f"Failed to mark account {account.phone} as error: {_e}")
+        finally:
+            _db.close()
         return None
 
     _active_clients[aid] = client
