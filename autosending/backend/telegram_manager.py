@@ -195,6 +195,16 @@ async def update_profile(account, first_name: str = "", last_name: str = "", bio
     logger.info(f"Profile updated for {account.phone}")
 
 
+async def set_profile_photo(account, photo_bytes):
+    from telethon.tl.functions.photos import UploadProfilePhotoRequest
+    client = await get_client(account)
+    if not client:
+        raise RuntimeError("Client not authorized")
+    uploaded = await client.upload_file(photo_bytes, file_name="photo.jpg")
+    await client(UploadProfilePhotoRequest(file=uploaded))
+    logger.info(f"Profile photo updated for {account.phone}")
+
+
 async def fetch_me(account) -> dict:
     client = await get_client(account)
     if not client:

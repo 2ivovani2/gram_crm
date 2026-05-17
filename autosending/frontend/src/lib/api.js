@@ -43,6 +43,11 @@ export const deleteAccount = (id)       => api.delete(`/api/accounts/${id}`).the
 export const sendCode      = (id)       => api.post(`/api/accounts/${id}/send-code`).then(r => r.data);
 export const verifyCode    = (id, data) => api.post(`/api/accounts/${id}/verify-code`, data).then(r => r.data);
 export const updateProfile = (id, data) => api.patch(`/api/accounts/${id}/profile`, data).then(r => r.data);
+export const uploadPhoto   = (id, file) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  return api.post(`/api/accounts/${id}/photo`, fd, { headers: { "Content-Type": "multipart/form-data" } }).then(r => r.data);
+};
 export const syncAccount   = (id)       => api.get(`/api/accounts/${id}/sync`).then(r => r.data);
 
 // ── Channels ──────────────────────────────────────────────────────────────────

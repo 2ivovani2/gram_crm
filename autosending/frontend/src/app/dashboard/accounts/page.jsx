@@ -2,7 +2,7 @@
 import { useEffect, useState, Fragment } from "react";
 import {
   getAccounts, addAccount, deleteAccount,
-  sendCode, verifyCode, updateProfile, syncAccount,
+  sendCode, verifyCode, updateProfile, uploadPhoto, syncAccount,
 } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import toast from "react-hot-toast";
@@ -100,7 +100,23 @@ function ProfileModal({ account, onClose, onSaved }) {
     last_name:  account.last_name  || "",
     bio:        account.bio        || "",
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]           = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoLoading(true);
+    try {
+      await uploadPhoto(account.id, file);
+      toast.success("Фото обновлено");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Ошибка загрузки фото");
+    } finally {
+      setPhotoLoading(false);
+      e.target.value = "";
+    }
+  };
 
   const save = async () => {
     setLoading(true);
@@ -140,6 +156,29 @@ function ProfileModal({ account, onClose, onSaved }) {
               {account.phone}
             </div>
           </div>
+          <label style={{ cursor: photoLoading ? "not-allowed" : "pointer", flexShrink: 0 }}>
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handlePhotoChange}
+              disabled={photoLoading}
+            />
+            <span
+              className="btn-ghost btn-sm"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                pointerEvents: photoLoading ? "none" : "auto",
+                opacity: photoLoading ? 0.6 : 1,
+                fontSize: 12,
+              }}
+            >
+              {photoLoading
+                ? <RefreshCw size={12} style={{ animation: "spin 0.7s linear infinite" }} />
+                : <Upload size={12} />}
+              Сменить фото
+            </span>
+          </label>
         </div>
 
         <Field label="Имя">

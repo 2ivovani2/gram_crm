@@ -3,12 +3,13 @@ FastAPI application — REST endpoints for AutoSending dashboard.
 Multi-user: every resource is scoped to the authenticated user.
 """
 
+import io
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session, joinedload
@@ -337,6 +338,26 @@ async def update_profile(
         return _account_dict(acc)
     except Exception as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/accounts/{account_id}/photo")
+async def update_photo(
+    account_id: int,
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    acc = db.query(Account).filter(
+        Account.id == account_id, Account.user_id == current_user.id
+    ).first()
+    if not acc:
+        raise HTTPException(404, "Account not found")
+    client = await tm.get_client(acc)
+    if not client:
+        raise HTTPException(400, "Account not authorized")
+    data = await file.read()
+    await tm.set_profile_photo(acc, io.BytesIO(data))
+    return {"ok": True}
 
 
 @app.get("/api/accounts/{account_id}/sync")

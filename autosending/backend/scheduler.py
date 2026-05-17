@@ -38,8 +38,8 @@ async def _alert(text: str, chat_id: int | None):
             headers={"Content-Type": "application/json"},
         )
         await asyncio.to_thread(urllib.request.urlopen, req, 5)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Alert failed → chat_id={chat_id}: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -490,12 +490,12 @@ async def _run_campaign(campaign_id: int):
         stats = _round_stats.pop(campaign_id, {})
         total = stats.get("sent", 0)
         logger.info(f"Campaign {campaign_id} finished — total sent: {total}")
-        await _alert(
+        asyncio.create_task(_alert(
             f"🏁 <b>«{camp_name}» завершена</b>\n"
             f"Отправлено: <b>{total}</b> сообщений\n"
             f"Пропущено навсегда: {stats.get('skip_forever', '?')}",
             user_tg_id,
-        )
+        ))
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
