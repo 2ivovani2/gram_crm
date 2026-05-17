@@ -228,6 +228,18 @@ async def _account_worker(
     zero_send_rounds: int = 0      # consecutive rounds with 0 sent
     reconnect_attempts: int = 0    # total reconnects this session
 
+    # Session-health counters — reset each rest period
+    flood_hits: int = 0   # FloodWaits received in current work session
+    joins_done: int = 0   # new channel joins in current work session
+    sends_done: int = 0   # messages sent in current work session
+    peer_flood_count: int = 0  # total PeerFlood events (escalates rest time)
+
+    # Per-work-session safety caps
+    _MAX_JOINS  = 10   # new channel joins per work period → join slowdown
+    _MAX_SENDS  = 40   # sends per work period → trigger early rest
+    _FLOOD_WARN = 2    # FloodWaits before slowing down + alert
+    _FLOOD_REST = 4    # FloodWaits before emergency rest
+
     # Work/rest rotation — randomized per worker so accounts don't all rest simultaneously
     _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
     rest_num = 0
@@ -253,6 +265,7 @@ async def _account_worker(
                 if stop.is_set():
                     break
                 _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
+                flood_hits = 0; joins_done = 0; sends_done = 0
                 logger.info(f"[Cmp{campaign_id}][{phone}] Resuming after rest #{rest_num}")
 
             # Account-level PeerFlood cooldown
@@ -286,20 +299,48 @@ async def _account_worker(
 
                 # ── Ensure joined ──────────────────────────────────────────
                 if not tm.is_cached_member(account_id, url):
+                    # Don't join new channels if we've hit the per-session cap
+                    if joins_done >= _MAX_JOINS:
+                        logger.debug(f"[Cmp{campaign_id}][{phone}] join cap ({_MAX_JOINS}), skipping {url}")
+                        skipped_cooldown += 1
+                        continue
+
                     join_res = await tm.ensure_joined(client, account_id, url)
 
                     if join_res["ok"]:
                         _log(account_id, campaign_id, url, None, "join_channel", "success")
                         _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["joined"] += 1
+                        joins_done += 1
                     elif join_res["reason"] == "disconnected":
                         logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
                         break  # break channel loop → reconnect at top of round loop
                     elif join_res["reason"] == "flood_wait":
                         secs = join_res["seconds"]
-                        jitter = random.uniform(5, 30)
+                        flood_hits += 1
+                        jitter = random.uniform(secs * 0.15, secs * 0.35)
                         flood_cooldowns[url] = now + secs + jitter
                         _log(account_id, campaign_id, url, None, "join_channel",
                              "flood_wait", f"FloodWait {secs}s — retry in {secs + jitter:.0f}s")
+                        if flood_hits >= _FLOOD_REST:
+                            _rest = random.uniform(2 * 3600, 4 * 3600)
+                            logger.warning(f"[Cmp{campaign_id}][{phone}] {flood_hits} floods → emergency rest {_rest/3600:.1f}h")
+                            asyncio.create_task(_alert(
+                                f"🆘 <b>Экстренный отдых</b> — <code>{phone}</code>\n"
+                                f"Кампания #{campaign_id}: {flood_hits} FloodWait подряд.\n"
+                                f"Пауза {_rest/3600:.1f}ч — защита сессии.",
+                                user_tg_id,
+                            ))
+                            await _sleep(_rest, stop)
+                            flood_hits = 0; joins_done = 0; sends_done = 0
+                            _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
+                            break
+                        elif flood_hits == _FLOOD_WARN:
+                            asyncio.create_task(_alert(
+                                f"⚠️ <b>Много FloodWait</b> — <code>{phone}</code>\n"
+                                f"Кампания #{campaign_id}: уже {flood_hits} подряд. "
+                                f"Увеличиваю паузы между каналами.",
+                                user_tg_id,
+                            ))
                         skipped_cooldown += 1
                         continue
                     elif join_res["reason"] in ("expired", "approval_required", "private", "not_channel"):
@@ -311,11 +352,11 @@ async def _account_worker(
                     else:
                         _log(account_id, campaign_id, url, None, "join_channel",
                              "error", join_res.get("detail", join_res["reason"]))
-                        # Don't permanently skip on generic errors — retry next round
                         continue
 
-                    # Human-like pause after joining a new channel
-                    await _sleep(_human_delay(5, 15), stop)
+                    # Post-join pause — longer than inter-send, and scales up if floods accumulate
+                    _join_pause = _human_delay(120, 300) if flood_hits >= _FLOOD_WARN else _human_delay(60, 150)
+                    await _sleep(_join_pause, stop)
                     if stop.is_set():
                         break
 
@@ -328,10 +369,15 @@ async def _account_worker(
 
                 if send_res["ok"]:
                     sent_this_round += 1
+                    sends_done += 1
                     error_retries.pop(url, None)  # reset backoff on success
                     _log(account_id, campaign_id, url, msg_text, "send_message", "success")
                     _increment_sent(account_id, campaign_id)
                     _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["sent"] += 1
+                    # Early rest when send cap reached mid-round
+                    if sends_done >= _MAX_SENDS:
+                        logger.info(f"[Cmp{campaign_id}][{phone}] send cap {_MAX_SENDS} — breaking round")
+                        break
 
                 elif send_res["reason"] == "disconnected":
                     logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
@@ -339,22 +385,50 @@ async def _account_worker(
 
                 elif send_res["reason"] == "flood_wait":
                     secs = send_res["seconds"]
-                    jitter = random.uniform(5, 30)
+                    flood_hits += 1
+                    jitter = random.uniform(secs * 0.15, secs * 0.35)
                     flood_cooldowns[url] = now + secs + jitter
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "flood_wait", f"FloodWait {secs}s — cooldown {secs + jitter:.0f}s")
+                    if flood_hits >= _FLOOD_REST:
+                        _rest = random.uniform(2 * 3600, 4 * 3600)
+                        logger.warning(f"[Cmp{campaign_id}][{phone}] {flood_hits} floods → emergency rest {_rest/3600:.1f}h")
+                        asyncio.create_task(_alert(
+                            f"🆘 <b>Экстренный отдых</b> — <code>{phone}</code>\n"
+                            f"Кампания #{campaign_id}: {flood_hits} FloodWait подряд.\n"
+                            f"Пауза {_rest/3600:.1f}ч — защита сессии.",
+                            user_tg_id,
+                        ))
+                        await _sleep(_rest, stop)
+                        flood_hits = 0; joins_done = 0; sends_done = 0
+                        _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
+                        break
+                    elif flood_hits == _FLOOD_WARN:
+                        asyncio.create_task(_alert(
+                            f"⚠️ <b>Много FloodWait</b> — <code>{phone}</code>\n"
+                            f"Кампания #{campaign_id}: уже {flood_hits} подряд. "
+                            f"Увеличиваю паузы между каналами.",
+                            user_tg_id,
+                        ))
 
                 elif send_res["reason"] == "peer_flood":
-                    # Account-level flood — pause with jitter so accounts don't all wake together
-                    pause = 600 + random.uniform(0, 180)
+                    # Escalating rest: 1st → 15-25 min, 2nd → 40-80 min, 3rd+ → 2-4 h
+                    peer_flood_count += 1
+                    if peer_flood_count == 1:
+                        pause = random.uniform(900, 1500)
+                    elif peer_flood_count == 2:
+                        pause = random.uniform(2400, 4800)
+                    else:
+                        pause = random.uniform(7200, 14400)
                     peer_flood_until = now + pause
                     _log(account_id, campaign_id, url, msg_text, "send_message",
-                         "flood_wait", f"PeerFlood — worker paused {pause:.0f}s")
-                    await _alert(
-                        f"🚫 <b>PeerFlood</b> — аккаунт <code>{phone}</code>\n"
-                        f"Кампания #{campaign_id}. Пауза {pause:.0f}с (~{pause/60:.0f} мин)",
+                         "flood_wait", f"PeerFlood #{peer_flood_count} — worker paused {pause:.0f}s")
+                    asyncio.create_task(_alert(
+                        f"🚫 <b>PeerFlood #{peer_flood_count}</b> — аккаунт <code>{phone}</code>\n"
+                        f"Кампания #{campaign_id}. Пауза {pause/60:.0f} мин"
+                        + (" ⚠️ аккаунт под угрозой, рекомендую снизить скорость" if peer_flood_count >= 2 else ""),
                         user_tg_id,
-                    )
+                    ))
                     break  # exit channel loop, sleep handled at top
 
                 elif send_res["reason"] == "banned":
@@ -383,6 +457,20 @@ async def _account_worker(
 
                 # Human-like inter-channel pause (normally distributed 5–30s)
                 await _sleep(_human_delay(5, 30), stop)
+
+            # ── Early rest if send cap hit ─────────────────────────────────
+            if sends_done >= _MAX_SENDS:
+                _rest = random.uniform(30 * 60, 70 * 60)
+                logger.info(f"[Cmp{campaign_id}][{phone}] send cap {sends_done} → rest {_rest/60:.0f} min")
+                asyncio.create_task(_alert(
+                    f"⏸️ <b>Лимит сессии</b> — <code>{phone}</code>\n"
+                    f"Кампания #{campaign_id}: отправлено {sends_done} за период. "
+                    f"Отдых {_rest/60:.0f} мин.",
+                    user_tg_id,
+                ))
+                await _sleep(_rest, stop)
+                sends_done = 0; joins_done = 0; flood_hits = 0
+                _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
 
             # ── Reconnect if client dropped ────────────────────────────────
             if not client.is_connected():
