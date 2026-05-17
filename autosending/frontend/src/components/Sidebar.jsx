@@ -5,15 +5,16 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, Users, Hash, MessageSquare, Zap,
-  HelpCircle, LogOut, Send, Search, Settings,
+  HelpCircle, LogOut, Send, Search, Settings, Calculator,
 } from "lucide-react";
 
 const NAV = [
-  { href: "/dashboard",           icon: LayoutDashboard, label: "Обзор" },
-  { href: "/dashboard/accounts",  icon: Users,           label: "Аккаунты" },
-  { href: "/dashboard/channels",  icon: Hash,            label: "Каналы" },
-  { href: "/dashboard/messages",  icon: MessageSquare,   label: "Шаблоны" },
-  { href: "/dashboard/campaigns", icon: Zap,             label: "Кампании" },
+  { href: "/dashboard",              icon: LayoutDashboard, label: "Обзор" },
+  { href: "/dashboard/accounts",     icon: Users,           label: "Аккаунты" },
+  { href: "/dashboard/channels",     icon: Hash,            label: "Каналы" },
+  { href: "/dashboard/messages",     icon: MessageSquare,   label: "Шаблоны" },
+  { href: "/dashboard/campaigns",    icon: Zap,             label: "Кампании" },
+  { href: "/dashboard/calculator",   icon: Calculator,      label: "Калькулятор" },
 ];
 const NAV_SUPPORT = [
   { href: "/dashboard/help",      icon: HelpCircle,      label: "Документация" },
