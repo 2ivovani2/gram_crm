@@ -206,6 +206,15 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
+def _pg_add_column(conn, table: str, column: str, col_type: str):
+    from sqlalchemy import text
+    try:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"))
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"PG migration {table}.{column}: {e}")
+
+
 def _run_pg_migrations():
     from sqlalchemy import inspect, text
     with engine.connect() as conn:
@@ -216,6 +225,9 @@ def _run_pg_migrations():
                 # Old username/password schema → migrate to Telegram auth schema
                 conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
                 conn.commit()
+
+        # Incremental column additions — safe to run repeatedly
+        _pg_add_column(conn, "accounts", "tg_user_id", "BIGINT")
 
 
 def _run_migrations():
