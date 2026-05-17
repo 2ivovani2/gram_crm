@@ -123,16 +123,16 @@ def _get_caps(tg_user_id: int | None, messages_sent: int) -> tuple[int, int]:
     Fallback: messages_sent counter when tg_user_id is not yet known.
     """
     if tg_user_id:
-        # Telegram IDs are sequential. Rough registration-year mapping:
-        # < 200M  → before 2016 (Ветеран)
-        # 200M–1B → 2016-2019  (Опытный)
-        # 1B–5B   → 2019-2022  (Растущий)
-        # > 5B    → 2022+      (Новичок)
-        if tg_user_id < 200_000_000:
+        # Telegram IDs are sequential. Rough registration-year mapping (as of 2026):
+        # < 500M  → before 2019 (Ветеран)
+        # 500M–2B → 2019-2021  (Опытный)
+        # 2B–6B   → 2021-2023  (Растущий)
+        # > 6B    → 2023+      (Новичок)
+        if tg_user_id < 500_000_000:
             return 14, 55
-        elif tg_user_id < 1_000_000_000:
+        elif tg_user_id < 2_000_000_000:
             return 12, 45
-        elif tg_user_id < 5_000_000_000:
+        elif tg_user_id < 6_000_000_000:
             return 10, 35
         else:
             return 8, 25
