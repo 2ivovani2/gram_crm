@@ -16,10 +16,10 @@ import {
 function getTier(tgUserId, sent) {
   // Primary: Telegram user ID (sequential — lower = older account)
   if (tgUserId) {
-    if (tgUserId < 500_000_000)   return { label: "Ветеран",  daily: 550, color: "#9b6dff",          bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
-    if (tgUserId < 2_000_000_000) return { label: "Опытный",  daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",       border: "var(--gold-edge)" };
-    if (tgUserId < 6_000_000_000) return { label: "Растущий", daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)",    border: "var(--emerald-edge)" };
-    return                               { label: "Новичок",  daily: 200, color: "var(--ink-3)",     bg: "var(--surface-2)",       border: "var(--line-2)" };
+    if (tgUserId < 6_000_000_000)   return { label: "Ветеран",  daily: 550, color: "#9b6dff",          bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
+    if (tgUserId < 7_000_000_000)   return { label: "Опытный",  daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",       border: "var(--gold-edge)" };
+    if (tgUserId < 7_500_000_000)   return { label: "Растущий", daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)",    border: "var(--emerald-edge)" };
+    return                                 { label: "Новичок",  daily: 200, color: "var(--ink-3)",     bg: "var(--surface-2)",       border: "var(--line-2)" };
   }
   // Fallback: internal sent counter
   if (sent >= 5000) return { label: "Ветеран",  daily: 550, color: "#9b6dff",          bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
