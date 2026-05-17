@@ -9,8 +9,65 @@ import toast from "react-hot-toast";
 import {
   Plus, Play, Square, Trash2, Zap, X, Check,
   Users, Hash, MessageSquare, Clock, RefreshCw, ChevronRight, ChevronLeft,
-  Settings, MessageCircle, MoreHorizontal, Info, Sparkles, Layers,
+  Settings, MessageCircle, MoreHorizontal, Info, Sparkles, Layers, Ban,
 } from "lucide-react";
+
+/* ── Skipped-forever channels display ───────────────────────────────────── */
+function SkippedChannels({ channels }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const PREVIEW = 3;
+  const shown = expanded ? channels : channels.slice(0, PREVIEW);
+
+  const shortUrl = (url) => {
+    const s = url.replace(/^https?:\/\/(t\.me\/)?/i, "").replace(/^@/, "");
+    return s.length > 28 ? s.slice(0, 28) + "…" : s;
+  };
+
+  return (
+    <div style={{
+      marginTop: 10,
+      padding: "8px 12px",
+      background: "var(--coral-tint)",
+      border: "1px solid var(--coral-edge)",
+      borderRadius: 8,
+      display: "flex", flexDirection: "column", gap: 6,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "var(--coral)" }}>
+        <Ban size={11} />
+        Пропущено навсегда ({channels.length})
+        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--ink-4)" }}>— приватные, трансляции, истёкшие инвайты</span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+        {shown.map(url => (
+          <span
+            key={url}
+            title={url}
+            style={{
+              fontSize: 10.5, fontFamily: "var(--mono)",
+              color: "var(--ink-3)",
+              background: "var(--surface-1)",
+              border: "1px solid var(--line-2)",
+              padding: "2px 7px", borderRadius: 4,
+            }}
+          >
+            {shortUrl(url)}
+          </span>
+        ))}
+        {channels.length > PREVIEW && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{
+              fontSize: 10.5, color: "var(--ink-4)", background: "none",
+              border: "none", cursor: "pointer", padding: "2px 4px",
+            }}
+          >
+            {expanded ? "свернуть" : `ещё ${channels.length - PREVIEW}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ── Avatar (mini, for account stack) ───────────────────────────────────── */
 function MiniAvatar({ name, phone, size = 26 }) {
@@ -557,6 +614,11 @@ export default function CampaignsPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* Skipped-forever channels */}
+                    {camp.skipped_channels?.length > 0 && (
+                      <SkippedChannels channels={camp.skipped_channels} />
+                    )}
                   </div>
 
                   {/* Actions */}

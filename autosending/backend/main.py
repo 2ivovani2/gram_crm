@@ -550,6 +550,12 @@ async def delete_message(
 # Campaigns
 # ══════════════════════════════════════════════════════════════════════════════
 
+_PERM_SKIP_KEYWORDS = [
+    "expired", "approval_required", "private", "not_channel",
+    "banned in channel", "write forbidden", "admin-only",
+]
+
+
 def _campaign_dict(c: Campaign, db: Session) -> dict:
     is_running = scheduler.is_running(c.id)
     round_stats = scheduler.get_round_stats(c.id) if is_running else {}
@@ -557,6 +563,25 @@ def _campaign_dict(c: Campaign, db: Session) -> dict:
         ActivityLog.campaign_id == c.id,
         ActivityLog.status == "error",
     ).scalar() or 0
+
+    if is_running:
+        skipped_channels = round_stats.get("skip_forever_urls", [])
+    else:
+        # Query ActivityLog for channels that hit permanent failures in this campaign
+        from sqlalchemy import or_
+        perm_rows = (
+            db.query(ActivityLog.channel_url)
+            .filter(
+                ActivityLog.campaign_id == c.id,
+                ActivityLog.status == "error",
+                ActivityLog.channel_url != None,
+                or_(*[ActivityLog.error_message.ilike(f"%{kw}%") for kw in _PERM_SKIP_KEYWORDS])
+            )
+            .distinct()
+            .all()
+        )
+        skipped_channels = [r.channel_url for r in perm_rows if r.channel_url]
+
     return {
         "id":               c.id,
         "name":             c.name,
@@ -571,6 +596,7 @@ def _campaign_dict(c: Campaign, db: Session) -> dict:
         "errors_count":     errors_count,
         "is_running":       is_running,
         "round_stats":      round_stats,
+        "skipped_channels": skipped_channels,
         "account_ids":      [a.id  for a in c.accounts],
         "channel_ids":      [ch.id for ch in c.channels],
         "message_ids":      [m.id  for m in c.messages],

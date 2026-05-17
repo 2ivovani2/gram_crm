@@ -38,6 +38,39 @@ logger = logging.getLogger(__name__)
 
 SESSION_DIR = Path("data/sessions")
 
+
+# ── Membership persistence helpers ─────────────────────────────────────────────
+
+def _persist_membership_sync(account_id: int, url: str) -> None:
+    from database import SessionLocal, AccountMembership
+    from sqlalchemy.exc import IntegrityError
+    db = SessionLocal()
+    try:
+        db.add(AccountMembership(account_id=account_id, channel_url=url))
+        db.commit()
+    except IntegrityError:
+        db.rollback()  # already exists — unique constraint
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"membership persist failed [{account_id}] {url}: {e}")
+    finally:
+        db.close()
+
+
+def _load_memberships_sync(account_id: int) -> set:
+    from database import SessionLocal, AccountMembership
+    db = SessionLocal()
+    try:
+        rows = db.query(AccountMembership.channel_url).filter(
+            AccountMembership.account_id == account_id
+        ).all()
+        return {r.channel_url for r in rows}
+    except Exception as e:
+        logger.warning(f"membership load failed [{account_id}]: {e}")
+        return set()
+    finally:
+        db.close()
+
 # phone → {client, phone_code_hash, api_id, api_hash}
 _pending_auth: Dict[str, dict] = {}
 
@@ -228,8 +261,19 @@ def is_cached_member(account_id: int, url: str) -> bool:
     return url in _member_cache.get(account_id, set())
 
 
-def mark_joined(account_id: int, url: str):
+async def mark_joined(account_id: int, url: str):
     _member_cache.setdefault(account_id, set()).add(url)
+    asyncio.create_task(asyncio.to_thread(_persist_membership_sync, account_id, url))
+
+
+async def preload_memberships(account_id: int):
+    """Restore persisted memberships into the in-memory cache on worker startup."""
+    if account_id in _member_cache:
+        return  # already loaded this session
+    urls = await asyncio.to_thread(_load_memberships_sync, account_id)
+    if urls:
+        _member_cache.setdefault(account_id, set()).update(urls)
+        logger.info(f"[{account_id}] Preloaded {len(urls)} memberships from DB")
 
 
 async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> dict:
@@ -277,7 +321,7 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
                 logger.warning(f"[{account_id}] Private channel, no access: {url}")
                 return {"ok": False, "reason": "private"}
 
-        mark_joined(account_id, url)
+        await mark_joined(account_id, url)
         return {"ok": True}
 
     except FloodWaitError as e:

@@ -17,6 +17,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 # Configurable via DATABASE_URL env var.
 # Defaults to SQLite for local dev / backwards compat.
@@ -147,6 +148,20 @@ class Campaign(Base):
     accounts = relationship("Account",         secondary=campaign_accounts)
     channels = relationship("Channel",         secondary=campaign_channels)
     messages = relationship("MessageTemplate", secondary=campaign_messages)
+
+
+class AccountMembership(Base):
+    """Persisted channel memberships — survives backend restarts."""
+    __tablename__ = "account_memberships"
+
+    id          = Column(Integer,     primary_key=True)
+    account_id  = Column(Integer,     ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    channel_url = Column(String(256), nullable=False)
+    joined_at   = Column(DateTime,    default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_account_memberships_acc_url", "account_id", "channel_url", unique=True),
+    )
 
 
 class ActivityLog(Base):

@@ -212,6 +212,9 @@ async def _account_worker(
     finally:
         db.close()
 
+    # Load persisted memberships so we skip re-joining channels the account is already in
+    await tm.preload_memberships(account_id)
+
     # Per-worker state
     # channel_url → monotonic timestamp after which it's safe to retry
     flood_cooldowns: Dict[str, float] = {}
@@ -415,13 +418,16 @@ async def _account_worker(
                 f"skip_forever={skipped_forever} active={active_channels}"
             )
             prev = _round_stats.get(campaign_id, {})
+            # Merge skip_forever URLs across all workers for this campaign
+            merged_skipped = set(prev.get("skip_forever_urls", [])) | skip_forever
             _round_stats[campaign_id] = {
-                "round":        max(round_num, prev.get("round", 0)),
-                "sent":         prev.get("sent", 0) + sent_this_round,
-                "cooldown":     on_cooldown,
-                "skip_forever": len(skip_forever),
-                "active":       active_channels,
-                "ts":           time.time(),
+                "round":             max(round_num, prev.get("round", 0)),
+                "sent":              prev.get("sent", 0) + sent_this_round,
+                "cooldown":          on_cooldown,
+                "skip_forever":      len(merged_skipped),
+                "skip_forever_urls": list(merged_skipped),
+                "active":            active_channels,
+                "ts":                time.time(),
             }
 
             # Alert if 0 sends for too many rounds in a row (not counting cooldown-only rounds)
