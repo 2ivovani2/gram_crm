@@ -316,6 +316,15 @@ export default function ChannelsPage() {
   const [adding, setAdding]     = useState(false);
   const [showImport, setImport] = useState(false);
   const [query, setQuery]       = useState("");
+  const [sortMode, setSortMode]       = useState("default");
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  const SORT_MODES  = ["default", "az", "za", "active"];
+  const SORT_LABELS = { default: "По умолчанию", az: "A → Z", za: "Z → A", active: "Активные первыми" };
+  const FILTER_MODES  = ["all", "active", "paused"];
+  const FILTER_LABELS = { all: "Все", active: "Активные", paused: "На паузе" };
+  const cycleSort   = () => setSortMode(m => SORT_MODES[(SORT_MODES.indexOf(m) + 1) % SORT_MODES.length]);
+  const cycleFilter = () => setFilterStatus(f => FILTER_MODES[(FILTER_MODES.indexOf(f) + 1) % FILTER_MODES.length]);
 
   const load = async () => {
     try { setChannels(await getChannels()); }
@@ -341,9 +350,15 @@ export default function ChannelsPage() {
 
   const active   = channels.filter(c => c.is_active).length;
   const inactive = channels.length - active;
-  const filtered = query
+
+  let filtered = query
     ? channels.filter(c => (c.url + " " + (c.title || "")).toLowerCase().includes(query.toLowerCase()))
-    : channels;
+    : [...channels];
+  if (filterStatus === "active") filtered = filtered.filter(c => c.is_active);
+  if (filterStatus === "paused") filtered = filtered.filter(c => !c.is_active);
+  if (sortMode === "az")     filtered = [...filtered].sort((a, b) => (a.title || a.url).localeCompare(b.title || b.url));
+  if (sortMode === "za")     filtered = [...filtered].sort((a, b) => (b.title || b.url).localeCompare(a.title || a.url));
+  if (sortMode === "active") filtered = [...filtered].sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0));
 
   return (
     <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -401,8 +416,22 @@ export default function ChannelsPage() {
             {filtered.length} результат{filtered.length === 1 ? "" : filtered.length < 5 ? "а" : "ов"}
           </span>
           <div style={{ flex: 1 }} />
-          <button className="btn-ghost btn-sm"><ArrowDownUp size={12} /> Сортировка</button>
-          <button className="btn-ghost btn-sm"><SlidersHorizontal size={12} /> Фильтры</button>
+          <button
+            className="btn-ghost btn-sm"
+            onClick={cycleSort}
+            style={sortMode !== "default" ? { color: "var(--gold-hi)", borderColor: "var(--gold-edge)" } : {}}
+            title="Нажмите для смены режима сортировки"
+          >
+            <ArrowDownUp size={12} /> {SORT_LABELS[sortMode]}
+          </button>
+          <button
+            className="btn-ghost btn-sm"
+            onClick={cycleFilter}
+            style={filterStatus !== "all" ? { color: "var(--gold-hi)", borderColor: "var(--gold-edge)" } : {}}
+            title="Нажмите для смены фильтра"
+          >
+            <SlidersHorizontal size={12} /> {FILTER_LABELS[filterStatus]}
+          </button>
         </div>
       )}
 

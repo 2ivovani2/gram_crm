@@ -494,7 +494,7 @@ export default function AccountsPage() {
           </p>
         </div>
         <div className="page-actions" style={{ display: "flex", gap: 8 }}>
-          <button className="btn-ghost"><Upload size={14} /> Импорт сессий</button>
+          <button className="btn-ghost" onClick={() => toast("🚧 Импорт сессий скоро будет доступен")}><Upload size={14} /> Импорт сессий</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus size={14} /> Добавить аккаунт</button>
         </div>
       </div>

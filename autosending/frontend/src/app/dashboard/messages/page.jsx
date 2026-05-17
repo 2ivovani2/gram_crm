@@ -7,7 +7,35 @@ import {
   RefreshCw, PenLine, Tag, Eye, Copy, Sparkles, FlaskConical,
 } from "lucide-react";
 
-function MessageCard({ msg, onSave, onDelete, onToggle }) {
+function PreviewModal({ text, onClose }) {
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">Предпросмотр</div>
+          <button className="modal-close" onClick={onClose}><X size={14} /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{
+            background: "var(--sunken)", border: "1px solid var(--line-2)", borderRadius: 12,
+            padding: "14px 16px", fontSize: 13.5, lineHeight: 1.6, color: "var(--ink-1)",
+            whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "var(--sans)",
+          }}>
+            {text}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 10 }}>
+            {text.length} символов
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn-ghost" onClick={onClose}>Закрыть</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageCard({ msg, onSave, onDelete, onToggle, onDuplicate, onPreview }) {
   const [editing, setEditing] = useState(false);
   const [text, setText]       = useState(msg.content);
   const [cat,  setCat]        = useState(msg.category || "");
@@ -127,7 +155,8 @@ function MessageCard({ msg, onSave, onDelete, onToggle }) {
                 justifyContent: "flex-end",
               }}
             >
-              <button className="btn-icon" style={{ width: 30, height: 30 }} title="Дублировать"><Copy size={12} /></button>
+              <button className="btn-icon" style={{ width: 30, height: 30 }} title="Предпросмотр" onClick={() => onPreview(msg.content)}><Eye size={12} /></button>
+              <button className="btn-icon" style={{ width: 30, height: 30 }} title="Дублировать" onClick={() => onDuplicate(msg)}><Copy size={12} /></button>
               <button className="btn-icon" style={{ width: 30, height: 30 }} title="Редактировать" onClick={() => setEditing(true)}>
                 <Edit3 size={12} />
               </button>
@@ -155,6 +184,7 @@ export default function MessagesPage() {
   const [text, setText]         = useState("");
   const [cat, setCat]           = useState("");
   const [adding, setAdding]     = useState(false);
+  const [previewText, setPreviewText] = useState(null);
 
   const load = async () => {
     try { setMessages(await getMessages()); }
@@ -177,6 +207,13 @@ export default function MessagesPage() {
     if (!confirm("Удалить этот шаблон?")) return;
     await deleteMessage(id); toast.success("Удалено"); load();
   };
+  const handleDuplicate = async (msg) => {
+    try {
+      await addMessage({ content: msg.content, category: msg.category || null });
+      toast.success("Шаблон продублирован");
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Ошибка дублирования"); }
+  };
 
   const active = messages.filter(m => m.is_active).length;
 
@@ -191,8 +228,8 @@ export default function MessagesPage() {
           </p>
         </div>
         <div className="page-actions" style={{ display: "flex", gap: 8 }}>
-          <button className="btn-ghost"><Sparkles size={14} /> AI-генератор</button>
-          <button className="btn-ghost"><FlaskConical size={14} /> A/B-тест</button>
+          <button className="btn-ghost" onClick={() => toast("🚧 AI-генератор появится в следующем обновлении")}><Sparkles size={14} /> AI-генератор</button>
+          <button className="btn-ghost" onClick={() => toast("🚧 A/B-тестирование появится в следующем обновлении")}><FlaskConical size={14} /> A/B-тест</button>
         </div>
       </div>
 
@@ -222,7 +259,7 @@ export default function MessagesPage() {
                 value={cat} onChange={e => setCat(e.target.value)} />
             </div>
             <div style={{ flex: 1 }} />
-            <button className="btn-ghost" disabled={!text.trim()}><Eye size={13} /> Предпросмотр</button>
+            <button className="btn-ghost" disabled={!text.trim()} onClick={() => setPreviewText(text)}><Eye size={13} /> Предпросмотр</button>
             <button onClick={handleAdd} disabled={adding || !text.trim()} className="btn-primary">
               {adding ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Plus size={14} />}
               {adding ? "Добавление…" : "Добавить шаблон"}
@@ -255,9 +292,15 @@ export default function MessagesPage() {
               onSave={handleSave}
               onDelete={handleDelete}
               onToggle={handleToggle}
+              onDuplicate={handleDuplicate}
+              onPreview={setPreviewText}
             />
           ))}
         </div>
+      )}
+
+      {previewText !== null && (
+        <PreviewModal text={previewText} onClose={() => setPreviewText(null)} />
       )}
     </div>
   );

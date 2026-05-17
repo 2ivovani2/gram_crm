@@ -50,6 +50,9 @@ _stop_events: Dict[int, asyncio.Event] = {}
 # {"round": int, "sent": int, "cooldown": int, "skip_forever": int, "active": int, "ts": float}
 _round_stats: Dict[int, dict] = {}
 
+# campaign_id → {"sent": int, "joined": int} — reset every 30-min alert cycle
+_campaign_counters: Dict[int, dict] = {}
+
 
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -122,6 +125,38 @@ def _pick_message(messages: list, used: list) -> str:
     idx = random.choice(available)
     used.append(idx)
     return messages[idx]["content"]
+
+
+# ── 30-min progress alert loop ────────────────────────────────────────────────
+
+async def _progress_alert_loop(
+    campaign_id: int,
+    camp_name: str,
+    user_tg_id: int | None,
+    stop: asyncio.Event,
+):
+    """Fire every 30 min with sent/joined totals since the last alert."""
+    while not stop.is_set():
+        await _sleep(30 * 60, stop)
+        if stop.is_set():
+            break
+        c = _campaign_counters.get(campaign_id, {})
+        sent  = c.get("sent",   0)
+        joined = c.get("joined", 0)
+        c["sent"]   = 0
+        c["joined"] = 0
+        if sent == 0 and joined == 0:
+            msg = (
+                f"😶 <b>«{camp_name}»</b> — итог за 30 мин\n"
+                f"Активности не было — аккаунты отдыхают или в FloodWait."
+            )
+        else:
+            msg = (
+                f"📊 <b>«{camp_name}»</b> — итог за 30 мин\n"
+                f"💬 Отправлено: <b>{sent}</b> сообщений\n"
+                f"📥 Вступлений: <b>{joined}</b>"
+            )
+        asyncio.create_task(_alert(msg, user_tg_id))
 
 
 # ── Per-account worker ─────────────────────────────────────────────────────────
@@ -252,6 +287,7 @@ async def _account_worker(
 
                     if join_res["ok"]:
                         _log(account_id, campaign_id, url, None, "join_channel", "success")
+                        _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["joined"] += 1
                     elif join_res["reason"] == "disconnected":
                         logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
                         break  # break channel loop → reconnect at top of round loop
@@ -292,6 +328,7 @@ async def _account_worker(
                     error_retries.pop(url, None)  # reset backoff on success
                     _log(account_id, campaign_id, url, msg_text, "send_message", "success")
                     _increment_sent(account_id, campaign_id)
+                    _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["sent"] += 1
 
                 elif send_res["reason"] == "disconnected":
                     logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
@@ -450,6 +487,12 @@ async def _run_campaign(campaign_id: int):
 
     stop = _stop_events.setdefault(campaign_id, asyncio.Event())
 
+    _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})
+
+    progress_task = asyncio.create_task(
+        _progress_alert_loop(campaign_id, camp_name, user_tg_id, stop)
+    )
+
     # Stagger accounts with random offsets so they don't hit Telegram simultaneously
     tasks = [
         asyncio.create_task(
@@ -485,6 +528,8 @@ async def _run_campaign(campaign_id: int):
         finally:
             db2.close()
 
+        progress_task.cancel()
+        _campaign_counters.pop(campaign_id, None)
         _running.pop(campaign_id, None)
         _stop_events.pop(campaign_id, None)
         stats = _round_stats.pop(campaign_id, {})
