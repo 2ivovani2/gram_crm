@@ -96,6 +96,7 @@ class Account(Base):
     last_used     = Column(DateTime,    nullable=True)
     messages_sent = Column(Integer,     default=0)
     errors_count  = Column(Integer,     default=0)
+    tg_user_id    = Column(BigInteger,  nullable=True)
 
     user = relationship("User", back_populates="accounts")
     logs = relationship("ActivityLog", back_populates="account", cascade="all, delete")
@@ -300,6 +301,7 @@ def _add_columns_if_missing(conn):
         ("message_templates", "user_id INTEGER REFERENCES users(id)"),
         ("campaigns",         "user_id INTEGER REFERENCES users(id)"),
         ("activity_logs",     "user_id INTEGER REFERENCES users(id)"),
+        ("accounts",          "tg_user_id BIGINT"),
     ]
     for table, col_def in migrations:
         col_name = col_def.split()[0]

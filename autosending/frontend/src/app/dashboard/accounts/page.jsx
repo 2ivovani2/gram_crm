@@ -13,15 +13,23 @@ import {
 } from "lucide-react";
 
 /* ── Account tier info ────────────────────────────────────────────────────── */
-function getTier(sent) {
-  if (sent >= 5000) return { label: "Ветеран",    daily: 550, color: "#9b6dff", bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
-  if (sent >= 2000) return { label: "Опытный",    daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",    border: "var(--gold-edge)" };
-  if (sent >= 500)  return { label: "Растущий",   daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)", border: "var(--emerald-edge)" };
-  return               { label: "Новичок",     daily: 200, color: "var(--ink-3)",    bg: "var(--surface-2)",    border: "var(--line-2)" };
+function getTier(tgUserId, sent) {
+  // Primary: Telegram user ID (sequential — lower = older account)
+  if (tgUserId) {
+    if (tgUserId < 200_000_000)   return { label: "Ветеран",  daily: 550, color: "#9b6dff",          bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
+    if (tgUserId < 1_000_000_000) return { label: "Опытный",  daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",       border: "var(--gold-edge)" };
+    if (tgUserId < 5_000_000_000) return { label: "Растущий", daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)",    border: "var(--emerald-edge)" };
+    return                               { label: "Новичок",  daily: 200, color: "var(--ink-3)",     bg: "var(--surface-2)",       border: "var(--line-2)" };
+  }
+  // Fallback: internal sent counter
+  if (sent >= 5000) return { label: "Ветеран",  daily: 550, color: "#9b6dff",          bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
+  if (sent >= 2000) return { label: "Опытный",  daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",       border: "var(--gold-edge)" };
+  if (sent >= 500)  return { label: "Растущий", daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)",    border: "var(--emerald-edge)" };
+  return                   { label: "Новичок",  daily: 200, color: "var(--ink-3)",     bg: "var(--surface-2)",       border: "var(--line-2)" };
 }
 
-function TierBadge({ sent }) {
-  const t = getTier(sent ?? 0);
+function TierBadge({ tgUserId, sent }) {
+  const t = getTier(tgUserId, sent ?? 0);
   return (
     <span
       style={{
@@ -612,7 +620,7 @@ export default function AccountsPage() {
                       </span>
                       <span style={{ color: "var(--ink-5)" }}>отправок</span>
                     </span>
-                    <TierBadge sent={acc.messages_sent ?? 0} />
+                    <TierBadge tgUserId={acc.tg_user_id} sent={acc.messages_sent ?? 0} />
                     {acc.errors_count > 0 && (
                       <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--coral)" }}>
                         <AlertTriangle size={12} />

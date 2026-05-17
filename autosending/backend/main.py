@@ -202,6 +202,7 @@ def _account_dict(a: Account) -> dict:
         "created_at":   a.created_at,
         "last_used":    a.last_used,
         "session_file": a.session_file,
+        "tg_user_id":   a.tg_user_id,
     }
 
 
@@ -305,6 +306,7 @@ async def verify_code(
         acc.first_name   = info.get("first_name", "")
         acc.last_name    = info.get("last_name", "")
         acc.session_file = info.get("session_file")
+        acc.tg_user_id   = info.get("user_id")
         acc.status       = "online"
         db.commit()
         return _account_dict(acc)
@@ -373,10 +375,11 @@ async def sync_account(
         raise HTTPException(404, "Account not found")
     info = await tm.fetch_me(acc)
     if info["status"] == "online":
-        acc.username   = info.get("username")
-        acc.first_name = info.get("first_name", "")
-        acc.last_name  = info.get("last_name", "")
-        acc.status     = "online"
+        acc.username    = info.get("username")
+        acc.first_name  = info.get("first_name", "")
+        acc.last_name   = info.get("last_name", "")
+        acc.tg_user_id  = info.get("user_id")
+        acc.status      = "online"
         db.commit()
     return info
 

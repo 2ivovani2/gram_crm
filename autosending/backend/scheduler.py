@@ -116,16 +116,35 @@ def _expo_backoff(retries: int, base: float = 10.0, cap: float = 600.0) -> float
     return min(cap, raw * jitter)
 
 
-def _get_caps(messages_sent: int) -> tuple[int, int]:
-    """Return (max_joins, max_sends) based on account experience level."""
+def _get_caps(tg_user_id: int | None, messages_sent: int) -> tuple[int, int]:
+    """
+    Return (max_joins, max_sends) based on account age.
+    Primary signal: Telegram user ID (sequential → lower = older).
+    Fallback: messages_sent counter when tg_user_id is not yet known.
+    """
+    if tg_user_id:
+        # Telegram IDs are sequential. Rough registration-year mapping:
+        # < 200M  → before 2016 (Ветеран)
+        # 200M–1B → 2016-2019  (Опытный)
+        # 1B–5B   → 2019-2022  (Растущий)
+        # > 5B    → 2022+      (Новичок)
+        if tg_user_id < 200_000_000:
+            return 14, 55
+        elif tg_user_id < 1_000_000_000:
+            return 12, 45
+        elif tg_user_id < 5_000_000_000:
+            return 10, 35
+        else:
+            return 8, 25
+    # No tg_user_id yet — fall back to internal sent counter
     if messages_sent >= 5000:
-        return 14, 55   # Ветеран
+        return 14, 55
     elif messages_sent >= 2000:
-        return 12, 45   # Опытный
+        return 12, 45
     elif messages_sent >= 500:
-        return 10, 35   # Растущий
+        return 10, 35
     else:
-        return 8, 25    # Новичок
+        return 8, 25
 
 
 # ── Message rotation ───────────────────────────────────────────────────────────
@@ -204,6 +223,7 @@ async def _account_worker(
             "api_id": account.api_id, "api_hash": account.api_hash,
         })()
         acc_messages_sent = account.messages_sent or 0
+        acc_tg_user_id    = account.tg_user_id
 
         client = await tm.get_client(account)
         if not client:
@@ -247,11 +267,14 @@ async def _account_worker(
     sends_done: int = 0   # messages sent in current work session
     peer_flood_count: int = 0  # total PeerFlood events (escalates rest time)
 
-    # Per-work-session safety caps — adaptive based on account experience
-    _MAX_JOINS, _MAX_SENDS = _get_caps(acc_messages_sent)
+    # Per-work-session safety caps — adaptive based on account age (Telegram user ID)
+    _MAX_JOINS, _MAX_SENDS = _get_caps(acc_tg_user_id, acc_messages_sent)
     _FLOOD_WARN = 2    # FloodWaits before slowing down + alert
     _FLOOD_REST = 4    # FloodWaits before emergency rest
-    logger.info(f"[Cmp{campaign_id}][{phone}] caps — joins={_MAX_JOINS} sends={_MAX_SENDS} (history={acc_messages_sent})")
+    logger.info(
+        f"[Cmp{campaign_id}][{phone}] caps — joins={_MAX_JOINS} sends={_MAX_SENDS} "
+        f"(tg_id={acc_tg_user_id}, history={acc_messages_sent})"
+    )
 
     # Work/rest rotation — randomized per worker so accounts don't all rest simultaneously
     _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
