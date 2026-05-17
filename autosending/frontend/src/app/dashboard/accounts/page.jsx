@@ -12,6 +12,36 @@ import {
   Hash, MoreHorizontal, CheckCircle2, RotateCcw, AlertTriangle, Upload,
 } from "lucide-react";
 
+/* ── Account tier info ────────────────────────────────────────────────────── */
+function getTier(sent) {
+  if (sent >= 5000) return { label: "Ветеран",    daily: 550, color: "#9b6dff", bg: "rgba(155,109,255,0.12)", border: "rgba(155,109,255,0.25)" };
+  if (sent >= 2000) return { label: "Опытный",    daily: 420, color: "var(--gold-hi)",   bg: "var(--gold-tint)",    border: "var(--gold-edge)" };
+  if (sent >= 500)  return { label: "Растущий",   daily: 300, color: "var(--emerald)",   bg: "var(--emerald-tint)", border: "var(--emerald-edge)" };
+  return               { label: "Новичок",     daily: 200, color: "var(--ink-3)",    bg: "var(--surface-2)",    border: "var(--line-2)" };
+}
+
+function TierBadge({ sent }) {
+  const t = getTier(sent ?? 0);
+  return (
+    <span
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "2px 8px",
+        borderRadius: 5,
+        fontSize: 11,
+        fontWeight: 600,
+        color: t.color,
+        background: t.bg,
+        border: `1px solid ${t.border}`,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {t.label} · ≈{t.daily.toLocaleString("ru-RU")}/сут
+    </span>
+  );
+}
+
 /* ── Avatar with deterministic gradient ───────────────────────────────────── */
 function Avatar({ name, phone, size = 44, status }) {
   const seed = (name || phone || "?").split("").reduce((a,c)=>a + c.charCodeAt(0), 0);
@@ -574,7 +604,7 @@ export default function AccountsPage() {
                     )}
                     <StatusBadge status={acc.status} pulse={acc.status === "working"} />
                   </div>
-                  <div style={{ display: "flex", gap: 18, fontSize: 12.5, color: "var(--ink-3)", alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 14, fontSize: 12.5, color: "var(--ink-3)", alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ fontFamily: "var(--mono)", color: "var(--ink-2)" }}>{acc.phone}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       <span className="t-numeric" style={{ color: "var(--ink-1)", fontSize: 13, fontFamily: "var(--mono)", fontWeight: 600 }}>
@@ -582,6 +612,7 @@ export default function AccountsPage() {
                       </span>
                       <span style={{ color: "var(--ink-5)" }}>отправок</span>
                     </span>
+                    <TierBadge sent={acc.messages_sent ?? 0} />
                     {acc.errors_count > 0 && (
                       <span style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--coral)" }}>
                         <AlertTriangle size={12} />

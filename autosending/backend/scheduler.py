@@ -116,6 +116,18 @@ def _expo_backoff(retries: int, base: float = 10.0, cap: float = 600.0) -> float
     return min(cap, raw * jitter)
 
 
+def _get_caps(messages_sent: int) -> tuple[int, int]:
+    """Return (max_joins, max_sends) based on account experience level."""
+    if messages_sent >= 5000:
+        return 14, 55   # Ветеран
+    elif messages_sent >= 2000:
+        return 12, 45   # Опытный
+    elif messages_sent >= 500:
+        return 10, 35   # Растущий
+    else:
+        return 8, 25    # Новичок
+
+
 # ── Message rotation ───────────────────────────────────────────────────────────
 
 def _pick_message(messages: list, used: list) -> str:
@@ -191,6 +203,7 @@ async def _account_worker(
             "id": account.id, "phone": account.phone,
             "api_id": account.api_id, "api_hash": account.api_hash,
         })()
+        acc_messages_sent = account.messages_sent or 0
 
         client = await tm.get_client(account)
         if not client:
@@ -234,11 +247,11 @@ async def _account_worker(
     sends_done: int = 0   # messages sent in current work session
     peer_flood_count: int = 0  # total PeerFlood events (escalates rest time)
 
-    # Per-work-session safety caps
-    _MAX_JOINS  = 10   # new channel joins per work period → join slowdown
-    _MAX_SENDS  = 40   # sends per work period → trigger early rest
+    # Per-work-session safety caps — adaptive based on account experience
+    _MAX_JOINS, _MAX_SENDS = _get_caps(acc_messages_sent)
     _FLOOD_WARN = 2    # FloodWaits before slowing down + alert
     _FLOOD_REST = 4    # FloodWaits before emergency rest
+    logger.info(f"[Cmp{campaign_id}][{phone}] caps — joins={_MAX_JOINS} sends={_MAX_SENDS} (history={acc_messages_sent})")
 
     # Work/rest rotation — randomized per worker so accounts don't all rest simultaneously
     _work_session_end = time.monotonic() + random.uniform(40 * 60, 80 * 60)
