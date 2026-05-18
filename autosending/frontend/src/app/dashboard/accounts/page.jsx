@@ -10,7 +10,7 @@ import {
   Plus, Trash2, RefreshCw, Edit3, X, Check, UserPlus,
   Phone, Key, User, ChevronRight, ChevronLeft, Smartphone,
   Hash, MoreHorizontal, CheckCircle2, RotateCcw, AlertTriangle, Upload,
-  FileUp, FolderOpen,
+  FileUp, FolderOpen, Users2,
 } from "lucide-react";
 
 /* ── Account tier info ────────────────────────────────────────────────────── */
@@ -246,6 +246,204 @@ function ProfileModal({ account, onClose, onSaved }) {
             onChange={e => setForm({ ...form, bio: e.target.value })}
           />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Bulk profile update modal ────────────────────────────────────────────── */
+function BulkProfileModal({ accounts, onClose, onDone }) {
+  const eligible = accounts.filter(a => a.status === "online" || a.status === "working");
+
+  const [form, setForm] = useState({ first_name: "", last_name: "", bio: "" });
+  const [photo, setPhoto]         = useState(null);      // File object
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [selected, setSelected]   = useState(() => new Set(eligible.map(a => a.id)));
+  const [results, setResults]     = useState(null);      // null = not started
+  const [running, setRunning]     = useState(false);
+
+  const toggleAll = () => {
+    if (selected.size === eligible.length) setSelected(new Set());
+    else setSelected(new Set(eligible.map(a => a.id)));
+  };
+  const toggle = (id) => setSelected(prev => {
+    const s = new Set(prev);
+    s.has(id) ? s.delete(id) : s.add(id);
+    return s;
+  });
+
+  const handlePhoto = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setPhoto(f);
+    setPhotoPreview(URL.createObjectURL(f));
+    e.target.value = "";
+  };
+
+  const hasChanges = form.first_name || form.last_name || form.bio || photo;
+
+  const run = async () => {
+    if (!hasChanges) { toast.error("Заполните хотя бы одно поле"); return; }
+    if (!selected.size) { toast.error("Выберите хотя бы один аккаунт"); return; }
+
+    const targets = eligible.filter(a => selected.has(a.id));
+    setRunning(true);
+    setResults(targets.map(a => ({ id: a.id, phone: a.phone, name: `${a.first_name || ""} ${a.last_name || ""}`.trim() || a.phone, status: "pending" })));
+
+    for (let i = 0; i < targets.length; i++) {
+      const acc = targets[i];
+      setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: "loading" } : r));
+      let err = null;
+      try {
+        if (form.first_name || form.last_name || form.bio) {
+          await updateProfile(acc.id, {
+            first_name: form.first_name || acc.first_name || "",
+            last_name:  form.last_name  || acc.last_name  || "",
+            bio:        form.bio        || acc.bio         || "",
+          });
+        }
+        if (photo) await uploadPhoto(acc.id, photo);
+      } catch (e) {
+        err = e.response?.data?.detail || e.message || "Ошибка";
+      }
+      setResults(prev => prev.map((r, idx) => idx === i ? { ...r, status: err ? "error" : "ok", err } : r));
+    }
+
+    setRunning(false);
+    onDone();
+  };
+
+  const done = results && results.every(r => r.status === "ok" || r.status === "error");
+  const okCount = results?.filter(r => r.status === "ok").length ?? 0;
+
+  return (
+    <Modal
+      title="Массовое обновление профилей"
+      subtitle={`${eligible.length} доступных аккаунтов`}
+      onClose={onClose}
+      size="lg"
+      footer={
+        <>
+          <button className="btn-ghost" onClick={onClose}>Закрыть</button>
+          <div style={{ flex: 1 }} />
+          {done
+            ? <button className="btn-primary" onClick={onClose}><Check size={14} /> Готово · {okCount} обновлено</button>
+            : <button className="btn-primary" onClick={run} disabled={running || !hasChanges || !selected.size}>
+                {running ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Users2 size={14} />}
+                Применить к {selected.size} аккаунт{selected.size % 10 === 1 && selected.size !== 11 ? "у" : selected.size % 10 < 5 && (selected.size < 10 || selected.size > 20) ? "ам" : "ам"}
+              </button>
+          }
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+        {/* Fields */}
+        {!results && (
+          <>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Field label="Имя" hint="Оставь пустым — не менять">
+                <input className="inp" placeholder={`текущее`} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
+              </Field>
+              <Field label="Фамилия" hint="Оставь пустым — не менять">
+                <input className="inp" placeholder={`текущее`} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+              </Field>
+            </div>
+
+            <Field label="О себе" tag={form.bio ? `${form.bio.length}/70` : "необязательно"}>
+              <textarea rows={2} className="inp" maxLength={70} placeholder="Оставь пустым — не менять" value={form.bio} onChange={e => setForm({ ...form, bio: e.target.value })} />
+            </Field>
+
+            <div>
+              <label className="field-label">Фото профиля <span className="field-label-tag">необязательно</span></label>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6 }}>
+                {photoPreview
+                  ? <img src={photoPreview} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-3)" }} />
+                  : <div style={{ width: 48, height: 48, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--ink-4)" }}><User size={18} /></div>
+                }
+                <label style={{ cursor: "pointer" }}>
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhoto} />
+                  <span className="btn-ghost btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                    <Upload size={12} /> {photo ? photo.name : "Выбрать фото"}
+                  </span>
+                </label>
+                {photo && (
+                  <button className="btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => { setPhoto(null); setPhotoPreview(null); }}>
+                    <X size={12} /> Убрать
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Account selector */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <label className="field-label" style={{ margin: 0 }}>Применить к аккаунтам</label>
+                <button onClick={toggleAll} className="btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                  {selected.size === eligible.length ? "Снять все" : "Выбрать все"}
+                </button>
+              </div>
+              {eligible.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: "var(--ink-4)", padding: "10px 0" }}>Нет онлайн-аккаунтов</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 220, overflowY: "auto" }}>
+                  {eligible.map(a => (
+                    <label
+                      key={a.id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "8px 12px", borderRadius: 8, cursor: "pointer",
+                        background: selected.has(a.id) ? "var(--surface-2)" : "transparent",
+                        border: `1px solid ${selected.has(a.id) ? "var(--line-3)" : "transparent"}`,
+                        transition: "all 0.1s",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(a.id)}
+                        onChange={() => toggle(a.id)}
+                        style={{ accentColor: "var(--gold-hi)", width: 14, height: 14 }}
+                      />
+                      <Avatar name={a.first_name || a.phone} size={28} status={a.status} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink-1)" }}>
+                          {a.first_name || "—"} {a.last_name || ""}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)" }}>{a.phone}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Progress */}
+        {results && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {results.map((r) => (
+              <div
+                key={r.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 13px", borderRadius: 8,
+                  background: r.status === "ok" ? "var(--emerald-tint)" : r.status === "error" ? "var(--coral-tint)" : "var(--surface-2)",
+                  border: `1px solid ${r.status === "ok" ? "var(--emerald-edge)" : r.status === "error" ? "var(--coral-edge)" : "var(--line-2)"}`,
+                }}
+              >
+                {r.status === "loading" && <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite", color: "var(--gold-hi)", flexShrink: 0 }} />}
+                {r.status === "ok"      && <CheckCircle2 size={13} style={{ color: "var(--emerald)", flexShrink: 0 }} />}
+                {r.status === "error"   && <AlertTriangle size={13} style={{ color: "var(--coral)", flexShrink: 0 }} />}
+                {r.status === "pending" && <div style={{ width: 13, height: 13, borderRadius: "50%", background: "var(--line-3)", flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontFamily: "var(--mono)", color: "var(--ink-1)" }}>{r.phone}</div>
+                  {r.err && <div style={{ fontSize: 11, color: "var(--coral)", marginTop: 2 }}>{r.err}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -677,6 +875,7 @@ export default function AccountsPage() {
   const [loading, setLoading]         = useState(true);
   const [showAdd, setShowAdd]         = useState(false);
   const [showImport, setShowImport]   = useState(false);
+  const [showBulk, setShowBulk]       = useState(false);
   const [editAcc, setEditAcc]         = useState(null);
   const [filter, setFilter]           = useState("all");
 
@@ -722,6 +921,9 @@ export default function AccountsPage() {
         </div>
         <div className="page-actions" style={{ display: "flex", gap: 8 }}>
           <button className="btn-ghost" onClick={() => setShowImport(true)}><FileUp size={14} /> Импорт сессий</button>
+          {accounts.some(a => a.status === "online" || a.status === "working") && (
+            <button className="btn-ghost" onClick={() => setShowBulk(true)}><Users2 size={14} /> Обновить всем профиль</button>
+          )}
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus size={14} /> Добавить аккаунт</button>
         </div>
       </div>
@@ -846,6 +1048,7 @@ export default function AccountsPage() {
 
       {showAdd    && <AddWizard onClose={() => setShowAdd(false)} onDone={load} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onDone={load} />}
+      {showBulk   && <BulkProfileModal accounts={accounts} onClose={() => setShowBulk(false)} onDone={load} />}
       {editAcc    && <ProfileModal account={editAcc} onClose={() => setEditAcc(null)} onSaved={load} />}
     </div>
   );
