@@ -429,6 +429,47 @@ async def send_message_to(
         return {"ok": False, "reason": "error", "detail": msg}
 
 
+async def import_session_file(session_bytes: bytes, api_id: int, api_hash: str) -> dict:
+    """
+    Validate a raw Telethon .session file and return account info.
+    Writes to a temp path; on success caller should rename to proper session path.
+    """
+    import os, uuid
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_name = str(SESSION_DIR / f"_import_{uuid.uuid4().hex}")
+    tmp_session = tmp_name + ".session"
+
+    with open(tmp_session, "wb") as f:
+        f.write(session_bytes)
+
+    client = TelegramClient(tmp_name, api_id, api_hash, receive_updates=False)
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            return {"ok": False, "reason": "Сессия недействительна (not authorized)"}
+        me = await client.get_me()
+        return {
+            "ok":         True,
+            "user_id":    me.id,
+            "phone":      me.phone or str(me.id),
+            "username":   me.username,
+            "first_name": me.first_name or "",
+            "last_name":  me.last_name or "",
+            "tmp_path":   tmp_session,
+        }
+    except Exception as e:
+        try:
+            Path(tmp_session).unlink(missing_ok=True)
+        except Exception:
+            pass
+        return {"ok": False, "reason": str(e)}
+    finally:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+
 async def resolve_channel_info(client: TelegramClient, channel_url: str) -> dict:
     try:
         entity = await client.get_entity(channel_url)

@@ -2,7 +2,7 @@
 import { useEffect, useState, Fragment } from "react";
 import {
   getAccounts, addAccount, deleteAccount,
-  sendCode, verifyCode, updateProfile, uploadPhoto, syncAccount,
+  sendCode, verifyCode, updateProfile, uploadPhoto, syncAccount, importSession,
 } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import toast from "react-hot-toast";
@@ -10,6 +10,7 @@ import {
   Plus, Trash2, RefreshCw, Edit3, X, Check, UserPlus,
   Phone, Key, User, ChevronRight, ChevronLeft, Smartphone,
   Hash, MoreHorizontal, CheckCircle2, RotateCcw, AlertTriangle, Upload,
+  FileUp, FolderOpen,
 } from "lucide-react";
 
 /* ── Account tier info ────────────────────────────────────────────────────── */
@@ -250,6 +251,188 @@ function ProfileModal({ account, onClose, onSaved }) {
   );
 }
 
+/* ── Session import modal ─────────────────────────────────────────────────── */
+function ImportModal({ onClose, onDone }) {
+  const [apiId, setApiId]     = useState("");
+  const [apiHash, setApiHash] = useState("");
+  const [files, setFiles]     = useState([]); // [{file, status, result}]
+  const [dragging, setDragging] = useState(false);
+  const [running, setRunning] = useState(false);
+
+  const addFiles = (incoming) => {
+    const valid = Array.from(incoming).filter(f => f.name.endsWith(".session"));
+    if (!valid.length) { toast.error("Только .session файлы"); return; }
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.file.name));
+      const fresh = valid.filter(f => !existing.has(f.name)).map(f => ({ file: f, status: "pending", result: null }));
+      return [...prev, ...fresh];
+    });
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault(); setDragging(false);
+    addFiles(e.dataTransfer.files);
+  };
+
+  const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
+
+  const runImport = async () => {
+    if (!apiId || !apiHash) { toast.error("Введите api_id и api_hash"); return; }
+    if (!files.length) { toast.error("Добавьте хотя бы один файл"); return; }
+    setRunning(true);
+    let ok = 0, fail = 0;
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].status === "ok") continue;
+      setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: "loading" } : f));
+      try {
+        const res = await importSession(files[i].file, Number(apiId), apiHash);
+        setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: "ok", result: res } : f));
+        ok++;
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message || "Ошибка";
+        setFiles(prev => prev.map((f, idx) => idx === i ? { ...f, status: "error", result: msg } : f));
+        fail++;
+      }
+    }
+    setRunning(false);
+    if (ok > 0) { onDone(); toast.success(`Импортировано: ${ok}`); }
+    if (fail > 0) toast.error(`Ошибок: ${fail}`);
+  };
+
+  const statusIcon = (s) => {
+    if (s === "loading") return <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite", color: "var(--gold-hi)" }} />;
+    if (s === "ok")      return <CheckCircle2 size={13} style={{ color: "var(--emerald)" }} />;
+    if (s === "error")   return <AlertTriangle size={13} style={{ color: "var(--coral)" }} />;
+    return <FileUp size={13} style={{ color: "var(--ink-4)" }} />;
+  };
+
+  const allDone = files.length > 0 && files.every(f => f.status === "ok" || f.status === "error");
+
+  return (
+    <Modal
+      title="Импорт сессий"
+      subtitle="Загрузи .session файлы от Telethon"
+      onClose={onClose}
+      size="lg"
+      footer={
+        <>
+          <button className="btn-ghost" onClick={onClose}>Закрыть</button>
+          <div style={{ flex: 1 }} />
+          {allDone
+            ? <button className="btn-primary" onClick={onClose}><Check size={14} /> Готово</button>
+            : <button className="btn-primary" onClick={runImport} disabled={running || !files.length}>
+                {running ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Upload size={14} />}
+                Импортировать
+              </button>
+          }
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* api_id / api_hash */}
+        <div style={{ display: "flex", gap: 10 }}>
+          <Field label="API ID" tag="число">
+            <div style={{ position: "relative" }}>
+              <Hash size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
+              <input
+                className="inp"
+                style={{ paddingLeft: 36, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                type="number"
+                placeholder="12345678"
+                value={apiId}
+                onChange={e => setApiId(e.target.value)}
+              />
+            </div>
+          </Field>
+          <Field label="API Hash" tag="32 символа">
+            <div style={{ position: "relative" }}>
+              <Key size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
+              <input
+                className="inp"
+                style={{ paddingLeft: 36, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                placeholder="0f8c3a4b2d9e1f5a..."
+                value={apiHash}
+                onChange={e => setApiHash(e.target.value)}
+              />
+            </div>
+          </Field>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          style={{
+            border: `2px dashed ${dragging ? "var(--gold-hi)" : "var(--line-3)"}`,
+            borderRadius: 12,
+            padding: "28px 20px",
+            textAlign: "center",
+            background: dragging ? "var(--gold-tint)" : "var(--surface-1)",
+            transition: "all 0.15s",
+            cursor: "pointer",
+          }}
+          onClick={() => document.getElementById("session-file-input").click()}
+        >
+          <input
+            id="session-file-input"
+            type="file"
+            accept=".session"
+            multiple
+            style={{ display: "none" }}
+            onChange={e => addFiles(e.target.files)}
+          />
+          <FolderOpen size={28} style={{ color: dragging ? "var(--gold-hi)" : "var(--ink-4)", marginBottom: 10 }} />
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 4 }}>
+            Перетащи .session файлы сюда
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-4)" }}>или кликни чтобы выбрать · можно несколько сразу</div>
+        </div>
+
+        {/* File list */}
+        {files.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {files.map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 13px", borderRadius: 8,
+                  background: f.status === "ok" ? "var(--emerald-tint)" : f.status === "error" ? "var(--coral-tint)" : "var(--surface-2)",
+                  border: `1px solid ${f.status === "ok" ? "var(--emerald-edge)" : f.status === "error" ? "var(--coral-edge)" : "var(--line-2)"}`,
+                }}
+              >
+                {statusIcon(f.status)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontFamily: "var(--mono)", color: "var(--ink-1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.file.name}
+                  </div>
+                  {f.status === "ok" && f.result && (
+                    <div style={{ fontSize: 11, color: "var(--emerald)", marginTop: 2 }}>
+                      {f.result.first_name || ""} {f.result.last_name || ""} {f.result.username ? `@${f.result.username}` : ""} · {f.result.phone}
+                    </div>
+                  )}
+                  {f.status === "error" && (
+                    <div style={{ fontSize: 11, color: "var(--coral)", marginTop: 2 }}>{f.result}</div>
+                  )}
+                </div>
+                {f.status === "pending" && !running && (
+                  <button
+                    onClick={() => removeFile(i)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-4)", padding: 2, display: "flex" }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 /* ── Add account wizard ────────────────────────────────────────────────────── */
 function AddWizard({ onClose, onDone }) {
   const [step, setStep]         = useState("add");
@@ -485,11 +668,12 @@ function AddWizard({ onClose, onDone }) {
 
 /* ── Main page ─────────────────────────────────────────────────────────────── */
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [showAdd, setShowAdd]   = useState(false);
-  const [editAcc, setEditAcc]   = useState(null);
-  const [filter, setFilter]     = useState("all");
+  const [accounts, setAccounts]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [showAdd, setShowAdd]         = useState(false);
+  const [showImport, setShowImport]   = useState(false);
+  const [editAcc, setEditAcc]         = useState(null);
+  const [filter, setFilter]           = useState("all");
 
   const load = async () => {
     try { setAccounts(await getAccounts()); }
@@ -532,7 +716,7 @@ export default function AccountsPage() {
           </p>
         </div>
         <div className="page-actions" style={{ display: "flex", gap: 8 }}>
-          <button className="btn-ghost" onClick={() => toast("🚧 Импорт сессий скоро будет доступен")}><Upload size={14} /> Импорт сессий</button>
+          <button className="btn-ghost" onClick={() => setShowImport(true)}><FileUp size={14} /> Импорт сессий</button>
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus size={14} /> Добавить аккаунт</button>
         </div>
       </div>
@@ -655,8 +839,9 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {showAdd && <AddWizard onClose={() => setShowAdd(false)} onDone={load} />}
-      {editAcc  && <ProfileModal account={editAcc} onClose={() => setEditAcc(null)} onSaved={load} />}
+      {showAdd    && <AddWizard onClose={() => setShowAdd(false)} onDone={load} />}
+      {showImport && <ImportModal onClose={() => setShowImport(false)} onDone={load} />}
+      {editAcc    && <ProfileModal account={editAcc} onClose={() => setEditAcc(null)} onSaved={load} />}
     </div>
   );
 }

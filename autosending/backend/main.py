@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session, joinedload
@@ -340,6 +340,69 @@ async def update_profile(
         return _account_dict(acc)
     except Exception as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/accounts/import-session", status_code=201)
+async def import_session(
+    file:     UploadFile,
+    api_id:   int = Form(...),
+    api_hash: str = Form(...),
+    db:       Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not api_id or not api_hash:
+        raise HTTPException(400, "api_id и api_hash обязательны")
+    if not file.filename.endswith(".session"):
+        raise HTTPException(400, "Файл должен иметь расширение .session")
+
+    raw = await file.read()
+    result = await tm.import_session_file(raw, api_id, api_hash)
+    if not result["ok"]:
+        raise HTTPException(400, result["reason"])
+
+    phone      = result["phone"]
+    tmp_path   = result["tmp_path"]
+    clean_phone = "".join(c for c in phone if c.isdigit())
+    final_path = f"data/sessions/session_{clean_phone}.session"
+
+    import shutil
+    shutil.move(tmp_path, final_path)
+
+    # Upsert account
+    existing = db.query(Account).filter(
+        Account.phone == phone, Account.user_id == current_user.id
+    ).first()
+
+    if existing:
+        existing.api_id       = api_id
+        existing.api_hash     = api_hash
+        existing.username     = result.get("username")
+        existing.first_name   = result.get("first_name", "")
+        existing.last_name    = result.get("last_name", "")
+        existing.session_file = final_path
+        existing.tg_user_id   = result.get("user_id")
+        existing.status       = "online"
+        await tm.disconnect_client(existing.id)
+        db.commit()
+        db.refresh(existing)
+        return _account_dict(existing)
+
+    acc = Account(
+        api_id=      api_id,
+        api_hash=    api_hash,
+        phone=       phone,
+        username=    result.get("username"),
+        first_name=  result.get("first_name", ""),
+        last_name=   result.get("last_name", ""),
+        session_file=final_path,
+        tg_user_id=  result.get("user_id"),
+        status=      "online",
+        user_id=     current_user.id,
+    )
+    db.add(acc)
+    db.commit()
+    db.refresh(acc)
+    return _account_dict(acc)
 
 
 @app.post("/api/accounts/{account_id}/photo")

@@ -49,6 +49,13 @@ export const uploadPhoto   = (id, file) => {
   return api.post(`/api/accounts/${id}/photo`, fd, { headers: { "Content-Type": "multipart/form-data" } }).then(r => r.data);
 };
 export const syncAccount   = (id)       => api.get(`/api/accounts/${id}/sync`).then(r => r.data);
+export const importSession = (file, apiId, apiHash) => {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("api_id", apiId);
+  fd.append("api_hash", apiHash);
+  return api.post("/api/accounts/import-session", fd, { timeout: 30000 }).then(r => r.data);
+};
 
 // ── Channels ──────────────────────────────────────────────────────────────────
 export const getChannels   = ()     => api.get("/api/channels").then(r => r.data);
