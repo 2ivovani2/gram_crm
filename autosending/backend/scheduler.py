@@ -37,7 +37,7 @@ async def _alert(text: str, chat_id: int | None):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        await asyncio.to_thread(urllib.request.urlopen, req, 5)
+        await asyncio.to_thread(urllib.request.urlopen, req, timeout=5)
     except Exception as e:
         logger.warning(f"Alert failed → chat_id={chat_id}: {e}")
 
@@ -618,6 +618,12 @@ async def _run_campaign(campaign_id: int):
     stop = _stop_events.setdefault(campaign_id, asyncio.Event())
 
     _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})
+
+    asyncio.create_task(_alert(
+        f"🚀 <b>«{camp_name}» запущена</b>\n"
+        f"Аккаунтов: {len(accounts_snap)} · Каналов: {len(channels_snap)} · Шаблонов: {len(messages_snap)}",
+        user_tg_id,
+    ))
 
     progress_task = asyncio.create_task(
         _progress_alert_loop(campaign_id, camp_name, user_tg_id, stop)
