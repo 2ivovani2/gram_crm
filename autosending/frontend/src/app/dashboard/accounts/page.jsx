@@ -410,6 +410,11 @@ function ImportModal({ onClose, onDone }) {
                   {f.status === "ok" && f.result && (
                     <div style={{ fontSize: 11, color: "var(--emerald)", marginTop: 2 }}>
                       {f.result.first_name || ""} {f.result.last_name || ""} {f.result.username ? `@${f.result.username}` : ""} · {f.result.phone}
+                      {f.result.sessions_killed > 0 && (
+                        <span style={{ color: "var(--ink-4)", marginLeft: 6 }}>
+                          · закрыто сессий: {f.result.sessions_killed}
+                        </span>
+                      )}
                     </div>
                   )}
                   {f.status === "error" && (

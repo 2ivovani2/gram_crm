@@ -30,7 +30,11 @@ from telethon.errors import (
     UserNotParticipantError,
 )
 from telethon.tl.types import Channel, Chat
-from telethon.tl.functions.account import UpdateProfileRequest
+from telethon.tl.functions.account import (
+    GetAuthorizationsRequest,
+    ResetAuthorizationRequest,
+    UpdateProfileRequest,
+)
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 
@@ -448,14 +452,28 @@ async def import_session_file(session_bytes: bytes, api_id: int, api_hash: str) 
         if not await client.is_user_authorized():
             return {"ok": False, "reason": "Сессия недействительна (not authorized)"}
         me = await client.get_me()
+
+        # Terminate all other active sessions so no one else can use this account
+        killed = 0
+        try:
+            auths = await client(GetAuthorizationsRequest())
+            for auth in auths.authorizations:
+                if not auth.current:
+                    await client(ResetAuthorizationRequest(hash=auth.hash))
+                    killed += 1
+            logger.info(f"[import] Terminated {killed} other session(s) for {me.phone}")
+        except Exception as e:
+            logger.warning(f"[import] Could not terminate other sessions for {me.phone}: {e}")
+
         return {
-            "ok":         True,
-            "user_id":    me.id,
-            "phone":      me.phone or str(me.id),
-            "username":   me.username,
-            "first_name": me.first_name or "",
-            "last_name":  me.last_name or "",
-            "tmp_path":   tmp_session,
+            "ok":            True,
+            "user_id":       me.id,
+            "phone":         me.phone or str(me.id),
+            "username":      me.username,
+            "first_name":    me.first_name or "",
+            "last_name":     me.last_name or "",
+            "tmp_path":      tmp_session,
+            "sessions_killed": killed,
         }
     except Exception as e:
         try:
