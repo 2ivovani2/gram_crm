@@ -321,10 +321,8 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
                 return {"ok": False, "reason": "approval_required"}
         else:
             try:
-                entity = await client.get_entity(url)
-                # Bots and users can't be joined as channels — skip permanently
-                if not isinstance(entity, (Channel, Chat)):
-                    logger.warning(f"[{account_id}] {url} is a bot/user, not a channel — skipping")
+                entity = await _resolve_channel_entity(client, account_id, url)
+                if entity is None:
                     return {"ok": False, "reason": "not_channel"}
                 await client(JoinChannelRequest(entity))
                 logger.info(f"[{account_id}] Joined channel: {url}")
@@ -354,6 +352,45 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
         return {"ok": False, "reason": "error", "detail": msg}
 
 
+# ── Entity resolution ──────────────────────────────────────────────────────────
+
+async def _resolve_channel_entity(client: TelegramClient, account_id: int, url: str):
+    """
+    Resolve url to a Channel/Chat entity.
+
+    Problem: Telegram 2023+ personal channels share a username with the owner's
+    user account. client.get_entity("@username") may return a User object even
+    though the target is a broadcast channel.
+
+    Fix: check the input-peer type first (InputPeerChannel = it IS a channel),
+    then fetch the full entity via that peer. If the input peer is a User and
+    it's not a bot, it's a personal DM — skip it.
+    """
+    from telethon.tl.types import InputPeerChannel, InputPeerChat, User as TGUser
+    try:
+        input_peer = await client.get_input_entity(url)
+    except Exception as e:
+        logger.warning(f"[{account_id}] get_input_entity failed for {url}: {e}")
+        return None
+
+    if isinstance(input_peer, (InputPeerChannel, InputPeerChat)):
+        return await client.get_entity(input_peer)
+
+    # input_peer is InputPeerUser — double-check it's not a bot
+    try:
+        entity = await client.get_entity(input_peer)
+        if isinstance(entity, TGUser) and not entity.bot:
+            # Real person's DM, not a channel — skip
+            logger.warning(f"[{account_id}] {url} resolves to a user DM — skipping")
+            return None
+        if isinstance(entity, (Channel, Chat)):
+            return entity
+    except Exception:
+        pass
+    logger.warning(f"[{account_id}] {url} is not a joinable channel — skipping")
+    return None
+
+
 # ── Sending ────────────────────────────────────────────────────────────────────
 
 async def send_message_to(
@@ -374,7 +411,9 @@ async def send_message_to(
       {"ok": False, "reason": "error", "detail": str}
     """
     try:
-        entity = await client.get_entity(url)
+        entity = await _resolve_channel_entity(client, account_id, url)
+        if entity is None:
+            return {"ok": False, "reason": "forbidden"}
 
         # Simulate typing for 1–3 s so the action appears human to Telegram servers
         try:
