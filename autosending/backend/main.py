@@ -482,6 +482,9 @@ async def search_channels(
         Account.status.in_(["online", "working"]),
     ).first()
 
+    if not account and not tgstat_token:
+        raise HTTPException(503, "Нет активных аккаунтов для поиска. Авторизуйте хотя бы один аккаунт или добавьте tgstat API ключ.")
+
     results: dict[str, dict] = {}  # url → channel dict
 
     # ── Telegram native search ─────────────────────────────────────────────

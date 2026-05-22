@@ -315,7 +315,7 @@ function fmtNum(n) {
 function ParserModal({ onClose, onAdded }) {
   const [query, setQuery]           = useState("");
   const [minMembers, setMinMembers] = useState(500);
-  const [groupsOnly, setGroupsOnly] = useState(true);
+  const [groupsOnly, setGroupsOnly] = useState(false);
   const [tgstatKey, setTgstatKey]   = useState(() => typeof localStorage !== "undefined" ? localStorage.getItem(TGSTAT_KEY) || "" : "");
   const [showSettings, setSettings] = useState(false);
   const [loading, setLoading]       = useState(false);
