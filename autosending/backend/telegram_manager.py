@@ -440,31 +440,60 @@ async def send_message_to(
 
 
 async def search_public_channels(client: TelegramClient, query: str, limit: int = 50) -> list:
-    """Search Telegram for public channels/groups matching query."""
-    from telethon.tl.functions.contacts import SearchRequest
+    """Search Telegram for public channels/groups matching query.
+    Tries contacts.SearchRequest first; falls back to messages.SearchGlobal
+    when the account is restricted from using the contacts search method.
+    """
     from telethon.tl.types import Channel
+
+    def _parse_chats(chats) -> dict:
+        result = {}
+        for chat in chats:
+            if not isinstance(chat, Channel):
+                continue
+            username = getattr(chat, "username", None)
+            if not username:
+                continue
+            result[username] = {
+                "username":     username,
+                "url":          f"@{username}",
+                "title":        chat.title or username,
+                "members":      getattr(chat, "participants_count", None),
+                "is_broadcast": getattr(chat, "broadcast", False),
+                "description":  None,
+                "source":       "telegram",
+            }
+        return result
+
+    # ── Primary: contacts.SearchRequest ───────────────────────────────────
     try:
-        result = await client(SearchRequest(q=query, limit=min(limit, 100)))
+        from telethon.tl.functions.contacts import SearchRequest
+        res = await client(SearchRequest(q=query, limit=min(limit, 100)))
+        found = _parse_chats(res.chats)
+        if found:
+            return list(found.values())
     except Exception as e:
-        logger.warning(f"Telegram channel search failed: {e}")
+        logger.warning(f"contacts.SearchRequest failed ({e}) — trying SearchGlobal")
+
+    # ── Fallback: messages.SearchGlobal ───────────────────────────────────
+    try:
+        from telethon.tl.functions.messages import SearchGlobalRequest
+        from telethon.tl.types import InputMessagesFilterEmpty, InputPeerEmpty
+        res = await client(SearchGlobalRequest(
+            q=query,
+            filter=InputMessagesFilterEmpty(),
+            min_date=0,
+            max_date=0,
+            offset_rate=0,
+            offset_peer=InputPeerEmpty(),
+            offset_id=0,
+            limit=min(limit * 2, 100),
+        ))
+        found = _parse_chats(res.chats)
+        return list(found.values())
+    except Exception as e:
+        logger.warning(f"messages.SearchGlobal failed: {e}")
         return []
-    channels = []
-    for chat in result.chats:
-        if not isinstance(chat, Channel):
-            continue
-        username = getattr(chat, "username", None)
-        if not username:
-            continue
-        channels.append({
-            "username":     username,
-            "url":          f"@{username}",
-            "title":        chat.title or username,
-            "members":      getattr(chat, "participants_count", None),
-            "is_broadcast": getattr(chat, "broadcast", False),
-            "description":  None,
-            "source":       "telegram",
-        })
-    return channels
 
 
 async def import_session_file(session_bytes: bytes, api_id: int, api_hash: str) -> dict:
