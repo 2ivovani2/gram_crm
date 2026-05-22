@@ -10,7 +10,7 @@ import {
   Plus, Trash2, RefreshCw, Edit3, X, Check, UserPlus,
   Phone, Key, User, ChevronRight, ChevronLeft, Smartphone,
   Hash, MoreHorizontal, CheckCircle2, RotateCcw, AlertTriangle, Upload,
-  FileUp, FolderOpen, Users2,
+  FileUp, FolderOpen, Users2, ExternalLink,
 } from "lucide-react";
 
 /* ── Account tier info ────────────────────────────────────────────────────── */
@@ -878,6 +878,7 @@ export default function AccountsPage() {
   const [showBulk, setShowBulk]       = useState(false);
   const [editAcc, setEditAcc]         = useState(null);
   const [filter, setFilter]           = useState("all");
+  const [syncing, setSyncing]         = useState(false);
 
   const load = async () => {
     try { setAccounts(await getAccounts()); }
@@ -895,6 +896,23 @@ export default function AccountsPage() {
     const r = await syncAccount(id);
     if (r.status === "online") { toast.success("Синхронизировано"); load(); }
     else toast.error("Не удалось — " + (r.reason || "не авторизован"));
+  };
+
+  const handleSyncAll = async () => {
+    if (!confirm(`Синхронизировать все ${accounts.length} аккаунтов и удалить неактивные?`)) return;
+    setSyncing(true);
+    try {
+      await Promise.allSettled(accounts.map(a => syncAccount(a.id)));
+      const fresh = await getAccounts();
+      const toDelete = fresh.filter(a => a.status === "error");
+      await Promise.allSettled(toDelete.map(a => deleteAccount(a.id)));
+      toast.success(`Синхронизировано · удалено неактивных: ${toDelete.length}`);
+      load();
+    } catch {
+      toast.error("Ошибка синхронизации");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const counts = {
@@ -923,6 +941,12 @@ export default function AccountsPage() {
           <button className="btn-ghost" onClick={() => setShowImport(true)}><FileUp size={14} /> Импорт сессий</button>
           {accounts.some(a => a.status === "online" || a.status === "working") && (
             <button className="btn-ghost" onClick={() => setShowBulk(true)}><Users2 size={14} /> Обновить всем профиль</button>
+          )}
+          {accounts.length > 0 && (
+            <button className="btn-ghost" onClick={handleSyncAll} disabled={syncing}>
+              <RefreshCw size={14} style={syncing ? { animation: "spin 0.7s linear infinite" } : {}} />
+              {syncing ? "Синхронизация…" : "Обновить всех"}
+            </button>
           )}
           <button onClick={() => setShowAdd(true)} className="btn-primary"><Plus size={14} /> Добавить аккаунт</button>
         </div>
@@ -1022,6 +1046,18 @@ export default function AccountsPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {(acc.username || acc.tg_user_id) && (
+                    <a
+                      href={acc.username ? `https://t.me/${acc.username}` : `tg://user?id=${acc.tg_user_id}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="btn-icon"
+                      title="Открыть в Telegram"
+                      style={{ textDecoration: "none" }}
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
                   <button onClick={() => handleSync(acc.id)} className="btn-icon" title="Синхронизировать">
                     <RefreshCw size={14} />
                   </button>
