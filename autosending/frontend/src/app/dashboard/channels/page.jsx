@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { getChannels, addChannel, toggleChannel, deleteChannel } from "@/lib/api";
+import { getChannels, addChannel, toggleChannel, deleteChannel, searchChannels, bulkAddChannels } from "@/lib/api";
 import toast from "react-hot-toast";
 import {
   Plus, Trash2, Hash, Link2, RefreshCw, Upload, X,
   CheckCircle2, AlertCircle, Copy, History, Search,
   ExternalLink, Pause, Play, ArrowDownUp, SlidersHorizontal,
-  FileText, Check,
+  FileText, Check, Telescope, Users, Megaphone, MessageSquare,
+  TrendingUp, Globe, Key, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 /* ─── Channel normalization (logic unchanged) ────────────────────────────── */
@@ -300,6 +301,294 @@ function ImportModal({ onClose, existingChannels, onImported }) {
   );
 }
 
+/* ─── Parser modal ───────────────────────────────────────────────────────── */
+
+const TGSTAT_KEY = "tgstat_token";
+
+function fmtNum(n) {
+  if (!n) return null;
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(".0", "") + "M";
+  if (n >= 1_000)     return (n / 1_000).toFixed(1).replace(".0", "") + "k";
+  return String(n);
+}
+
+function ParserModal({ onClose, onAdded }) {
+  const [query, setQuery]           = useState("");
+  const [minMembers, setMinMembers] = useState(500);
+  const [groupsOnly, setGroupsOnly] = useState(true);
+  const [tgstatKey, setTgstatKey]   = useState(() => typeof localStorage !== "undefined" ? localStorage.getItem(TGSTAT_KEY) || "" : "");
+  const [showSettings, setSettings] = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [results, setResults]       = useState(null);
+  const [selected, setSelected]     = useState(new Set());
+  const [adding, setAdding]         = useState(false);
+
+  const saveTgstat = (v) => { setTgstatKey(v); localStorage.setItem(TGSTAT_KEY, v); };
+
+  const search = async () => {
+    if (!query.trim()) return;
+    setLoading(true); setResults(null); setSelected(new Set());
+    try {
+      const data = await searchChannels({
+        q: query.trim(),
+        min_members: minMembers,
+        groups_only: groupsOnly,
+        limit: 80,
+        ...(tgstatKey ? { tgstat_token: tgstatKey } : {}),
+      });
+      setResults(data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка поиска");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleCh = (url) => setSelected(s => {
+    const n = new Set(s); n.has(url) ? n.delete(url) : n.add(url); return n;
+  });
+  const toggleAll = () => {
+    const available = (results || []).filter(c => !c.already_added).map(c => c.url);
+    setSelected(s => s.size === available.length ? new Set() : new Set(available));
+  };
+
+  const handleAdd = async () => {
+    if (!selected.size) return;
+    setAdding(true);
+    try {
+      const res = await bulkAddChannels([...selected]);
+      toast.success(`Добавлено: ${res.added}${res.skipped ? `, уже было: ${res.skipped}` : ""}`);
+      setResults(r => r.map(c => selected.has(c.url) ? { ...c, already_added: true } : c));
+      setSelected(new Set());
+      onAdded();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Ошибка добавления");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const available = (results || []).filter(c => !c.already_added);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-xl animate-in" style={{ maxWidth: 760, maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+
+        {/* Header */}
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Парсер каналов</div>
+            <div className="modal-subtitle">Telegram Search{tgstatKey ? " + tgstat.ru" : " · добавь tgstat ключ для расширенной аналитики"}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={14} /></button>
+        </div>
+
+        <div className="modal-body" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 14 }}>
+
+          {/* Search bar */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Search size={13} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink-4)", pointerEvents: "none" }} />
+              <input
+                className="inp"
+                style={{ paddingLeft: 36 }}
+                placeholder="Ключевое слово: крипто, авто, маркетинг…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && search()}
+                autoFocus
+              />
+            </div>
+            <button className="btn-primary" onClick={search} disabled={loading || !query.trim()}>
+              {loading ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Search size={14} />}
+              Найти
+            </button>
+          </div>
+
+          {/* Filters row */}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--ink-4)" }}>Мин. подписчиков:</span>
+              {[0, 500, 1000, 5000, 10000].map(v => (
+                <button key={v} onClick={() => setMinMembers(v)} className="btn-sm" style={{
+                  background: minMembers === v ? "var(--surface-3)" : "transparent",
+                  border: "1px solid " + (minMembers === v ? "var(--line-3)" : "var(--line-2)"),
+                  color: minMembers === v ? "var(--ink-1)" : "var(--ink-4)",
+                  fontWeight: minMembers === v ? 600 : 400,
+                  cursor: "pointer", borderRadius: 6, height: 28, padding: "0 10px", fontSize: 11.5,
+                }}>
+                  {v === 0 ? "Все" : fmtNum(v)}
+                </button>
+              ))}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--ink-3)", userSelect: "none" }}>
+              <input type="checkbox" checked={groupsOnly} onChange={e => setGroupsOnly(e.target.checked)} style={{ accentColor: "var(--gold-hi)" }} />
+              Только группы (можно писать)
+            </label>
+            <button onClick={() => setSettings(s => !s)} className="btn-ghost btn-sm" style={{ marginLeft: "auto", gap: 4 }}>
+              <Key size={11} /> tgstat API {showSettings ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+            </button>
+          </div>
+
+          {/* tgstat settings */}
+          {showSettings && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "12px 14px", background: "var(--surface-1)", borderRadius: 10, border: "1px solid var(--line-2)" }}>
+              <Key size={13} style={{ color: "var(--ink-4)", flexShrink: 0 }} />
+              <input
+                className="inp"
+                style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 12 }}
+                placeholder="tgstat API токен (с tgstat.ru/api)"
+                value={tgstatKey}
+                onChange={e => saveTgstat(e.target.value)}
+              />
+              {tgstatKey && (
+                <span style={{ fontSize: 11, color: "var(--emerald)", whiteSpace: "nowrap" }}>
+                  <CheckCircle2 size={11} style={{ verticalAlign: "middle" }} /> Активен
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Results */}
+          {loading && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="skeleton" style={{ height: 90, borderRadius: 10 }} />
+              ))}
+            </div>
+          )}
+
+          {results && !loading && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                  Найдено: <b style={{ color: "var(--ink-1)" }}>{results.length}</b>
+                  {tgstatKey && <span style={{ marginLeft: 6, color: "var(--emerald)", fontSize: 11 }}>· с tgstat аналитикой</span>}
+                </span>
+                {available.length > 0 && (
+                  <button onClick={toggleAll} className="btn-ghost btn-sm" style={{ fontSize: 11 }}>
+                    {selected.size === available.length ? "Снять все" : `Выбрать все (${available.length})`}
+                  </button>
+                )}
+              </div>
+
+              {results.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "32px 0", color: "var(--ink-4)", fontSize: 13 }}>
+                  Ничего не найдено — попробуй другое ключевое слово
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 8 }}>
+                  {results.map(ch => {
+                    const sel = selected.has(ch.url);
+                    const grp = !ch.is_broadcast;
+                    return (
+                      <div
+                        key={ch.url}
+                        onClick={() => !ch.already_added && toggleCh(ch.url)}
+                        style={{
+                          padding: "12px 14px",
+                          borderRadius: 10,
+                          border: `1.5px solid ${sel ? "var(--gold-hi)" : ch.already_added ? "var(--line-2)" : "var(--line-2)"}`,
+                          background: sel ? "var(--gold-tint)" : ch.already_added ? "var(--surface-1)" : "var(--surface-1)",
+                          cursor: ch.already_added ? "default" : "pointer",
+                          opacity: ch.already_added ? 0.55 : 1,
+                          transition: "border-color 0.12s, background 0.12s",
+                          display: "flex", flexDirection: "column", gap: 6,
+                          position: "relative",
+                        }}
+                      >
+                        {/* Type + source badge */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: 3,
+                            padding: "2px 6px", borderRadius: 4, fontSize: 9.5, fontWeight: 700,
+                            background: grp ? "var(--emerald-tint)" : "var(--surface-2)",
+                            border: `1px solid ${grp ? "var(--emerald-edge)" : "var(--line-2)"}`,
+                            color: grp ? "var(--emerald)" : "var(--ink-4)",
+                          }}>
+                            {grp ? <MessageSquare size={9} /> : <Megaphone size={9} />}
+                            {grp ? "ГРУППА" : "КАНАЛ"}
+                          </span>
+                          {ch.source === "tgstat" && (
+                            <span style={{ fontSize: 9.5, color: "var(--ink-5)", fontWeight: 600 }}>tgstat</span>
+                          )}
+                          {ch.already_added && (
+                            <span style={{ fontSize: 9.5, color: "var(--ink-4)", marginLeft: "auto" }}>уже есть</span>
+                          )}
+                          {sel && !ch.already_added && (
+                            <span style={{ marginLeft: "auto" }}>
+                              <CheckCircle2 size={13} style={{ color: "var(--gold-hi)" }} />
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Title */}
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-1)", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                          {ch.title}
+                        </div>
+
+                        {/* Stats row */}
+                        <div style={{ display: "flex", gap: 10, fontSize: 11.5, color: "var(--ink-4)", flexWrap: "wrap" }}>
+                          {ch.members != null && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                              <Users size={10} /> {fmtNum(ch.members)}
+                            </span>
+                          )}
+                          {ch.avg_reach != null && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                              <TrendingUp size={10} /> {fmtNum(ch.avg_reach)} охват
+                            </span>
+                          )}
+                          {ch.er != null && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--gold-hi)" }}>
+                              ER {(ch.er * 100).toFixed(1)}%
+                            </span>
+                          )}
+                          {ch.country && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                              <Globe size={10} /> {ch.country}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Description */}
+                        {ch.description && (
+                          <div style={{ fontSize: 11, color: "var(--ink-5)", lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                            {ch.description}
+                          </div>
+                        )}
+
+                        {/* url */}
+                        <div style={{ fontSize: 10.5, fontFamily: "var(--mono)", color: "var(--ink-5)", marginTop: 2 }}>
+                          {ch.url}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="modal-footer">
+          <button className="btn-ghost" onClick={onClose}>Закрыть</button>
+          <div style={{ flex: 1 }} />
+          {selected.size > 0 && (
+            <button className="btn-primary" onClick={handleAdd} disabled={adding}>
+              {adding ? <RefreshCw size={13} style={{ animation: "spin 0.7s linear infinite" }} /> : <Plus size={14} />}
+              Добавить {selected.size} канал{selected.size % 10 === 1 && selected.size !== 11 ? "" : selected.size % 10 < 5 && (selected.size < 10 || selected.size > 20) ? "а" : "ов"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /* ─── Main page ──────────────────────────────────────────────────────────── */
 
 function formatK(n) {
@@ -314,7 +603,8 @@ export default function ChannelsPage() {
   const [loading, setLoading]   = useState(true);
   const [url, setUrl]           = useState("");
   const [adding, setAdding]     = useState(false);
-  const [showImport, setImport] = useState(false);
+  const [showImport, setImport]   = useState(false);
+  const [showParser, setShowParser] = useState(false);
   const [query, setQuery]       = useState("");
   const [sortMode, setSortMode]       = useState("default");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -373,6 +663,7 @@ export default function ChannelsPage() {
           </p>
         </div>
         <div className="page-actions" style={{ display: "flex", gap: 8 }}>
+          <button className="btn-ghost" onClick={() => setShowParser(true)}><Telescope size={14} /> Парсер каналов</button>
           <button className="btn-ghost" onClick={() => setImport(true)}><FileText size={14} /> Импорт CSV</button>
         </div>
       </div>
@@ -536,6 +827,12 @@ export default function ChannelsPage() {
           existingChannels={channels}
           onClose={() => setImport(false)}
           onImported={load}
+        />
+      )}
+      {showParser && (
+        <ParserModal
+          onClose={() => setShowParser(false)}
+          onAdded={load}
         />
       )}
     </div>

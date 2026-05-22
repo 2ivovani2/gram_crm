@@ -433,6 +433,34 @@ async def send_message_to(
         return {"ok": False, "reason": "error", "detail": msg}
 
 
+async def search_public_channels(client: TelegramClient, query: str, limit: int = 50) -> list:
+    """Search Telegram for public channels/groups matching query."""
+    from telethon.tl.functions.contacts import SearchRequest
+    from telethon.tl.types import Channel
+    try:
+        result = await client(SearchRequest(q=query, limit=min(limit, 100)))
+    except Exception as e:
+        logger.warning(f"Telegram channel search failed: {e}")
+        return []
+    channels = []
+    for chat in result.chats:
+        if not isinstance(chat, Channel):
+            continue
+        username = getattr(chat, "username", None)
+        if not username:
+            continue
+        channels.append({
+            "username":     username,
+            "url":          f"@{username}",
+            "title":        chat.title or username,
+            "members":      getattr(chat, "participants_count", None),
+            "is_broadcast": getattr(chat, "broadcast", False),
+            "description":  None,
+            "source":       "telegram",
+        })
+    return channels
+
+
 async def import_session_file(session_bytes: bytes, api_id: int, api_hash: str) -> dict:
     """
     Validate a raw Telethon .session file and return account info.

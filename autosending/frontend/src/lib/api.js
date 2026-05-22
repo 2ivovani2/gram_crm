@@ -58,10 +58,12 @@ export const importSession = (file, apiId, apiHash) => {
 };
 
 // ── Channels ──────────────────────────────────────────────────────────────────
-export const getChannels   = ()     => api.get("/api/channels").then(r => r.data);
-export const addChannel    = (data) => api.post("/api/channels", data).then(r => r.data);
-export const toggleChannel = (id)   => api.patch(`/api/channels/${id}`).then(r => r.data);
-export const deleteChannel = (id)   => api.delete(`/api/channels/${id}`).then(r => r.data);
+export const getChannels      = ()       => api.get("/api/channels").then(r => r.data);
+export const addChannel       = (data)   => api.post("/api/channels", data).then(r => r.data);
+export const toggleChannel    = (id)     => api.patch(`/api/channels/${id}`).then(r => r.data);
+export const deleteChannel    = (id)     => api.delete(`/api/channels/${id}`).then(r => r.data);
+export const searchChannels   = (params) => api.get("/api/channels/search", { params, timeout: 20000 }).then(r => r.data);
+export const bulkAddChannels  = (urls)   => api.post("/api/channels/bulk-add", { urls }).then(r => r.data);
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 export const getMessages   = ()         => api.get("/api/messages").then(r => r.data);

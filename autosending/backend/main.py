@@ -3,8 +3,10 @@ FastAPI application — REST endpoints for AutoSending dashboard.
 Multi-user: every resource is scoped to the authenticated user.
 """
 
+import asyncio
 import io
 import logging
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
@@ -460,6 +462,108 @@ def _channel_dict(c: Channel) -> dict:
         "is_active":     c.is_active,
         "created_at":    c.created_at,
     }
+
+
+@app.get("/api/channels/search")
+async def search_channels(
+    q:            str,
+    min_members:  int = 0,
+    groups_only:  bool = False,
+    limit:        int = 50,
+    tgstat_token: str = "",
+    db:           Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    import urllib.request, json as _json
+
+    # Use any online account for Telegram search
+    account = db.query(Account).filter(
+        Account.user_id == current_user.id,
+        Account.status.in_(["online", "working"]),
+    ).first()
+
+    results: dict[str, dict] = {}  # url → channel dict
+
+    # ── Telegram native search ─────────────────────────────────────────────
+    if account:
+        client = await tm.get_client(account)
+        if client:
+            tg = await tm.search_public_channels(client, q, limit)
+            for ch in tg:
+                results[ch["url"]] = ch
+
+    # ── tgstat API ─────────────────────────────────────────────────────────
+    if tgstat_token:
+        try:
+            params = f"token={tgstat_token}&q={urllib.parse.quote(q)}&limit={min(limit,50)}"
+            if min_members:
+                params += f"&subscribers_count_min={min_members}"
+            req = urllib.request.Request(
+                f"https://api.tgstat.ru/channels/search?{params}",
+                headers={"Accept": "application/json"},
+            )
+            resp = await asyncio.to_thread(urllib.request.urlopen, req, timeout=10)
+            data = _json.loads(resp.read())
+            if data.get("status") == "ok":
+                for item in data["response"].get("items", []):
+                    uname = item.get("username") or ""
+                    url   = f"@{uname}" if uname else f"https://t.me/{item.get('link','').split('/')[-1]}"
+                    results[url] = {
+                        "username":     uname,
+                        "url":          url,
+                        "title":        item.get("title", url),
+                        "members":      item.get("participants_count"),
+                        "is_broadcast": not item.get("is_chat", False),
+                        "description":  item.get("about"),
+                        "avg_reach":    item.get("avg_post_reach"),
+                        "er":           item.get("er"),
+                        "category":     item.get("category"),
+                        "country":      item.get("country"),
+                        "tgstat_url":   item.get("tgstat_url"),
+                        "source":       "tgstat",
+                    }
+        except Exception as e:
+            logger.warning(f"tgstat search failed: {e}")
+
+    # ── Filter & sort ──────────────────────────────────────────────────────
+    out = list(results.values())
+    if min_members:
+        out = [c for c in out if (c.get("members") or 0) >= min_members]
+    if groups_only:
+        out = [c for c in out if not c.get("is_broadcast")]
+
+    out.sort(key=lambda c: c.get("members") or 0, reverse=True)
+
+    # Mark already-added channels
+    existing = {c.url for c in db.query(Channel).filter(Channel.user_id == current_user.id).all()}
+    for c in out:
+        c["already_added"] = c["url"] in existing
+
+    return out[:limit]
+
+
+class BulkChannelAdd(BaseModel):
+    urls: List[str]
+
+
+@app.post("/api/channels/bulk-add", status_code=201)
+async def bulk_add_channels(
+    data: BulkChannelAdd,
+    db:   Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    added, skipped = 0, 0
+    for url in data.urls[:300]:
+        url = url.strip()
+        if not url:
+            continue
+        if db.query(Channel).filter(Channel.url == url, Channel.user_id == current_user.id).first():
+            skipped += 1
+            continue
+        db.add(Channel(url=url, user_id=current_user.id))
+        added += 1
+    db.commit()
+    return {"added": added, "skipped": skipped}
 
 
 @app.get("/api/channels")
