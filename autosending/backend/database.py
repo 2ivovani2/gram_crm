@@ -112,6 +112,8 @@ class Channel(Base):
     channel_tg_id = Column(String(32),  nullable=True)
     is_active     = Column(Boolean,     default=True)
     created_at    = Column(DateTime,    default=datetime.utcnow)
+    success_count = Column(Integer,     default=0, server_default="0")
+    fail_streak   = Column(Integer,     default=0, server_default="0")
 
     user = relationship("User", back_populates="channels")
 
@@ -227,7 +229,9 @@ def _run_pg_migrations():
                 conn.commit()
 
         # Incremental column additions — safe to run repeatedly
-        _pg_add_column(conn, "accounts", "tg_user_id", "BIGINT")
+        _pg_add_column(conn, "accounts", "tg_user_id",    "BIGINT")
+        _pg_add_column(conn, "channels", "success_count", "INTEGER DEFAULT 0")
+        _pg_add_column(conn, "channels", "fail_streak",   "INTEGER DEFAULT 0")
 
 
 def _run_migrations():
@@ -314,6 +318,8 @@ def _add_columns_if_missing(conn):
         ("campaigns",         "user_id INTEGER REFERENCES users(id)"),
         ("activity_logs",     "user_id INTEGER REFERENCES users(id)"),
         ("accounts",          "tg_user_id BIGINT"),
+        ("channels",          "success_count INTEGER DEFAULT 0"),
+        ("channels",          "fail_streak INTEGER DEFAULT 0"),
     ]
     for table, col_def in migrations:
         col_name = col_def.split()[0]

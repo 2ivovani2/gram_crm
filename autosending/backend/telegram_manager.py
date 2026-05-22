@@ -384,16 +384,22 @@ async def send_message_to(
             pass  # typing action is best-effort; never block the actual send
 
         if comment_mode:
-            msgs = await client.get_messages(entity, limit=1)
-            sent = False
-            if msgs:
+            # Try to comment on the latest post in the channel's discussion group.
+            # Falls back to direct send for groups (supergroups) that have no linked channel.
+            msgs = await client.get_messages(entity, limit=5)
+            commented = False
+            for post in msgs:
+                if post is None:
+                    continue
                 try:
-                    await client.send_message(entity, text, comment_to=msgs[0].id)
-                    sent = True
+                    await client.send_message(entity, text, comment_to=post.id)
+                    commented = True
+                    break
                 except Exception:
-                    # Channel has no linked discussion group — fall back to plain message
-                    pass
-            if not sent:
+                    continue
+            if not commented:
+                # No discussion group or comment failed for all posts — send directly.
+                # For broadcast channels this will raise ChatWriteForbiddenError → "forbidden".
                 await client.send_message(entity, text)
         else:
             await client.send_message(entity, text)

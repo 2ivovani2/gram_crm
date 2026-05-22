@@ -785,6 +785,26 @@ export default function ChannelsPage() {
                 </div>
               </div>
 
+              {ch.success_count > 0 && (
+                <span title={`${ch.success_count} успешных · ${ch.fail_streak} провалов подряд`} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "2px 8px", borderRadius: 100, fontSize: 11, fontWeight: 600,
+                  background: "var(--gold-tint)", border: "1px solid var(--gold-edge)", color: "var(--gold-hi)",
+                  whiteSpace: "nowrap",
+                }}>
+                  ✓ {ch.success_count}
+                </span>
+              )}
+              {ch.fail_streak >= 2 && (
+                <span title={`${ch.fail_streak} провалов подряд`} style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "2px 8px", borderRadius: 100, fontSize: 11, fontWeight: 600,
+                  background: "var(--coral-tint)", border: "1px solid var(--coral-edge)", color: "var(--coral)",
+                  whiteSpace: "nowrap",
+                }}>
+                  ✗ {ch.fail_streak}
+                </span>
+              )}
               <span className="badge" style={ch.is_active
                 ? { background: "var(--emerald-tint)", color: "var(--emerald)", borderColor: "var(--emerald-edge)" }
                 : { background: "var(--surface-1)", color: "var(--ink-4)", borderColor: "var(--line-2)" }

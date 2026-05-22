@@ -461,6 +461,8 @@ def _channel_dict(c: Channel) -> dict:
         "channel_tg_id": c.channel_tg_id,
         "is_active":     c.is_active,
         "created_at":    c.created_at,
+        "success_count": c.success_count or 0,
+        "fail_streak":   c.fail_streak   or 0,
     }
 
 

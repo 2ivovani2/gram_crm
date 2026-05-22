@@ -20,7 +20,7 @@ import urllib.request
 from datetime import datetime
 from typing import Dict, Set
 
-from database import Account, ActivityLog, Campaign, SessionLocal
+from database import Account, ActivityLog, Campaign, Channel, SessionLocal
 import telegram_manager as tm
 
 _BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -147,6 +147,53 @@ def _get_caps(tg_user_id: int | None, messages_sent: int) -> tuple[int, int]:
         return 8, 25
 
 
+# ── Channel stats helpers ──────────────────────────────────────────────────────
+
+def _update_channel_stats(channel_id: int, success: bool):
+    """Increment success_count or fail_streak. Auto-disables after 3 consecutive fails."""
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        if success:
+            db.execute(
+                text("UPDATE channels SET success_count = success_count + 1, fail_streak = 0 WHERE id = :id"),
+                {"id": channel_id},
+            )
+        else:
+            db.execute(
+                text("UPDATE channels SET fail_streak = fail_streak + 1 WHERE id = :id"),
+                {"id": channel_id},
+            )
+            row = db.execute(text("SELECT fail_streak FROM channels WHERE id = :id"), {"id": channel_id}).fetchone()
+            if row and row[0] >= 3:
+                db.execute(text("UPDATE channels SET is_active = false WHERE id = :id"), {"id": channel_id})
+                logger.info(f"Channel {channel_id} auto-disabled after {row[0]} consecutive failures")
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to update channel stats [{channel_id}]: {e}")
+    finally:
+        db.close()
+
+
+def _weighted_order(channels: list, live_stats: dict) -> list:
+    """
+    Sort channels by priority with randomised jitter.
+    weight = (success + 1) / (fail_streak + 1)^2
+    New channels (success=0, fail=0) get weight=1 ± jitter — always in rotation.
+    """
+    def _w(ch):
+        s = live_stats.get(ch["url"], ch)
+        sc = s.get("success_count", 0) or 0
+        fs = s.get("fail_streak",   0) or 0
+        return ((sc + 1) / (fs + 1) ** 2) * random.uniform(0.6, 1.4)
+    return sorted(channels, key=_w, reverse=True)
+
+
+def _channel_volume(success_count: int) -> int:
+    """How many slots (comment attempts) a channel gets per round: 1–3."""
+    return min(3, 1 + (success_count or 0) // 5)
+
+
 # ── Message rotation ───────────────────────────────────────────────────────────
 
 def _pick_message(messages: list, used: list) -> str:
@@ -255,6 +302,11 @@ async def _account_worker(
     skip_forever: Set[str] = set()
     # channel_url → consecutive generic error count (for exponential backoff)
     error_retries: Dict[str, int] = {}
+    # live success/fail tracking — starts from DB snapshot, updated per send
+    live_stats: Dict[str, dict] = {
+        ch["url"]: {"success_count": ch.get("success_count", 0), "fail_streak": ch.get("fail_streak", 0)}
+        for ch in channels
+    }
 
     used_msg_indices: list = []
     peer_flood_until: float = 0.0  # account-level flood, entire worker pauses
@@ -316,7 +368,14 @@ async def _account_worker(
             skipped_cooldown = 0
             skipped_forever = 0
 
-            for ch in channels:
+            # Weighted order: hot channels first; expand hot channels for multiple slots per round
+            ordered = _weighted_order(channels, live_stats)
+            expanded = []
+            for _ch in ordered:
+                vol = _channel_volume(live_stats.get(_ch["url"], {}).get("success_count", 0))
+                expanded.extend([_ch] * vol)
+
+            for ch in expanded:
                 if stop.is_set():
                     break
 
@@ -410,6 +469,11 @@ async def _account_worker(
                     _log(account_id, campaign_id, url, msg_text, "send_message", "success")
                     _increment_sent(account_id, campaign_id)
                     _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["sent"] += 1
+                    # Update live stats and persist to DB
+                    ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
+                    ls["success_count"] += 1
+                    ls["fail_streak"] = 0
+                    _update_channel_stats(ch["id"], True)
                     # Early rest when send cap reached mid-round
                     if sends_done >= _MAX_SENDS:
                         logger.info(f"[Cmp{campaign_id}][{phone}] send cap {_MAX_SENDS} — breaking round")
@@ -469,11 +533,17 @@ async def _account_worker(
 
                 elif send_res["reason"] == "banned":
                     skip_forever.add(url)
+                    ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
+                    ls["fail_streak"] += 1
+                    _update_channel_stats(ch["id"], False)
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "error", "banned in channel")
 
                 elif send_res["reason"] == "forbidden":
                     skip_forever.add(url)
+                    ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
+                    ls["fail_streak"] += 1
+                    _update_channel_stats(ch["id"], False)
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "error", "write forbidden (broadcast channel)")
 
@@ -488,6 +558,11 @@ async def _account_worker(
                     backoff = _expo_backoff(retries)
                     error_retries[url] = retries + 1
                     flood_cooldowns[url] = now + backoff
+                    # Count as channel fail after 3rd consecutive generic error
+                    if retries >= 2:
+                        ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
+                        ls["fail_streak"] += 1
+                        _update_channel_stats(ch["id"], False)
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "error", f"{send_res.get('detail', send_res['reason'])} — backoff {backoff:.0f}s (retry #{retries + 1})")
 
@@ -605,7 +680,10 @@ async def _run_campaign(campaign_id: int):
         db.commit()
 
         accounts_snap = [{"id": a.id} for a in camp.accounts if a.is_active]
-        channels_snap = [{"url": c.url}  for c in camp.channels  if c.is_active]
+        channels_snap = [
+            {"url": c.url, "id": c.id, "success_count": c.success_count or 0, "fail_streak": c.fail_streak or 0}
+            for c in camp.channels if c.is_active
+        ]
         messages_snap = [{"content": m.content} for m in camp.messages if m.is_active]
         min_d, max_d = camp.min_delay, camp.max_delay
         comment = camp.comment_on_posts
