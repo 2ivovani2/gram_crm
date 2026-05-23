@@ -474,6 +474,10 @@ async def send_message_to(
         if "admin privileges" in msg.lower() or "chat_admin_required" in msg.lower():
             logger.warning(f"[{account_id}] Admin-only channel {url} — skipping permanently")
             return {"ok": False, "reason": "forbidden"}
+        # Deleted / invalid channels — peer no longer exists on Telegram servers
+        if "invalid peer" in msg.lower() or "peer_id_invalid" in msg.lower():
+            logger.warning(f"[{account_id}] Invalid/deleted peer {url} — skipping permanently")
+            return {"ok": False, "reason": "forbidden"}
         logger.error(f"[{account_id}] send error → {url}: {e}")
         return {"ok": False, "reason": "error", "detail": msg}
 
