@@ -643,6 +643,18 @@ async def _account_worker(
                 "ts":                time.time(),
             }
 
+            # Auto-stop if all channels exhausted (nothing will ever send)
+            if active_channels == 0 and on_cooldown == 0:
+                logger.warning(f"[Cmp{campaign_id}][{phone}] all channels exhausted — stopping campaign")
+                await _alert(
+                    f"🛑 <b>Все каналы исчерпаны</b> — кампания #{campaign_id} остановлена\n"
+                    f"Аккаунт <code>{phone}</code>: нет активных каналов для отправки.\n"
+                    f"Добавьте новые каналы и перезапустите кампанию.",
+                    user_tg_id,
+                )
+                stop.set()
+                break
+
             # Alert if 0 sends for too many rounds in a row (not counting cooldown-only rounds)
             if sent_this_round == 0 and on_cooldown < len(channels) * 0.9:
                 zero_send_rounds += 1
