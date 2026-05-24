@@ -175,6 +175,23 @@ def _update_channel_stats(channel_id: int, success: bool):
         db.close()
 
 
+def _disable_channel(channel_id: int, reason: str):
+    """Immediately deactivate a channel that is permanently unreachable."""
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(
+            text("UPDATE channels SET is_active = false, fail_streak = fail_streak + 1 WHERE id = :id"),
+            {"id": channel_id},
+        )
+        db.commit()
+        logger.info(f"Channel {channel_id} disabled immediately ({reason})")
+    except Exception as e:
+        logger.warning(f"Failed to disable channel [{channel_id}]: {e}")
+    finally:
+        db.close()
+
+
 def _weighted_order(channels: list, live_stats: dict) -> list:
     """
     Sort channels by priority with randomised jitter.
@@ -440,6 +457,7 @@ async def _account_worker(
                         continue
                     elif join_res["reason"] in ("expired", "approval_required", "private", "not_channel"):
                         skip_forever.add(url)
+                        _disable_channel(ch["id"], join_res["reason"])
                         _log(account_id, campaign_id, url, None, "join_channel",
                              "error", join_res["reason"])
                         skipped_forever += 1
@@ -449,8 +467,8 @@ async def _account_worker(
                              "error", join_res.get("detail", join_res["reason"]))
                         continue
 
-                    # Post-join pause — longer than inter-send, and scales up if floods accumulate
-                    _join_pause = _human_delay(120, 300) if flood_hits >= _FLOOD_WARN else _human_delay(60, 150)
+                    # Post-join pause — scales up if floods accumulate
+                    _join_pause = _human_delay(45, 120) if flood_hits >= _FLOOD_WARN else _human_delay(20, 60)
                     await _sleep(_join_pause, stop)
                     if stop.is_set():
                         break
@@ -533,17 +551,13 @@ async def _account_worker(
 
                 elif send_res["reason"] == "banned":
                     skip_forever.add(url)
-                    ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
-                    ls["fail_streak"] += 1
-                    _update_channel_stats(ch["id"], False)
+                    _disable_channel(ch["id"], "banned")
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "error", "banned in channel")
 
                 elif send_res["reason"] == "forbidden":
                     skip_forever.add(url)
-                    ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
-                    ls["fail_streak"] += 1
-                    _update_channel_stats(ch["id"], False)
+                    _disable_channel(ch["id"], "forbidden")
                     _log(account_id, campaign_id, url, msg_text, "send_message",
                          "error", "write forbidden (broadcast channel)")
 
