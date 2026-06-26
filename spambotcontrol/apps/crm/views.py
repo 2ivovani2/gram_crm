@@ -524,59 +524,12 @@ class AdminIndexView(CRMOwnerMixin, TemplateView):
 
 
 class AdminMembersView(CRMOwnerMixin, View):
-    template_name = "crm/admin/members.html"
-
+    """Redirects to the unified user management in control app."""
     def get(self, request):
-        from apps.crm.models import WorkspaceMembership
-        from apps.crm.forms import AddMemberForm
-        members = WorkspaceMembership.objects.filter(
-            workspace=request.crm_workspace
-        ).select_related("user").order_by("role", "user__first_name")
-        add_form = AddMemberForm()
-        ctx = self.get_crm_context(request)
-        ctx.update({"members": members, "add_form": add_form})
-        return render(request, self.template_name, ctx)
+        return redirect("control:users")
 
     def post(self, request):
-        action = request.POST.get("action", "")
-
-        if action == "add":
-            from apps.crm.forms import AddMemberForm
-            from apps.crm.services import WorkspaceService
-            from apps.users.models import User
-            form = AddMemberForm(request.POST)
-            if form.is_valid():
-                tg_id = form.cleaned_data["telegram_id"]
-                role  = form.cleaned_data["role"]
-                user  = User.objects.filter(telegram_id=tg_id).first()
-                if not user:
-                    messages.error(request, f"Пользователь с Telegram ID {tg_id} не найден.")
-                else:
-                    WorkspaceService.add_member(
-                        request.crm_workspace, user, role, invited_by=request.crm_user
-                    )
-                    messages.success(request, f"{user.display_name} добавлен с ролью {role}.")
-
-        elif action == "change_role":
-            from apps.crm.services import WorkspaceService
-            from apps.users.models import User
-            user_id = request.POST.get("user_id")
-            role    = request.POST.get("role")
-            if user_id and role:
-                user = get_object_or_404(User, pk=user_id)
-                WorkspaceService.set_member_role(request.crm_workspace, user, role)
-                messages.success(request, f"Роль пользователя {user.display_name} обновлена.")
-
-        elif action == "deactivate":
-            from apps.crm.models import WorkspaceMembership
-            member_id = request.POST.get("member_id")
-            if member_id:
-                WorkspaceMembership.objects.filter(
-                    pk=member_id, workspace=request.crm_workspace
-                ).update(is_active=False)
-                messages.success(request, "Доступ участника отозван.")
-
-        return redirect("crm:admin_members")
+        return redirect("control:users")
 
 
 class AdminPlansView(CRMOwnerMixin, View):

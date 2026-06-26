@@ -357,7 +357,8 @@ class AnalyticsView(ControlAccessMixin, View):
 
 class UsersListView(AdminOnlyMixin, View):
     def get(self, request):
-        # Default tab: anonymous
+        from apps.crm.models import WorkspaceMembership, CRMRole
+
         role_filter = request.GET.get("role", "anonymous")
         status_filter = request.GET.get("status", "")
         search = request.GET.get("q", "")
@@ -373,23 +374,41 @@ class UsersListView(AdminOnlyMixin, View):
                 Q(telegram_id__icontains=search)
             )
 
-        # Role counts for tab badges
+        users = list(qs[:200])
+
+        # Attach CRM membership for the active workspace to each user
+        workspace = request.crm_workspace
+        if workspace:
+            memberships = {
+                m.user_id: m
+                for m in WorkspaceMembership.objects.filter(
+                    workspace=workspace,
+                    user_id__in=[u.pk for u in users],
+                    is_active=True,
+                )
+            }
+        else:
+            memberships = {}
+        for u in users:
+            u._crm_membership = memberships.get(u.pk)
+
         role_counts = dict(
             User.objects.values("role").annotate(c=Count("id")).values_list("role", "c")
         )
 
         return render(request, "control/users_list.html", self.ctx(request, {
             "page": "users",
-            "users": qs[:200],
+            "users": users,
             "roles": UserRole.choices,
             "statuses": UserStatus.choices,
+            "crm_roles": CRMRole.choices,
             "role_filter": role_filter,
             "status_filter": status_filter,
             "search": search,
-            "anon_count":      role_counts.get("anonymous", 0),
-            "worker_count":    role_counts.get("worker", 0),
+            "anon_count":       role_counts.get("anonymous", 0),
+            "worker_count":     role_counts.get("worker", 0),
             "accountant_count": role_counts.get("accountant", 0),
-            "admin_count":     role_counts.get("admin", 0),
+            "admin_count":      role_counts.get("admin", 0),
         }))
 
     def post(self, request):
@@ -413,8 +432,12 @@ class UsersListView(AdminOnlyMixin, View):
 
 class UserEditView(AdminOnlyMixin, View):
     def post(self, request, pk):
+        from apps.crm.models import WorkspaceMembership, CRMRole
+        from apps.crm.services import WorkspaceService
+
         user = get_object_or_404(User, pk=pk)
         action = request.POST.get("action")
+        next_url = request.POST.get("next", "control:users")
 
         if action == "set_role":
             new_role = request.POST.get("role")
@@ -428,10 +451,22 @@ class UserEditView(AdminOnlyMixin, View):
                 user.status = new_status
                 user.save(update_fields=["status"])
 
+        elif action == "set_crm_role":
+            crm_role = request.POST.get("crm_role", "")
+            workspace = request.crm_workspace
+            if workspace and crm_role in dict(CRMRole.choices):
+                WorkspaceService.add_member(workspace, user, crm_role, invited_by=request.crm_user)
+
+        elif action == "remove_crm_role":
+            workspace = request.crm_workspace
+            if workspace:
+                WorkspaceMembership.objects.filter(
+                    workspace=workspace, user=user
+                ).update(is_active=False)
+
         elif action == "delete":
-            # Only allow deleting non-admin users
             if not user.is_admin():
                 user.delete()
                 return redirect("control:users")
 
-        return redirect(request.POST.get("next", "control:users"))
+        return redirect(next_url)
