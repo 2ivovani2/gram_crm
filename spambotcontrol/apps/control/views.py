@@ -12,17 +12,22 @@ from apps.crm.views import CRMLoginMixin
 from apps.users.models import User, UserRole, UserStatus
 
 
+def _is_control_admin(request) -> bool:
+    """True for bot admins and CRM workspace owners."""
+    return request.crm_user.is_admin() or request.crm_is_owner
+
+
 class ControlAccessMixin(CRMLoginMixin):
-    """Allows only admin and accountant roles (checked via crm session)."""
+    """Admin/owner + accountant can access control pages."""
 
     def check_crm_permissions(self, request):
-        if not (request.crm_user.is_admin() or request.crm_user.is_accountant()):
+        if not (_is_control_admin(request) or request.crm_user.is_accountant()):
             return HttpResponseForbidden("Доступ запрещён")
 
 
 class AdminOnlyMixin(CRMLoginMixin):
     def check_crm_permissions(self, request):
-        if not request.crm_user.is_admin():
+        if not _is_control_admin(request):
             return HttpResponseForbidden("Только для администраторов")
 
 
