@@ -43,9 +43,15 @@ class CRMLoginMixin:
 
     Sets on request:
       crm_user        — User instance
-      crm_workspace   — Workspace or None (if user has no membership)
+      crm_workspace   — Workspace or None
       crm_membership  — WorkspaceMembership or None
-      crm_is_owner    — bool; True only when membership.role == OWNER
+      crm_is_owner    — bool; True for OWNER membership OR UserRole.ADMIN bot role
+
+    User.role is the single source of truth for access level:
+      ADMIN      → crm_is_owner = True (full access, no WorkspaceMembership required)
+      ACCOUNTANT → accountant access (Control module)
+      WORKER     → no CRM access
+    WorkspaceMembership is still used when present, but bot ADMIN always gets owner-level access.
     """
 
     def dispatch(self, request, *args, **kwargs):
@@ -65,26 +71,31 @@ class CRMLoginMixin:
             del request.session["crm_user_id"]
             return redirect(_login_url)
 
-        # 3. Resolve workspace + membership (None for non-members)
+        # 3. Resolve workspace + membership
         workspace, membership = self._resolve_workspace_and_membership(request)
         request.crm_workspace = workspace
         request.crm_membership = membership
-        request.crm_is_owner = bool(membership and membership.is_owner())
 
-        # 4. Permission hook — subclasses return a response to deny, None to allow
+        # 4. Bot ADMIN role always grants owner-level CRM access (single source of truth)
+        request.crm_is_owner = (
+            bool(membership and membership.is_owner())
+            or request.crm_user.is_admin()
+        )
+
+        # 5. Permission hook — subclasses return a response to deny, None to allow
         denial = self.check_crm_permissions(request)
         if denial is not None:
             return denial
 
-        # 5. Run the actual view method
+        # 6. Run the actual view method
         return super().dispatch(request, *args, **kwargs)
 
     def _resolve_workspace_and_membership(self, request):
         """
         Return (workspace, membership) for the current user.
-        Non-members (no WorkspaceMembership) get (None, None).
+        Bot admins without membership still get the default workspace resolved.
         """
-        from apps.crm.models import WorkspaceMembership
+        from apps.crm.models import WorkspaceMembership, Workspace
 
         ws_id = request.session.get("active_workspace_id")
         if ws_id:
@@ -102,6 +113,13 @@ class CRMLoginMixin:
             request.session["active_workspace_id"] = m.workspace_id
             return m.workspace, m
 
+        # Bot admin with no explicit membership → resolve default workspace
+        if request.crm_user.is_admin():
+            ws = Workspace.objects.order_by("created_at").first()
+            if ws:
+                request.session["active_workspace_id"] = ws.pk
+                return ws, None
+
         return None, None
 
     def check_crm_permissions(self, request):
@@ -114,28 +132,38 @@ class CRMLoginMixin:
 
     def get_crm_context(self, request):
         from apps.crm.models import WorkspaceMembership
-        # Always load all memberships so sidebar switcher works from every page
         all_memberships = list(
             WorkspaceMembership.objects.filter(user=request.crm_user, is_active=True)
             .select_related("workspace")
             .order_by("workspace__name")
         )
         m = request.crm_membership
+        user = request.crm_user
+
+        # Derive capabilities: membership takes precedence; bot admin gets everything
+        can_finance = bool(m and m.can_enter_finance()) or user.is_admin()
+        can_apps    = bool(m and m.can_enter_applications()) or user.is_admin()
+
+        # Role label: prefer bot role for clarity
+        role_label = user.get_role_display() if hasattr(user, "get_role_display") else (
+            m.get_role_display() if m else None
+        )
+
         return {
-            "crm_user":         request.crm_user,
-            "workspace":        request.crm_workspace,
-            "membership":       m,
-            "all_workspaces":   [ms.workspace for ms in all_memberships],
-            "all_memberships":  all_memberships,   # includes role per workspace
-            "is_owner":         request.crm_is_owner,
-            "can_enter_finance":      bool(m and m.can_enter_finance()),
-            "can_enter_applications": bool(m and m.can_enter_applications()),
-            "crm_role":         m.get_role_display() if m else None,
+            "crm_user":               user,
+            "workspace":              request.crm_workspace,
+            "membership":             m,
+            "all_workspaces":         [ms.workspace for ms in all_memberships],
+            "all_memberships":        all_memberships,
+            "is_owner":               request.crm_is_owner,
+            "can_enter_finance":      can_finance,
+            "can_enter_applications": can_apps,
+            "crm_role":               role_label,
         }
 
 
 class CRMOwnerMixin(CRMLoginMixin):
-    """Restrict to OWNER role."""
+    """Restrict to OWNER membership or bot ADMIN role."""
 
     def check_crm_permissions(self, request):
         if not request.crm_is_owner:
@@ -144,21 +172,21 @@ class CRMOwnerMixin(CRMLoginMixin):
 
 
 class CRMFinanceMixin(CRMLoginMixin):
-    """Allow OWNER and FINANCE roles."""
+    """Allow OWNER/ADMIN + FINANCE roles."""
 
     def check_crm_permissions(self, request):
         m = request.crm_membership
-        if not m or not m.can_enter_finance():
+        if not (request.crm_is_owner or (m and m.can_enter_finance())):
             return render(request, "crm/403.html", self.get_crm_context(request), status=403)
         return None
 
 
 class CRMApplicationsMixin(CRMLoginMixin):
-    """Allow OWNER and APPLICATIONS roles."""
+    """Allow OWNER/ADMIN + APPLICATIONS roles."""
 
     def check_crm_permissions(self, request):
         m = request.crm_membership
-        if not m or not m.can_enter_applications():
+        if not (request.crm_is_owner or (m and m.can_enter_applications())):
             return render(request, "crm/403.html", self.get_crm_context(request), status=403)
         return None
 
