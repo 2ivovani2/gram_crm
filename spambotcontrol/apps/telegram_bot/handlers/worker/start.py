@@ -28,7 +28,6 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
         return
 
     if db_user.is_accountant():
-        from apps.control.bot.accountant_handlers import cmd_accounting
         await message.answer(
             "💼 <b>Панель бухгалтера</b>\n\nВыберите раздел:",
             reply_markup=__accountant_menu(),
@@ -40,15 +39,11 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
         await send_worker_cabinet(message, db_user, state)
         return
 
-    from django.conf import settings
-    crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
-    docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
-
+    # Anonymous / unregistered users
     await message.answer(
         f"👋 Привет, <b>{db_user.display_name}</b>!\n\n"
-        "Добро пожаловать в Gramly.\n"
-        "Используй кнопки ниже для доступа к системе.",
-        reply_markup=_welcome_keyboard(crm_url, docs_url),
+        "Вы не зарегистрированы как сотрудник.\n"
+        "Если вы работаете с нами — обратитесь к администратору.",
     )
 
 

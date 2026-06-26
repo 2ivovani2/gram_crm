@@ -357,7 +357,8 @@ class AnalyticsView(ControlAccessMixin, View):
 
 class UsersListView(AdminOnlyMixin, View):
     def get(self, request):
-        role_filter = request.GET.get("role", "")
+        # Default tab: anonymous
+        role_filter = request.GET.get("role", "anonymous")
         status_filter = request.GET.get("status", "")
         search = request.GET.get("q", "")
 
@@ -372,6 +373,11 @@ class UsersListView(AdminOnlyMixin, View):
                 Q(telegram_id__icontains=search)
             )
 
+        # Role counts for tab badges
+        role_counts = dict(
+            User.objects.values("role").annotate(c=Count("id")).values_list("role", "c")
+        )
+
         return render(request, "control/users_list.html", self.ctx(request, {
             "page": "users",
             "users": qs[:200],
@@ -380,6 +386,10 @@ class UsersListView(AdminOnlyMixin, View):
             "role_filter": role_filter,
             "status_filter": status_filter,
             "search": search,
+            "anon_count":      role_counts.get("anonymous", 0),
+            "worker_count":    role_counts.get("worker", 0),
+            "accountant_count": role_counts.get("accountant", 0),
+            "admin_count":     role_counts.get("admin", 0),
         }))
 
     def post(self, request):

@@ -47,10 +47,11 @@ class WorkLink(models.Model):
 
 
 class UserRole(models.TextChoices):
-    ADMIN       = "admin",       "Admin"
-    CURATOR     = "curator",     "Curator"
-    WORKER      = "worker",      "Worker"
+    ADMIN       = "admin",       "Администратор"
     ACCOUNTANT  = "accountant",  "Бухгалтер"
+    WORKER      = "worker",      "Сотрудник"
+    CURATOR     = "curator",     "Куратор"
+    ANONYMOUS   = "anonymous",   "Аноним"   # default for new users; no system access
 
 
 class UserStatus(models.TextChoices):
@@ -80,13 +81,13 @@ class User(AbstractUser):
     role = models.CharField(
         max_length=20,
         choices=UserRole.choices,
-        default=UserRole.WORKER,
+        default=UserRole.ANONYMOUS,
         db_index=True,
     )
     status = models.CharField(
         max_length=20,
         choices=UserStatus.choices,
-        default=UserStatus.PENDING,
+        default=UserStatus.ACTIVE,
         db_index=True,
     )
 
@@ -219,6 +220,9 @@ class User(AbstractUser):
 
     def is_accountant(self) -> bool:
         return self.role == UserRole.ACCOUNTANT
+
+    def is_anonymous(self) -> bool:
+        return self.role == UserRole.ANONYMOUS
 
     def is_admin_or_accountant(self) -> bool:
         return self.role in (UserRole.ADMIN, UserRole.ACCOUNTANT)

@@ -5,6 +5,9 @@
 
 {% block extra_css %}
 <style>
+.tab-row { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+.tab { padding:7px 16px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--muted); font-size:13px; text-decoration:none; cursor:pointer; }
+.tab.active { background:var(--accent-soft); border-color:var(--accent-tint); color:var(--accent); font-weight:600; }
 .filters { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; align-items:center; }
 .filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
 .ctrl-table { width:100%; border-collapse:collapse; }
@@ -15,23 +18,23 @@
 .badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
 .r-admin      { background:rgba(255,184,77,.18); color:#FFB84D; }
 .r-accountant { background:rgba(167,139,250,.15); color:#A78BFA; }
-.r-worker     { background:rgba(96,165,250,.12); color:#60A5FA; }
-.r-curator    { background:rgba(74,222,128,.12); color:#4ADE80; }
+.r-worker     { background:rgba(74,222,128,.12); color:#4ADE80; }
+.r-curator    { background:rgba(96,165,250,.12); color:#60A5FA; }
+.r-anonymous  { background:rgba(250,250,251,.08); color:var(--muted); }
 .s-active   { background:rgba(74,222,128,.12); color:#4ADE80; }
 .s-inactive { background:rgba(250,250,251,.08); color:var(--muted); }
 .s-pending  { background:rgba(255,184,77,.12); color:#FFB84D; }
 .s-banned   { background:rgba(239,68,68,.12); color:#F87171; }
 select.inline { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:4px 8px; font-size:12px; cursor:pointer; }
-.btn-xs { font-size:12px; padding:4px 10px; border-radius:6px; border:none; cursor:pointer; }
-.btn-apply { background:var(--accent-soft); color:var(--accent); }
-.btn-del   { background:rgba(239,68,68,.10); color:#F87171; }
+.btn-xs  { font-size:12px; padding:4px 10px; border-radius:6px; border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.btn-hire { background:rgba(74,222,128,.18); color:#4ADE80; font-weight:600; }
+.btn-del  { background:rgba(239,68,68,.10); color:#F87171; }
+.btn-sm   { font-size:13px; padding:7px 16px; border-radius:8px; background:var(--accent); color:#000; font-weight:600; border:none; cursor:pointer; }
 .create-panel { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px 24px; margin-bottom:24px; }
 .create-panel h3 { font-size:14px; font-weight:600; margin-bottom:14px; }
 .create-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
 .create-row input, .create-row select { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
-.btn-sm { font-size:13px; padding:7px 16px; border-radius:8px; background:var(--accent); color:#000; font-weight:600; border:none; cursor:pointer; }
 .tg-id { font-family:monospace; font-size:12px; color:var(--muted); }
-.inline-form { display:inline; }
 </style>
 {% endblock %}
 
@@ -44,10 +47,10 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     {% csrf_token %}
     <div class="create-row">
       <input name="telegram_id" placeholder="Telegram ID (цифры)" required style="width:160px"/>
-      <input name="telegram_username" placeholder="@username (без @)"/>
+      <input name="telegram_username" placeholder="username (без @)"/>
       <select name="role">
         {% for val, label in roles %}
-        <option value="{{ val }}">{{ label }}</option>
+        <option value="{{ val }}" {% if val == "worker" %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       <button type="submit" class="btn-sm">Добавить</button>
@@ -55,25 +58,39 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
   </form>
 </div>
 
-<!-- Filters -->
+<!-- Role tabs -->
+<div class="tab-row">
+  <a href="?role=anonymous{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'anonymous' or not role_filter %}active{% endif %}">
+    Анонимы <span style="font-size:11px;opacity:.7">({{ anon_count }})</span>
+  </a>
+  <a href="?role=worker{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'worker' %}active{% endif %}">
+    Сотрудники <span style="font-size:11px;opacity:.7">({{ worker_count }})</span>
+  </a>
+  <a href="?role=accountant{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'accountant' %}active{% endif %}">
+    Бухгалтеры <span style="font-size:11px;opacity:.7">({{ accountant_count }})</span>
+  </a>
+  <a href="?role=admin{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'admin' %}active{% endif %}">
+    Админы <span style="font-size:11px;opacity:.7">({{ admin_count }})</span>
+  </a>
+  <a href="?{% if search %}q={{ search }}{% endif %}" class="tab {% if role_filter == '' and not request.GET.role %}{% endif %}" style="{% if not role_filter %}{% endif %}">
+    Все
+  </a>
+</div>
+
+<!-- Search -->
 <div class="filters">
   <form method="get" style="display:contents">
-    <input name="q" value="{{ search }}" placeholder="Поиск по username / ID..." style="min-width:200px"/>
-    <select name="role">
-      <option value="">Все роли</option>
-      {% for val, label in roles %}
-      <option value="{{ val }}" {% if val == role_filter %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
+    {% if role_filter %}<input type="hidden" name="role" value="{{ role_filter }}">{% endif %}
+    <input name="q" value="{{ search }}" placeholder="Поиск по username / Telegram ID..." style="min-width:240px"/>
     <select name="status">
       <option value="">Все статусы</option>
       {% for val, label in statuses %}
       <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="btn-xs btn-apply">Найти</button>
-    {% if search or role_filter or status_filter %}
-    <a href="{% url 'control:users' %}" class="btn-xs" style="background:var(--surface-3);color:var(--text);text-decoration:none;padding:4px 10px;border-radius:6px">Сбросить</a>
+    <button type="submit" class="btn-xs" style="background:var(--accent-soft);color:var(--accent)">Найти</button>
+    {% if search or status_filter %}
+    <a href="?{% if role_filter %}role={{ role_filter }}{% endif %}" class="btn-xs" style="background:var(--surface-3);color:var(--text)">Сбросить</a>
     {% endif %}
   </form>
 </div>
@@ -88,7 +105,11 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
       <th>Telegram ID</th>
       <th>Роль</th>
       <th>Статус</th>
+      {% if role_filter == "anonymous" or not role_filter %}
+      <th>Назначить</th>
+      {% else %}
       <th>Изменить роль</th>
+      {% endif %}
       <th>Изменить статус</th>
       <th></th>
     </tr>
@@ -107,9 +128,18 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <td><span class="badge r-{{ u.role }}">{{ u.get_role_display }}</span></td>
     <td><span class="badge s-{{ u.status }}">{{ u.get_status_display }}</span></td>
 
-    <!-- Change role inline -->
+    <!-- Hire button for anonymous / role selector for others -->
     <td>
-      <form method="post" action="{% url 'control:user_edit' u.pk %}" class="inline-form" style="display:flex;gap:6px;align-items:center">
+      {% if u.is_anonymous %}
+      <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="set_role">
+        <input type="hidden" name="role" value="worker">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="btn-xs btn-hire">✅ Сделать сотрудником</button>
+      </form>
+      {% else %}
+      <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
         {% csrf_token %}
         <input type="hidden" name="action" value="set_role">
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -119,11 +149,12 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
           {% endfor %}
         </select>
       </form>
+      {% endif %}
     </td>
 
-    <!-- Change status inline -->
+    <!-- Status -->
     <td>
-      <form method="post" action="{% url 'control:user_edit' u.pk %}" class="inline-form" style="display:flex;gap:6px;align-items:center">
+      <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
         {% csrf_token %}
         <input type="hidden" name="action" value="set_status">
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
@@ -138,11 +169,11 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <!-- Delete -->
     <td>
       {% if not u.is_admin %}
-      <form method="post" action="{% url 'control:user_edit' u.pk %}" class="inline-form"
+      <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline"
             onsubmit="return confirm('Удалить @{{ u.telegram_username|default:u.telegram_id }}?')">
         {% csrf_token %}
         <input type="hidden" name="action" value="delete">
-        <button type="submit" class="btn-xs btn-del">Удалить</button>
+        <button type="submit" class="btn-xs btn-del">✕</button>
       </form>
       {% endif %}
     </td>
@@ -151,7 +182,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
   </tbody>
 </table>
 {% else %}
-<div style="padding:40px;text-align:center;color:var(--muted)">Пользователи не найдены</div>
+<div style="padding:40px;text-align:center;color:var(--muted)">Пользователей не найдено</div>
 {% endif %}
 
 {% endblock %}
