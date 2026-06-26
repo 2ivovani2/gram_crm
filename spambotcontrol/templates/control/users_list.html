@@ -48,22 +48,27 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 
 {% block content %}
 
-<!-- Create user -->
+<!-- Invite user -->
 <div class="create-panel">
-  <h3>Добавить пользователя</h3>
+  <h3>Пригласить сотрудника</h3>
+  {% with err=request.session.invite_error ok=request.session.invite_success %}
+  {% if err %}
+  <div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#F87171;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px">{{ err }}</div>
+  {% endif %}
+  {% if ok %}
+  <div style="background:rgba(74,222,128,.10);border:1px solid rgba(74,222,128,.25);color:#4ADE80;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px">{{ ok }}</div>
+  {% endif %}
+  {% endwith %}
   <form method="post">
     {% csrf_token %}
     <div class="create-row">
-      <input name="telegram_id" placeholder="Telegram ID (цифры)" required style="width:160px"/>
-      <input name="telegram_username" placeholder="username (без @)"/>
-      <select name="role">
-        {% for val, label in roles %}
-        <option value="{{ val }}" {% if val == "worker" %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="btn-sm">Добавить</button>
+      <input name="query" placeholder="Telegram ID или @username" required style="min-width:220px"/>
+      <button type="submit" class="btn-sm">Отправить приглашение</button>
     </div>
   </form>
+  <div style="font-size:12px;color:var(--muted);margin-top:10px">
+    Пользователь получит сообщение в боте с кнопками «Принять» / «Отклонить». Вам придёт уведомление с ответом.
+  </div>
 </div>
 
 <!-- Role tabs -->

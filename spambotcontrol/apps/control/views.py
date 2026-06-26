@@ -374,6 +374,10 @@ class UsersListView(AdminOnlyMixin, View):
                 Q(telegram_id__icontains=search)
             )
 
+        # Pop flash messages (set by invite POST)
+        request.session.pop("invite_error", None)
+        request.session.pop("invite_success", None)
+
         users = list(qs[:200])
 
         # Attach CRM membership for the active workspace to each user
@@ -412,21 +416,55 @@ class UsersListView(AdminOnlyMixin, View):
         }))
 
     def post(self, request):
-        """Create a new user slot (pre-register before they start the bot)."""
-        telegram_id = request.POST.get("telegram_id", "").strip()
-        username = request.POST.get("telegram_username", "").lstrip("@").strip()
-        role = request.POST.get("role", UserRole.WORKER)
+        """Search user by telegram_id or @username and send bot invite."""
+        from apps.control.models import WorkerInvite, InviteStatus
+        from apps.control.bot.invite_handlers import send_worker_invite_sync
 
-        if telegram_id:
-            User.objects.get_or_create(
-                telegram_id=telegram_id,
-                defaults={
-                    "telegram_username": username or None,
-                    "role": role,
-                    "status": UserStatus.ACTIVE,
-                    "is_activated": True,
-                },
-            )
+        query = request.POST.get("query", "").strip().lstrip("@")
+        error = None
+        success = None
+
+        if not query:
+            return redirect("control:users")
+
+        # Find user: try numeric ID first, then username
+        user = None
+        if query.isdigit():
+            user = User.objects.filter(telegram_id=int(query)).first()
+        if not user:
+            user = User.objects.filter(telegram_username__iexact=query).first()
+
+        if not user:
+            error = f"Пользователь «{query}» не найден. Попросите их написать /start боту."
+        elif user.is_admin():
+            error = "Нельзя отправить приглашение администратору."
+        elif user.role == UserRole.WORKER:
+            error = f"@{user.telegram_username or user.telegram_id} уже является сотрудником."
+        else:
+            # Check no pending invite already
+            existing = WorkerInvite.objects.filter(
+                user=user, status=InviteStatus.PENDING
+            ).first()
+            if existing:
+                error = f"Приглашение уже отправлено @{user.telegram_username or user.telegram_id} и ожидает ответа."
+            else:
+                invite = WorkerInvite.objects.create(
+                    user=user,
+                    invited_by=request.crm_user,
+                )
+                inviter = request.crm_user
+                inviter_name = (
+                    f"@{inviter.telegram_username}" if inviter.telegram_username
+                    else inviter.first_name or str(inviter.telegram_id)
+                )
+                send_worker_invite_sync(invite.pk, user.telegram_id, inviter_name)
+                success = f"✅ Приглашение отправлено @{user.telegram_username or user.telegram_id}"
+
+        # Pass flash message via session
+        if error:
+            request.session["invite_error"] = error
+        if success:
+            request.session["invite_success"] = success
         return redirect("control:users")
 
 

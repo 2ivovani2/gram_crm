@@ -26,6 +26,8 @@ def setup_routers(dp: Dispatcher) -> None:
     dp.include_router(admin_users_router)
 
     # Control bot routers
+    from apps.control.bot.invite_handlers import router as control_invite_router
+    dp.include_router(control_invite_router)
     dp.include_router(control_admin_router)
     dp.include_router(control_accountant_router)
     dp.include_router(control_worker_router)

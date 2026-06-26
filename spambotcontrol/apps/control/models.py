@@ -321,5 +321,47 @@ class ControlSettings(models.Model):
         return obj
 
 
+# ── Worker invite ─────────────────────────────────────────────────────────────
+
+class InviteStatus(models.TextChoices):
+    PENDING  = "pending",  "Ожидает ответа"
+    ACCEPTED = "accepted", "Принято"
+    DECLINED = "declined", "Отклонено"
+
+
+class WorkerInvite(models.Model):
+    """Admin-initiated invite sent via bot to a user to join as a worker."""
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="worker_invites",
+        verbose_name="Приглашённый",
+    )
+    invited_by = models.ForeignKey(
+        "users.User",
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sent_worker_invites",
+        verbose_name="Кто пригласил",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=InviteStatus.choices,
+        default=InviteStatus.PENDING,
+        db_index=True,
+    )
+    bot_message_id = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Приглашение сотрудника"
+        verbose_name_plural = "Приглашения сотрудников"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"WorkerInvite #{self.pk} → {self.user_id} [{self.status}]"
+
+
 # ── Broadcast history ─────────────────────────────────────────────────────────
 # Reuses existing apps.broadcasts.Broadcast model — no duplication needed.
