@@ -962,6 +962,12 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
           </svg>
           Аналитика
         </a>
+        <a href="{% url 'control:users' %}" class="sidebar-item {% block nav_ctrl_users %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          Пользователи
+        </a>
         {% endif %}
         <a href="{% url 'control:withdrawals' %}" class="sidebar-item {% block nav_ctrl_withdrawals %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">

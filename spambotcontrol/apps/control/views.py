@@ -4,7 +4,7 @@ Accessible at /crm/control/ — uses the existing CRM session auth.
 """
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import HttpResponseForbidden
 from django.utils import timezone
 from django.db.models import Count, Sum, Q
 
@@ -13,19 +13,22 @@ from apps.users.models import User, UserRole, UserStatus
 
 
 def _is_control_admin(request) -> bool:
-    """True for bot admins and CRM workspace owners."""
     return request.crm_user.is_admin() or request.crm_is_owner
 
 
 class ControlAccessMixin(CRMLoginMixin):
-    """Admin/owner + accountant can access control pages."""
-
     def check_crm_permissions(self, request):
         if not (_is_control_admin(request) or request.crm_user.is_accountant()):
             return HttpResponseForbidden("Доступ запрещён")
 
+    def ctx(self, request, extra: dict) -> dict:
+        """Merge CRM base context (sidebar data) with view-specific data."""
+        base = self.get_crm_context(request)
+        base.update(extra)
+        return base
 
-class AdminOnlyMixin(CRMLoginMixin):
+
+class AdminOnlyMixin(ControlAccessMixin):
     def check_crm_permissions(self, request):
         if not _is_control_admin(request):
             return HttpResponseForbidden("Только для администраторов")
@@ -36,19 +39,19 @@ class AdminOnlyMixin(CRMLoginMixin):
 class ControlDashboardView(ControlAccessMixin, View):
     def get(self, request):
         from apps.control.models import EmployeeReport, Penalty, ReportStatus, PenaltyStatus
-        from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
+        from apps.withdrawals.models import WithdrawalRequest
 
         today = timezone.localdate()
         user = request.crm_user
 
-        ctx = {
+        extra = {
             "page": "control_dashboard",
-            "is_admin": user.is_admin(),
+            "is_admin": _is_control_admin(request),
             "is_accountant": user.is_accountant(),
         }
 
-        if user.is_admin():
-            ctx.update({
+        if _is_control_admin(request):
+            extra.update({
                 "pending_reports": EmployeeReport.objects.filter(status=ReportStatus.PENDING).count(),
                 "pending_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
@@ -66,12 +69,12 @@ class ControlDashboardView(ControlAccessMixin, View):
                 ).select_related("user").order_by("-created_at")[:5],
             })
 
-        if user.is_admin() or user.is_accountant():
-            ctx["pending_withdrawals_list"] = WithdrawalRequest.objects.filter(
+        if _is_control_admin(request) or user.is_accountant():
+            extra["pending_withdrawals_list"] = WithdrawalRequest.objects.filter(
                 status__in=["pending", "processing", "receipt_sent"]
             ).select_related("user").order_by("created_at")[:10]
 
-        return render(request, "control/dashboard.html", ctx)
+        return render(request, "control/dashboard.html", self.ctx(request, extra))
 
 
 # ── Reports ────────────────────────────────────────────────────────────────────
@@ -92,23 +95,23 @@ class ReportsListView(AdminOnlyMixin, View):
                 Q(user__telegram_id__icontains=search)
             )
 
-        return render(request, "control/reports_list.html", {
+        return render(request, "control/reports_list.html", self.ctx(request, {
             "page": "reports",
             "reports": qs[:100],
             "statuses": ReportStatus.choices,
             "status_filter": status_filter,
             "search": search,
-        })
+        }))
 
 
 class ReportDetailView(AdminOnlyMixin, View):
     def get(self, request, pk):
         from apps.control.models import EmployeeReport
         report = get_object_or_404(EmployeeReport.objects.select_related("user"), pk=pk)
-        return render(request, "control/report_detail.html", {
+        return render(request, "control/report_detail.html", self.ctx(request, {
             "page": "reports",
             "report": report,
-        })
+        }))
 
     def post(self, request, pk):
         from apps.control.models import EmployeeReport
@@ -147,14 +150,14 @@ class PenaltiesListView(AdminOnlyMixin, View):
                 Q(reason__icontains=search)
             )
 
-        return render(request, "control/penalties_list.html", {
+        return render(request, "control/penalties_list.html", self.ctx(request, {
             "page": "penalties",
             "penalties": qs[:100],
             "statuses": PenaltyStatus.choices,
             "types": PenaltyType.choices,
             "status_filter": status_filter,
             "search": search,
-        })
+        }))
 
     def post(self, request):
         from apps.control.services import PenaltyService
@@ -197,19 +200,17 @@ class PenaltyActionView(AdminOnlyMixin, View):
         return redirect("control:penalties")
 
 
-# ── KPI management ─────────────────────────────────────────────────────────────
+# ── KPI / Employees ────────────────────────────────────────────────────────────
 
 class EmployeesView(AdminOnlyMixin, View):
     def get(self, request):
         workers = User.objects.filter(
             role=UserRole.WORKER
-        ).prefetch_related("kpi_settings", "kpi_document", "report_template").order_by(
-            "telegram_username"
-        )
-        return render(request, "control/employees.html", {
+        ).prefetch_related("kpi_settings", "kpi_document", "report_template").order_by("telegram_username")
+        return render(request, "control/employees.html", self.ctx(request, {
             "page": "employees",
             "workers": workers,
-        })
+        }))
 
 
 class EmployeeKPIView(AdminOnlyMixin, View):
@@ -220,13 +221,13 @@ class EmployeeKPIView(AdminOnlyMixin, View):
         doc = KPIDocument.objects.filter(user=worker).first()
         template = ReportTemplate.objects.filter(user=worker).first()
 
-        return render(request, "control/employee_kpi.html", {
+        return render(request, "control/employee_kpi.html", self.ctx(request, {
             "page": "employees",
             "worker": worker,
             "kpi": kpi,
             "doc": doc,
             "template": template,
-        })
+        }))
 
     def post(self, request, user_id):
         from apps.control.models import KPISettings, KPIDocument, ReportTemplate
@@ -269,7 +270,7 @@ class EmployeeKPIView(AdminOnlyMixin, View):
         return redirect("control:employee_kpi", user_id=user_id)
 
 
-# ── Withdrawals (accountant view) ─────────────────────────────────────────────
+# ── Withdrawals ────────────────────────────────────────────────────────────────
 
 class WithdrawalsListView(ControlAccessMixin, View):
     def get(self, request):
@@ -280,12 +281,12 @@ class WithdrawalsListView(ControlAccessMixin, View):
         if status_filter:
             qs = qs.filter(status=status_filter)
 
-        return render(request, "control/withdrawals_list.html", {
+        return render(request, "control/withdrawals_list.html", self.ctx(request, {
             "page": "withdrawals",
             "withdrawals": qs[:100],
             "statuses": WithdrawalStatus.choices,
             "status_filter": status_filter,
-        })
+        }))
 
 
 class WithdrawalActionView(ControlAccessMixin, View):
@@ -313,51 +314,114 @@ class WithdrawalActionView(ControlAccessMixin, View):
 
 class AnalyticsView(ControlAccessMixin, View):
     def get(self, request):
-        from apps.control.models import EmployeeReport, Penalty, PenaltyStatus, ReportStatus
+        from apps.control.models import EmployeeReport, Penalty, PenaltyStatus
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
         from datetime import timedelta
+        from django.db.models.functions import TruncDate
 
         today = timezone.localdate()
-        month_ago = today - timedelta(days=30)
 
-        # Reports by status
         reports_by_status = dict(
-            EmployeeReport.objects.filter(submitted_at__date__gte=month_ago)
-            .values("status")
-            .annotate(c=Count("id"))
-            .values_list("status", "c")
+            EmployeeReport.objects.filter(submitted_at__date__gte=today - timedelta(days=30))
+            .values("status").annotate(c=Count("id")).values_list("status", "c")
         )
 
-        # Penalties total (accepted)
         penalties_total = Penalty.objects.filter(
             status=PenaltyStatus.ACCEPTED
         ).aggregate(total=Sum("amount"))["total"] or 0
 
-        # Withdrawals paid out
         withdrawals_total = WithdrawalRequest.objects.filter(
             status=WithdrawalStatus.APPROVED
         ).aggregate(total=Sum("amount"))["total"] or 0
 
-        # Workers overview
         workers = User.objects.filter(role=UserRole.WORKER).prefetch_related("penalties", "reports")
 
-        # Daily report submissions for chart (last 14 days)
-        from django.db.models.functions import TruncDate
         daily_reports = list(
             EmployeeReport.objects
             .filter(submitted_at__date__gte=today - timedelta(days=14))
             .annotate(day=TruncDate("submitted_at"))
-            .values("day")
-            .annotate(count=Count("id"))
-            .order_by("day")
+            .values("day").annotate(count=Count("id")).order_by("day")
         )
 
-        return render(request, "control/analytics.html", {
+        return render(request, "control/analytics.html", self.ctx(request, {
             "page": "analytics",
             "reports_by_status": reports_by_status,
             "penalties_total": penalties_total,
             "withdrawals_total": withdrawals_total,
             "workers": workers,
             "daily_reports": daily_reports,
-            "is_admin": request.crm_user.is_admin(),
-        })
+        }))
+
+
+# ── User management ───────────────────────────────────────────────────────────
+
+class UsersListView(AdminOnlyMixin, View):
+    def get(self, request):
+        role_filter = request.GET.get("role", "")
+        status_filter = request.GET.get("status", "")
+        search = request.GET.get("q", "")
+
+        qs = User.objects.order_by("telegram_username")
+        if role_filter:
+            qs = qs.filter(role=role_filter)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if search:
+            qs = qs.filter(
+                Q(telegram_username__icontains=search) |
+                Q(telegram_id__icontains=search)
+            )
+
+        return render(request, "control/users_list.html", self.ctx(request, {
+            "page": "users",
+            "users": qs[:200],
+            "roles": UserRole.choices,
+            "statuses": UserStatus.choices,
+            "role_filter": role_filter,
+            "status_filter": status_filter,
+            "search": search,
+        }))
+
+    def post(self, request):
+        """Create a new user slot (pre-register before they start the bot)."""
+        telegram_id = request.POST.get("telegram_id", "").strip()
+        username = request.POST.get("telegram_username", "").lstrip("@").strip()
+        role = request.POST.get("role", UserRole.WORKER)
+
+        if telegram_id:
+            User.objects.get_or_create(
+                telegram_id=telegram_id,
+                defaults={
+                    "telegram_username": username or None,
+                    "role": role,
+                    "status": UserStatus.ACTIVE,
+                    "is_activated": True,
+                },
+            )
+        return redirect("control:users")
+
+
+class UserEditView(AdminOnlyMixin, View):
+    def post(self, request, pk):
+        user = get_object_or_404(User, pk=pk)
+        action = request.POST.get("action")
+
+        if action == "set_role":
+            new_role = request.POST.get("role")
+            if new_role in dict(UserRole.choices):
+                user.role = new_role
+                user.save(update_fields=["role"])
+
+        elif action == "set_status":
+            new_status = request.POST.get("status")
+            if new_status in dict(UserStatus.choices):
+                user.status = new_status
+                user.save(update_fields=["status"])
+
+        elif action == "delete":
+            # Only allow deleting non-admin users
+            if not user.is_admin():
+                user.delete()
+                return redirect("control:users")
+
+        return redirect(request.POST.get("next", "control:users"))

@@ -24,4 +24,8 @@ urlpatterns = [
 
     # Analytics
     path("analytics/", views.AnalyticsView.as_view(), name="analytics"),
+
+    # User management
+    path("users/", views.UsersListView.as_view(), name="users"),
+    path("users/<int:pk>/edit/", views.UserEditView.as_view(), name="user_edit"),
 ]
