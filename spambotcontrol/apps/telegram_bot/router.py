@@ -16,9 +16,19 @@ def setup_routers(dp: Dispatcher) -> None:
     from apps.telegram_bot.handlers.admin.users import router as admin_users_router
     from apps.telegram_bot.handlers.worker.start import router as start_router
 
+    # Control bot — Gramly Control HR system
+    from apps.control.bot.admin_handlers import router as control_admin_router
+    from apps.control.bot.worker_handlers import router as control_worker_router
+    from apps.control.bot.accountant_handlers import router as control_accountant_router
+
     # Admin routers first — IsAdmin() filter prevents conflicts
     dp.include_router(admin_menu_router)
     dp.include_router(admin_users_router)
 
-    # General /start for all users
+    # Control bot routers
+    dp.include_router(control_admin_router)
+    dp.include_router(control_accountant_router)
+    dp.include_router(control_worker_router)
+
+    # General /start for all users (last — catches everything else)
     dp.include_router(start_router)

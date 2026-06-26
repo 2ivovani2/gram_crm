@@ -47,9 +47,10 @@ class WorkLink(models.Model):
 
 
 class UserRole(models.TextChoices):
-    ADMIN = "admin", "Admin"
-    CURATOR = "curator", "Curator"
-    WORKER = "worker", "Worker"
+    ADMIN       = "admin",       "Admin"
+    CURATOR     = "curator",     "Curator"
+    WORKER      = "worker",      "Worker"
+    ACCOUNTANT  = "accountant",  "Бухгалтер"
 
 
 class UserStatus(models.TextChoices):
@@ -215,6 +216,12 @@ class User(AbstractUser):
 
     def is_worker(self) -> bool:
         return self.role == UserRole.WORKER
+
+    def is_accountant(self) -> bool:
+        return self.role == UserRole.ACCOUNTANT
+
+    def is_admin_or_accountant(self) -> bool:
+        return self.role in (UserRole.ADMIN, UserRole.ACCOUNTANT)
 
     def can_use_bot(self) -> bool:
         return self.status == UserStatus.ACTIVE and not self.is_blocked_bot

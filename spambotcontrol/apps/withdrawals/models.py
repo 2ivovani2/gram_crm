@@ -7,9 +7,11 @@ class WithdrawalMethod(models.TextChoices):
 
 
 class WithdrawalStatus(models.TextChoices):
-    PENDING = "pending", "Ожидает обработки"
-    APPROVED = "approved", "Исполнена"
-    REJECTED = "rejected", "Отклонена"
+    PENDING      = "pending",      "Создана"
+    PROCESSING   = "processing",   "В обработке"
+    RECEIPT_SENT = "receipt_sent", "Чек отправлен"
+    APPROVED     = "approved",     "Выполнена"
+    REJECTED     = "rejected",     "Отклонена"
 
 
 class WithdrawalRequest(models.Model):

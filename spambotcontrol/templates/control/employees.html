@@ -1,0 +1,71 @@
+{% extends "crm/base.html" %}
+{% block title %}Сотрудники{% endblock %}
+{% block page_title %}Сотрудники / KPI{% endblock %}
+
+{% block extra_css %}
+<style>
+.workers-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; }
+.worker-card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px; }
+.worker-name { font-weight:600; font-size:15px; margin-bottom:4px; }
+.worker-meta { font-size:12px; color:var(--muted); margin-bottom:14px; }
+.worker-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+.wstat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+.wstat-num { font-size:16px; font-weight:700; color:var(--accent); }
+.wstat-label { font-size:11px; color:var(--muted); margin-top:2px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.badge-active { background:rgba(74,222,128,.12); color:#4ADE80; }
+.badge-inactive { background:rgba(250,250,251,.08); color:var(--muted); }
+.btn-sm { font-size:13px; padding:7px 16px; border-radius:8px; background:var(--accent-soft); color:var(--accent); border:none; cursor:pointer; text-decoration:none; display:inline-block; width:100%; text-align:center; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:20px;color:var(--muted);font-size:14px">{{ workers|length }} сотрудников</div>
+
+<div class="workers-grid">
+{% for w in workers %}
+<div class="worker-card">
+  <div class="worker-name">@{{ w.telegram_username|default:w.telegram_id }}</div>
+  <div class="worker-meta">
+    <span class="badge {% if w.status == 'active' %}badge-active{% else %}badge-inactive{% endif %}">{{ w.get_status_display }}</span>
+    {% if w.telegram_username %} · ID: {{ w.telegram_id }}{% endif %}
+  </div>
+
+  <div class="worker-stats">
+    <div class="wstat">
+      <div class="wstat-num">
+        {% with kpi=w.kpi_settings %}
+          {% if kpi %}{{ kpi.base_rate }} ₽{% else %}—{% endif %}
+        {% endwith %}
+      </div>
+      <div class="wstat-label">Базовая ставка</div>
+    </div>
+    <div class="wstat">
+      <div class="wstat-num">
+        {% with kpi=w.kpi_settings %}
+          {% if kpi %}{{ kpi.bonus_rate }} ₽{% else %}—{% endif %}
+        {% endwith %}
+      </div>
+      <div class="wstat-label">Бонус</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;font-size:12px;color:var(--muted);margin-bottom:12px">
+    {% with doc=w.kpi_document %}
+      {% if doc %}✅ KPI-документ{% else %}❌ Нет KPI-документа{% endif %}
+    {% endwith %}
+    ·
+    {% with tmpl=w.report_template %}
+      {% if tmpl %}✅ Шаблон отчёта{% else %}❌ Нет шаблона{% endif %}
+    {% endwith %}
+  </div>
+
+  <a href="{% url 'control:employee_kpi' w.pk %}" class="btn-sm">Настройки KPI →</a>
+</div>
+{% empty %}
+<div style="padding:40px;text-align:center;color:var(--muted)">Нет сотрудников</div>
+{% endfor %}
+</div>
+
+{% endblock %}

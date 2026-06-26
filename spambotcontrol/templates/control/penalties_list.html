@@ -1,0 +1,110 @@
+{% extends "crm/base.html" %}
+{% block title %}Штрафы{% endblock %}
+{% block page_title %}Штрафы{% endblock %}
+
+{% block extra_css %}
+<style>
+.filters { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; align-items:center; }
+.filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
+.ctrl-table { width:100%; border-collapse:collapse; }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
+.ctrl-table td { padding:11px 12px; border-bottom:1px solid var(--line-2); font-size:14px; color:var(--text); }
+.ctrl-table tr:last-child td { border:none; }
+.ctrl-table tr:hover td { background:var(--surface-3); }
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.s-created  { background:rgba(250,250,251,.08); color:var(--muted); }
+.s-pending  { background:rgba(255,184,77,.15); color:#FFB84D; }
+.s-accepted { background:rgba(239,68,68,.12);  color:#F87171; }
+.s-rejected { background:rgba(74,222,128,.12); color:#4ADE80; }
+.s-disputed { background:rgba(96,165,250,.12); color:#60A5FA; }
+.s-deleted  { background:rgba(250,250,251,.06); color:var(--muted2); text-decoration:line-through; }
+.btn-sm { font-size:12px; padding:4px 10px; border-radius:7px; background:var(--accent-soft); color:var(--accent); border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.btn-sm-red { background:rgba(239,68,68,.12); color:#F87171; }
+.btn-sm-green { background:rgba(74,222,128,.12); color:#4ADE80; }
+.action-btns { display:flex; gap:6px; }
+.create-form { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:24px; }
+.create-form h3 { font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text); }
+.form-row { display:grid; grid-template-columns:1fr 120px 1fr; gap:10px; margin-bottom:10px; }
+.form-row input, .form-row textarea { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="create-form">
+  <h3>⚠️ Создать штраф вручную</h3>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="form-row">
+      <input name="username" placeholder="@username сотрудника" />
+      <input name="amount" type="number" step="0.01" placeholder="Сумма ₽" />
+      <input name="reason" placeholder="Причина" />
+    </div>
+    <input name="comment" placeholder="Комментарий (необязательно)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px">
+    <button type="submit" class="btn-sm">Начислить штраф</button>
+  </form>
+</div>
+
+<div class="filters">
+  <form method="get" style="display:contents">
+    <input name="q" value="{{ search }}" placeholder="Поиск по username / причине..." />
+    <select name="status">
+      <option value="">Все статусы</option>
+      {% for val, label in statuses %}
+      <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-sm">Найти</button>
+    {% if search or status_filter %}
+    <a href="{% url 'control:penalties' %}" class="btn-sm" style="background:var(--surface-3)">Сбросить</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if penalties %}
+<table class="ctrl-table">
+  <thead>
+    <tr>
+      <th>#</th><th>Сотрудник</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Причина</th><th>Дата</th><th>Действие</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in penalties %}
+  <tr>
+    <td style="color:var(--muted)">{{ p.pk }}</td>
+    <td>@{{ p.user.telegram_username|default:p.user.telegram_id }}</td>
+    <td style="color:var(--muted);font-size:12px">{{ p.get_type_display }}</td>
+    <td style="font-weight:600;color:#F87171">{{ p.amount }} ₽</td>
+    <td><span class="badge s-{{ p.status }}">{{ p.get_status_display }}</span></td>
+    <td style="font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.reason }}</td>
+    <td style="color:var(--muted);font-size:13px">{{ p.created_at|date:"d.m.Y" }}</td>
+    <td>
+      {% if p.status == "pending" or p.status == "disputed" %}
+      <div class="action-btns">
+        <form method="post" action="{% url 'control:penalty_action' p.pk %}">
+          {% csrf_token %}
+          <button name="action" value="accept" class="btn-sm" style="background:rgba(239,68,68,.12);color:#F87171">Принять</button>
+        </form>
+        <form method="post" action="{% url 'control:penalty_action' p.pk %}">
+          {% csrf_token %}
+          <button name="action" value="reject" class="btn-sm btn-sm-green">Отклонить</button>
+        </form>
+        <form method="post" action="{% url 'control:penalty_action' p.pk %}">
+          {% csrf_token %}
+          <button name="action" value="delete" class="btn-sm" style="background:var(--surface-3);color:var(--muted)">Удалить</button>
+        </form>
+      </div>
+      {% elif p.status == "disputed" %}
+        <span style="color:#60A5FA;font-size:12px">Оспорен: {{ p.dispute_comment|truncatechars:30 }}</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div style="padding:40px;text-align:center;color:var(--muted)">Штрафов не найдено</div>
+{% endif %}
+
+{% endblock %}

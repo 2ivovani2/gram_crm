@@ -44,6 +44,7 @@ LOCAL_APPS = [
     "apps.telegram_bot",
     "apps.crm",
     "apps.docs",
+    "apps.control",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -119,6 +120,7 @@ CELERY_TASK_ROUTES = {
     "apps.broadcasts.tasks.*": {"queue": "broadcasts"},
     "apps.stats.tasks.*": {"queue": "default"},
     "apps.crm.tasks.*": {"queue": "default"},
+    "apps.control.tasks.*": {"queue": "default"},
 }
 
 # ── Celery Beat Schedule ──────────────────────────────────────────────────────
@@ -140,8 +142,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clients.tasks.check_worker_inactivity_task",
         "schedule": crontab(hour=9, minute=0),
     },
-    # Removed: admin-reminder-1300, admin-reminder-2000, check-missing-daily-report
-    # These depended on DailyReport/MissedDay (legacy system, replaced by client-link model).
+    # Control bot: report reminders — 10:00, 15:00, 23:00 МСК
+    "control-reminder-1000": {
+        "task": "apps.control.tasks.send_report_reminders_task",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    "control-reminder-1500": {
+        "task": "apps.control.tasks.send_report_reminders_task",
+        "schedule": crontab(hour=15, minute=0),
+    },
+    "control-reminder-2300": {
+        "task": "apps.control.tasks.send_report_reminders_task",
+        "schedule": crontab(hour=23, minute=0),
+    },
+    # Control bot: check overdue reports and create auto-penalties daily at 23:30 МСК
+    "control-check-overdue": {
+        "task": "apps.control.tasks.check_overdue_reports_task",
+        "schedule": crontab(hour=23, minute=30),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

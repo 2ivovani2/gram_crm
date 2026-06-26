@@ -16,6 +16,8 @@ urlpatterns = [
     path("health/", HealthCheckView.as_view(), name="health-check"),
     # CRM web service (crm.gramly.tech)
     path("crm/", include("apps.crm.urls", namespace="crm")),
+    # Gramly Control HR dashboard
+    path("crm/control/", include("apps.control.urls", namespace="control")),
     # Manager documentation
     path("docs/", include("apps.docs.urls", namespace="docs")),
     # Spam app auth relay (Telegram widget requires gramly.tech domain)

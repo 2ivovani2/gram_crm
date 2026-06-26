@@ -27,6 +27,19 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
         await send_admin_main_menu(message, db_user)
         return
 
+    if db_user.is_accountant():
+        from apps.control.bot.accountant_handlers import cmd_accounting
+        await message.answer(
+            "💼 <b>Панель бухгалтера</b>\n\nВыберите раздел:",
+            reply_markup=__accountant_menu(),
+        )
+        return
+
+    if db_user.is_worker() and db_user.status == "active":
+        from apps.control.bot.worker_handlers import send_worker_cabinet
+        await send_worker_cabinet(message, db_user, state)
+        return
+
     from django.conf import settings
     crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
     docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
@@ -37,3 +50,8 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
         "Используй кнопки ниже для доступа к системе.",
         reply_markup=_welcome_keyboard(crm_url, docs_url),
     )
+
+
+def __accountant_menu():
+    from apps.control.bot.keyboards import accountant_main_menu
+    return accountant_main_menu()

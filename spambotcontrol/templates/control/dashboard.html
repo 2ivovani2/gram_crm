@@ -1,0 +1,144 @@
+{% extends "crm/base.html" %}
+{% block title %}Грамли Контроль — Дашборд{% endblock %}
+{% block page_title %}Грамли Контроль{% endblock %}
+
+{% block extra_css %}
+<style>
+.ctrl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.ctrl-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; }
+.ctrl-card-num { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1; }
+.ctrl-card-label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.ctrl-section { margin-bottom: 32px; }
+.ctrl-section h2 { font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 14px; }
+.ctrl-table { width: 100%; border-collapse: collapse; }
+.ctrl-table th { font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.ctrl-table td { padding: 11px 12px; border-bottom: 1px solid var(--line-2); font-size: 14px; color: var(--text); }
+.ctrl-table tr:last-child td { border: none; }
+.ctrl-table tr:hover td { background: var(--surface-3); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+.badge-orange { background: rgba(255,184,77,.15); color: #FFB84D; }
+.badge-green  { background: rgba(74,222,128,.12); color: #4ADE80; }
+.badge-red    { background: rgba(239,68,68,.12); color: #F87171; }
+.badge-blue   { background: rgba(96,165,250,.12); color: #60A5FA; }
+.badge-gray   { background: rgba(250,250,251,.08); color: var(--muted); }
+.btn-sm { font-size: 13px; padding: 6px 14px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); border: none; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn-sm:hover { background: var(--accent-tint); }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media(max-width:900px) { .two-col { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block nav_dashboard %}active{% endblock %}
+
+{% block content %}
+
+{% if is_admin %}
+<div class="ctrl-grid">
+  <div class="ctrl-card">
+    <div class="ctrl-card-num">{{ active_workers }}</div>
+    <div class="ctrl-card-label">Активных сотрудников</div>
+  </div>
+  <div class="ctrl-card">
+    <div class="ctrl-card-num">{{ reports_submitted_today }}</div>
+    <div class="ctrl-card-label">Отчётов сегодня</div>
+  </div>
+  <div class="ctrl-card">
+    <div class="ctrl-card-num" style="color:{% if pending_reports > 0 %}#FFB84D{% else %}#4ADE80{% endif %}">{{ pending_reports }}</div>
+    <div class="ctrl-card-label">Отчётов на проверке</div>
+  </div>
+  <div class="ctrl-card">
+    <div class="ctrl-card-num" style="color:{% if pending_penalties > 0 %}#F87171{% else %}#4ADE80{% endif %}">{{ pending_penalties }}</div>
+    <div class="ctrl-card-label">Штрафов на рассмотрении</div>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="ctrl-section">
+    <h2>Ожидают проверки — отчёты</h2>
+    {% if recent_reports %}
+    <table class="ctrl-table">
+      <thead><tr><th>Сотрудник</th><th>Период</th><th>Время</th><th></th></tr></thead>
+      <tbody>
+      {% for r in recent_reports %}
+      <tr>
+        <td>@{{ r.user.telegram_username|default:r.user.telegram_id }}</td>
+        <td>{{ r.period_label|default:"—" }}</td>
+        <td>{{ r.submitted_at|date:"d.m H:i" }}</td>
+        <td><a href="{% url 'control:report_detail' r.pk %}" class="btn-sm">Открыть</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);font-size:14px">Нет отчётов на проверке ✅</p>
+    {% endif %}
+    <a href="{% url 'control:reports' %}" class="btn-sm" style="margin-top:12px;display:inline-block">Все отчёты →</a>
+  </div>
+
+  <div class="ctrl-section">
+    <h2>Штрафы на рассмотрении</h2>
+    {% if recent_penalties %}
+    <table class="ctrl-table">
+      <thead><tr><th>Сотрудник</th><th>Сумма</th><th>Статус</th><th></th></tr></thead>
+      <tbody>
+      {% for p in recent_penalties %}
+      <tr>
+        <td>@{{ p.user.telegram_username|default:p.user.telegram_id }}</td>
+        <td>{{ p.amount }} ₽</td>
+        <td>
+          {% if p.status == "disputed" %}
+            <span class="badge badge-blue">Оспорен</span>
+          {% else %}
+            <span class="badge badge-orange">Ожидает</span>
+          {% endif %}
+        </td>
+        <td><a href="{% url 'control:penalties' %}" class="btn-sm">Список</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);font-size:14px">Нет штрафов на рассмотрении ✅</p>
+    {% endif %}
+    <a href="{% url 'control:penalties' %}" class="btn-sm" style="margin-top:12px;display:inline-block">Все штрафы →</a>
+  </div>
+</div>
+{% endif %}
+
+{% if pending_withdrawals_list %}
+<div class="ctrl-section">
+  <h2>Заявки на вывод — требуют действий</h2>
+  <table class="ctrl-table">
+    <thead><tr><th>Сотрудник</th><th>Сумма</th><th>Кошелёк</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+    {% for w in pending_withdrawals_list %}
+    <tr>
+      <td>@{{ w.user.telegram_username|default:w.user.telegram_id }}</td>
+      <td>{{ w.amount }} ₽</td>
+      <td style="font-family:monospace;font-size:12px">{{ w.details|truncatechars:20 }}</td>
+      <td>
+        {% if w.status == "pending" %}<span class="badge badge-orange">Новая</span>
+        {% elif w.status == "processing" %}<span class="badge badge-blue">В обработке</span>
+        {% elif w.status == "receipt_sent" %}<span class="badge badge-green">Чек отправлен</span>
+        {% endif %}
+      </td>
+      <td><a href="{% url 'control:withdrawals' %}" class="btn-sm">Обработать</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <a href="{% url 'control:withdrawals' %}" class="btn-sm" style="margin-top:12px;display:inline-block">Все выводы →</a>
+</div>
+{% endif %}
+
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
+  {% if is_admin %}
+  <a href="{% url 'control:reports' %}" class="btn">📋 Отчёты</a>
+  <a href="{% url 'control:penalties' %}" class="btn">⚠️ Штрафы</a>
+  <a href="{% url 'control:employees' %}" class="btn">👥 Сотрудники / KPI</a>
+  <a href="{% url 'control:analytics' %}" class="btn">📊 Аналитика</a>
+  {% endif %}
+  <a href="{% url 'control:withdrawals' %}" class="btn">💳 Выводы</a>
+</div>
+
+{% endblock %}

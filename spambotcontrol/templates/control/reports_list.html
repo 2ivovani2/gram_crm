@@ -1,0 +1,74 @@
+{% extends "crm/base.html" %}
+{% block title %}Отчёты сотрудников{% endblock %}
+{% block page_title %}Отчёты{% endblock %}
+
+{% block extra_css %}
+<style>
+.filters { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; align-items:center; }
+.filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
+.ctrl-table { width:100%; border-collapse:collapse; }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
+.ctrl-table td { padding:11px 12px; border-bottom:1px solid var(--line-2); font-size:14px; color:var(--text); }
+.ctrl-table tr:last-child td { border:none; }
+.ctrl-table tr:hover td { background:var(--surface-3); }
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.s-pending   { background:rgba(255,184,77,.15); color:#FFB84D; }
+.s-accepted  { background:rgba(74,222,128,.12); color:#4ADE80; }
+.s-rejected  { background:rgba(239,68,68,.12);  color:#F87171; }
+.s-revision  { background:rgba(96,165,250,.12); color:#60A5FA; }
+.s-overdue   { background:rgba(239,68,68,.18);  color:#F87171; }
+.s-not_submitted { background:rgba(250,250,251,.08); color:var(--muted); }
+.btn-sm { font-size:13px; padding:5px 12px; border-radius:8px; background:var(--accent-soft); color:var(--accent); border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="filters">
+  <form method="get" style="display:contents">
+    <input name="q" value="{{ search }}" placeholder="Поиск по username..." />
+    <select name="status">
+      <option value="">Все статусы</option>
+      {% for val, label in statuses %}
+      <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-sm">Найти</button>
+    {% if search or status_filter %}
+    <a href="{% url 'control:reports' %}" class="btn-sm" style="background:var(--surface-3)">Сбросить</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if reports %}
+<table class="ctrl-table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Сотрудник</th>
+      <th>Период</th>
+      <th>Статус</th>
+      <th>Подан</th>
+      <th>Проверил</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in reports %}
+  <tr>
+    <td style="color:var(--muted)">{{ r.pk }}</td>
+    <td>@{{ r.user.telegram_username|default:r.user.telegram_id }}</td>
+    <td>{{ r.period_label|default:"—" }}</td>
+    <td><span class="badge s-{{ r.status }}">{{ r.get_status_display }}</span></td>
+    <td style="color:var(--muted);font-size:13px">{{ r.submitted_at|date:"d.m.Y H:i"|default:"—" }}</td>
+    <td style="color:var(--muted);font-size:13px">{{ r.reviewed_by.telegram_username|default:"—" }}</td>
+    <td><a href="{% url 'control:report_detail' r.pk %}" class="btn-sm">Открыть</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div style="padding:40px;text-align:center;color:var(--muted)">Отчётов не найдено</div>
+{% endif %}
+
+{% endblock %}

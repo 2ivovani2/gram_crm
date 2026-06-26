@@ -1,0 +1,106 @@
+{% extends "crm/base.html" %}
+{% block title %}Аналитика — Грамли Контроль{% endblock %}
+{% block page_title %}Аналитика{% endblock %}
+
+{% block extra_css %}
+<style>
+.stats-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:16px; margin-bottom:32px; }
+.stat-card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:22px 24px; }
+.stat-num { font-size:2rem; font-weight:700; color:var(--accent); line-height:1; }
+.stat-label { font-size:13px; color:var(--muted); margin-top:6px; }
+.section { margin-bottom:32px; }
+.section h2 { font-size:15px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:16px; }
+.chart-bar-wrap { display:flex; flex-direction:column; gap:6px; }
+.chart-bar-row { display:flex; align-items:center; gap:10px; }
+.chart-bar-label { width:60px; font-size:12px; color:var(--muted); text-align:right; flex-shrink:0; }
+.chart-bar-bg { flex:1; height:20px; background:var(--surface); border-radius:4px; overflow:hidden; }
+.chart-bar-fill { height:100%; background:var(--accent); border-radius:4px; min-width:2px; transition:width .3s; }
+.chart-bar-count { width:30px; font-size:12px; color:var(--text); text-align:left; }
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; }
+.ctrl-table { width:100%; border-collapse:collapse; }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
+.ctrl-table td { padding:10px 12px; border-bottom:1px solid var(--line-2); font-size:14px; color:var(--text); }
+.ctrl-table tr:last-child td { border:none; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-num">{{ penalties_total|floatformat:0 }} ₽</div>
+    <div class="stat-label">Принятых штрафов (всего)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num">{{ withdrawals_total|floatformat:0 }} ₽</div>
+    <div class="stat-label">Выплачено (всего)</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num">{{ workers|length }}</div>
+    <div class="stat-label">Сотрудников</div>
+  </div>
+</div>
+
+<!-- Report submissions chart -->
+{% if daily_reports %}
+<div class="section">
+  <h2>Подача отчётов — последние 14 дней</h2>
+  {% with max_count=daily_reports|dictsort:"count"|last %}
+  <div class="chart-bar-wrap">
+    {% for day in daily_reports %}
+    <div class="chart-bar-row">
+      <div class="chart-bar-label">{{ day.day|date:"d.m" }}</div>
+      <div class="chart-bar-bg">
+        <div class="chart-bar-fill" style="width:{% widthratio day.count max_count.count 100 %}%"></div>
+      </div>
+      <div class="chart-bar-count">{{ day.count }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endwith %}
+</div>
+{% endif %}
+
+<!-- Reports by status -->
+{% if reports_by_status %}
+<div class="section">
+  <h2>Отчёты за последние 30 дней</h2>
+  <table class="ctrl-table" style="max-width:400px">
+    <thead><tr><th>Статус</th><th>Количество</th></tr></thead>
+    <tbody>
+      {% for status, count in reports_by_status.items %}
+      <tr>
+        <td>{{ status }}</td>
+        <td style="font-weight:600;color:var(--accent)">{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Workers table -->
+{% if is_admin %}
+<div class="section">
+  <h2>Сотрудники</h2>
+  <table class="ctrl-table">
+    <thead>
+      <tr><th>Сотрудник</th><th>Статус</th><th>Отчётов всего</th><th>Штрафов</th></tr>
+    </thead>
+    <tbody>
+    {% for w in workers %}
+    <tr>
+      <td>@{{ w.telegram_username|default:w.telegram_id }}</td>
+      <td>{{ w.get_status_display }}</td>
+      <td>{{ w.reports.count }}</td>
+      <td>{{ w.penalties.count }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" style="text-align:center;color:var(--muted)">Нет сотрудников</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "crm/base.html" %}
+{% block title %}Отчёт #{{ report.pk }}{% endblock %}
+{% block page_title %}Отчёт #{{ report.pk }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:20px; }
+.kv { display:grid; grid-template-columns:160px 1fr; gap:8px 16px; align-items:start; }
+.kv dt { color:var(--muted); font-size:13px; padding-top:2px; }
+.kv dd { font-size:14px; color:var(--text); }
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.s-pending   { background:rgba(255,184,77,.15); color:#FFB84D; }
+.s-accepted  { background:rgba(74,222,128,.12); color:#4ADE80; }
+.s-rejected  { background:rgba(239,68,68,.12);  color:#F87171; }
+.s-revision  { background:rgba(96,165,250,.12); color:#60A5FA; }
+.s-overdue   { background:rgba(239,68,68,.18);  color:#F87171; }
+.report-text { white-space:pre-wrap; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; font-size:14px; line-height:1.7; max-height:400px; overflow-y:auto; }
+.action-form { display:flex; flex-direction:column; gap:12px; }
+.action-form textarea { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px 12px; font-size:13px; resize:vertical; min-height:80px; }
+.actions { display:flex; gap:10px; flex-wrap:wrap; }
+.btn-accept { background:rgba(74,222,128,.15); color:#4ADE80; border:1px solid rgba(74,222,128,.3); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; }
+.btn-reject { background:rgba(239,68,68,.12);  color:#F87171; border:1px solid rgba(239,68,68,.25); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; }
+.btn-revision { background:rgba(96,165,250,.12); color:#60A5FA; border:1px solid rgba(96,165,250,.25); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; }
+.btn-back { background:var(--surface-3); color:var(--text); border:none; padding:8px 18px; border-radius:8px; cursor:pointer; font-size:14px; text-decoration:none; display:inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<a href="{% url 'control:reports' %}" class="btn-back" style="margin-bottom:20px">← Все отчёты</a>
+
+<div class="card">
+  <dl class="kv">
+    <dt>Сотрудник</dt>
+    <dd>@{{ report.user.telegram_username|default:report.user.telegram_id }}</dd>
+    <dt>Статус</dt>
+    <dd><span class="badge s-{{ report.status }}">{{ report.get_status_display }}</span></dd>
+    <dt>Период</dt>
+    <dd>{{ report.period_label|default:"—" }}</dd>
+    <dt>Подан</dt>
+    <dd>{{ report.submitted_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+    {% if report.reviewed_by %}
+    <dt>Проверил</dt>
+    <dd>@{{ report.reviewed_by.telegram_username|default:report.reviewed_by.telegram_id }}</dd>
+    <dt>Проверено</dt>
+    <dd>{{ report.reviewed_at|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
+    {% if report.reviewed_comment %}
+    <dt>Комментарий</dt>
+    <dd>{{ report.reviewed_comment }}</dd>
+    {% endif %}
+  </dl>
+</div>
+
+{% if report.text_content %}
+<div class="card">
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.04em">Текст отчёта</h3>
+  <div class="report-text">{{ report.text_content }}</div>
+</div>
+{% endif %}
+
+{% if report.telegram_file_id %}
+<div class="card">
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Прикреплённый файл</h3>
+  <p style="font-size:14px;color:var(--text)">
+    Тип: {{ report.file_type|default:"файл" }}<br>
+    Имя: {{ report.original_filename|default:"—" }}<br>
+    <span style="color:var(--muted);font-size:12px">Файл доступен через Telegram Bot</span>
+  </p>
+</div>
+{% endif %}
+
+{% if report.status == "pending" %}
+<div class="card">
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em">Действие</h3>
+  <form method="post" class="action-form">
+    {% csrf_token %}
+    <textarea name="comment" placeholder="Комментарий (необязательно)..."></textarea>
+    <div class="actions">
+      <button name="action" value="accept" class="btn-accept">✅ Принять</button>
+      <button name="action" value="revision" class="btn-revision">✏️ На доработку</button>
+      <button name="action" value="reject" class="btn-reject">❌ Отклонить</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,27 @@
+from django.urls import path
+from apps.control import views
+
+app_name = "control"
+
+urlpatterns = [
+    path("", views.ControlDashboardView.as_view(), name="dashboard"),
+
+    # Reports
+    path("reports/", views.ReportsListView.as_view(), name="reports"),
+    path("reports/<int:pk>/", views.ReportDetailView.as_view(), name="report_detail"),
+
+    # Penalties
+    path("penalties/", views.PenaltiesListView.as_view(), name="penalties"),
+    path("penalties/<int:pk>/action/", views.PenaltyActionView.as_view(), name="penalty_action"),
+
+    # Employees / KPI
+    path("employees/", views.EmployeesView.as_view(), name="employees"),
+    path("employees/<int:user_id>/kpi/", views.EmployeeKPIView.as_view(), name="employee_kpi"),
+
+    # Withdrawals
+    path("withdrawals/", views.WithdrawalsListView.as_view(), name="withdrawals"),
+    path("withdrawals/<int:pk>/action/", views.WithdrawalActionView.as_view(), name="withdrawal_action"),
+
+    # Analytics
+    path("analytics/", views.AnalyticsView.as_view(), name="analytics"),
+]
