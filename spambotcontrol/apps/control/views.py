@@ -394,7 +394,7 @@ class UsersListView(AdminOnlyMixin, View):
         else:
             memberships = {}
         for u in users:
-            u._crm_membership = memberships.get(u.pk)
+            u.crm_membership = memberships.get(u.pk)
 
         role_counts = dict(
             User.objects.values("role").annotate(c=Count("id")).values_list("role", "c")

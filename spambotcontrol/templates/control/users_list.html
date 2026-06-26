@@ -166,15 +166,15 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <!-- CRM access (WorkspaceMembership) -->
     <td>
       <div class="crm-cell">
-        {% if u._crm_membership %}
-          <span class="badge crm-{{ u._crm_membership.role }}">{{ u._crm_membership.get_role_display }}</span>
+        {% if u.crm_membership %}
+          <span class="badge crm-{{ u.crm_membership.role }}">{{ u.crm_membership.get_role_display }}</span>
           <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
             {% csrf_token %}
             <input type="hidden" name="action" value="set_crm_role">
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
             <select name="crm_role" class="inline" onchange="this.form.submit()">
               {% for val, label in crm_roles %}
-              <option value="{{ val }}" {% if val == u._crm_membership.role %}selected{% endif %}>{{ label }}</option>
+              <option value="{{ val }}" {% if val == u.crm_membership.role %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </form>
