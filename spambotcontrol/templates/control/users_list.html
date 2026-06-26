@@ -130,7 +130,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 
     <!-- Hire button for anonymous / role selector for others -->
     <td>
-      {% if u.is_anonymous %}
+      {% if u.is_anon %}
       <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
         {% csrf_token %}
         <input type="hidden" name="action" value="set_role">

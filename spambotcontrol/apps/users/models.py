@@ -221,7 +221,7 @@ class User(AbstractUser):
     def is_accountant(self) -> bool:
         return self.role == UserRole.ACCOUNTANT
 
-    def is_anonymous(self) -> bool:
+    def is_anon(self) -> bool:
         return self.role == UserRole.ANONYMOUS
 
     def is_admin_or_accountant(self) -> bool:
