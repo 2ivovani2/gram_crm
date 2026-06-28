@@ -11,7 +11,7 @@ from apps.users.models import User
 from apps.control.bot.keyboards import (
     CtrlWorkerCB, worker_main_menu, worker_kpi_keyboard,
     worker_back_to_menu, worker_cancel_report, worker_cancel_withdrawal,
-    penalty_dispute_keyboard,
+    penalty_dispute_keyboard, worker_template_select_keyboard,
 )
 from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState
 
@@ -99,9 +99,6 @@ async def cb_kpi_doc(callback: CallbackQuery, db_user: User):
 
     await callback.answer()
     try:
-        from aiogram.types import FSInputFile
-        import os
-        # Try to get file URL from storage
         file_url = doc.file.url
         await callback.message.answer_document(
             document=file_url,
@@ -118,7 +115,6 @@ async def cb_withdraw(callback: CallbackQuery, db_user: User, state: FSMContext)
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService, ControlBalanceService
 
-    # Check blocking conditions
     blocked = await sync_to_async(ReportService.has_blocking_report)(db_user)
     if blocked:
         await callback.answer(
@@ -164,7 +160,6 @@ async def process_wallet_input(message: Message, db_user: User, state: FSMContex
 
     await state.clear()
 
-    # Notify accountants
     from apps.users.models import UserRole, UserStatus
     accountants = await sync_to_async(
         lambda: list(
@@ -204,31 +199,164 @@ async def cb_submit_report(callback: CallbackQuery, db_user: User, state: FSMCon
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService
 
-    template = await sync_to_async(ReportService.get_template)(db_user)
-    has_pending = await sync_to_async(ReportService.has_blocking_report)(db_user)
-
-    if has_pending:
+    # Block if already has a report in moderation
+    blocked = await sync_to_async(ReportService.has_blocking_report)(db_user)
+    if blocked:
         await callback.answer(
             "У вас уже есть отчёт на проверке. Дождитесь его рассмотрения.",
             show_alert=True,
         )
         return
 
-    await state.set_state(SubmitReportState.waiting_for_report)
+    # Get assigned templates
+    templates = await sync_to_async(ReportService.get_active_templates_for_user)(db_user)
+
     await callback.answer()
 
-    text = "📝 <b>Подача отчёта</b>\n\n"
-    if template:
-        text += f"<b>Шаблон отчёта:</b>\n{template}\n\n"
-    text += "Отправьте ваш отчёт (текст, документ, файл или любой другой формат):"
+    if len(templates) > 1:
+        # Multiple templates — let worker pick
+        await state.set_state(SubmitReportState.selecting_template)
+        await callback.message.edit_text(
+            "📝 <b>Подача отчёта</b>\n\nВыберите тип отчёта:",
+            reply_markup=worker_template_select_keyboard(templates),
+        )
+        return
 
-    await callback.message.edit_text(text, reply_markup=worker_cancel_report())
+    # 0 or 1 template — go straight to submission
+    template = templates[0] if templates else None
+    await _start_report_input(callback.message, state, template)
+
+
+@router.callback_query(CtrlWorkerCB.filter(F.action == "my_penalties"))
+async def cb_my_penalties(callback: CallbackQuery, db_user: User):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import PenaltyService
+
+    penalties = await sync_to_async(
+        lambda: list(PenaltyService.get_active_for_user(db_user)[:10])
+    )()
+
+    if not penalties:
+        await callback.answer()
+        await callback.message.edit_text(
+            "✅ У вас нет активных штрафов.",
+            reply_markup=worker_back_to_menu(),
+        )
+        return
+
+    status_emoji = {
+        "created": "🆕", "pending": "⏳", "accepted": "❌",
+        "rejected": "✅", "disputed": "🔄", "deleted": "🗑",
+    }
+    text = "⚠️ <b>Ваши штрафы</b>\n\n"
+    b = InlineKeyboardBuilder()
+    for p in penalties:
+        emoji = status_emoji.get(p.status, "❓")
+        text += f"{emoji} <b>#{p.pk}</b> — {p.amount:.2f} ₽\n"
+        text += f"   {p.reason}\n"
+        text += f"   Статус: {p.get_status_display()}\n"
+        if p.status in ("created", "pending", "accepted"):
+            b.button(
+                text=f"#{p.pk} Оспорить",
+                callback_data=CtrlWorkerCB(action=f"dispute_{p.pk}"),
+            )
+        text += "\n"
+
+    b.button(text="◀️ Назад", callback_data=CtrlWorkerCB(action="main_menu"))
+    b.adjust(1)
+
+    await callback.answer()
+    await callback.message.edit_text(text, reply_markup=b.as_markup())
+
+
+@router.callback_query(CtrlWorkerCB.filter())
+async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB,
+                             db_user: User, state: FSMContext):
+    """Handle dynamic worker actions: template pick, dispute."""
+    action = callback_data.action
+
+    if action.startswith("pick_tmpl_"):
+        # Worker selected a template from the picker
+        try:
+            tmpl_id = int(action.split("_", 2)[2])
+        except (ValueError, IndexError):
+            await callback.answer("Ошибка", show_alert=True)
+            return
+
+        from asgiref.sync import sync_to_async
+        from apps.control.models import ReportTemplate
+
+        template = await sync_to_async(
+            lambda: ReportTemplate.objects.filter(pk=tmpl_id).first()
+        )()
+        if not template:
+            await callback.answer("Шаблон не найден", show_alert=True)
+            return
+
+        await callback.answer()
+        await _start_report_input(callback.message, state, template)
+
+    elif action.startswith("dispute_"):
+        try:
+            penalty_id = int(action.split("_", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Ошибка", show_alert=True)
+            return
+
+        from asgiref.sync import sync_to_async
+        from apps.control.models import Penalty
+
+        penalty = await sync_to_async(Penalty.objects.filter(pk=penalty_id).first)()
+        if not penalty or penalty.user_id != db_user.pk:
+            await callback.answer("Штраф не найден", show_alert=True)
+            return
+
+        from apps.control.bot.states import DisputePenaltyState
+        await state.set_state(DisputePenaltyState.waiting_for_comment)
+        await state.update_data(penalty_id=penalty_id)
+        await callback.answer()
+        await callback.message.edit_text(
+            f"✏️ <b>Оспаривание штрафа #{penalty_id}</b>\n\n"
+            f"Причина: {penalty.reason}\n"
+            f"Сумма: {penalty.amount:.2f} ₽\n\n"
+            f"Напишите ваш комментарий для администратора:",
+            reply_markup=worker_cancel_report(),
+        )
+    else:
+        await callback.answer()
+
+
+async def _start_report_input(message: Message, state: FSMContext, template=None):
+    """Enter the report input state for a given template (or generic if None)."""
+    if template:
+        await state.update_data(template_id=template.pk)
+    else:
+        await state.update_data(template_id=None)
+
+    await state.set_state(SubmitReportState.waiting_for_report)
+
+    text = "📝 <b>Подача отчёта</b>\n\n"
+    if template and template.instructions:
+        name = template.name or f"Шаблон #{template.pk}"
+        text += f"<b>{name}</b>\n\n<b>Инструкции:</b>\n{template.instructions}\n\n"
+    text += "Отправьте ваш отчёт (текст, документ или фото):"
+
+    await message.edit_text(text, reply_markup=worker_cancel_report())
 
 
 @router.message(SubmitReportState.waiting_for_report)
 async def process_report_submission(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService
+    from apps.control.models import ReportTemplate
+
+    data = await state.get_data()
+    template_id = data.get("template_id")
+    template = None
+    if template_id:
+        template = await sync_to_async(
+            lambda: ReportTemplate.objects.filter(pk=template_id).first()
+        )()
 
     # Detect content type
     text_content = ""
@@ -244,18 +372,20 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
     elif message.photo:
         file_id = message.photo[-1].file_id
         file_type = "photo"
+        text_content = message.caption or ""
     elif message.text:
         text_content = message.text
         file_type = "text"
     else:
         await message.answer(
-            "❌ Неподдерживаемый тип файла. Отправьте текст или документ.",
+            "❌ Неподдерживаемый тип файла. Отправьте текст, документ или фото.",
             reply_markup=worker_cancel_report(),
         )
         return
 
     report = await sync_to_async(ReportService.submit_report)(
         user=db_user,
+        template=template,
         text=text_content,
         file_id=file_id,
         file_type=file_type,
@@ -264,25 +394,34 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
 
     await state.clear()
 
-    # Notify admins
+    # Notify the right admin(s)
     from apps.users.models import UserRole, UserStatus
-    admin_ids = await sync_to_async(
-        lambda: list(
-            User.objects.filter(
-                role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False
-            ).values_list("telegram_id", flat=True)
-        )
-    )()
+    from apps.control.bot.keyboards import CtrlAdminCB, admin_report_actions
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
-    from apps.control.bot.keyboards import CtrlAdminCB, admin_report_actions
+    template_label = ""
+    if template and template.name:
+        template_label = f"\nТип: {template.name}"
+
     admin_text = (
         f"📋 <b>Новый отчёт от {username}</b>\n\n"
-        f"Дата: {report.period_label}\n"
+        f"Дата: {report.period_label}{template_label}\n"
         f"ID отчёта: #{report.pk}\n\n"
     )
     if text_content:
         admin_text += f"<b>Текст:</b>\n{text_content[:500]}"
+
+    # Route: if template has created_by → notify only them; otherwise notify all admins
+    if template and template.created_by_id:
+        admin_ids = [template.created_by.telegram_id]
+    else:
+        admin_ids = await sync_to_async(
+            lambda: list(
+                User.objects.filter(
+                    role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False
+                ).values_list("telegram_id", flat=True)
+            )
+        )()
 
     for admin_id in admin_ids:
         try:
@@ -320,79 +459,6 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
     )
 
 
-# ── Penalties ──────────────────────────────────────────────────────────────────
-
-@router.callback_query(CtrlWorkerCB.filter(F.action == "my_penalties"))
-async def cb_my_penalties(callback: CallbackQuery, db_user: User):
-    from asgiref.sync import sync_to_async
-    from apps.control.services import PenaltyService
-
-    penalties = await sync_to_async(
-        lambda: list(PenaltyService.get_active_for_user(db_user)[:10])
-    )()
-
-    if not penalties:
-        await callback.answer()
-        await callback.message.edit_text(
-            "✅ У вас нет активных штрафов.",
-            reply_markup=worker_back_to_menu(),
-        )
-        return
-
-    text = "⚠️ <b>Ваши штрафы</b>\n\n"
-    b = InlineKeyboardBuilder()
-    for p in penalties:
-        status_emoji = {"created": "🆕", "pending": "⏳", "accepted": "❌",
-                        "rejected": "✅", "disputed": "🔄", "deleted": "🗑"}.get(p.status, "❓")
-        text += f"{status_emoji} <b>#{p.pk}</b> — {p.amount:.2f} ₽\n"
-        text += f"   {p.reason}\n"
-        if p.status in ("created", "accepted"):
-            b.button(
-                text=f"#{p.pk} Оспорить",
-                callback_data=CtrlWorkerCB(action=f"dispute_{p.pk}"),
-            )
-        text += "\n"
-
-    b.button(text="◀️ Назад", callback_data=CtrlWorkerCB(action="main_menu"))
-    b.adjust(1)
-
-    await callback.answer()
-    await callback.message.edit_text(text, reply_markup=b.as_markup())
-
-
-@router.callback_query(CtrlWorkerCB.filter())
-async def cb_dispute_or_unknown(callback: CallbackQuery, callback_data: CtrlWorkerCB,
-                                 db_user: User, state: FSMContext):
-    action = callback_data.action
-    if action.startswith("dispute_"):
-        try:
-            penalty_id = int(action.split("_", 1)[1])
-        except (ValueError, IndexError):
-            await callback.answer("Ошибка", show_alert=True)
-            return
-
-        from asgiref.sync import sync_to_async
-        from apps.control.models import Penalty
-
-        penalty = await sync_to_async(Penalty.objects.filter(pk=penalty_id).first)()
-        if not penalty or penalty.user_id != db_user.pk:
-            await callback.answer("Штраф не найден", show_alert=True)
-            return
-
-        await state.set_state(DisputePenaltyState.waiting_for_comment)
-        await state.update_data(penalty_id=penalty_id)
-        await callback.answer()
-        await callback.message.edit_text(
-            f"✏️ <b>Оспаривание штрафа #{penalty_id}</b>\n\n"
-            f"Причина: {penalty.reason}\n"
-            f"Сумма: {penalty.amount:.2f} ₽\n\n"
-            f"Напишите ваш комментарий для администратора:",
-            reply_markup=worker_cancel_report(),
-        )
-    else:
-        await callback.answer()
-
-
 @router.message(DisputePenaltyState.waiting_for_comment)
 async def process_dispute_comment(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
@@ -411,7 +477,6 @@ async def process_dispute_comment(message: Message, db_user: User, state: FSMCon
     await sync_to_async(PenaltyService.dispute)(penalty, message.text or "")
     await state.clear()
 
-    # Notify admins
     from apps.users.models import UserRole, UserStatus
     admin_ids = await sync_to_async(
         lambda: list(

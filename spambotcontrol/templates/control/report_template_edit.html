@@ -1,0 +1,128 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ tmpl.name|default:"Шаблон" }} — редактор{% endblock %}
+{% block page_title %}Шаблон: {{ tmpl.name|default:"без названия" }}{% endblock %}
+{% block nav_ctrl_reports %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+@media(max-width:700px) { .form-grid { grid-template-columns:1fr; } }
+.field-group { display:flex; flex-direction:column; gap:6px; }
+.field-group label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.field-group input, .field-group textarea, .field-group select {
+  background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+  border-radius:8px; padding:9px 12px; font-size:13px; width:100%; box-sizing:border-box;
+}
+.field-group textarea { min-height:100px; resize:vertical; font-family:inherit; }
+.card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px 24px; margin-bottom:20px; }
+.card-title { font-size:13px; font-weight:700; margin-bottom:16px; color:var(--text); }
+.btn-save { font-size:13px; padding:9px 24px; border-radius:8px; background:var(--accent); color:#000; font-weight:700; border:none; cursor:pointer; }
+.btn-del { font-size:13px; padding:9px 20px; border-radius:8px; background:rgba(239,68,68,.14); color:#F87171; font-weight:600; border:none; cursor:pointer; }
+.btn-back { font-size:13px; padding:9px 18px; border-radius:8px; background:var(--surface-3); color:var(--text); border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.worker-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; }
+.worker-item { display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 12px; cursor:pointer; transition:border-color .15s; }
+.worker-item:has(input:checked) { border-color:var(--accent); background:var(--accent-soft); }
+.worker-item input { accent-color:var(--accent); width:14px; height:14px; flex-shrink:0; }
+.worker-name { font-size:13px; font-weight:500; }
+.worker-id { font-size:11px; color:var(--muted); font-family:monospace; }
+.hint { font-size:12px; color:var(--muted); margin-top:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:20px;display:flex;gap:10px;align-items:center">
+  <a href="{% url 'control:report_templates' %}" class="btn-back">← Шаблоны</a>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save">
+
+  <!-- Main fields -->
+  <div class="card">
+    <div class="card-title">Основное</div>
+    <div class="form-grid">
+      <div class="field-group">
+        <label>Название *</label>
+        <input name="name" value="{{ tmpl.name }}" required placeholder="Ежедневный отчёт"/>
+      </div>
+      <div class="field-group">
+        <label>Описание</label>
+        <input name="description" value="{{ tmpl.description }}" placeholder="Краткое описание для администратора"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Instructions -->
+  <div class="card">
+    <div class="card-title">Инструкции по формату</div>
+    <div class="field-group">
+      <label>Что должно быть в отчёте</label>
+      <textarea name="format_instructions" rows="6" placeholder="Опишите формат: что писать, как оформлять, что прикладывать...">{{ tmpl.format_instructions }}</textarea>
+      <div class="hint">Этот текст будет показан сотруднику перед подачей отчёта и при отклонении.</div>
+    </div>
+  </div>
+
+  <!-- Deadline & penalty -->
+  <div class="card">
+    <div class="card-title">Дедлайн и штраф</div>
+    <div class="form-grid">
+      <div class="field-group">
+        <label>Срок исправления (часов)</label>
+        <input type="number" name="correction_deadline_hours" value="{{ tmpl.correction_deadline_hours }}" min="1" max="168"/>
+        <div class="hint">Сколько часов даётся сотруднику на повторную подачу после отклонения. После истечения — штраф.</div>
+      </div>
+      <div class="field-group">
+        <label>Автоштраф за просрочку (₽)</label>
+        <input type="number" name="auto_penalty_amount" value="{{ tmpl.auto_penalty_amount }}" min="0" step="0.01"/>
+        <div class="hint">Сумма штрафа, автоматически начисляемого при истечении срока исправления. 0 = без штрафа.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assigned workers -->
+  <div class="card">
+    <div class="card-title">Назначенные сотрудники</div>
+    {% if workers %}
+    <div class="worker-grid">
+      {% for w in workers %}
+      <label class="worker-item">
+        <input type="checkbox" name="assigned_users" value="{{ w.pk }}"
+               {% if w.pk in assigned_ids %}checked{% endif %}>
+        <div>
+          <div class="worker-name">{{ w.telegram_username|default:"—" }}</div>
+          <div class="worker-id">{{ w.telegram_id }}</div>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="hint" style="margin-top:12px">
+      Отмеченные сотрудники будут видеть этот шаблон при подаче отчёта.
+      Уведомление о новом отчёте придёт создателю шаблона.
+    </div>
+    {% else %}
+    <div style="color:var(--muted);font-size:13px">Сотрудников с ролью «Воркер» нет.</div>
+    {% endif %}
+  </div>
+
+  <!-- Actions -->
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+    <button type="submit" class="btn-save">💾 Сохранить</button>
+    <a href="{% url 'control:report_templates' %}" class="btn-back">Отмена</a>
+    <div style="flex:1"></div>
+    <button type="submit" name="action" value="delete"
+            class="btn-del"
+            onclick="return confirm('Удалить шаблон «{{ tmpl.name }}»? Это действие нельзя отменить.')">
+      🗑 Удалить шаблон
+    </button>
+  </div>
+</form>
+
+{% if tmpl.updated_by %}
+<div style="font-size:12px;color:var(--muted2);margin-top:20px">
+  Обновлён: {{ tmpl.updated_at|date:"d.m.Y H:i" }} — @{{ tmpl.updated_by.telegram_username|default:tmpl.updated_by.telegram_id }}
+</div>
+{% endif %}
+
+{% endblock %}

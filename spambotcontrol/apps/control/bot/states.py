@@ -2,6 +2,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class SubmitReportState(StatesGroup):
+    selecting_template = State()
     waiting_for_report = State()
 
 
@@ -17,7 +18,7 @@ class AdminPenaltyCreateState(StatesGroup):
 
 
 class AdminReportReviewState(StatesGroup):
-    waiting_for_comment = State()
+    waiting_for_comment = State()   # used when admin clicks "Reject"
 
 
 class DisputePenaltyState(StatesGroup):

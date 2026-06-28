@@ -160,6 +160,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.control.tasks.check_overdue_reports_task",
         "schedule": crontab(hour=23, minute=30),
     },
+    # Control bot: check expired correction deadlines every hour
+    "control-check-corrections": {
+        "task": "apps.control.tasks.check_correction_deadlines_task",
+        "schedule": crontab(minute=0),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

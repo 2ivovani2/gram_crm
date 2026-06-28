@@ -1,0 +1,103 @@
+{% extends "crm/base.html" %}
+{% block title %}Шаблоны отчётов{% endblock %}
+{% block page_title %}Шаблоны отчётов{% endblock %}
+{% block nav_ctrl_reports %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.ctrl-table { width:100%; border-collapse:collapse; }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); font-weight:600; }
+.ctrl-table td { padding:10px 12px; border-bottom:1px solid var(--line-2); font-size:13px; color:var(--text); vertical-align:middle; }
+.ctrl-table tr:last-child td { border:none; }
+.ctrl-table tr:hover td { background:var(--surface-3); }
+.badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+.create-panel { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px 24px; margin-bottom:24px; }
+.create-panel h3 { font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text); }
+.create-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+.create-row input, .create-row textarea { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
+.btn-sm { font-size:13px; padding:7px 16px; border-radius:8px; background:var(--accent); color:#000; font-weight:600; border:none; cursor:pointer; }
+.btn-xs { font-size:12px; padding:4px 10px; border-radius:6px; border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.btn-edit { background:rgba(240,180,41,.18); color:var(--accent); font-weight:600; }
+.tmpl-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Create panel -->
+<div class="create-panel">
+  <h3>Создать шаблон отчёта</h3>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="create-row">
+      <input name="name" placeholder="Название шаблона *" required style="min-width:240px"/>
+      <button type="submit" class="btn-sm">Создать</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">
+      После создания откроется редактор: добавьте инструкции, назначьте сотрудников, задайте дедлайн и штраф.
+    </div>
+  </form>
+</div>
+
+<!-- Templates table -->
+{% if templates %}
+<div style="overflow-x:auto">
+<table class="ctrl-table">
+  <thead>
+    <tr>
+      <th>Название</th>
+      <th>Инструкции</th>
+      <th>Сотрудники</th>
+      <th>Штраф</th>
+      <th>Создал</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for t in templates %}
+  <tr>
+    <td>
+      <div style="font-weight:600">{{ t.name }}</div>
+      {% if t.description %}<div class="tmpl-meta">{{ t.description|truncatechars:60 }}</div>{% endif %}
+      <div class="tmpl-meta">Срок исправления: {{ t.correction_deadline_hours }} ч.</div>
+    </td>
+    <td style="max-width:220px;white-space:pre-wrap;font-size:12px;color:var(--muted)">
+      {{ t.instructions|truncatechars:120 }}
+    </td>
+    <td>
+      {% with cnt=t.assigned_users.count %}
+        {% if cnt %}
+          <span class="badge" style="background:rgba(74,222,128,.12);color:#4ADE80">{{ cnt }} чел.</span>
+        {% else %}
+          <span style="color:var(--muted2);font-size:12px">—</span>
+        {% endif %}
+      {% endwith %}
+    </td>
+    <td>
+      {% if t.auto_penalty_amount > 0 %}
+        <span style="color:#F87171;font-weight:600">{{ t.auto_penalty_amount }} ₽</span>
+      {% else %}
+        <span style="color:var(--muted2);font-size:12px">—</span>
+      {% endif %}
+    </td>
+    <td style="font-size:12px;color:var(--muted)">
+      {% if t.created_by %}@{{ t.created_by.telegram_username|default:t.created_by.telegram_id }}{% else %}—{% endif %}
+    </td>
+    <td>
+      <a href="{% url 'control:report_template_edit' t.pk %}" class="btn-xs btn-edit">Редактировать</a>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div style="padding:60px;text-align:center;color:var(--muted)">
+  <div style="font-size:32px;margin-bottom:12px">📋</div>
+  <div style="font-weight:600;margin-bottom:6px">Шаблонов ещё нет</div>
+  <div style="font-size:13px">Создайте первый шаблон выше</div>
+</div>
+{% endif %}
+
+{% endblock %}

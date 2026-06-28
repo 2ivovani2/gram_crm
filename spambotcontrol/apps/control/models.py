@@ -4,6 +4,9 @@ Gramly Control — HR management models.
 Handles employee reports, penalties, KPI, and withdrawal tracking
 for the "Грамли Контроль" Telegram bot.
 """
+from decimal import Decimal
+from datetime import time as dt_time
+
 from django.db import models
 from django.utils import timezone
 
@@ -11,23 +14,90 @@ from django.utils import timezone
 # ── Report system ──────────────────────────────────────────────────────────────
 
 class ReportStatus(models.TextChoices):
-    NOT_SUBMITTED = "not_submitted", "Не подан"
-    PENDING       = "pending",       "Ожидает проверки"
-    ACCEPTED      = "accepted",      "Принят"
-    REJECTED      = "rejected",      "Отклонён"
-    REVISION      = "revision",      "На доработке"
-    OVERDUE       = "overdue",       "Просрочен"
+    NOT_SUBMITTED  = "not_submitted",  "Не подан"
+    PENDING        = "pending",        "Ожидает проверки"   # legacy
+    ON_MODERATION  = "on_moderation",  "На модерации"
+    ACCEPTED       = "accepted",       "Принят"
+    REJECTED       = "rejected",       "Отклонён"
+    REVISION       = "revision",       "На доработке"       # legacy
+    OVERDUE        = "overdue",        "Просрочен"
+    RESUBMITTED    = "resubmitted",    "Повторно отправлен"
+
+
+# Statuses that count as "awaiting review" in admin panels
+REPORT_MODERATION_STATUSES = {
+    ReportStatus.PENDING,
+    ReportStatus.ON_MODERATION,
+    ReportStatus.RESUBMITTED,
+}
+
+# Statuses that block withdrawal
+REPORT_BLOCKING_STATUSES = {
+    ReportStatus.PENDING,
+    ReportStatus.ON_MODERATION,
+    ReportStatus.RESUBMITTED,
+}
 
 
 class ReportTemplate(models.Model):
-    """Individual report template assigned to each employee by admin."""
+    """Named report template — admin creates, assigns to multiple workers."""
+
+    # Legacy: per-worker OneToOne template (kept nullable for compat)
     user = models.OneToOneField(
         "users.User",
         on_delete=models.CASCADE,
+        null=True, blank=True,
         related_name="report_template",
-        verbose_name="Сотрудник",
+        verbose_name="Сотрудник (устар.)",
     )
-    content = models.TextField(verbose_name="Шаблон отчёта")
+
+    # Template identity
+    name = models.CharField(max_length=200, blank=True, verbose_name="Название")
+    description = models.TextField(blank=True, verbose_name="Описание")
+
+    # Template body — prefer format_instructions; content kept for legacy
+    content = models.TextField(blank=True, verbose_name="Шаблон (устар.)")
+    format_instructions = models.TextField(blank=True, verbose_name="Инструкции по формату")
+
+    # Schedule & deadline
+    deadline_time = models.TimeField(
+        null=True, blank=True,
+        default=dt_time(23, 0),
+        verbose_name="Дедлайн (время)",
+    )
+    notification_times = models.JSONField(
+        default=list,
+        verbose_name="Времена напоминаний",
+        help_text='Список строк "HH:MM", до 3 штук',
+    )
+    correction_deadline_hours = models.PositiveSmallIntegerField(
+        default=24,
+        verbose_name="Срок исправления (часов)",
+        help_text="Сколько часов даётся на повторную подачу после отклонения",
+    )
+
+    # Penalty for overdue / missed correction
+    auto_penalty_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0"),
+        verbose_name="Штраф за просрочку",
+    )
+
+    # Multi-user assignment
+    assigned_users = models.ManyToManyField(
+        "users.User",
+        blank=True,
+        related_name="assigned_report_templates",
+        verbose_name="Назначенные сотрудники",
+    )
+
+    # Ownership
+    created_by = models.ForeignKey(
+        "users.User",
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_report_templates",
+        verbose_name="Создал",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "users.User",
@@ -40,9 +110,19 @@ class ReportTemplate(models.Model):
     class Meta:
         verbose_name = "Шаблон отчёта"
         verbose_name_plural = "Шаблоны отчётов"
+        ordering = ["name"]
 
     def __str__(self) -> str:
-        return f"Шаблон для {self.user}"
+        if self.name:
+            return self.name
+        if self.user_id:
+            return f"Шаблон для {self.user}"
+        return f"Шаблон #{self.pk}"
+
+    @property
+    def instructions(self) -> str:
+        """Current format instructions (prefer new field, fall back to legacy content)."""
+        return self.format_instructions or self.content
 
 
 class EmployeeReport(models.Model):
@@ -53,19 +133,27 @@ class EmployeeReport(models.Model):
         related_name="reports",
         verbose_name="Сотрудник",
     )
+    # Link to template (null for legacy reports submitted without a template)
+    template = models.ForeignKey(
+        ReportTemplate,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reports",
+        verbose_name="Шаблон",
+    )
     status = models.CharField(
         max_length=20,
         choices=ReportStatus.choices,
-        default=ReportStatus.PENDING,
+        default=ReportStatus.ON_MODERATION,
         db_index=True,
         verbose_name="Статус",
     )
+
     # Content: either text or a Telegram file
     text_content = models.TextField(blank=True, verbose_name="Текст отчёта")
     telegram_file_id = models.CharField(
         max_length=255, blank=True,
         verbose_name="Telegram file_id",
-        help_text="ID файла в Telegram (если отчёт — документ/фото)",
     )
     file_type = models.CharField(
         max_length=20, blank=True,
@@ -85,11 +173,16 @@ class EmployeeReport(models.Model):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     review_comment = models.TextField(blank=True, verbose_name="Комментарий администратора")
 
-    # Deadline tracking
+    # Correction deadline (set when report is rejected)
+    correction_deadline = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Срок исправления",
+    )
+
+    # Period label for display
     period_label = models.CharField(
         max_length=100, blank=True,
         verbose_name="Период",
-        help_text="Например: '25 мая 2026'",
     )
 
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата подачи")
@@ -105,7 +198,7 @@ class EmployeeReport(models.Model):
 
     @property
     def is_blocking_withdrawal(self) -> bool:
-        return self.status == ReportStatus.PENDING
+        return self.status in REPORT_BLOCKING_STATUSES
 
 
 # ── Penalty system ─────────────────────────────────────────────────────────────
@@ -117,9 +210,9 @@ class PenaltyType(models.TextChoices):
 
 class PenaltyStatus(models.TextChoices):
     CREATED   = "created",   "Создан"
-    PENDING   = "pending",   "Ожидает подтверждения"
-    ACCEPTED  = "accepted",  "Принят"
-    REJECTED  = "rejected",  "Отклонён"
+    PENDING   = "pending",   "Активен"
+    ACCEPTED  = "accepted",  "Подтверждён"
+    REJECTED  = "rejected",  "Отменён"
     DISPUTED  = "disputed",  "Оспаривается"
     DELETED   = "deleted",   "Удалён"
 
@@ -158,8 +251,7 @@ class Penalty(models.Model):
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name="created_penalties",
-        verbose_name="Создал",
-        help_text="null для автоматических штрафов",
+        verbose_name="Назначил",
     )
     report = models.ForeignKey(
         EmployeeReport,
@@ -182,7 +274,6 @@ class Penalty(models.Model):
     )
     resolved_at = models.DateTimeField(null=True, blank=True)
 
-    # Notification message ID for bot alerts
     bot_notification_message_id = models.BigIntegerField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -292,12 +383,10 @@ class ControlSettings(models.Model):
     late_report_penalty_amount = models.DecimalField(
         max_digits=12, decimal_places=2, default=0,
         verbose_name="Штраф за просрочку отчёта",
-        help_text="Сумма штрафа, автоматически начисляемого за неподанный отчёт",
     )
     report_deadline_hour = models.PositiveSmallIntegerField(
         default=23,
         verbose_name="Час дедлайна отчёта (МСК)",
-        help_text="Час по московскому времени, после которого отчёт считается просроченным",
     )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
@@ -361,7 +450,3 @@ class WorkerInvite(models.Model):
 
     def __str__(self) -> str:
         return f"WorkerInvite #{self.pk} → {self.user_id} [{self.status}]"
-
-
-# ── Broadcast history ─────────────────────────────────────────────────────────
-# Reuses existing apps.broadcasts.Broadcast model — no duplication needed.

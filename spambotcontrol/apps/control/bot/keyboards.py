@@ -67,11 +67,26 @@ def penalty_dispute_keyboard(penalty_id: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def worker_template_select_keyboard(templates: list) -> InlineKeyboardMarkup:
+    """Show list of report templates for worker to pick from."""
+    b = InlineKeyboardBuilder()
+    for tmpl in templates:
+        label = tmpl.name or f"Шаблон #{tmpl.pk}"
+        b.button(
+            text=f"📋 {label}",
+            callback_data=CtrlWorkerCB(action=f"pick_tmpl_{tmpl.pk}"),
+        )
+    b.button(text="❌ Отмена", callback_data=CtrlWorkerCB(action="cancel"))
+    b.adjust(1)
+    return b.as_markup()
+
+
 # ── Admin keyboards ───────────────────────────────────────────────────────────
 
 def admin_control_main_menu() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="📋 Отчёты (ожидают)", callback_data=CtrlAdminCB(action="reports"))
+    b.button(text="📋 Мои отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
+    b.button(text="📋 Все отчёты (без шаблона)", callback_data=CtrlAdminCB(action="reports_all"))
     b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
     b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
     b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
@@ -83,16 +98,15 @@ def admin_report_actions(report_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="✅ Принять", callback_data=CtrlAdminCB(action="rep_accept", obj_id=report_id))
     b.button(text="❌ Отклонить", callback_data=CtrlAdminCB(action="rep_reject", obj_id=report_id))
-    b.button(text="🔄 На доработку", callback_data=CtrlAdminCB(action="rep_revision", obj_id=report_id))
     b.button(text="◀️ Список отчётов", callback_data=CtrlAdminCB(action="reports"))
-    b.adjust(3, 1)
+    b.adjust(2, 1)
     return b.as_markup()
 
 
 def admin_penalty_actions(penalty_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✅ Принять", callback_data=CtrlAdminCB(action="pen_accept", obj_id=penalty_id))
-    b.button(text="❌ Отклонить", callback_data=CtrlAdminCB(action="pen_reject", obj_id=penalty_id))
+    b.button(text="✅ Подтвердить", callback_data=CtrlAdminCB(action="pen_accept", obj_id=penalty_id))
+    b.button(text="❌ Отменить", callback_data=CtrlAdminCB(action="pen_reject", obj_id=penalty_id))
     b.button(text="🗑 Удалить", callback_data=CtrlAdminCB(action="pen_delete", obj_id=penalty_id))
     b.button(text="◀️ Список штрафов", callback_data=CtrlAdminCB(action="penalties"))
     b.adjust(3, 1)

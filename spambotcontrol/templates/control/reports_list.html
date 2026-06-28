@@ -1,74 +1,136 @@
 {% extends "crm/base.html" %}
-{% block title %}Отчёты сотрудников{% endblock %}
-{% block page_title %}Отчёты{% endblock %}
+{% block title %}Отчёты{% endblock %}
+{% block page_title %}Отчёты сотрудников{% endblock %}
+{% block nav_ctrl_reports %}active{% endblock %}
 
 {% block extra_css %}
 <style>
-.filters { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; align-items:center; }
+.filters { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; align-items:flex-end; }
 .filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
 .ctrl-table { width:100%; border-collapse:collapse; }
-.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
-.ctrl-table td { padding:11px 12px; border-bottom:1px solid var(--line-2); font-size:14px; color:var(--text); }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; }
+.ctrl-table td { padding:10px 12px; border-bottom:1px solid var(--line-2); font-size:13px; color:var(--text); vertical-align:middle; }
 .ctrl-table tr:last-child td { border:none; }
 .ctrl-table tr:hover td { background:var(--surface-3); }
-.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
-.s-pending   { background:rgba(255,184,77,.15); color:#FFB84D; }
-.s-accepted  { background:rgba(74,222,128,.12); color:#4ADE80; }
-.s-rejected  { background:rgba(239,68,68,.12);  color:#F87171; }
-.s-revision  { background:rgba(96,165,250,.12); color:#60A5FA; }
-.s-overdue   { background:rgba(239,68,68,.18);  color:#F87171; }
-.s-not_submitted { background:rgba(250,250,251,.08); color:var(--muted); }
-.btn-sm { font-size:13px; padding:5px 12px; border-radius:8px; background:var(--accent-soft); color:var(--accent); border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; white-space:nowrap; }
+.s-on_moderation { background:rgba(96,165,250,.15); color:#60A5FA; }
+.s-resubmitted   { background:rgba(167,139,250,.15); color:#A78BFA; }
+.s-pending       { background:rgba(255,184,77,.12); color:#FFB84D; }
+.s-accepted      { background:rgba(74,222,128,.12); color:#4ADE80; }
+.s-rejected      { background:rgba(239,68,68,.12); color:#F87171; }
+.s-revision      { background:rgba(255,184,77,.10); color:#FFC65A; }
+.s-overdue       { background:rgba(239,68,68,.18); color:#F87171; }
+.s-not_submitted { background:rgba(250,250,251,.07); color:var(--muted); }
+.btn-xs  { font-size:12px; padding:4px 10px; border-radius:6px; border:1px solid var(--border); color:var(--text); background:var(--surface-2); cursor:pointer; text-decoration:none; display:inline-block; }
+.btn-xs:hover { background:var(--surface-3); }
+.btn-filter { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-tint); font-weight:600; }
+.tmpl-tag { font-size:11px; color:var(--muted); background:var(--surface-3); border-radius:4px; padding:2px 6px; }
+.deadline-warn { color:#F87171; font-size:11px; font-weight:600; }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="filters">
-  <form method="get" style="display:contents">
-    <input name="q" value="{{ search }}" placeholder="Поиск по username..." />
-    <select name="status">
-      <option value="">Все статусы</option>
-      {% for val, label in statuses %}
-      <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit" class="btn-sm">Найти</button>
-    {% if search or status_filter %}
-    <a href="{% url 'control:reports' %}" class="btn-sm" style="background:var(--surface-3)">Сбросить</a>
-    {% endif %}
-  </form>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
+  <div style="font-size:13px;color:var(--muted)">Показано: <b>{{ reports|length }}</b></div>
+  <a href="{% url 'control:report_templates' %}" class="btn-xs btn-filter">📋 Шаблоны отчётов</a>
 </div>
 
+<form method="get">
+<div class="filters">
+  <input name="q" value="{{ search }}" placeholder="Поиск по username / ID..." style="min-width:180px"/>
+
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for val, label in statuses %}
+    <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="template">
+    <option value="">Все шаблоны</option>
+    {% for t in templates %}
+    <option value="{{ t.pk }}" {% if t.pk|stringformat:"s" == template_filter %}selected{% endif %}>{{ t.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="admin">
+    <option value="">Все администраторы</option>
+    {% for a in admins %}
+    <option value="{{ a.pk }}" {% if a.pk|stringformat:"s" == admin_filter %}selected{% endif %}>@{{ a.telegram_username|default:a.telegram_id }}</option>
+    {% endfor %}
+  </select>
+
+  <input type="date" name="date_from" value="{{ date_from }}" title="Дата с"/>
+  <input type="date" name="date_to" value="{{ date_to }}" title="Дата по"/>
+
+  <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer">
+    <input type="checkbox" name="overdue" value="1" {% if overdue_only %}checked{% endif %} style="accent-color:var(--accent)"/>
+    Только просроченные
+  </label>
+
+  <button type="submit" class="btn-xs btn-filter">Найти</button>
+  {% if search or status_filter or template_filter or admin_filter or date_from or date_to or overdue_only %}
+  <a href="{% url 'control:reports' %}" class="btn-xs">Сбросить</a>
+  {% endif %}
+</div>
+</form>
+
 {% if reports %}
+<div style="overflow-x:auto">
 <table class="ctrl-table">
   <thead>
     <tr>
       <th>#</th>
       <th>Сотрудник</th>
+      <th>Шаблон</th>
       <th>Период</th>
       <th>Статус</th>
-      <th>Подан</th>
       <th>Проверил</th>
+      <th>Срок исправления</th>
+      <th>Подан</th>
       <th></th>
     </tr>
   </thead>
   <tbody>
   {% for r in reports %}
   <tr>
-    <td style="color:var(--muted)">{{ r.pk }}</td>
-    <td>@{{ r.user.telegram_username|default:r.user.telegram_id }}</td>
-    <td>{{ r.period_label|default:"—" }}</td>
+    <td style="color:var(--muted);font-size:12px">#{{ r.pk }}</td>
+    <td style="font-weight:500">
+      {% if r.user.telegram_username %}@{{ r.user.telegram_username }}{% else %}<span style="color:var(--muted)">{{ r.user.telegram_id }}</span>{% endif %}
+    </td>
+    <td>
+      {% if r.template %}
+        <span class="tmpl-tag">{{ r.template.name }}</span>
+      {% else %}
+        <span style="color:var(--muted2);font-size:12px">—</span>
+      {% endif %}
+    </td>
+    <td style="font-size:12px">{{ r.period_label }}</td>
     <td><span class="badge s-{{ r.status }}">{{ r.get_status_display }}</span></td>
-    <td style="color:var(--muted);font-size:13px">{{ r.submitted_at|date:"d.m.Y H:i"|default:"—" }}</td>
-    <td style="color:var(--muted);font-size:13px">{{ r.reviewed_by.telegram_username|default:"—" }}</td>
-    <td><a href="{% url 'control:report_detail' r.pk %}" class="btn-sm">Открыть</a></td>
+    <td style="font-size:12px;color:var(--muted)">
+      {% if r.reviewed_by %}@{{ r.reviewed_by.telegram_username|default:r.reviewed_by.telegram_id }}{% else %}—{% endif %}
+    </td>
+    <td>
+      {% if r.correction_deadline %}
+        <span class="deadline-warn">{{ r.correction_deadline|date:"d.m H:i" }}</span>
+      {% else %}<span style="color:var(--muted2)">—</span>{% endif %}
+    </td>
+    <td style="font-size:12px;color:var(--muted);white-space:nowrap">{{ r.submitted_at|date:"d.m.Y H:i" }}</td>
+    <td>
+      <a href="{% url 'control:report_detail' r.pk %}" class="btn-xs">Открыть</a>
+    </td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
-<div style="padding:40px;text-align:center;color:var(--muted)">Отчётов не найдено</div>
+<div style="padding:60px;text-align:center;color:var(--muted)">
+  <div style="font-size:32px;margin-bottom:12px">📋</div>
+  <div style="font-weight:600;margin-bottom:6px">Отчётов не найдено</div>
+  <div style="font-size:13px">Попробуйте изменить фильтры</div>
+</div>
 {% endif %}
 
 {% endblock %}

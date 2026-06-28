@@ -1,38 +1,46 @@
 {% extends "crm/base.html" %}
 {% block title %}Штрафы{% endblock %}
 {% block page_title %}Штрафы{% endblock %}
+{% block nav_ctrl_penalties %}active{% endblock %}
 
 {% block extra_css %}
 <style>
 .filters { display:flex; gap:10px; margin-bottom:22px; flex-wrap:wrap; align-items:center; }
 .filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
 .ctrl-table { width:100%; border-collapse:collapse; }
-.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); }
-.ctrl-table td { padding:11px 12px; border-bottom:1px solid var(--line-2); font-size:14px; color:var(--text); }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); font-weight:600; white-space:nowrap; }
+.ctrl-table td { padding:10px 12px; border-bottom:1px solid var(--line-2); font-size:13px; color:var(--text); vertical-align:middle; }
 .ctrl-table tr:last-child td { border:none; }
 .ctrl-table tr:hover td { background:var(--surface-3); }
-.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
 .s-created  { background:rgba(250,250,251,.08); color:var(--muted); }
 .s-pending  { background:rgba(255,184,77,.15); color:#FFB84D; }
-.s-accepted { background:rgba(239,68,68,.12);  color:#F87171; }
+.s-accepted { background:rgba(239,68,68,.12); color:#F87171; }
 .s-rejected { background:rgba(74,222,128,.12); color:#4ADE80; }
 .s-disputed { background:rgba(96,165,250,.12); color:#60A5FA; }
-.s-deleted  { background:rgba(250,250,251,.06); color:var(--muted2); text-decoration:line-through; }
-.btn-sm { font-size:12px; padding:4px 10px; border-radius:7px; background:var(--accent-soft); color:var(--accent); border:none; cursor:pointer; text-decoration:none; display:inline-block; }
-.btn-sm-red { background:rgba(239,68,68,.12); color:#F87171; }
-.btn-sm-green { background:rgba(74,222,128,.12); color:#4ADE80; }
-.action-btns { display:flex; gap:6px; }
-.create-form { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:24px; }
+.s-deleted  { background:rgba(250,250,251,.06); color:var(--muted2); }
+.t-auto   { background:rgba(255,184,77,.10); color:#FFB84D; }
+.t-manual { background:rgba(167,139,250,.12); color:#A78BFA; }
+.btn-xs { font-size:12px; padding:4px 10px; border-radius:6px; border:none; cursor:pointer; display:inline-block; white-space:nowrap; }
+.btn-confirm { background:rgba(239,68,68,.14); color:#F87171; font-weight:600; }
+.btn-cancel  { background:rgba(74,222,128,.12); color:#4ADE80; font-weight:600; }
+.btn-delete  { background:rgba(250,250,251,.08); color:var(--muted); }
+.action-btns { display:flex; gap:5px; flex-wrap:wrap; }
+.create-form { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:20px 24px; margin-bottom:24px; }
 .create-form h3 { font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text); }
 .form-row { display:grid; grid-template-columns:1fr 120px 1fr; gap:10px; margin-bottom:10px; }
-.form-row input, .form-row textarea { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; }
+.form-row input { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; width:100%; }
+.btn-sm { font-size:13px; padding:7px 16px; border-radius:8px; background:var(--accent); color:#000; font-weight:700; border:none; cursor:pointer; }
+.report-link { font-size:11px; background:var(--surface-3); border-radius:4px; padding:2px 6px; color:var(--muted); text-decoration:none; }
+.report-link:hover { color:var(--text); }
+.dispute-text { font-size:11px; color:#60A5FA; margin-top:3px; }
 </style>
 {% endblock %}
 
 {% block content %}
 
 <div class="create-form">
-  <h3>⚠️ Создать штраф вручную</h3>
+  <h3>➕ Создать штраф вручную</h3>
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="create">
@@ -41,70 +49,100 @@
       <input name="amount" type="number" step="0.01" placeholder="Сумма ₽" />
       <input name="reason" placeholder="Причина" />
     </div>
-    <input name="comment" placeholder="Комментарий (необязательно)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px">
+    <input name="comment" placeholder="Комментарий (необязательно)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px;box-sizing:border-box">
     <button type="submit" class="btn-sm">Начислить штраф</button>
   </form>
 </div>
 
 <div class="filters">
   <form method="get" style="display:contents">
-    <input name="q" value="{{ search }}" placeholder="Поиск по username / причине..." />
+    <input name="q" value="{{ search }}" placeholder="Поиск по username / причине..." style="min-width:200px"/>
     <select name="status">
       <option value="">Все статусы</option>
       {% for val, label in statuses %}
       <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="btn-sm">Найти</button>
+    <button type="submit" class="btn-xs" style="background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-tint);font-weight:600;padding:8px 14px">Найти</button>
     {% if search or status_filter %}
-    <a href="{% url 'control:penalties' %}" class="btn-sm" style="background:var(--surface-3)">Сбросить</a>
+    <a href="{% url 'control:penalties' %}" class="btn-xs" style="background:var(--surface-3);color:var(--text);border:1px solid var(--border);padding:8px 14px">Сбросить</a>
     {% endif %}
   </form>
 </div>
 
+<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Показано: {{ penalties|length }}</div>
+
 {% if penalties %}
+<div style="overflow-x:auto">
 <table class="ctrl-table">
   <thead>
     <tr>
-      <th>#</th><th>Сотрудник</th><th>Тип</th><th>Сумма</th><th>Статус</th><th>Причина</th><th>Дата</th><th>Действие</th>
+      <th>#</th>
+      <th>Сотрудник</th>
+      <th>Тип</th>
+      <th>Сумма</th>
+      <th>Причина</th>
+      <th>Статус</th>
+      <th>Назначил</th>
+      <th>Отчёт</th>
+      <th>Дата</th>
+      <th>Действия</th>
     </tr>
   </thead>
   <tbody>
   {% for p in penalties %}
   <tr>
-    <td style="color:var(--muted)">{{ p.pk }}</td>
-    <td>@{{ p.user.telegram_username|default:p.user.telegram_id }}</td>
-    <td style="color:var(--muted);font-size:12px">{{ p.get_type_display }}</td>
-    <td style="font-weight:600;color:#F87171">{{ p.amount }} ₽</td>
+    <td style="color:var(--muted);font-size:12px">#{{ p.pk }}</td>
+    <td style="font-weight:500">@{{ p.user.telegram_username|default:p.user.telegram_id }}</td>
+    <td><span class="badge t-{{ p.type }}">{{ p.get_type_display }}</span></td>
+    <td style="font-weight:700;color:#F87171;white-space:nowrap">{{ p.amount }} ₽</td>
+    <td style="max-width:180px">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px" title="{{ p.reason }}">{{ p.reason }}</div>
+      {% if p.comment %}<div style="font-size:11px;color:var(--muted);margin-top:2px">{{ p.comment|truncatechars:50 }}</div>{% endif %}
+      {% if p.dispute_comment %}<div class="dispute-text">💬 {{ p.dispute_comment|truncatechars:60 }}</div>{% endif %}
+    </td>
     <td><span class="badge s-{{ p.status }}">{{ p.get_status_display }}</span></td>
-    <td style="font-size:13px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.reason }}</td>
-    <td style="color:var(--muted);font-size:13px">{{ p.created_at|date:"d.m.Y" }}</td>
+    <td style="font-size:12px;color:var(--muted)">
+      {% if p.created_by %}@{{ p.created_by.telegram_username|default:p.created_by.telegram_id }}
+      {% else %}<span style="color:var(--muted2)">авто</span>{% endif %}
+    </td>
     <td>
-      {% if p.status == "pending" or p.status == "disputed" %}
+      {% if p.report_id %}
+        <a href="{% url 'control:report_detail' p.report_id %}" class="report-link">#{{ p.report_id }}</a>
+      {% else %}<span style="color:var(--muted2);font-size:12px">—</span>{% endif %}
+    </td>
+    <td style="font-size:12px;color:var(--muted);white-space:nowrap">{{ p.created_at|date:"d.m.Y" }}</td>
+    <td>
       <div class="action-btns">
+        {% if p.status == "pending" or p.status == "disputed" or p.status == "created" %}
         <form method="post" action="{% url 'control:penalty_action' p.pk %}">
           {% csrf_token %}
-          <button name="action" value="accept" class="btn-sm" style="background:rgba(239,68,68,.12);color:#F87171">Принять</button>
+          <button name="action" value="accept" class="btn-xs btn-confirm" title="Подтвердить штраф">✓ Подтвердить</button>
         </form>
         <form method="post" action="{% url 'control:penalty_action' p.pk %}">
           {% csrf_token %}
-          <button name="action" value="reject" class="btn-sm btn-sm-green">Отклонить</button>
+          <button name="action" value="reject" class="btn-xs btn-cancel" title="Отменить штраф">✕ Отменить</button>
         </form>
-        <form method="post" action="{% url 'control:penalty_action' p.pk %}">
+        {% endif %}
+        {% if p.status != "deleted" %}
+        <form method="post" action="{% url 'control:penalty_action' p.pk %}"
+              onsubmit="return confirm('Удалить штраф #{{ p.pk }}?')">
           {% csrf_token %}
-          <button name="action" value="delete" class="btn-sm" style="background:var(--surface-3);color:var(--muted)">Удалить</button>
+          <button name="action" value="delete" class="btn-xs btn-delete" title="Удалить">🗑</button>
         </form>
+        {% endif %}
       </div>
-      {% elif p.status == "disputed" %}
-        <span style="color:#60A5FA;font-size:12px">Оспорен: {{ p.dispute_comment|truncatechars:30 }}</span>
-      {% endif %}
     </td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
-<div style="padding:40px;text-align:center;color:var(--muted)">Штрафов не найдено</div>
+<div style="padding:60px;text-align:center;color:var(--muted)">
+  <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+  <div style="font-weight:600;margin-bottom:6px">Штрафов не найдено</div>
+</div>
 {% endif %}
 
 {% endblock %}

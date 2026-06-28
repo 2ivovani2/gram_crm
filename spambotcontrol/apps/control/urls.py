@@ -6,6 +6,10 @@ app_name = "control"
 urlpatterns = [
     path("", views.ControlDashboardView.as_view(), name="dashboard"),
 
+    # Report templates (admin CRUD)
+    path("report-templates/", views.ReportTemplatesView.as_view(), name="report_templates"),
+    path("report-templates/<int:pk>/", views.ReportTemplateEditView.as_view(), name="report_template_edit"),
+
     # Reports
     path("reports/", views.ReportsListView.as_view(), name="reports"),
     path("reports/<int:pk>/", views.ReportDetailView.as_view(), name="report_detail"),

@@ -51,8 +51,11 @@ class ControlDashboardView(ControlAccessMixin, View):
         }
 
         if _is_control_admin(request):
+            from apps.control.models import REPORT_MODERATION_STATUSES
             extra.update({
-                "pending_reports": EmployeeReport.objects.filter(status=ReportStatus.PENDING).count(),
+                "pending_reports": EmployeeReport.objects.filter(
+                    status__in=REPORT_MODERATION_STATUSES
+                ).count(),
                 "pending_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
                 ).count(),
@@ -62,11 +65,11 @@ class ControlDashboardView(ControlAccessMixin, View):
                 "active_workers": User.objects.filter(role=UserRole.WORKER, status=UserStatus.ACTIVE).count(),
                 "reports_submitted_today": EmployeeReport.objects.filter(submitted_at__date=today).count(),
                 "recent_reports": EmployeeReport.objects.filter(
-                    status=ReportStatus.PENDING
-                ).select_related("user").order_by("-submitted_at")[:5],
+                    status__in=REPORT_MODERATION_STATUSES
+                ).select_related("user", "template").order_by("-submitted_at")[:5],
                 "recent_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
-                ).select_related("user").order_by("-created_at")[:5],
+                ).select_related("user", "created_by").order_by("-created_at")[:5],
             })
 
         if _is_control_admin(request) or user.is_accountant():
@@ -77,16 +80,127 @@ class ControlDashboardView(ControlAccessMixin, View):
         return render(request, "control/dashboard.html", self.ctx(request, extra))
 
 
+# ── Report templates ───────────────────────────────────────────────────────────
+
+class ReportTemplatesView(AdminOnlyMixin, View):
+    def get(self, request):
+        from apps.control.models import ReportTemplate
+        templates = (
+            ReportTemplate.objects
+            .select_related("created_by")
+            .prefetch_related("assigned_users")
+            .order_by("name", "-updated_at")
+        )
+        return render(request, "control/report_templates.html", self.ctx(request, {
+            "page": "reports",
+            "templates": templates,
+        }))
+
+    def post(self, request):
+        from apps.control.models import ReportTemplate
+        from apps.users.models import User as U
+
+        action = request.POST.get("action")
+        admin = request.crm_user
+
+        if action == "create":
+            name = request.POST.get("name", "").strip()
+            if not name:
+                return redirect("control:report_templates")
+            tmpl = ReportTemplate.objects.create(
+                name=name,
+                description=request.POST.get("description", ""),
+                format_instructions=request.POST.get("format_instructions", ""),
+                correction_deadline_hours=int(request.POST.get("correction_deadline_hours", 24) or 24),
+                created_by=admin,
+                updated_by=admin,
+            )
+            try:
+                from decimal import Decimal
+                tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
+                tmpl.save(update_fields=["auto_penalty_amount"])
+            except Exception:
+                pass
+            return redirect("control:report_template_edit", pk=tmpl.pk)
+
+        return redirect("control:report_templates")
+
+
+class ReportTemplateEditView(AdminOnlyMixin, View):
+    def get(self, request, pk):
+        from apps.control.models import ReportTemplate
+        from apps.users.models import User as U, UserRole
+
+        tmpl = get_object_or_404(ReportTemplate, pk=pk)
+        workers = U.objects.filter(role=UserRole.WORKER).order_by("telegram_username")
+        assigned_ids = set(tmpl.assigned_users.values_list("id", flat=True))
+
+        return render(request, "control/report_template_edit.html", self.ctx(request, {
+            "page": "reports",
+            "tmpl": tmpl,
+            "workers": workers,
+            "assigned_ids": assigned_ids,
+        }))
+
+    def post(self, request, pk):
+        from apps.control.models import ReportTemplate
+        from apps.users.models import User as U, UserRole
+        from decimal import Decimal, InvalidOperation
+
+        tmpl = get_object_or_404(ReportTemplate, pk=pk)
+        action = request.POST.get("action", "save")
+        admin = request.crm_user
+
+        if action == "delete":
+            tmpl.delete()
+            return redirect("control:report_templates")
+
+        # Save template fields
+        tmpl.name = request.POST.get("name", tmpl.name).strip()
+        tmpl.description = request.POST.get("description", "")
+        tmpl.format_instructions = request.POST.get("format_instructions", "")
+        try:
+            tmpl.correction_deadline_hours = int(request.POST.get("correction_deadline_hours", 24) or 24)
+        except (ValueError, TypeError):
+            tmpl.correction_deadline_hours = 24
+        try:
+            tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
+        except InvalidOperation:
+            pass
+        tmpl.updated_by = admin
+        tmpl.save()
+
+        # Update assigned users (M2M)
+        selected_ids = request.POST.getlist("assigned_users")
+        try:
+            selected_pks = [int(i) for i in selected_ids if i.isdigit()]
+        except Exception:
+            selected_pks = []
+        tmpl.assigned_users.set(U.objects.filter(pk__in=selected_pks, role=UserRole.WORKER))
+
+        return redirect("control:report_template_edit", pk=tmpl.pk)
+
+
 # ── Reports ────────────────────────────────────────────────────────────────────
 
 class ReportsListView(AdminOnlyMixin, View):
     def get(self, request):
-        from apps.control.models import EmployeeReport, ReportStatus
+        from apps.control.models import EmployeeReport, ReportStatus, ReportTemplate
+        from apps.users.models import User as U, UserRole
 
         status_filter = request.GET.get("status", "")
         search = request.GET.get("q", "")
+        template_filter = request.GET.get("template", "")
+        admin_filter = request.GET.get("admin", "")
+        date_from = request.GET.get("date_from", "")
+        date_to = request.GET.get("date_to", "")
+        overdue_only = request.GET.get("overdue", "")
 
-        qs = EmployeeReport.objects.select_related("user", "reviewed_by").order_by("-submitted_at")
+        qs = (
+            EmployeeReport.objects
+            .select_related("user", "reviewed_by", "template", "template__created_by")
+            .order_by("-submitted_at")
+        )
         if status_filter:
             qs = qs.filter(status=status_filter)
         if search:
@@ -94,20 +208,42 @@ class ReportsListView(AdminOnlyMixin, View):
                 Q(user__telegram_username__icontains=search) |
                 Q(user__telegram_id__icontains=search)
             )
+        if template_filter:
+            qs = qs.filter(template_id=template_filter)
+        if admin_filter:
+            qs = qs.filter(template__created_by_id=admin_filter)
+        if date_from:
+            qs = qs.filter(submitted_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(submitted_at__date__lte=date_to)
+        if overdue_only:
+            qs = qs.filter(status=ReportStatus.OVERDUE)
+
+        templates = ReportTemplate.objects.filter(name__gt="").order_by("name")
+        admins = U.objects.filter(role=UserRole.ADMIN).order_by("telegram_username")
 
         return render(request, "control/reports_list.html", self.ctx(request, {
             "page": "reports",
-            "reports": qs[:100],
+            "reports": qs[:200],
             "statuses": ReportStatus.choices,
+            "templates": templates,
+            "admins": admins,
             "status_filter": status_filter,
             "search": search,
+            "template_filter": template_filter,
+            "admin_filter": admin_filter,
+            "date_from": date_from,
+            "date_to": date_to,
+            "overdue_only": overdue_only,
         }))
 
 
 class ReportDetailView(AdminOnlyMixin, View):
     def get(self, request, pk):
         from apps.control.models import EmployeeReport
-        report = get_object_or_404(EmployeeReport.objects.select_related("user"), pk=pk)
+        report = get_object_or_404(
+            EmployeeReport.objects.select_related("user", "template", "reviewed_by"), pk=pk
+        )
         return render(request, "control/report_detail.html", self.ctx(request, {
             "page": "reports",
             "report": report,
@@ -206,7 +342,7 @@ class EmployeesView(AdminOnlyMixin, View):
     def get(self, request):
         workers = User.objects.filter(
             role=UserRole.WORKER
-        ).prefetch_related("kpi_settings", "kpi_document", "report_template").order_by("telegram_username")
+        ).prefetch_related("kpi_settings", "kpi_document", "report_template", "assigned_report_templates").order_by("telegram_username")
         return render(request, "control/employees.html", self.ctx(request, {
             "page": "employees",
             "workers": workers,

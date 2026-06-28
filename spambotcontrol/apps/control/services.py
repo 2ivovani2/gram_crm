@@ -5,8 +5,9 @@ All methods are sync — wrap with sync_to_async in async bot handlers.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 
 from django.db import transaction
 from django.utils import timezone
@@ -21,38 +22,68 @@ logger = logging.getLogger(__name__)
 class ReportService:
 
     @staticmethod
-    def get_pending_report(user: User):
-        """Return the most recent report in PENDING status, if any."""
-        from apps.control.models import EmployeeReport, ReportStatus
+    def get_active_templates_for_user(user: User) -> List["ReportTemplate"]:
+        """Templates assigned to this worker via M2M (new flow)."""
+        from apps.control.models import ReportTemplate
+        return list(
+            ReportTemplate.objects.filter(assigned_users=user).order_by("name")
+        )
+
+    @staticmethod
+    def get_template_for_user(user: User) -> Optional["ReportTemplate"]:
+        """Return the first template assigned to this user (new M2M or legacy OneToOne)."""
+        from apps.control.models import ReportTemplate
+        # New: check M2M assignment
+        tmpl = ReportTemplate.objects.filter(assigned_users=user).first()
+        if tmpl:
+            return tmpl
+        # Legacy: per-user OneToOne
+        try:
+            return user.report_template
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_template(user: User) -> Optional[str]:
+        """Return format instructions for the user's template, or None (legacy compat)."""
+        tmpl = ReportService.get_template_for_user(user)
+        return tmpl.instructions if tmpl else None
+
+    @staticmethod
+    def has_blocking_report(user: User) -> bool:
+        """True if the worker has a report in a blocking status."""
+        from apps.control.models import EmployeeReport, REPORT_BLOCKING_STATUSES
+        return EmployeeReport.objects.filter(
+            user=user,
+            status__in=REPORT_BLOCKING_STATUSES,
+        ).exists()
+
+    @staticmethod
+    def get_blocking_report(user: User) -> Optional["EmployeeReport"]:
+        """Return the blocking report, if any."""
+        from apps.control.models import EmployeeReport, REPORT_BLOCKING_STATUSES
         return (
-            EmployeeReport.objects.filter(user=user, status=ReportStatus.PENDING)
+            EmployeeReport.objects.filter(user=user, status__in=REPORT_BLOCKING_STATUSES)
             .order_by("-submitted_at")
             .first()
         )
 
     @staticmethod
-    def has_blocking_report(user: User) -> bool:
-        """True if the worker has a pending report that blocks withdrawal."""
-        return ReportService.get_pending_report(user) is not None
-
-    @staticmethod
-    def get_template(user: User) -> Optional[str]:
-        """Return report template text for the user, or None."""
-        from apps.control.models import ReportTemplate
-        try:
-            return user.report_template.content
-        except Exception:
-            return None
-
-    @staticmethod
-    def submit_report(user: User, text: str = "", file_id: str = "",
-                      file_type: str = "text", original_filename: str = "") -> "EmployeeReport":
-        """Create a new report and return it."""
+    def submit_report(
+        user: User,
+        template: Optional["ReportTemplate"] = None,
+        text: str = "",
+        file_id: str = "",
+        file_type: str = "text",
+        original_filename: str = "",
+    ) -> "EmployeeReport":
+        """Create a new report. Status = ON_MODERATION if template, else PENDING (legacy)."""
         from apps.control.models import EmployeeReport, ReportStatus
-        from django.utils import timezone
+        status = ReportStatus.ON_MODERATION if template else ReportStatus.PENDING
         report = EmployeeReport.objects.create(
             user=user,
-            status=ReportStatus.PENDING,
+            template=template,
+            status=status,
             text_content=text,
             telegram_file_id=file_id,
             file_type=file_type or "text",
@@ -62,25 +93,61 @@ class ReportService:
         return report
 
     @staticmethod
-    def accept_report(report, admin: User, comment: str = "") -> None:
+    def accept_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
         from apps.control.models import ReportStatus
         report.status = ReportStatus.ACCEPTED
         report.reviewed_by = admin
         report.reviewed_at = timezone.now()
         report.review_comment = comment
-        report.save(update_fields=["status", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
+        report.correction_deadline = None
+        report.save(update_fields=[
+            "status", "reviewed_by", "reviewed_at", "review_comment",
+            "correction_deadline", "updated_at",
+        ])
 
     @staticmethod
-    def reject_report(report, admin: User, comment: str = "") -> None:
+    def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+        """Reject and set correction deadline based on template settings."""
         from apps.control.models import ReportStatus
         report.status = ReportStatus.REJECTED
         report.reviewed_by = admin
         report.reviewed_at = timezone.now()
         report.review_comment = comment
-        report.save(update_fields=["status", "reviewed_by", "reviewed_at", "review_comment", "updated_at"])
+        # Set correction deadline from template, or default 24 hours
+        hours = 24
+        if report.template and report.template.correction_deadline_hours:
+            hours = report.template.correction_deadline_hours
+        report.correction_deadline = timezone.now() + timedelta(hours=hours)
+        report.save(update_fields=[
+            "status", "reviewed_by", "reviewed_at", "review_comment",
+            "correction_deadline", "updated_at",
+        ])
 
     @staticmethod
-    def send_to_revision(report, admin: User, comment: str = "") -> None:
+    def resubmit_report(
+        original_report: "EmployeeReport",
+        text: str = "",
+        file_id: str = "",
+        file_type: str = "text",
+        original_filename: str = "",
+    ) -> "EmployeeReport":
+        """Create a correction/resubmission of a rejected report."""
+        from apps.control.models import EmployeeReport, ReportStatus
+        new_report = EmployeeReport.objects.create(
+            user=original_report.user,
+            template=original_report.template,
+            status=ReportStatus.RESUBMITTED,
+            text_content=text,
+            telegram_file_id=file_id,
+            file_type=file_type or "text",
+            original_filename=original_filename,
+            period_label=original_report.period_label,
+        )
+        return new_report
+
+    @staticmethod
+    def send_to_revision(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+        """Legacy: send to revision (kept for backward compat)."""
         from apps.control.models import ReportStatus
         report.status = ReportStatus.REVISION
         report.reviewed_by = admin
@@ -90,13 +157,45 @@ class ReportService:
 
     @staticmethod
     def get_all_pending():
-        from apps.control.models import EmployeeReport, ReportStatus
-        return EmployeeReport.objects.filter(status=ReportStatus.PENDING).select_related("user").order_by("-submitted_at")
+        """All reports awaiting review (any admin)."""
+        from apps.control.models import EmployeeReport, REPORT_MODERATION_STATUSES
+        return (
+            EmployeeReport.objects.filter(status__in=REPORT_MODERATION_STATUSES)
+            .select_related("user", "template", "template__created_by")
+            .order_by("-submitted_at")
+        )
+
+    @staticmethod
+    def get_pending_for_admin(admin: User):
+        """Reports for templates created by this admin (new routing)."""
+        from apps.control.models import EmployeeReport, REPORT_MODERATION_STATUSES
+        return (
+            EmployeeReport.objects.filter(
+                status__in=REPORT_MODERATION_STATUSES,
+                template__created_by=admin,
+            )
+            .select_related("user", "template")
+            .order_by("-submitted_at")
+        )
 
     @staticmethod
     def get_reports_for_user(user: User):
         from apps.control.models import EmployeeReport
         return EmployeeReport.objects.filter(user=user).order_by("-submitted_at")[:10]
+
+    @staticmethod
+    def mark_overdue_correction_deadlines() -> int:
+        """Mark as OVERDUE all REJECTED reports whose correction_deadline has passed."""
+        from apps.control.models import EmployeeReport, ReportStatus
+        now = timezone.now()
+        qs = EmployeeReport.objects.filter(
+            status=ReportStatus.REJECTED,
+            correction_deadline__lt=now,
+            correction_deadline__isnull=False,
+        )
+        count = qs.count()
+        qs.update(status=ReportStatus.OVERDUE, updated_at=now)
+        return count
 
 
 # ── Penalty services ───────────────────────────────────────────────────────────
@@ -118,14 +217,17 @@ class PenaltyService:
         )
 
     @staticmethod
-    def create_auto(worker: User, report=None) -> "Penalty":
+    def create_auto(worker: User, report=None, amount: Optional[Decimal] = None,
+                    reason: str = "Просрочка подачи отчёта") -> "Penalty":
         from apps.control.models import Penalty, PenaltyType, PenaltyStatus, ControlSettings
-        settings = ControlSettings.get()
+        if amount is None:
+            settings = ControlSettings.get()
+            amount = settings.late_report_penalty_amount
         return Penalty.objects.create(
             user=worker,
             type=PenaltyType.AUTO,
-            amount=settings.late_report_penalty_amount,
-            reason="Просрочка подачи отчёта",
+            amount=amount,
+            reason=reason,
             status=PenaltyStatus.PENDING,
             report=report,
         )
@@ -149,7 +251,7 @@ class PenaltyService:
         from apps.control.models import Penalty, PenaltyStatus
         return Penalty.objects.filter(
             status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
-        ).select_related("user", "created_by").order_by("-created_at")
+        ).select_related("user", "created_by", "report", "report__template").order_by("-created_at")
 
     @staticmethod
     def total_accepted_penalty(user: User) -> Decimal:
@@ -264,27 +366,21 @@ class ControlBalanceService:
 
     @staticmethod
     def get_total_balance(user: User) -> Decimal:
-        """Total ever earned (gross, before penalties and withdrawals)."""
         return user.compute_personal_earned() + user.compute_referral_earned()
 
     @staticmethod
     def get_available_balance(user: User) -> Decimal:
-        """Balance available for withdrawal (after penalties and withdrawals)."""
         penalties = PenaltyService.total_accepted_penalty(user)
         gross = ControlBalanceService.get_total_balance(user)
         withdrawn = user.compute_withdrawn()
         available = gross - withdrawn - penalties
-        from decimal import Decimal as D
-        return max(D("0"), available)
+        return max(Decimal("0"), available)
 
 
 # ── Worker list helper ─────────────────────────────────────────────────────────
 
 def get_all_workers():
-    return User.objects.filter(
-        role=UserRole.WORKER,
-        status="active",
-    ).order_by("telegram_username")
+    return User.objects.filter(role=UserRole.WORKER, status="active").order_by("telegram_username")
 
 
 def get_all_accountants():

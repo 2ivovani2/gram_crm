@@ -1,6 +1,6 @@
 """
 Admin-facing handlers for the Gramly Control bot.
-Report review, penalty management, manual penalties, broadcasts.
+Report review (with rejection comment FSM), penalty management, broadcasts.
 """
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -13,7 +13,9 @@ from apps.control.bot.keyboards import (
     CtrlAdminCB, admin_control_main_menu, admin_report_actions,
     admin_penalty_actions, admin_confirm_broadcast, admin_back,
 )
-from apps.control.bot.states import AdminPenaltyCreateState, AdminBroadcastControlState
+from apps.control.bot.states import (
+    AdminPenaltyCreateState, AdminBroadcastControlState, AdminReportReviewState,
+)
 
 router = Router(name="control_admin")
 
@@ -41,27 +43,40 @@ async def cb_admin_main(callback: CallbackQuery, state: FSMContext):
 
 # ── Reports ────────────────────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "reports"), IsAdmin())
-async def cb_reports_list(callback: CallbackQuery, db_user: User):
+async def _show_reports_list(callback: CallbackQuery, db_user: User, only_mine: bool = True):
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService
     from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-    pending = await sync_to_async(lambda: list(ReportService.get_all_pending()[:15]))()
+    if only_mine:
+        pending = await sync_to_async(
+            lambda: list(ReportService.get_pending_for_admin(db_user)[:15])
+        )()
+        title = "📋 <b>Отчёты на вашей проверке</b>"
+        empty_text = (
+            "✅ Нет отчётов на вашей проверке.\n\n"
+            "Отчёты попадают к вам, когда сотрудник сдаёт отчёт по вашему шаблону."
+        )
+    else:
+        pending = await sync_to_async(
+            lambda: list(ReportService.get_all_pending()[:15])
+        )()
+        title = "📋 <b>Все отчёты без шаблона / legacy</b>"
+        empty_text = "✅ Нет отчётов, ожидающих проверки."
+
     await callback.answer()
 
     if not pending:
-        await callback.message.edit_text(
-            "✅ Нет отчётов, ожидающих проверки.",
-            reply_markup=admin_back(),
-        )
+        await callback.message.edit_text(empty_text, reply_markup=admin_back())
         return
 
-    text = f"📋 <b>Отчёты на проверке</b> ({len(pending)}):\n\n"
+    text = f"{title} ({len(pending)}):\n\n"
     b = InlineKeyboardBuilder()
     for r in pending:
         username = f"@{r.user.telegram_username}" if r.user.telegram_username else str(r.user.telegram_id)
-        text += f"• #{r.pk} {username} — {r.period_label}\n"
+        tmpl_label = f" [{r.template.name}]" if r.template and r.template.name else ""
+        status_icon = {"on_moderation": "🔵", "resubmitted": "🔄", "pending": "⏳"}.get(r.status, "📋")
+        text += f"{status_icon} #{r.pk} {username}{tmpl_label} — {r.period_label}\n"
         b.button(
             text=f"#{r.pk} {username}",
             callback_data=CtrlAdminCB(action="rep_view", obj_id=r.pk),
@@ -72,28 +87,48 @@ async def cb_reports_list(callback: CallbackQuery, db_user: User):
     await callback.message.edit_text(text, reply_markup=b.as_markup())
 
 
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports"), IsAdmin())
+async def cb_reports_list(callback: CallbackQuery, db_user: User):
+    await _show_reports_list(callback, db_user, only_mine=True)
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports_all"), IsAdmin())
+async def cb_reports_list_all(callback: CallbackQuery, db_user: User):
+    await _show_reports_list(callback, db_user, only_mine=False)
+
+
 @router.callback_query(CtrlAdminCB.filter(F.action == "rep_view"), IsAdmin())
 async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
 
     report = await sync_to_async(
-        lambda: EmployeeReport.objects.select_related("user").filter(pk=callback_data.obj_id).first()
+        lambda: EmployeeReport.objects.select_related("user", "template").filter(pk=callback_data.obj_id).first()
     )()
     if not report:
         await callback.answer("Отчёт не найден", show_alert=True)
         return
 
     username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)
+    tmpl_label = f"\nШаблон: {report.template.name}" if report.template and report.template.name else ""
+    status_icon = {
+        "on_moderation": "🔵", "resubmitted": "🔄", "pending": "⏳",
+        "accepted": "✅", "rejected": "❌", "overdue": "🚨",
+    }.get(report.status, "📋")
+
     text = (
         f"📋 <b>Отчёт #{report.pk}</b>\n\n"
-        f"Сотрудник: {username}\n"
+        f"Сотрудник: {username}{tmpl_label}\n"
         f"Период: {report.period_label}\n"
         f"Подан: {report.submitted_at.strftime('%d.%m.%Y %H:%M')}\n"
-        f"Статус: {report.get_status_display()}\n\n"
+        f"Статус: {status_icon} {report.get_status_display()}\n"
     )
+    if report.review_comment:
+        text += f"Предыдущий комментарий: {report.review_comment}\n"
+    if report.correction_deadline:
+        text += f"Срок исправления: {report.correction_deadline.strftime('%d.%m %H:%M')}\n"
     if report.text_content:
-        text += f"<b>Текст:</b>\n{report.text_content[:800]}"
+        text += f"\n<b>Текст:</b>\n{report.text_content[:800]}"
 
     await callback.answer()
     if report.telegram_file_id and report.file_type == "document":
@@ -114,62 +149,129 @@ async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db
         await callback.message.edit_text(text, reply_markup=admin_report_actions(report.pk))
 
 
-async def _review_report(callback: CallbackQuery, callback_data: CtrlAdminCB,
-                         db_user: User, action: str):
+# ── Report: ACCEPT (immediate) ────────────────────────────────────────────────
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "rep_accept"), IsAdmin())
+async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
     from apps.control.services import ReportService
 
     report = await sync_to_async(
-        lambda: EmployeeReport.objects.select_related("user").filter(pk=callback_data.obj_id).first()
+        lambda: EmployeeReport.objects.select_related("user", "template").filter(pk=callback_data.obj_id).first()
     )()
     if not report:
         await callback.answer("Отчёт не найден", show_alert=True)
         return
 
-    if action == "accept":
-        await sync_to_async(ReportService.accept_report)(report, db_user)
-        result_text = "✅ принят"
-        worker_msg = f"✅ <b>Ваш отчёт принят!</b>\n\nОтчёт за {report.period_label} принят администратором. Вывод средств разблокирован."
-    elif action == "reject":
-        await sync_to_async(ReportService.reject_report)(report, db_user)
-        result_text = "❌ отклонён"
-        worker_msg = f"❌ <b>Ваш отчёт отклонён.</b>\n\nОтчёт за {report.period_label} отклонён администратором. Подайте новый отчёт."
-    else:
-        await sync_to_async(ReportService.send_to_revision)(report, db_user)
-        result_text = "🔄 на доработке"
-        worker_msg = f"🔄 <b>Отчёт отправлен на доработку.</b>\n\nОтчёт за {report.period_label} требует доработки. Подайте исправленный отчёт."
+    await sync_to_async(ReportService.accept_report)(report, db_user)
 
     # Notify worker
+    worker_msg = (
+        f"✅ <b>Ваш отчёт принят!</b>\n\n"
+        f"Отчёт за {report.period_label} принят администратором.\n"
+        f"Вывод средств разблокирован."
+    )
     try:
-        await callback.message.bot.send_message(
-            report.user.telegram_id,
-            worker_msg,
-            parse_mode="HTML",
-        )
+        await callback.bot.send_message(report.user.telegram_id, worker_msg, parse_mode="HTML")
     except Exception:
         pass
 
-    await callback.answer(f"Отчёт {result_text}")
+    await callback.answer("✅ Отчёт принят")
     await callback.message.edit_text(
-        f"Отчёт #{report.pk} — {result_text}",
+        f"✅ Отчёт #{report.pk} принят.",
         reply_markup=admin_back(),
     )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "rep_accept"), IsAdmin())
-async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
-    await _review_report(callback, callback_data, db_user, "accept")
-
+# ── Report: REJECT — enter FSM to collect comment ────────────────────────────
 
 @router.callback_query(CtrlAdminCB.filter(F.action == "rep_reject"), IsAdmin())
-async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
-    await _review_report(callback, callback_data, db_user, "reject")
+async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB,
+                         db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.models import EmployeeReport
+
+    report = await sync_to_async(
+        lambda: EmployeeReport.objects.select_related("user", "template").filter(pk=callback_data.obj_id).first()
+    )()
+    if not report:
+        await callback.answer("Отчёт не найден", show_alert=True)
+        return
+
+    username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)
+
+    # Remember which report we're rejecting
+    await state.set_state(AdminReportReviewState.waiting_for_comment)
+    await state.update_data(report_id=report.pk, action="reject")
+
+    # Build context about correction deadline
+    hours = 24
+    if report.template and report.template.correction_deadline_hours:
+        hours = report.template.correction_deadline_hours
+
+    await callback.answer()
+    await callback.message.edit_text(
+        f"❌ <b>Отклонение отчёта #{report.pk}</b>\n\n"
+        f"Сотрудник: {username}\n"
+        f"Период: {report.period_label}\n\n"
+        f"Напишите причину отклонения и что нужно исправить.\n"
+        f"Сотруднику будет дано <b>{hours} ч.</b> на повторную подачу.",
+        reply_markup=admin_back(),
+    )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "rep_revision"), IsAdmin())
-async def cb_rep_revision(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
-    await _review_report(callback, callback_data, db_user, "revision")
+@router.message(AdminReportReviewState.waiting_for_comment, IsAdmin())
+async def process_reject_comment(message: Message, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.models import EmployeeReport
+    from apps.control.services import ReportService
+
+    data = await state.get_data()
+    report_id = data.get("report_id")
+    comment = message.text or ""
+
+    report = await sync_to_async(
+        lambda: EmployeeReport.objects.select_related("user", "template").filter(pk=report_id).first()
+    )()
+    if not report:
+        await state.clear()
+        await message.answer("Отчёт не найден.", reply_markup=admin_back())
+        return
+
+    await sync_to_async(ReportService.reject_report)(report, db_user, comment)
+    await state.clear()
+
+    # Get template instructions for the notification
+    hours = 24
+    instructions = ""
+    if report.template:
+        hours = report.template.correction_deadline_hours or 24
+        instructions = report.template.instructions
+
+    worker_msg = (
+        f"❌ <b>Ваш отчёт отклонён</b>\n\n"
+        f"Период: {report.period_label}\n\n"
+        f"<b>Причина:</b>\n{comment}\n\n"
+    )
+    if instructions:
+        worker_msg += f"<b>Требования к отчёту:</b>\n{instructions}\n\n"
+    worker_msg += (
+        f"У вас есть <b>{hours} ч.</b> для повторной подачи.\n"
+        f"Нажмите «📝 Подать отчёт» в меню."
+    )
+
+    try:
+        await message.bot.send_message(
+            report.user.telegram_id, worker_msg, parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    await message.answer(
+        f"❌ Отчёт #{report.pk} отклонён. Сотрудник уведомлён.",
+        reply_markup=admin_back(),
+    )
 
 
 # ── Penalties ──────────────────────────────────────────────────────────────────
@@ -190,7 +292,7 @@ async def cb_penalties_list(callback: CallbackQuery, db_user: User):
         )
         return
 
-    text = f"⚠️ <b>Штрафы (ожидают / оспариваются)</b> ({len(penalties)}):\n\n"
+    text = f"⚠️ <b>Штрафы (активны / оспариваются)</b> ({len(penalties)}):\n\n"
     b = InlineKeyboardBuilder()
     for p in penalties:
         username = f"@{p.user.telegram_username}" if p.user.telegram_username else str(p.user.telegram_id)
@@ -212,13 +314,17 @@ async def cb_penalty_view(callback: CallbackQuery, callback_data: CtrlAdminCB, d
     from apps.control.models import Penalty
 
     penalty = await sync_to_async(
-        lambda: Penalty.objects.select_related("user", "created_by").filter(pk=callback_data.obj_id).first()
+        lambda: Penalty.objects.select_related("user", "created_by", "report").filter(pk=callback_data.obj_id).first()
     )()
     if not penalty:
         await callback.answer("Штраф не найден", show_alert=True)
         return
 
     username = f"@{penalty.user.telegram_username}" if penalty.user.telegram_username else str(penalty.user.telegram_id)
+    created_by = (
+        f"@{penalty.created_by.telegram_username}" if penalty.created_by and penalty.created_by.telegram_username
+        else (str(penalty.created_by.telegram_id) if penalty.created_by else "Авто")
+    )
     text = (
         f"⚠️ <b>Штраф #{penalty.pk}</b>\n\n"
         f"Сотрудник: {username}\n"
@@ -226,7 +332,10 @@ async def cb_penalty_view(callback: CallbackQuery, callback_data: CtrlAdminCB, d
         f"Сумма: <b>{penalty.amount:.2f} ₽</b>\n"
         f"Причина: {penalty.reason}\n"
         f"Статус: {penalty.get_status_display()}\n"
+        f"Назначил: {created_by}\n"
     )
+    if penalty.report_id:
+        text += f"Отчёт: #{penalty.report_id}\n"
     if penalty.comment:
         text += f"Комментарий: {penalty.comment}\n"
     if penalty.dispute_comment:
@@ -250,19 +359,19 @@ async def _resolve_penalty(callback: CallbackQuery, callback_data: CtrlAdminCB,
 
     if action == "accept":
         await sync_to_async(penalty.accept)(db_user)
-        result = "принят ❌"
+        result = "подтверждён ❌"
         worker_msg = f"❌ <b>Штраф подтверждён</b>\n\nШтраф #{penalty.pk} ({penalty.amount:.2f} ₽) подтверждён администратором."
     elif action == "reject":
         await sync_to_async(penalty.reject)(db_user)
-        result = "отклонён ✅"
-        worker_msg = f"✅ <b>Штраф отклонён</b>\n\nШтраф #{penalty.pk} ({penalty.amount:.2f} ₽) отклонён администратором."
+        result = "отменён ✅"
+        worker_msg = f"✅ <b>Штраф отменён</b>\n\nШтраф #{penalty.pk} ({penalty.amount:.2f} ₽) отменён администратором."
     else:
         await sync_to_async(penalty.delete_soft)(db_user)
         result = "удалён 🗑"
         worker_msg = f"🗑 <b>Штраф удалён</b>\n\nШтраф #{penalty.pk} ({penalty.amount:.2f} ₽) удалён администратором."
 
     try:
-        await callback.message.bot.send_message(
+        await callback.bot.send_message(
             penalty.user.telegram_id, worker_msg, parse_mode="HTML"
         )
     except Exception:
@@ -352,7 +461,6 @@ async def penalty_got_reason(message: Message, db_user: User, state: FSMContext)
     )
     await state.clear()
 
-    # Notify worker
     from apps.control.bot.keyboards import CtrlWorkerCB
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     b = InlineKeyboardBuilder()
@@ -438,7 +546,7 @@ async def cb_broadcast_confirm(callback: CallbackQuery, db_user: User, state: FS
     failed = 0
     for tg_id in workers:
         try:
-            await callback.message.bot.send_message(tg_id, text, parse_mode="HTML")
+            await callback.bot.send_message(tg_id, text, parse_mode="HTML")
             sent += 1
         except Exception:
             failed += 1
