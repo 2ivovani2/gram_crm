@@ -25,9 +25,21 @@ from apps.common.utils import format_dt
 router = Router(name="admin_users")
 
 
+async def send_users_list(target, page: int = 1) -> None:
+    """Entry point for the users list — called from menu.py."""
+    from asgiref.sync import sync_to_async
+    users, total = await sync_to_async(UserService.get_users_list)(page=page)
+    text = f"👥 <b>Пользователи</b>\n\nВсего: {total}"
+    if isinstance(target, CallbackQuery):
+        await safe_edit_text(target, text, get_users_list_keyboard(users, page=page, total=total))
+    else:
+        from aiogram.types import Message
+        await target.answer(text, reply_markup=get_users_list_keyboard(users, page=page, total=total))
+
+
 def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None = None) -> str:
     status_icon = {"active": "✅", "inactive": "⛔", "pending": "⏳", "banned": "🚫"}.get(user.status, "❓")
-    role_icon = {"admin": "👑", "curator": "🎓", "worker": "👷"}.get(user.role, "❓")
+    role_icon = {"admin": "👑", "curator": "🎓", "worker": "👷", "accountant": "💼", "anonymous": "👤"}.get(user.role, "👤")
 
     lines = [
         "👤 <b>Карточка пользователя</b>",
@@ -104,14 +116,6 @@ def _load_user_data(user_id: int) -> tuple:
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminMenuCallback.filter(F.section == "users"), IsAdmin())
-async def cb_users_section(callback: CallbackQuery, db_user: User) -> None:
-    await callback.answer()
-    users, total = await sync_to_async(UserService.get_users_list)(page=1)
-    text = f"👥 <b>Пользователи</b>\n\nВсего: {total}"
-    await safe_edit_text(callback, text, get_users_list_keyboard(users, page=1, total=total))
-
-
 @router.callback_query(AdminUserCallback.filter(F.action == "list"), IsAdmin())
 async def cb_users_list(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
     await callback.answer()
@@ -155,16 +159,7 @@ async def cb_set_status(callback: CallbackQuery, callback_data: AdminUserCallbac
     action_map = {"set_active": "active", "set_inactive": "inactive", "set_banned": "banned"}
     new_status = action_map[callback_data.action]
 
-    user, referral_count, breakdown = await sync_to_async(
-        lambda: (
-            *(_d := _load_user_data(callback_data.user_id)),
-        )
-    )()
-    # Unpack
-    user = user
-    referral_count = referral_count
-    breakdown = breakdown
-
+    user, referral_count, _ = await sync_to_async(_load_user_data)(callback_data.user_id)
     user = await sync_to_async(UserService.set_status)(user, new_status)
     breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
 
