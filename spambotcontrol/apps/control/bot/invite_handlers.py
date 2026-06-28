@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 router = Router(name="control_invite")
 
 
+def _make_bot():
+    """Fresh Bot instance for asyncio.run() calls — avoids event-loop conflicts with singleton."""
+    from aiogram import Bot
+    from aiogram.client.default import DefaultBotProperties
+    from aiogram.enums import ParseMode
+    from django.conf import settings
+    return Bot(
+        token=settings.TELEGRAM_BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+
 class WorkerInviteCB(CallbackData, prefix="wi"):
     action: str   # accept | decline
     invite_id: int
@@ -37,12 +49,10 @@ def _invite_keyboard(invite_id: int) -> InlineKeyboardMarkup:
 
 # ── Async helpers ──────────────────────────────────────────────────────────────
 
-async def _notify_admins(text: str) -> None:
-    from apps.telegram_bot.bot import get_bot
+async def _notify_admins(bot, text: str) -> None:
     from apps.users.models import User, UserRole
     from asgiref.sync import sync_to_async
 
-    bot = get_bot()
     admin_ids = await sync_to_async(
         lambda: list(User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)
                      .values_list("telegram_id", flat=True))
@@ -97,9 +107,10 @@ async def cb_invite_accept(callback: CallbackQuery, callback_data: WorkerInviteC
     inviter_name = f"@{inviter.telegram_username}" if inviter and inviter.telegram_username else "Администратор"
     user_name = f"@{user.telegram_username}" if user.telegram_username else str(user.telegram_id)
     await _notify_admins(
+        callback.bot,
         f"✅ <b>Сотрудник принял приглашение</b>\n\n"
         f"👤 {user_name}\n"
-        f"📨 Пригласил: {inviter_name}"
+        f"📨 Пригласил: {inviter_name}",
     )
 
 
@@ -137,9 +148,10 @@ async def cb_invite_decline(callback: CallbackQuery, callback_data: WorkerInvite
     user = invite.user
     user_name = f"@{user.telegram_username}" if user.telegram_username else str(user.telegram_id)
     await _notify_admins(
+        callback.bot,
         f"❌ <b>Сотрудник отклонил приглашение</b>\n\n"
         f"👤 {user_name}\n"
-        f"📨 Пригласил: {inviter_name}"
+        f"📨 Пригласил: {inviter_name}",
     )
 
 
@@ -149,10 +161,10 @@ def send_worker_invite_sync(invite_id: int, user_tg_id: int, inviter_name: str) 
     """Send invite message to user and save bot_message_id. Fails silently."""
 
     async def _send():
-        from apps.telegram_bot.bot import get_bot
         from apps.control.models import WorkerInvite
+        from asgiref.sync import sync_to_async
 
-        bot = get_bot()
+        bot = _make_bot()
         try:
             msg = await bot.send_message(
                 user_tg_id,
@@ -161,14 +173,17 @@ def send_worker_invite_sync(invite_id: int, user_tg_id: int, inviter_name: str) 
                 "Примите приглашение чтобы получить доступ к личному кабинету.",
                 reply_markup=_invite_keyboard(invite_id),
             )
-            from asgiref.sync import sync_to_async
             await sync_to_async(
                 lambda: WorkerInvite.objects.filter(pk=invite_id)
                         .update(bot_message_id=msg.message_id)
             )()
+            logger.info("send_worker_invite_sync: sent to tg_id=%s invite=%s msg=%s",
+                        user_tg_id, invite_id, msg.message_id)
         except Exception as exc:
             logger.error("send_worker_invite_sync: failed tg_id=%s invite=%s: %s",
                          user_tg_id, invite_id, exc)
+        finally:
+            await bot.session.close()
 
     try:
         asyncio.run(_send())
