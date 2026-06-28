@@ -494,6 +494,10 @@ class UserEditView(AdminOnlyMixin, View):
             workspace = request.crm_workspace
             if workspace and crm_role in dict(CRMRole.choices):
                 WorkspaceService.add_member(workspace, user, crm_role, invited_by=request.crm_user)
+                # CRM owner → sync bot role to admin (single source of truth)
+                if crm_role == "owner" and not user.is_admin():
+                    user.role = UserRole.ADMIN
+                    user.save(update_fields=["role"])
 
         elif action == "remove_crm_role":
             workspace = request.crm_workspace
