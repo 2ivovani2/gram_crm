@@ -280,6 +280,8 @@ class PenaltiesListView(AdminOnlyMixin, View):
         qs = Penalty.objects.select_related("user", "created_by", "resolved_by").order_by("-created_at")
         if status_filter:
             qs = qs.filter(status=status_filter)
+        else:
+            qs = qs.exclude(status=PenaltyStatus.DELETED)
         if search:
             qs = qs.filter(
                 Q(user__telegram_username__icontains=search) |
