@@ -151,20 +151,8 @@
     <a href="{% url 'crm:entry_finance' %}?date={{ date|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
       {% if finance %}Изменить CF{% else %}Внести CF{% endif %}
     </a>
-    <a href="{% url 'crm:entry_apps' %}?date={{ date|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
-      {% if application %}Изменить заявки{% else %}Внести заявки{% endif %}
-    </a>
     {% if report %}
     <a href="{% url 'crm:report_detail' report.pk %}" class="btn btn-secondary btn-sm">Открыть отчёт</a>
-    <form method="post" action="{% url 'crm:generate_report' date|date:'Y-m-d' %}" style="display:inline">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-secondary btn-sm">Пересформировать</button>
-    </form>
-    {% elif finance and application %}
-    <form method="post" action="{% url 'crm:generate_report' date|date:'Y-m-d' %}" style="display:inline">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary btn-sm">Сформировать отчёт →</button>
-    </form>
     {% endif %}
   </div>
   {% endif %}

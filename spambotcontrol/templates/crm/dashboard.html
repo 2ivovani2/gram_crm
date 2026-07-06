@@ -67,41 +67,6 @@
     {% endif %}
   </div>
 
-  <!-- Applications -->
-  <div class="entry-status-card {% if status.apps_done %}done{% else %}pending{% endif %}">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:38px;height:38px;border-radius:10px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>
-          </svg>
-        </div>
-        <div>
-          <div class="entry-status-title">Заявки</div>
-          <div class="entry-status-who">Менеджер по заявкам</div>
-        </div>
-      </div>
-      {% if status.apps_done %}
-      <span class="badge badge-green">Внесено</span>
-      {% else %}
-      <span class="badge badge-amber">Ожидает</span>
-      {% endif %}
-    </div>
-
-    {% if status.app_entry %}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:13px;padding:14px 16px;background:var(--bg-2);border-radius:var(--r-sm)">
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Количество</span><span style="color:var(--accent-ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.app_entry.applications_count }}</span></div>
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Заработок</span><span style="color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums">{{ status.app_entry.applications_earnings }} $</span></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:11.5px">
-      <span style="color:var(--muted);font-weight:500">Внёс: <span style="color:var(--ink-2)">{{ status.app_entry.submitted_by.display_name }}</span></span>
-      <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-ghost btn-sm">Редактировать →</a>
-    </div>
-    {% else %}
-    <div style="font-size:13.5px;color:var(--muted);font-weight:500">Данные ещё не внесены за сегодня.</div>
-    <a href="{% url 'crm:entry_apps' %}?date={{ status.today|date:'Y-m-d' }}" class="btn btn-primary btn-sm" style="align-self:flex-start">Внести данные</a>
-    {% endif %}
-  </div>
 </div>
 
 <!-- ── Today's report (if generated) ───────────────────────────────────── -->

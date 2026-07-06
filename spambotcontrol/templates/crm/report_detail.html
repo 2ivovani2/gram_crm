@@ -145,14 +145,9 @@
   {% endif %}
 
   <!-- ── Actions ────────────────────────────────────────────── -->
-  {% if membership.is_owner %}
+  {% if is_owner %}
   <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <form method="post" action="{% url 'crm:generate_report' report.date|date:'Y-m-d' %}">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-secondary">Пересформировать отчёт</button>
-    </form>
     <a href="{% url 'crm:entry_finance' %}?date={{ report.date|date:'Y-m-d' }}" class="btn btn-secondary">Изменить CF</a>
-    <a href="{% url 'crm:entry_apps' %}?date={{ report.date|date:'Y-m-d' }}" class="btn btn-secondary">Изменить заявки</a>
   </div>
   {% endif %}
 

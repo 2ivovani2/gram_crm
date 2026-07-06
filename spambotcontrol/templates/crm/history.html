@@ -3,14 +3,7 @@
 {% block page_title %}История данных{% endblock %}
 {% block nav_history %}active{% endblock %}
 
-{% block topbar_actions %}
-<a href="{% url 'crm:export' %}?start={{ start|date:'Y-m-d' }}&end={{ end|date:'Y-m-d' }}" class="btn btn-secondary btn-sm">
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-  </svg>
-  Экспорт Excel
-</a>
-{% endblock %}
+{% endblock topbar_actions %}
 
 {% block extra_css %}
 <style>
@@ -109,17 +102,8 @@ tr.clickable-row td:first-child { color: var(--ink); font-weight: 600; }
           {% if entry.finance %}
           <a href="{% url 'crm:entry_finance' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:10px;font-weight:600">CF</a>
           {% endif %}
-          {% if entry.application %}
-          <a href="{% url 'crm:entry_apps' %}?date={{ entry.date|date:'Y-m-d' }}" style="color:var(--accent);font-size:12px;text-decoration:none;margin-right:10px;font-weight:600">Заявки</a>
-          {% endif %}
           {% if entry.report %}
           <a href="{% url 'crm:report_detail' entry.report.pk %}" style="color:var(--muted);font-size:12px;text-decoration:none;font-weight:500">Отчёт →</a>
-          {% endif %}
-          {% if is_owner and entry.finance and entry.application and not entry.report %}
-          <form method="post" action="{% url 'crm:generate_report' entry.date|date:'Y-m-d' %}" style="display:inline">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11px">Сформировать</button>
-          </form>
           {% endif %}
         </td>
       </tr>
