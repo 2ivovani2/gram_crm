@@ -549,6 +549,7 @@ class UsersListView(AdminOnlyMixin, View):
             "search": search,
             "anon_count":       role_counts.get("anonymous", 0),
             "worker_count":     role_counts.get("worker", 0),
+            "curator_count":    role_counts.get("curator", 0),
             "accountant_count": role_counts.get("accountant", 0),
             "admin_count":      role_counts.get("admin", 0),
         }))

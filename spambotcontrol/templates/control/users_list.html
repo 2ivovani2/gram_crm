@@ -79,6 +79,9 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
   <a href="?role=worker{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'worker' %}active{% endif %}">
     Сотрудники <span style="font-size:11px;opacity:.7">({{ worker_count }})</span>
   </a>
+  <a href="?role=curator{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'curator' %}active{% endif %}">
+    Кураторы <span style="font-size:11px;opacity:.7">({{ curator_count }})</span>
+  </a>
   <a href="?role=accountant{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'accountant' %}active{% endif %}">
     Бухгалтеры <span style="font-size:11px;opacity:.7">({{ accountant_count }})</span>
   </a>
@@ -189,16 +192,17 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
           {% endif %}
         {% else %}
           <span class="crm-none">—</span>
-          <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
+          <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
             {% csrf_token %}
             <input type="hidden" name="action" value="set_crm_role">
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <select name="crm_role" class="inline" onchange="this.form.submit()" style="color:var(--muted)">
-              <option value="" disabled selected>Выдать доступ...</option>
-              {% for val, label in crm_roles %}
-              <option value="{{ val }}">{{ label }}</option>
-              {% endfor %}
+            <select name="crm_role" class="inline" style="color:var(--muted)">
+              <option value="viewer" selected>Наблюдатель</option>
+              <option value="applications">Менеджер по заявкам</option>
+              <option value="finance">Финансовый аналитик</option>
+              <option value="owner">Владелец</option>
             </select>
+            <button type="submit" class="btn-xs" style="background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-tint);white-space:nowrap">Выдать</button>
           </form>
         {% endif %}
       </div>
