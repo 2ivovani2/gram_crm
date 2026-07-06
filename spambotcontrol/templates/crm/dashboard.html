@@ -139,41 +139,6 @@
 </div>
 {% endif %}
 
-<!-- ── Weekly plan progress ────────────────────────────────────────────── -->
-{% if plan %}
-<div class="card" style="margin-bottom:24px">
-  <div class="section-hdr" style="margin-bottom:18px">
-    <h2 style="font-size:16px">Прогресс недельного плана</h2>
-    <span style="font-size:12px;color:var(--muted);font-weight:500">Неделя с {{ plan.week_start|date:"d.m" }}</span>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
-    {% with pp_pct=status.report.pp_plan_pct|default:0 %}
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px">
-        <span style="color:var(--ink-2);font-weight:600">ПП</span>
-        <span style="font-weight:700;color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ pp_pct|floatformat:1 }}%</span>
-      </div>
-      <div style="height:8px;background:var(--bg-2);border-radius:6px;overflow:hidden;border:1px solid var(--line-2)">
-        <div style="height:100%;width:{{ pp_pct|floatformat:0 }}%;max-width:100%;background:var(--accent);border-radius:6px;transition:width .6s cubic-bezier(.4,.0,.2,1)"></div>
-      </div>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:6px;font-weight:500">План: <span style="color:var(--ink-2);font-weight:600">{{ plan.pp_plan }} $</span></div>
-    </div>
-    {% endwith %}
-    {% with prv_pct=status.report.privat_plan_pct|default:0 %}
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:8px">
-        <span style="color:var(--ink-2);font-weight:600">Привата</span>
-        <span style="font-weight:700;color:var(--ink);font-size:18px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ prv_pct|floatformat:1 }}%</span>
-      </div>
-      <div style="height:8px;background:var(--bg-2);border-radius:6px;overflow:hidden;border:1px solid var(--line-2)">
-        <div style="height:100%;width:{{ prv_pct|floatformat:0 }}%;max-width:100%;background:var(--ink);border-radius:6px;transition:width .6s cubic-bezier(.4,.0,.2,1)"></div>
-      </div>
-      <div style="font-size:11.5px;color:var(--muted);margin-top:6px;font-weight:500">План: <span style="color:var(--ink-2);font-weight:600">{{ plan.privat_plan }} $</span></div>
-    </div>
-    {% endwith %}
-  </div>
-</div>
-{% endif %}
 
 <!-- ── Recent reports ────────────────────────────────────────────────── -->
 <div class="section-hdr">

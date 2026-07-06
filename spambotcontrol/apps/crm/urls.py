@@ -20,7 +20,6 @@ Authenticated:
 Admin (OWNER only):
   /crm/admin/              — admin panel index
   /crm/admin/members/      — member management
-  /crm/admin/plans/        — weekly plans
   /crm/admin/generate/<date>/ — POST to manually generate a report for a date
 """
 from django.urls import path
@@ -58,6 +57,5 @@ urlpatterns = [
     # ── Admin (OWNER only) ────────────────────────────────────────────────────
     path("admin/",              views.AdminIndexView.as_view(),        name="admin"),
     path("admin/members/",      views.AdminMembersView.as_view(),      name="admin_members"),
-    path("admin/plans/",        views.AdminPlansView.as_view(),        name="admin_plans"),
     path("admin/generate/<str:date_str>/", views.GenerateReportView.as_view(), name="generate_report"),
 ]

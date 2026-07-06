@@ -787,6 +787,11 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
 }
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: 1fr; }
+  .sidebar { width: 240px; }
+  .content { padding: 16px 12px; }
+}
+@media (max-width: 360px) {
+  .sidebar { width: 200px; }
 }
 </style>
 {% block extra_css %}{% endblock %}
@@ -900,13 +905,6 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
             <path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
           </svg>
           Управление
-        </a>
-        <a href="{% url 'crm:admin_plans' %}" class="sidebar-item {% block nav_plans %}{% endblock %}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 8a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8z"/>
-            <path d="M8 3v4M16 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/>
-          </svg>
-          Планы
         </a>
       </div>
 
@@ -1059,6 +1057,16 @@ function checkSidebarToggle() {
 }
 checkSidebarToggle();
 window.addEventListener('resize', checkSidebarToggle);
+// Reset sidebar state on page load (browser back/forward cache may leave it open)
+document.addEventListener('DOMContentLoaded', function() {
+  closeSidebar();
+  // Close sidebar when any nav link is clicked on mobile
+  document.querySelectorAll('.sidebar-item, .sidebar-brand').forEach(function(el) {
+    el.addEventListener('click', function() {
+      if (window.innerWidth <= 900) closeSidebar();
+    });
+  });
+});
 
 function toggleWsSwitcher() {
   const trigger  = document.getElementById('ws-trigger');

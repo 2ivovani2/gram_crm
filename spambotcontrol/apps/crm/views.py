@@ -322,14 +322,12 @@ class DashboardView(CRMLoginMixin, TemplateView):
         ctx = self.get_crm_context(request)
 
         if request.crm_is_owner:
-            from apps.crm.services import DashboardService, WeeklyPlanService
+            from apps.crm.services import DashboardService
             status = DashboardService.get_today_status(request.crm_workspace)
             recent = DashboardService.get_recent_reports(request.crm_workspace, days=7)
-            plan   = WeeklyPlanService.get_current_plan(request.crm_workspace)
             ctx.update({
                 "status":  status,
                 "recent":  recent,
-                "plan":    plan,
                 "now_msk": datetime.datetime.now(tz=_MSK),
             })
 
@@ -531,47 +529,6 @@ class AdminMembersView(CRMOwnerMixin, View):
     def post(self, request):
         return redirect("control:users")
 
-
-class AdminPlansView(CRMOwnerMixin, View):
-    template_name = "crm/admin/plans.html"
-
-    def get(self, request):
-        from apps.crm.models import WeeklyPlan
-        from apps.crm.forms import WeeklyPlanForm
-        from apps.crm.services import WeeklyPlanService
-
-        plans = WeeklyPlan.objects.filter(
-            workspace=request.crm_workspace
-        ).order_by("-week_start")[:12]
-
-        today = datetime.datetime.now(tz=_MSK).date()
-        week_start = WeeklyPlanService.get_week_start(today)
-        form = WeeklyPlanForm(initial={"week_start": week_start})
-
-        ctx = self.get_crm_context(request)
-        ctx.update({"plans": plans, "form": form})
-        return render(request, self.template_name, ctx)
-
-    def post(self, request):
-        from apps.crm.forms import WeeklyPlanForm
-        from apps.crm.services import WeeklyPlanService
-        form = WeeklyPlanForm(request.POST)
-        if form.is_valid():
-            WeeklyPlanService.upsert_plan(
-                workspace=request.crm_workspace,
-                week_start=form.cleaned_data["week_start"],
-                pp_plan=form.cleaned_data["pp_plan"],
-                privat_plan=form.cleaned_data["privat_plan"],
-                created_by=request.crm_user,
-            )
-            messages.success(request, "План сохранён.")
-            return redirect("crm:admin_plans")
-
-        from apps.crm.models import WeeklyPlan
-        plans = WeeklyPlan.objects.filter(workspace=request.crm_workspace).order_by("-week_start")[:12]
-        ctx = self.get_crm_context(request)
-        ctx.update({"plans": plans, "form": form})
-        return render(request, self.template_name, ctx)
 
 
 class GenerateReportView(CRMOwnerMixin, View):
