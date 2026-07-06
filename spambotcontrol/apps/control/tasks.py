@@ -37,54 +37,86 @@ def _send_message_sync(telegram_id: int, text: str) -> bool:
 @shared_task(name="apps.control.tasks.send_report_reminders_task", queue="default")
 def send_report_reminders_task():
     """
-    Send report reminders to active workers who haven't submitted today.
-    For workers with assigned templates: per-template reminder text.
-    For others: generic reminder.
+    Runs every hour. Sends report reminders based on per-template notification_times.
+
+    For each template that has notification_times configured: if the current MSK hour
+    matches one of those times, notify all assigned workers who haven't submitted today.
+
+    For workers not assigned to any template: send at default times 10:00, 15:00, 23:00.
     """
+    import datetime as dt
+    import pytz
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import EmployeeReport, ReportTemplate
-    from django.utils import timezone
 
-    today = timezone.localdate()
+    _MSK = pytz.timezone("Europe/Moscow")
+    now_msk = dt.datetime.now(tz=_MSK)
+    current_hhmm = now_msk.strftime("%H:%M")   # e.g. "10:00"
+    current_hh00 = now_msk.strftime("%H:00")   # normalised to :00
+    today = now_msk.date()
 
-    # Workers who already have a report today (any blocking status)
+    # Workers who already have a report today
     submitted_today_ids = set(
-        EmployeeReport.objects.filter(
-            submitted_at__date=today,
-        ).values_list("user_id", flat=True)
+        EmployeeReport.objects.filter(submitted_at__date=today).values_list("user_id", flat=True)
     )
-
-    workers = User.objects.filter(
-        role=UserRole.WORKER,
-        status=UserStatus.ACTIVE,
-        is_blocked_bot=False,
-    ).exclude(id__in=submitted_today_ids)
 
     sent = 0
     failed = 0
-    for worker in workers:
-        # Get assigned templates for custom reminder text
-        templates = list(
-            ReportTemplate.objects.filter(assigned_users=worker).order_by("name")
-        )
-        if templates:
-            tmpl_names = ", ".join(t.name for t in templates if t.name) or "шаблон отчёта"
-            text = (
-                f"⏰ <b>Напоминание об отчёте</b>\n\n"
-                f"Не забудьте сдать отчёт: <b>{tmpl_names}</b>\n\n"
-                f"Нажмите «📝 Подать отчёт» в меню."
-            )
-        else:
-            text = (
-                "⏰ <b>Напоминание</b>\n\n"
-                "Необходимо подать отчёт, иначе будет начислен штраф за просрочку."
-            )
+    notified_worker_ids: set = set()
 
-        ok = _send_message_sync(worker.telegram_id, text)
-        if ok:
-            sent += 1
-        else:
-            failed += 1
+    # ── Per-template reminders (uses notification_times) ──────────────────────
+    for tmpl in ReportTemplate.objects.prefetch_related("assigned_users").filter(
+        assigned_users__isnull=False
+    ).distinct():
+        times = tmpl.notification_times or []
+        # Normalise stored values ("10:00", "10", "10:30") → "HH:MM"
+        normalised = []
+        for t in times:
+            t = str(t).strip()
+            if ":" not in t:
+                t = t.zfill(2) + ":00"
+            normalised.append(t[:5])
+
+        if current_hhmm not in normalised and current_hh00 not in normalised:
+            continue
+
+        tmpl_name = tmpl.name or "отчёт"
+        text = (
+            f"⏰ <b>Напоминание об отчёте</b>\n\n"
+            f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>\n\n"
+            f"Нажмите «📝 Подать отчёт» в меню."
+        )
+
+        for worker in tmpl.assigned_users.filter(
+            role=UserRole.WORKER,
+            status=UserStatus.ACTIVE,
+            is_blocked_bot=False,
+        ).exclude(id__in=submitted_today_ids):
+            ok = _send_message_sync(worker.telegram_id, text)
+            notified_worker_ids.add(worker.pk)
+            sent += 1 if ok else 0
+            failed += 0 if ok else 1
+
+    # ── Generic reminders for workers without template assignment ─────────────
+    _DEFAULT_TIMES = {"10:00", "15:00", "23:00"}
+    if current_hhmm in _DEFAULT_TIMES or current_hh00 in _DEFAULT_TIMES:
+        workers_no_tmpl = User.objects.filter(
+            role=UserRole.WORKER,
+            status=UserStatus.ACTIVE,
+            is_blocked_bot=False,
+        ).exclude(id__in=submitted_today_ids).exclude(
+            assigned_report_templates__isnull=False
+        )
+        text_generic = (
+            "⏰ <b>Напоминание</b>\n\n"
+            "Необходимо подать отчёт, иначе будет начислен штраф за просрочку."
+        )
+        for worker in workers_no_tmpl:
+            if worker.pk in notified_worker_ids:
+                continue
+            ok = _send_message_sync(worker.telegram_id, text_generic)
+            sent += 1 if ok else 0
+            failed += 0 if ok else 1
 
     logger.info("[control] Reminders sent: %d, failed: %d", sent, failed)
     return {"sent": sent, "failed": failed}

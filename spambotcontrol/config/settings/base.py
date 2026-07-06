@@ -142,18 +142,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.clients.tasks.check_worker_inactivity_task",
         "schedule": crontab(hour=9, minute=0),
     },
-    # Control bot: report reminders — 10:00, 15:00, 23:00 МСК
-    "control-reminder-1000": {
+    # Control bot: report reminders — every hour (task checks notification_times per template)
+    "control-reminder-hourly": {
         "task": "apps.control.tasks.send_report_reminders_task",
-        "schedule": crontab(hour=10, minute=0),
-    },
-    "control-reminder-1500": {
-        "task": "apps.control.tasks.send_report_reminders_task",
-        "schedule": crontab(hour=15, minute=0),
-    },
-    "control-reminder-2300": {
-        "task": "apps.control.tasks.send_report_reminders_task",
-        "schedule": crontab(hour=23, minute=0),
+        "schedule": crontab(minute=0),
     },
     # Control bot: check overdue reports and create auto-penalties daily at 23:30 МСК
     "control-check-overdue": {

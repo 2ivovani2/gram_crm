@@ -81,6 +81,26 @@
     </div>
   </div>
 
+  <!-- Notification times -->
+  <div class="card">
+    <div class="card-title">Время уведомлений (МСК)</div>
+    <div class="form-grid">
+      <div class="field-group">
+        <label>Уведомление 1</label>
+        <input type="time" name="notification_time_1" value="{{ notif_time_1 }}"/>
+      </div>
+      <div class="field-group">
+        <label>Уведомление 2</label>
+        <input type="time" name="notification_time_2" value="{{ notif_time_2 }}"/>
+      </div>
+      <div class="field-group">
+        <label>Уведомление 3</label>
+        <input type="time" name="notification_time_3" value="{{ notif_time_3 }}"/>
+      </div>
+    </div>
+    <div class="hint">До 3 напоминаний в день. Оставьте пустым, чтобы не отправлять в это время.</div>
+  </div>
+
   <!-- Assigned workers -->
   <div class="card">
     <div class="card-title">Назначенные сотрудники</div>

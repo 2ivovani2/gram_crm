@@ -34,6 +34,13 @@ class AdminOnlyMixin(ControlAccessMixin):
             return HttpResponseForbidden("Только для администраторов")
 
 
+class AdminOrCuratorMixin(ControlAccessMixin):
+    """Allows access for admins, owners AND curators."""
+    def check_crm_permissions(self, request):
+        if not (_is_control_admin(request) or request.crm_user.is_curator()):
+            return HttpResponseForbidden("Только для администраторов и кураторов")
+
+
 # ── Dashboard overview ─────────────────────────────────────────────────────────
 
 class ControlDashboardView(ControlAccessMixin, View):
@@ -82,7 +89,7 @@ class ControlDashboardView(ControlAccessMixin, View):
 
 # ── Report templates ───────────────────────────────────────────────────────────
 
-class ReportTemplatesView(AdminOnlyMixin, View):
+class ReportTemplatesView(AdminOrCuratorMixin, View):
     def get(self, request):
         from apps.control.models import ReportTemplate
         templates = (
@@ -126,7 +133,7 @@ class ReportTemplatesView(AdminOnlyMixin, View):
         return redirect("control:report_templates")
 
 
-class ReportTemplateEditView(AdminOnlyMixin, View):
+class ReportTemplateEditView(AdminOrCuratorMixin, View):
     def get(self, request, pk):
         from apps.control.models import ReportTemplate
         from apps.users.models import User as U, UserRole
@@ -134,12 +141,16 @@ class ReportTemplateEditView(AdminOnlyMixin, View):
         tmpl = get_object_or_404(ReportTemplate, pk=pk)
         workers = U.objects.filter(role=UserRole.WORKER).order_by("telegram_username")
         assigned_ids = set(tmpl.assigned_users.values_list("id", flat=True))
+        times = tmpl.notification_times or []
 
         return render(request, "control/report_template_edit.html", self.ctx(request, {
             "page": "reports",
             "tmpl": tmpl,
             "workers": workers,
             "assigned_ids": assigned_ids,
+            "notif_time_1": times[0] if len(times) > 0 else "",
+            "notif_time_2": times[1] if len(times) > 1 else "",
+            "notif_time_3": times[2] if len(times) > 2 else "",
         }))
 
     def post(self, request, pk):
@@ -167,6 +178,14 @@ class ReportTemplateEditView(AdminOnlyMixin, View):
             tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
         except InvalidOperation:
             pass
+        # notification_times: collect up to 3 non-empty HH:MM values
+        notif_times = []
+        for i in range(1, 4):
+            t = request.POST.get(f"notification_time_{i}", "").strip()
+            if t:
+                notif_times.append(t[:5])
+        tmpl.notification_times = notif_times
+
         tmpl.updated_by = admin
         tmpl.save()
 
@@ -183,7 +202,7 @@ class ReportTemplateEditView(AdminOnlyMixin, View):
 
 # ── Reports ────────────────────────────────────────────────────────────────────
 
-class ReportsListView(AdminOnlyMixin, View):
+class ReportsListView(AdminOrCuratorMixin, View):
     def get(self, request):
         from apps.control.models import EmployeeReport, ReportStatus, ReportTemplate
         from apps.users.models import User as U, UserRole
@@ -238,7 +257,7 @@ class ReportsListView(AdminOnlyMixin, View):
         }))
 
 
-class ReportDetailView(AdminOnlyMixin, View):
+class ReportDetailView(AdminOrCuratorMixin, View):
     def get(self, request, pk):
         from apps.control.models import EmployeeReport
         report = get_object_or_404(
