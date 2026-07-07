@@ -764,11 +764,13 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
 /* Sidebar overlay (mobile) */
 .sidebar-overlay {
   display: none;
-  position: fixed; inset: 0; z-index: 45;
+  position: fixed; inset: 0; z-index: 48;
   background: rgba(0,0,0,.6);
-  backdrop-filter: blur(6px);
 }
 .sidebar-overlay.open { display: block; }
+
+/* Burger button — hidden by default, shown via CSS on mobile */
+#sidebar-toggle { display: none; }
 
 /* Responsive */
 @media (max-width: 900px) {
@@ -776,14 +778,16 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
     transform: translateX(-100%);
     transition: transform .3s cubic-bezier(.4,0,.2,1);
     box-shadow: 4px 0 40px rgba(0,0,0,.5);
+    z-index: 60;
   }
   .sidebar.open { transform: translateX(0); }
   .main { margin-left: 0; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .entry-status-grid { grid-template-columns: 1fr; }
   .content { padding: 20px 18px; }
-  .topbar { padding: 0 18px; }
+  .topbar { padding: 0 18px; z-index: 50; }
   .topbar-title { font-size: 13.5px; }
+  #sidebar-toggle { display: flex; }
 }
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: 1fr; }
@@ -969,7 +973,7 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
   <!-- ══ Main ══ -->
   <div class="main">
     <div class="topbar">
-      <button class="btn btn-icon btn-secondary" id="sidebar-toggle" style="display:none"
+      <button class="btn btn-icon btn-secondary" id="sidebar-toggle"
         onclick="openSidebar()" aria-label="Открыть меню">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M3 12h18M3 6h18M3 18h18"/>
@@ -1020,19 +1024,13 @@ function closeSidebar() {
   document.getElementById('sidebar-overlay').classList.remove('open');
   document.body.style.overflow = '';
 }
-function checkSidebarToggle() {
-  const t = document.getElementById('sidebar-toggle');
-  if (t) t.style.display = window.innerWidth <= 900 ? 'flex' : 'none';
-}
-checkSidebarToggle();
-window.addEventListener('resize', checkSidebarToggle);
 // Reset sidebar state on page load (browser back/forward cache may leave it open)
 document.addEventListener('DOMContentLoaded', function() {
   closeSidebar();
   // Close sidebar when any nav link is clicked on mobile
   document.querySelectorAll('.sidebar-item, .sidebar-brand').forEach(function(el) {
     el.addEventListener('click', function() {
-      if (window.innerWidth <= 900) closeSidebar();
+      closeSidebar();
     });
   });
 });
