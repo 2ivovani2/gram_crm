@@ -699,8 +699,8 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
 
         # Workers eligible but not yet in log for today (never processed)
         import datetime as dt
-        import pytz
-        _MSK = pytz.timezone("Europe/Moscow")
+        from zoneinfo import ZoneInfo
+        _MSK = ZoneInfo("Europe/Moscow")
         today = dt.datetime.now(tz=_MSK).date()
 
         workers_without_log_today = U.objects.filter(
