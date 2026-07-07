@@ -45,6 +45,7 @@
 </div>
 
 {% if withdrawals %}
+<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
 <table class="ctrl-table">
   <thead>
     <tr>
@@ -98,6 +99,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <div style="padding:40px;text-align:center;color:var(--muted)">Заявок на вывод нет ✅</div>
 {% endif %}

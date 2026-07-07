@@ -9,6 +9,13 @@
 </a>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .two-col-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
 {% block content %}
 <div style="max-width:760px">
 
@@ -99,7 +106,7 @@
   <!-- ── Cash flow details ─────────────────────────────────────── -->
   <div class="card" style="margin-bottom:22px;padding:24px 26px">
     <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--ink);letter-spacing:-.02em">Детализация Cash Flow</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="two-col-grid">
       <div style="padding:16px 18px;background:var(--success-soft);border:1px solid var(--success-line);border-radius:var(--r)">
         <div style="font-size:10.5px;color:var(--success);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Поступления</div>
         <div style="font-size:24px;font-weight:700;color:var(--success);font-variant-numeric:tabular-nums;letter-spacing:-.03em">+{{ report.cash_flow_income|floatformat:2 }} $</div>

@@ -801,6 +801,47 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
   .sidebar { width: 200px; }
   .sidebar-overlay { left: 200px; }
 }
+
+/* ── Global mobile utilities ──────────────────────────────── */
+@media (max-width: 700px) {
+  /* Filter forms: stack vertically */
+  .filters { flex-direction: column !important; align-items: stretch !important; }
+  .filters input, .filters select { width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+  .filters button, .filters a { box-sizing: border-box !important; }
+
+  /* Create/invite rows: stack */
+  .create-row { flex-direction: column !important; }
+  .create-row input, .create-row select, .create-row textarea {
+    width: 100% !important; min-width: 0 !important; box-sizing: border-box !important;
+  }
+
+  /* Multi-column form grids: single column */
+  .form-row { grid-template-columns: 1fr !important; }
+
+  /* KV detail grids: label above value */
+  .kv { grid-template-columns: 1fr !important; }
+  .kv dt { padding-top: 10px; font-size: 12px; }
+
+  /* Cards grids */
+  .workers-grid { grid-template-columns: 1fr !important; }
+  .stats-grid   { grid-template-columns: repeat(2, 1fr) !important; }
+  .ctrl-kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Chart bar label: narrower fixed width */
+  .chart-bar-label { width: 44px !important; font-size: 11px; }
+
+  /* Action button groups in table cells: stack */
+  .action-btns { flex-direction: column !important; gap: 4px !important; }
+  .action-btns form { display: block !important; width: 100% !important; }
+  .action-btns button { width: 100% !important; text-align: center !important; box-sizing: border-box; }
+
+  /* Table-wrap scrollable */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+@media (max-width: 480px) {
+  .stats-grid    { grid-template-columns: 1fr !important; }
+  .ctrl-kpi-grid { grid-template-columns: 1fr !important; }
+}
 </style>
 {% block extra_css %}{% endblock %}
 </head>

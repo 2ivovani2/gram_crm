@@ -3,6 +3,13 @@
 {% block page_title %}Внести данные — Cash Flow{% endblock %}
 {% block nav_finance %}active{% endblock %}
 
+{% block extra_css %}
+<style>
+.two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+@media (max-width: 480px) { .two-col-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
 {% block content %}
 <style>
 /* ── Dark-tech upload zone ─────────────────────────────────────── */
@@ -196,7 +203,7 @@
       {% csrf_token %}
       <input type="hidden" name="entry_date" value="{{ entry_date|date:'Y-m-d' }}"/>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="two-col-grid">
         <div class="form-group">
           <label class="form-label">Сумма поступлений ($)</label>
           <input type="number" name="income" step="0.01" min="0" class="form-input"
@@ -216,7 +223,7 @@
         <span id="balance-preview" style="font-family:'Space Grotesk',system-ui,sans-serif;font-weight:600;color:var(--success);font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.025em">0.00 $</span>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="two-col-grid">
         <div class="form-group">
           <label class="form-label">Заработок с ПП ($)</label>
           <input type="number" name="pp_earnings" step="0.01" min="0" class="form-input"

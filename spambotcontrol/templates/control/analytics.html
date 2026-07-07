@@ -65,6 +65,7 @@
 {% if reports_by_status %}
 <div class="section">
   <h2>Отчёты за последние 30 дней</h2>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
   <table class="ctrl-table" style="max-width:400px">
     <thead><tr><th>Статус</th><th>Количество</th></tr></thead>
     <tbody>
@@ -76,6 +77,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
@@ -83,6 +85,7 @@
 {% if is_admin %}
 <div class="section">
   <h2>Сотрудники</h2>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
   <table class="ctrl-table">
     <thead>
       <tr><th>Сотрудник</th><th>Статус</th><th>Отчётов всего</th><th>Штрафов</th></tr>
@@ -100,6 +103,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 

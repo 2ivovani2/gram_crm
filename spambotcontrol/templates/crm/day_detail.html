@@ -9,6 +9,13 @@
 </a>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .two-col-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
 {% block content %}
 <div style="max-width:720px">
 
@@ -77,7 +84,7 @@
   <div class="card" style="margin-bottom:22px;padding:24px 26px">
     <div style="font-size:16px;font-weight:700;margin-bottom:18px;color:var(--ink);letter-spacing:-.02em">Cash Flow</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+    <div class="two-col-grid" style="margin-bottom:16px">
       <div style="padding:16px 18px;background:var(--success-soft);border:1px solid var(--success-line);border-radius:var(--r)">
         <div style="font-size:10.5px;color:var(--success);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Поступления</div>
         <div style="font-size:24px;font-weight:700;color:var(--success);font-variant-numeric:tabular-nums;letter-spacing:-.03em">+{{ finance.income|floatformat:2 }} $</div>
@@ -124,7 +131,7 @@
   <!-- ── Applications detail ────────────────────────────────────── -->
   <div class="card" style="margin-bottom:22px;padding:24px 26px">
     <div style="font-size:16px;font-weight:700;margin-bottom:18px;color:var(--ink);letter-spacing:-.02em">Заявки</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="two-col-grid">
       <div style="padding:16px 18px;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r)">
         <div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;font-weight:700">Количество</div>
         <div style="font-size:24px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.03em">{{ application.applications_count }}</div>
