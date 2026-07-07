@@ -19,6 +19,16 @@
 .btn-xs { font-size:12px; padding:4px 10px; border-radius:6px; border:none; cursor:pointer; text-decoration:none; display:inline-block; }
 .btn-edit { background:rgba(240,180,41,.18); color:var(--accent); font-weight:600; }
 .tmpl-meta { font-size:12px; color:var(--muted); margin-top:2px; }
+@media (max-width: 700px) {
+  /* Stack create panel: input + button */
+  .create-row { flex-direction: column !important; align-items: stretch !important; }
+  .create-row input, .create-row button { width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+  /* Hide Инструкции (2) and Создал (5) — keep: Название, Сотрудники, Штраф, Edit */
+  .ctrl-table th:nth-child(2), .ctrl-table td:nth-child(2),
+  .ctrl-table th:nth-child(5), .ctrl-table td:nth-child(5) { display: none !important; }
+  /* Prevent name cell from stretching the table too wide */
+  .ctrl-table td:nth-child(1) { max-width: 160px; word-break: break-word; }
+}
 </style>
 {% endblock %}
 

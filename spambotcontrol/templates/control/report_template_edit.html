@@ -26,6 +26,11 @@
 .worker-name { font-size:13px; font-weight:500; }
 .worker-id { font-size:11px; color:var(--muted); font-family:monospace; }
 .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+@media (max-width: 700px) {
+  .form-actions { flex-direction: column !important; align-items: stretch !important; gap: 8px !important; }
+  .btn-save, .btn-del, .btn-back { width: 100% !important; text-align: center !important; box-sizing: border-box !important; }
+  .worker-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important; }
+}
 </style>
 {% endblock %}
 
@@ -127,7 +132,7 @@
   </div>
 
   <!-- Actions -->
-  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+  <div class="form-actions" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
     <button type="submit" class="btn-save">💾 Сохранить</button>
     <a href="{% url 'control:report_templates' %}" class="btn-back">Отмена</a>
     <div style="flex:1"></div>
