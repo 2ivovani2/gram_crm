@@ -24,6 +24,30 @@
 .section-hdr { display:flex; align-items:center; gap:12px; margin:24px 0 14px; }
 .section-hdr h2 { font-size:14px; font-weight:700; color:var(--text); }
 .no-log-table .ctrl-table td { color:var(--muted); }
+
+/* ── Mobile: hide secondary log-table columns ──── */
+@media (max-width: 700px) {
+  /* Log table: hide Telegram ID(2), Balance(7), Available(8), Penalty(9), Timestamp(10), Error(11) */
+  .log-table .ctrl-table th:nth-child(2),
+  .log-table .ctrl-table td:nth-child(2),
+  .log-table .ctrl-table th:nth-child(7),
+  .log-table .ctrl-table td:nth-child(7),
+  .log-table .ctrl-table th:nth-child(8),
+  .log-table .ctrl-table td:nth-child(8),
+  .log-table .ctrl-table th:nth-child(9),
+  .log-table .ctrl-table td:nth-child(9),
+  .log-table .ctrl-table th:nth-child(10),
+  .log-table .ctrl-table td:nth-child(10),
+  .log-table .ctrl-table th:nth-child(11),
+  .log-table .ctrl-table td:nth-child(11) { display: none; }
+
+  /* Workers without log: hide Telegram ID column */
+  .no-log-table .ctrl-table th:nth-child(2),
+  .no-log-table .ctrl-table td:nth-child(2) { display: none; }
+
+  /* Test button and result: stack */
+  .test-btn { width: 100%; text-align: center; }
+}
 </style>
 {% endblock %}
 
@@ -58,7 +82,7 @@
 </div>
 
 {% if logs %}
-<div style="overflow-x:auto;margin-bottom:32px">
+<div style="overflow-x:auto;margin-bottom:32px" class="log-table">
 <table class="ctrl-table">
   <thead>
     <tr>

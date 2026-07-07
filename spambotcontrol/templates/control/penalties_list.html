@@ -34,6 +34,16 @@
 .report-link { font-size:11px; background:var(--surface-3); border-radius:4px; padding:2px 6px; color:var(--muted); text-decoration:none; }
 .report-link:hover { color:var(--text); }
 .dispute-text { font-size:11px; color:#60A5FA; margin-top:3px; }
+@media (max-width: 700px) {
+  /* Hide: # (1), Назначил (7), Отчёт (8), Дата (9) */
+  .ctrl-table th:nth-child(1), .ctrl-table td:nth-child(1),
+  .ctrl-table th:nth-child(7), .ctrl-table td:nth-child(7),
+  .ctrl-table th:nth-child(8), .ctrl-table td:nth-child(8),
+  .ctrl-table th:nth-child(9), .ctrl-table td:nth-child(9) { display: none; }
+  /* Create form: stack */
+  .form-row { display: flex; flex-direction: column; gap: 8px; }
+  .form-row input { width: 100%; box-sizing: border-box; }
+}
 </style>
 {% endblock %}
 

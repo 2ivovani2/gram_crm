@@ -26,6 +26,13 @@
 .btn-filter { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-tint); font-weight:600; }
 .tmpl-tag { font-size:11px; color:var(--muted); background:var(--surface-3); border-radius:4px; padding:2px 6px; }
 .deadline-warn { color:#F87171; font-size:11px; font-weight:600; }
+@media (max-width: 700px) {
+  /* Hide: # (1), Проверил (6), Срок исправления (7), Подан (8) */
+  .ctrl-table th:nth-child(1), .ctrl-table td:nth-child(1),
+  .ctrl-table th:nth-child(6), .ctrl-table td:nth-child(6),
+  .ctrl-table th:nth-child(7), .ctrl-table td:nth-child(7),
+  .ctrl-table th:nth-child(8), .ctrl-table td:nth-child(8) { display: none; }
+}
 </style>
 {% endblock %}
 
