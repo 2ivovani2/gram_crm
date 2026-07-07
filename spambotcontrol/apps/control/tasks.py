@@ -45,11 +45,11 @@ def send_report_reminders_task():
     For workers not assigned to any template: send at default times 10:00, 15:00, 23:00.
     """
     import datetime as dt
-    import pytz
+    from zoneinfo import ZoneInfo
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import EmployeeReport, ReportTemplate
 
-    _MSK = pytz.timezone("Europe/Moscow")
+    _MSK = ZoneInfo("Europe/Moscow")
     now_msk = dt.datetime.now(tz=_MSK)
     current_hhmm = now_msk.strftime("%H:%M")   # e.g. "10:00"
     current_hh00 = now_msk.strftime("%H:00")   # normalised to :00
@@ -426,11 +426,11 @@ def deadline_reminder_task(slot: str) -> dict:
     slot: one of "23:00", "23:30", "23:45", "00:00"
     """
     import datetime as dt
-    import pytz
+    from zoneinfo import ZoneInfo
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import ControlSettings, NotificationSlot
 
-    _MSK = pytz.timezone("Europe/Moscow")
+    _MSK = ZoneInfo("Europe/Moscow")
     now_msk = dt.datetime.now(tz=_MSK)
 
     # At 00:00 we check YESTERDAY (the day that just ended)
