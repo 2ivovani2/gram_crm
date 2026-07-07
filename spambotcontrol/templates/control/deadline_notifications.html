@@ -41,12 +41,15 @@
   .log-table .ctrl-table th:nth-child(11),
   .log-table .ctrl-table td:nth-child(11) { display: none; }
 
+  /* "What's missing" column: wrap text, don't stretch table */
+  .log-table .ctrl-table td:nth-child(6) { max-width: 140px; word-break: break-word; white-space: normal; font-size: 11px; }
+
   /* Workers without log: hide Telegram ID column */
   .no-log-table .ctrl-table th:nth-child(2),
   .no-log-table .ctrl-table td:nth-child(2) { display: none; }
 
-  /* Test button and result: stack */
-  .test-btn { width: 100%; text-align: center; }
+  /* Test buttons in table and general panel */
+  .no-log-table .test-btn { width: 100%; text-align: center; }
 }
 </style>
 {% endblock %}

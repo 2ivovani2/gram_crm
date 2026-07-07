@@ -35,6 +35,15 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 .create-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
 .create-row input, .create-row select { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
 .tg-id { font-family:monospace; font-size:12px; color:var(--muted); }
+
+@media (max-width: 700px) {
+  /* Hide Telegram ID column — fits 5 cols on phone */
+  .ctrl-table th:nth-child(2), .ctrl-table td:nth-child(2) { display: none; }
+  /* Compact inline selects */
+  select.inline { font-size: 11px; padding: 3px 4px; max-width: 120px; }
+  /* Hire button next to anon badge: full-width */
+  .btn-hire { display: block; width: 100%; text-align: center; margin-top: 4px; }
+}
 </style>
 {% endblock %}
 
