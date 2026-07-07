@@ -40,8 +40,15 @@
     <dt>Шаблон</dt>
     <dd><a href="{% url 'control:report_template_edit' report.template.pk %}" style="color:var(--accent);text-decoration:none">{{ report.template.name }}</a></dd>
     {% endif %}
-    <dt>Период</dt>
-    <dd>{{ report.period_label|default:"—" }}</dd>
+    <dt>Отчётная дата</dt>
+    <dd>
+      {{ report.period_label|default:"—" }}
+      {% if report.report_date and report.submitted_at.date != report.report_date %}
+      <span style="font-size:11px;color:#FFB84D;margin-left:6px" title="Отчёт сдан после полуночи ({{ report.submitted_at|date:'d.m.Y H:i' }}), но относится к предыдущему дню">
+        ⚠ сдан {{ report.submitted_at|date:"d.m H:i" }}
+      </span>
+      {% endif %}
+    </dd>
     <dt>Подан</dt>
     <dd>{{ report.submitted_at|date:"d.m.Y H:i"|default:"—" }}</dd>
     {% if report.correction_deadline %}

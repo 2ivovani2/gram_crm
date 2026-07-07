@@ -12,9 +12,30 @@ from typing import Optional, List
 from django.db import transaction
 from django.utils import timezone
 
+import datetime as _dt
+from zoneinfo import ZoneInfo as _ZoneInfo
+
 from apps.users.models import User, UserRole
 
 logger = logging.getLogger(__name__)
+
+_MSK = _ZoneInfo("Europe/Moscow")
+
+
+def _calc_report_date() -> _dt.date:
+    """
+    Determine which calendar date a report being submitted NOW belongs to.
+
+    Deadline is midnight (00:00 MSK). Workers who miss it and submit in the
+    early morning hours (00:00–05:59) are filing a LATE report for the previous
+    day — not an early report for the new day.
+
+    Returns yesterday's date for 00:00–05:59 MSK, today's date otherwise.
+    """
+    now_msk = timezone.now().astimezone(_MSK)
+    if now_msk.hour < 6:
+        return (now_msk - _dt.timedelta(days=1)).date()
+    return now_msk.date()
 
 
 # ── Report services ────────────────────────────────────────────────────────────
@@ -80,6 +101,7 @@ class ReportService:
         """Create a new report. Status = ON_MODERATION if template, else PENDING (legacy)."""
         from apps.control.models import EmployeeReport, ReportStatus
         status = ReportStatus.ON_MODERATION if template else ReportStatus.PENDING
+        report_date = _calc_report_date()
         report = EmployeeReport.objects.create(
             user=user,
             template=template,
@@ -88,7 +110,8 @@ class ReportService:
             telegram_file_id=file_id,
             file_type=file_type or "text",
             original_filename=original_filename,
-            period_label=timezone.localdate().strftime("%-d %B %Y"),
+            report_date=report_date,
+            period_label=report_date.strftime("%-d %B %Y"),
         )
         return report
 
@@ -141,6 +164,7 @@ class ReportService:
             telegram_file_id=file_id,
             file_type=file_type or "text",
             original_filename=original_filename,
+            report_date=original_report.report_date,  # resubmission keeps the same report_date
             period_label=original_report.period_label,
         )
         return new_report

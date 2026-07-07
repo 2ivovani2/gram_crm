@@ -55,9 +55,9 @@ def send_report_reminders_task():
     current_hh00 = now_msk.strftime("%H:00")   # normalised to :00
     today = now_msk.date()
 
-    # Workers who already have a report today
+    # Workers who already have a report for today (by report_date, not submission timestamp)
     submitted_today_ids = set(
-        EmployeeReport.objects.filter(submitted_at__date=today).values_list("user_id", flat=True)
+        EmployeeReport.objects.filter(report_date=today).values_list("user_id", flat=True)
     )
 
     sent = 0
@@ -141,7 +141,7 @@ def check_overdue_reports_task():
 
     submitted_today_ids = set(
         EmployeeReport.objects.filter(
-            submitted_at__date=today,
+            report_date=today,
         ).values_list("user_id", flat=True)
     )
 
@@ -299,7 +299,7 @@ def _get_missing_items_for_worker(worker, deadline_date) -> list[str]:
         submitted_template_ids = set(
             EmployeeReport.objects.filter(
                 user=worker,
-                submitted_at__date=deadline_date,
+                report_date=deadline_date,
             ).values_list("template_id", flat=True)
         )
         missing = [
@@ -309,7 +309,7 @@ def _get_missing_items_for_worker(worker, deadline_date) -> list[str]:
         ]
     else:
         has_any = EmployeeReport.objects.filter(
-            user=worker, submitted_at__date=deadline_date
+            user=worker, report_date=deadline_date
         ).exists()
         missing = [] if has_any else ["📋 Отчёт"]
 

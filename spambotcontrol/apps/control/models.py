@@ -179,10 +179,20 @@ class EmployeeReport(models.Model):
         verbose_name="Срок исправления",
     )
 
-    # Period label for display
+    # Period label for display (derived from report_date at submission)
     period_label = models.CharField(
         max_length=100, blank=True,
         verbose_name="Период",
+    )
+
+    # Explicit report date — which calendar day this report is FOR.
+    # Differs from submitted_at.date() when a worker submits after midnight
+    # to cover the previous day's deadline.
+    report_date = models.DateField(
+        null=True,
+        db_index=True,
+        verbose_name="Отчётная дата",
+        help_text="За какой день этот отчёт. Может отличаться от даты подачи при сдаче после 00:00.",
     )
 
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата подачи")

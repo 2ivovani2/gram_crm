@@ -6,7 +6,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
 from django.http import HttpResponseForbidden
 from django.utils import timezone
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, F
 
 from apps.crm.views import CRMLoginMixin
 from apps.users.models import User, UserRole, UserStatus
@@ -70,7 +70,7 @@ class ControlDashboardView(ControlAccessMixin, View):
                     status__in=["pending", "processing", "receipt_sent"]
                 ).count(),
                 "active_workers": User.objects.filter(role=UserRole.WORKER, status=UserStatus.ACTIVE).count(),
-                "reports_submitted_today": EmployeeReport.objects.filter(submitted_at__date=today).count(),
+                "reports_submitted_today": EmployeeReport.objects.filter(report_date=today).count(),
                 "recent_reports": EmployeeReport.objects.filter(
                     status__in=REPORT_MODERATION_STATUSES
                 ).select_related("user", "template").order_by("-submitted_at")[:5],
@@ -232,9 +232,9 @@ class ReportsListView(AdminOrCuratorMixin, View):
         if admin_filter:
             qs = qs.filter(template__created_by_id=admin_filter)
         if date_from:
-            qs = qs.filter(submitted_at__date__gte=date_from)
+            qs = qs.filter(report_date__gte=date_from)
         if date_to:
-            qs = qs.filter(submitted_at__date__lte=date_to)
+            qs = qs.filter(report_date__lte=date_to)
         if overdue_only:
             qs = qs.filter(status=ReportStatus.OVERDUE)
 
@@ -474,12 +474,11 @@ class AnalyticsView(ControlAccessMixin, View):
         from apps.control.models import EmployeeReport, Penalty, PenaltyStatus
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
         from datetime import timedelta
-        from django.db.models.functions import TruncDate
 
         today = timezone.localdate()
 
         reports_by_status = dict(
-            EmployeeReport.objects.filter(submitted_at__date__gte=today - timedelta(days=30))
+            EmployeeReport.objects.filter(report_date__gte=today - timedelta(days=30))
             .values("status").annotate(c=Count("id")).values_list("status", "c")
         )
 
@@ -495,9 +494,8 @@ class AnalyticsView(ControlAccessMixin, View):
 
         daily_reports = list(
             EmployeeReport.objects
-            .filter(submitted_at__date__gte=today - timedelta(days=14))
-            .annotate(day=TruncDate("submitted_at"))
-            .values("day").annotate(count=Count("id")).order_by("day")
+            .filter(report_date__gte=today - timedelta(days=14))
+            .values(day=F("report_date")).annotate(count=Count("id")).order_by("day")
         )
 
         return render(request, "control/analytics.html", self.ctx(request, {
