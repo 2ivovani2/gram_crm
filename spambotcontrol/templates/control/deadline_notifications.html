@@ -1,0 +1,207 @@
+{% extends "crm/base.html" %}
+{% block title %}Уведомления о дедлайнах{% endblock %}
+{% block page_title %}Уведомления о дедлайнах{% endblock %}
+{% block nav_ctrl_deadline_notif %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.filters { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; align-items:center; }
+.filters input, .filters select { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
+.ctrl-table { width:100%; border-collapse:collapse; }
+.ctrl-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; padding:8px 12px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+.ctrl-table td { padding:9px 12px; border-bottom:1px solid var(--line-2); font-size:12.5px; color:var(--text); vertical-align:top; }
+.ctrl-table tr:last-child td { border:none; }
+.ctrl-table tr:hover td { background:var(--surface-3); }
+.badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+.s-sent    { background:rgba(74,222,128,.12); color:#4ADE80; }
+.s-skipped { background:rgba(250,250,251,.07); color:var(--muted); }
+.s-error   { background:rgba(239,68,68,.12); color:#F87171; }
+.slot-badge { background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-tint); border-radius:6px; font-size:11px; font-weight:700; padding:2px 8px; font-family:monospace; }
+.missing-list { font-size:12px; color:var(--muted); }
+.test-btn { font-size:12px; padding:5px 12px; border-radius:7px; background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-tint); cursor:pointer; white-space:nowrap; }
+.test-btn:hover { background:var(--accent); color:#000; }
+.test-result { font-size:12px; margin-top:6px; }
+.section-hdr { display:flex; align-items:center; gap:12px; margin:24px 0 14px; }
+.section-hdr h2 { font-size:14px; font-weight:700; color:var(--text); }
+.no-log-table .ctrl-table td { color:var(--muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Filters ─────────────────────────────────── -->
+<form method="get" class="filters">
+  <input name="date" type="date" value="{{ date_filter }}" placeholder="Дата">
+  <select name="slot">
+    <option value="">Все слоты</option>
+    {% for val, label in slots %}
+    <option value="{{ val }}" {% if val == slot_filter %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for val, label in statuses %}
+    <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <input name="user" value="{{ user_filter }}" placeholder="@username...">
+  <button type="submit" style="background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-tint);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;">Найти</button>
+  {% if date_filter or slot_filter or status_filter or user_filter %}
+  <a href="{% url 'control:deadline_notifications' %}" style="font-size:12px;color:var(--muted);text-decoration:none;">✕ Сбросить</a>
+  {% endif %}
+</form>
+
+<!-- ── Log table ───────────────────────────────── -->
+<div class="section-hdr">
+  <h2>Лог уведомлений</h2>
+  <span style="font-size:12px;color:var(--muted)">Показано: {{ logs|length }}</span>
+</div>
+
+{% if logs %}
+<div style="overflow-x:auto;margin-bottom:32px">
+<table class="ctrl-table">
+  <thead>
+    <tr>
+      <th>Пользователь</th>
+      <th>Telegram ID</th>
+      <th>Дата дедлайна</th>
+      <th>Слот</th>
+      <th>Статус</th>
+      <th>Что не внесено</th>
+      <th>Баланс</th>
+      <th>Доступно</th>
+      <th>Штраф</th>
+      <th>Время попытки</th>
+      <th>Ошибка</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for log in logs %}
+  <tr>
+    <td style="font-weight:500">{{ log.user.telegram_username|default:"—" }}</td>
+    <td style="font-family:monospace;font-size:11px;color:var(--muted)">{{ log.telegram_id }}</td>
+    <td>{{ log.deadline_date|date:"d.m.Y" }}</td>
+    <td><span class="slot-badge">{{ log.slot }}</span></td>
+    <td><span class="badge s-{{ log.status }}">{{ log.get_status_display }}</span></td>
+    <td class="missing-list">
+      {% if log.missing_items %}
+        {% for item in log.missing_items %}{{ item }}{% if not forloop.last %}, {% endif %}{% endfor %}
+      {% else %}
+        <span style="color:var(--muted2)">—</span>
+      {% endif %}
+    </td>
+    <td style="font-variant-numeric:tabular-nums">
+      {% if log.balance_snapshot is not None %}{{ log.balance_snapshot|floatformat:2 }} ₽{% else %}—{% endif %}
+    </td>
+    <td style="font-variant-numeric:tabular-nums">
+      {% if log.available_snapshot is not None %}{{ log.available_snapshot|floatformat:2 }} ₽{% else %}—{% endif %}
+    </td>
+    <td style="font-variant-numeric:tabular-nums">
+      {% if log.penalty_snapshot is not None %}{{ log.penalty_snapshot|floatformat:2 }} ₽{% else %}—{% endif %}
+    </td>
+    <td style="font-size:11px;color:var(--muted)">{{ log.attempted_at|date:"d.m H:i:s" }}</td>
+    <td style="font-size:11px;color:#F87171;max-width:200px;word-break:break-all">
+      {{ log.error_text|default:"" }}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:36px;margin-bottom:32px">
+  <div style="font-size:13.5px;color:var(--muted)">Нет записей по выбранным фильтрам.</div>
+</div>
+{% endif %}
+
+<!-- ── Workers with no log today ──────────────────────────────── -->
+{% if not date_filter and not slot_filter and not status_filter and not user_filter %}
+<div class="section-hdr">
+  <h2>Сотрудники без уведомлений сегодня ({{ today|date:"d.m.Y" }})</h2>
+  <span style="font-size:12px;color:var(--muted)">{{ workers_without_log|length }} чел.</span>
+</div>
+
+{% if workers_without_log %}
+<div style="overflow-x:auto;margin-bottom:32px" class="no-log-table">
+<table class="ctrl-table">
+  <thead>
+    <tr>
+      <th>Пользователь</th>
+      <th>Telegram ID</th>
+      <th>Тест-уведомление</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for w in workers_without_log %}
+  <tr>
+    <td>{{ w.telegram_username|default:"—" }}</td>
+    <td style="font-family:monospace;font-size:11px;color:var(--muted)">{{ w.telegram_id }}</td>
+    <td>
+      <button class="test-btn" onclick="sendTest(this, {{ w.pk }})">Отправить тест</button>
+      <div class="test-result" id="test-result-{{ w.pk }}"></div>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:24px;margin-bottom:32px">
+  <div style="font-size:13px;color:var(--muted)">Все активные сотрудники уже попали в лог за сегодня.</div>
+</div>
+{% endif %}
+{% endif %}
+
+<!-- ── Test notification panel (general) ──────────────────────── -->
+<div class="section-hdr"><h2>Тест-уведомление</h2></div>
+<div class="card" style="padding:20px 24px;margin-bottom:32px">
+  <div style="font-size:13px;color:var(--muted);margin-bottom:14px">
+    Отправьте тестовое сообщение конкретному сотруднику, чтобы убедиться, что бот связан с его аккаунтом.
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <input id="test-user-id" type="number" placeholder="ID пользователя (число)"
+      style="background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;width:220px">
+    <button class="test-btn" style="padding:8px 18px;font-size:13px" onclick="sendTestById()">Отправить тест</button>
+    <span id="test-general-result" style="font-size:13px"></span>
+  </div>
+</div>
+
+<script>
+async function sendTest(btn, userId) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  const res = await fetch('{% url "control:deadline_notifications" %}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token }}'},
+    body: 'user_id=' + userId,
+  });
+  const data = await res.json();
+  const el = document.getElementById('test-result-' + userId);
+  if (data.ok) {
+    el.style.color = '#4ADE80';
+    el.textContent = data.msg;
+    btn.textContent = '✓ Отправлено';
+  } else {
+    el.style.color = '#F87171';
+    el.textContent = data.error;
+    btn.disabled = false;
+    btn.textContent = 'Повторить';
+  }
+}
+
+async function sendTestById() {
+  const userId = document.getElementById('test-user-id').value;
+  if (!userId) return;
+  const res = await fetch('{% url "control:deadline_notifications" %}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': '{{ csrf_token }}'},
+    body: 'user_id=' + userId,
+  });
+  const data = await res.json();
+  const el = document.getElementById('test-general-result');
+  el.style.color = data.ok ? '#4ADE80' : '#F87171';
+  el.textContent = data.ok ? data.msg : data.error;
+}
+</script>
+
+{% endblock %}

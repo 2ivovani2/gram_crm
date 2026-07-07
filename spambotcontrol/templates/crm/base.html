@@ -943,6 +943,12 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
           Пользователи
         </a>
         {% endif %}
+        <a href="{% url 'control:deadline_notifications' %}" class="sidebar-item {% block nav_ctrl_deadline_notif %}{% endblock %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/>
+          </svg>
+          Уведомления
+        </a>
         <a href="{% url 'control:withdrawals' %}" class="sidebar-item {% block nav_ctrl_withdrawals %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>

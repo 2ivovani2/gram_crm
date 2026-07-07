@@ -157,6 +157,27 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.control.tasks.check_correction_deadlines_task",
         "schedule": crontab(minute=0),
     },
+    # Deadline reminders for workers — 4 slots МСК
+    "deadline-reminder-2300": {
+        "task": "apps.control.tasks.deadline_reminder_task",
+        "schedule": crontab(hour=23, minute=0),
+        "kwargs": {"slot": "23:00"},
+    },
+    "deadline-reminder-2330": {
+        "task": "apps.control.tasks.deadline_reminder_task",
+        "schedule": crontab(hour=23, minute=30),
+        "kwargs": {"slot": "23:30"},
+    },
+    "deadline-reminder-2345": {
+        "task": "apps.control.tasks.deadline_reminder_task",
+        "schedule": crontab(hour=23, minute=45),
+        "kwargs": {"slot": "23:45"},
+    },
+    "deadline-reminder-0000": {
+        "task": "apps.control.tasks.deadline_reminder_task",
+        "schedule": crontab(hour=0, minute=0),
+        "kwargs": {"slot": "00:00"},
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

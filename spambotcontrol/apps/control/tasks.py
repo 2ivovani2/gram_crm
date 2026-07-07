@@ -282,3 +282,189 @@ def check_correction_deadlines_task():
 
     logger.info("[control] Correction deadlines expired: %d, penalized: %d", len(expired), penalized)
     return {"expired": len(expired), "penalized": penalized}
+
+
+# ── Deadline reminder notifications ───────────────────────────────────────────
+
+def _get_missing_items_for_worker(worker, deadline_date) -> list[str]:
+    """Return list of human-readable names of required items not yet submitted."""
+    from apps.control.models import EmployeeReport, ReportTemplate
+    from apps.users.models import UserRole
+
+    templates = list(
+        ReportTemplate.objects.filter(assigned_users=worker).only("pk", "name")
+    )
+
+    if templates:
+        submitted_template_ids = set(
+            EmployeeReport.objects.filter(
+                user=worker,
+                submitted_at__date=deadline_date,
+            ).values_list("template_id", flat=True)
+        )
+        missing = [
+            f"📋 {t.name or 'Отчёт'}"
+            for t in templates
+            if t.pk not in submitted_template_ids
+        ]
+    else:
+        has_any = EmployeeReport.objects.filter(
+            user=worker, submitted_at__date=deadline_date
+        ).exists()
+        missing = [] if has_any else ["📋 Отчёт"]
+
+    return missing
+
+
+def _get_available_balance(worker) -> tuple:
+    """Return (balance, available_for_withdrawal) for the worker, fresh from DB."""
+    from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
+    from django.db.models import Sum
+
+    balance = worker.balance or 0
+    pending = (
+        WithdrawalRequest.objects.filter(
+            user=worker, status=WithdrawalStatus.PENDING
+        ).aggregate(s=Sum("amount"))["s"] or 0
+    )
+    available = max(balance - pending, 0)
+    return balance, available
+
+
+def _send_deadline_notification(worker, slot: str, deadline_date, settings) -> None:
+    """
+    Send (or skip/log-error) deadline notification for a given worker + slot.
+    Idempotent: skips if DeadlineNotificationLog row already exists.
+    """
+    from apps.control.models import DeadlineNotificationLog, NotificationSlot, NotificationStatus
+    from django.db import IntegrityError
+
+    # Idempotency: skip if already processed this slot for this user+date
+    if DeadlineNotificationLog.objects.filter(
+        user=worker, deadline_date=deadline_date, slot=slot
+    ).exists():
+        return
+
+    missing = _get_missing_items_for_worker(worker, deadline_date)
+
+    if not missing:
+        # Data already submitted — log as skipped
+        try:
+            DeadlineNotificationLog.objects.create(
+                user=worker,
+                deadline_date=deadline_date,
+                slot=slot,
+                status=NotificationStatus.SKIPPED,
+                telegram_id=worker.telegram_id,
+                missing_items=[],
+                balance_snapshot=None,
+                available_snapshot=None,
+                penalty_snapshot=None,
+            )
+        except IntegrityError:
+            pass
+        return
+
+    balance, available = _get_available_balance(worker)
+    penalty = settings.late_report_penalty_amount
+
+    slot_labels = {
+        NotificationSlot.H23_00: "⚠️ [GRAMLY CRM] Дедлайн через час!",
+        NotificationSlot.H23_30: "⚠️ [GRAMLY CRM] Дедлайн через полчаса!",
+        NotificationSlot.H23_45: "⚠️ [GRAMLY CRM] Дедлайн через 15 минут!",
+        NotificationSlot.H00_00: "⚠️ [GRAMLY CRM] Дедлайн пропущен!",
+    }
+    header = slot_labels.get(slot, "⚠️ [GRAMLY CRM] Уведомление")
+    missing_lines = "\n".join(f"• {item}" for item in missing)
+
+    text = (
+        f"{header}\n\n"
+        f"Дата: <b>{deadline_date.strftime('%d.%m.%Y')}</b>\n\n"
+        f"Не внесено:\n{missing_lines}\n\n"
+        f"Штраф за отчёт: <b>{penalty:.2f} ₽</b>\n\n"
+        f"💰 Общий баланс: <b>{balance:.2f} ₽</b>\n"
+        f"✅ Доступно для вывода: <b>{available:.2f} ₽</b>"
+    )
+
+    ok = _send_message_sync(worker.telegram_id, text)
+    error_text = "" if ok else "Ошибка отправки (см. логи)"
+
+    try:
+        DeadlineNotificationLog.objects.create(
+            user=worker,
+            deadline_date=deadline_date,
+            slot=slot,
+            status=NotificationStatus.SENT if ok else NotificationStatus.ERROR,
+            error_text=error_text,
+            telegram_id=worker.telegram_id,
+            missing_items=missing,
+            balance_snapshot=balance,
+            available_snapshot=available,
+            penalty_snapshot=penalty,
+        )
+    except IntegrityError:
+        pass  # race condition — another process already wrote the row
+
+    if ok:
+        logger.info(
+            "[deadline] Sent slot=%s user=%s date=%s missing=%s",
+            slot, worker.telegram_id, deadline_date, missing,
+        )
+    else:
+        logger.error(
+            "[deadline] FAILED slot=%s user=%s date=%s",
+            slot, worker.telegram_id, deadline_date,
+        )
+
+
+@shared_task(name="apps.control.tasks.deadline_reminder_task", queue="default")
+def deadline_reminder_task(slot: str) -> dict:
+    """
+    Runs at 23:00, 23:30, 23:45, 00:00 MSK.
+    Checks each active worker's submissions and sends deadline reminders.
+
+    slot: one of "23:00", "23:30", "23:45", "00:00"
+    """
+    import datetime as dt
+    import pytz
+    from apps.users.models import User, UserRole, UserStatus
+    from apps.control.models import ControlSettings, NotificationSlot
+
+    _MSK = pytz.timezone("Europe/Moscow")
+    now_msk = dt.datetime.now(tz=_MSK)
+
+    # At 00:00 we check YESTERDAY (the day that just ended)
+    if slot == NotificationSlot.H00_00:
+        deadline_date = (now_msk - dt.timedelta(days=1)).date()
+    else:
+        deadline_date = now_msk.date()
+
+    settings = ControlSettings.get()
+
+    workers = User.objects.filter(
+        role=UserRole.WORKER,
+        status=UserStatus.ACTIVE,
+        is_blocked_bot=False,
+    ).only("pk", "telegram_id", "telegram_username", "balance")
+
+    sent = skipped = errors = 0
+    for worker in workers:
+        from apps.control.models import DeadlineNotificationLog, NotificationStatus
+        _send_deadline_notification(worker, slot, deadline_date, settings)
+        # Count result from the log row just created (or existing)
+        row = DeadlineNotificationLog.objects.filter(
+            user=worker, deadline_date=deadline_date, slot=slot
+        ).first()
+        if row:
+            if row.status == NotificationStatus.SENT:
+                sent += 1
+            elif row.status == NotificationStatus.SKIPPED:
+                skipped += 1
+            else:
+                errors += 1
+
+    logger.info(
+        "[deadline] slot=%s date=%s sent=%d skipped=%d errors=%d",
+        slot, deadline_date, sent, skipped, errors,
+    )
+    return {"slot": slot, "date": str(deadline_date), "sent": sent, "skipped": skipped, "errors": errors}

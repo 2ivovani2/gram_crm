@@ -670,3 +670,81 @@ class UserEditView(AdminOnlyMixin, View):
                 return redirect("control:users")
 
         return redirect(next_url)
+
+
+# ── Deadline notifications ─────────────────────────────────────────────────────
+
+class DeadlineNotificationsView(AdminOnlyMixin, View):
+    def get(self, request):
+        from apps.control.models import DeadlineNotificationLog, NotificationSlot, NotificationStatus
+        from apps.users.models import User as U, UserRole
+
+        date_filter   = request.GET.get("date", "")
+        slot_filter   = request.GET.get("slot", "")
+        status_filter = request.GET.get("status", "")
+        user_filter   = request.GET.get("user", "")
+
+        qs = DeadlineNotificationLog.objects.select_related("user").order_by("-attempted_at")
+
+        if date_filter:
+            qs = qs.filter(deadline_date=date_filter)
+        if slot_filter:
+            qs = qs.filter(slot=slot_filter)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if user_filter:
+            qs = qs.filter(user__telegram_username__icontains=user_filter)
+
+        logs = qs[:200]
+
+        # Workers eligible but not yet in log for today (never processed)
+        import datetime as dt
+        import pytz
+        _MSK = pytz.timezone("Europe/Moscow")
+        today = dt.datetime.now(tz=_MSK).date()
+
+        workers_without_log_today = U.objects.filter(
+            role=UserRole.WORKER
+        ).exclude(
+            deadline_notifications__deadline_date=today
+        ).only("pk", "telegram_id", "telegram_username")
+
+        return render(request, "control/deadline_notifications.html", self.ctx(request, {
+            "page": "deadline_notifications",
+            "logs": logs,
+            "slots": NotificationSlot.choices,
+            "statuses": NotificationStatus.choices,
+            "date_filter": date_filter,
+            "slot_filter": slot_filter,
+            "status_filter": status_filter,
+            "user_filter": user_filter,
+            "today": today,
+            "workers_without_log": workers_without_log_today,
+        }))
+
+    def post(self, request):
+        """Send a test notification to a specific user."""
+        from apps.control.tasks import _send_message_sync
+        from apps.users.models import User as U
+        from django.http import JsonResponse
+
+        user_id = request.POST.get("user_id")
+        if not user_id:
+            return JsonResponse({"ok": False, "error": "user_id required"})
+
+        try:
+            worker = U.objects.get(pk=int(user_id))
+        except (U.DoesNotExist, ValueError):
+            return JsonResponse({"ok": False, "error": "Пользователь не найден"})
+
+        text = (
+            f"🔔 <b>[Тест] GRAMLY CRM — проверка уведомлений</b>\n\n"
+            f"Этот тест был отправлен вручную из CRM администратором.\n"
+            f"Если вы видите это сообщение — бот работает корректно ✅"
+        )
+        ok = _send_message_sync(worker.telegram_id, text)
+        username = worker.telegram_username or str(worker.telegram_id)
+        if ok:
+            return JsonResponse({"ok": True, "msg": f"✅ Сообщение отправлено @{username}"})
+        else:
+            return JsonResponse({"ok": False, "error": f"Ошибка отправки для @{username} (tg_id={worker.telegram_id})"})

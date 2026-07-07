@@ -32,4 +32,7 @@ urlpatterns = [
     # User management
     path("users/", views.UsersListView.as_view(), name="users"),
     path("users/<int:pk>/edit/", views.UserEditView.as_view(), name="user_edit"),
+
+    # Deadline notification monitoring
+    path("deadline-notifications/", views.DeadlineNotificationsView.as_view(), name="deadline_notifications"),
 ]

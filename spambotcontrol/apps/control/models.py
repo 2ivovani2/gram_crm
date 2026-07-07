@@ -410,6 +410,67 @@ class ControlSettings(models.Model):
         return obj
 
 
+# ── Deadline notification log ─────────────────────────────────────────────────
+
+class NotificationSlot(models.TextChoices):
+    H23_00 = "23:00", "За час (23:00)"
+    H23_30 = "23:30", "За 30 мин (23:30)"
+    H23_45 = "23:45", "За 15 мин (23:45)"
+    H00_00 = "00:00", "Пропущен (00:00)"
+
+
+class NotificationStatus(models.TextChoices):
+    SENT    = "sent",    "Доставлено"
+    SKIPPED = "skipped", "Пропущено (данные внесены)"
+    ERROR   = "error",   "Ошибка отправки"
+
+
+class DeadlineNotificationLog(models.Model):
+    """One row per (user × deadline_date × slot). Idempotent — created once."""
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="deadline_notifications",
+        verbose_name="Пользователь",
+    )
+    deadline_date = models.DateField(verbose_name="Дата дедлайна")
+    slot          = models.CharField(
+        max_length=5,
+        choices=NotificationSlot.choices,
+        verbose_name="Слот",
+    )
+    status        = models.CharField(
+        max_length=10,
+        choices=NotificationStatus.choices,
+        verbose_name="Статус",
+    )
+    error_text    = models.TextField(blank=True, default="", verbose_name="Ошибка")
+    telegram_id   = models.BigIntegerField(verbose_name="Telegram ID")
+    missing_items = models.JSONField(default=list, verbose_name="Что не внесено")
+    balance_snapshot       = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        verbose_name="Баланс на момент отправки",
+    )
+    available_snapshot     = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        verbose_name="Доступно к выводу",
+    )
+    penalty_snapshot       = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        verbose_name="Штраф",
+    )
+    attempted_at  = models.DateTimeField(auto_now_add=True, verbose_name="Время попытки")
+
+    class Meta:
+        verbose_name        = "Лог уведомления о дедлайне"
+        verbose_name_plural = "Лог уведомлений о дедлайне"
+        ordering            = ["-attempted_at"]
+        unique_together     = [("user", "deadline_date", "slot")]
+
+    def __str__(self) -> str:
+        return f"{self.user} | {self.deadline_date} {self.slot} | {self.status}"
+
+
 # ── Worker invite ─────────────────────────────────────────────────────────────
 
 class InviteStatus(models.TextChoices):
