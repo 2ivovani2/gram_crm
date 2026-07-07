@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 _MSK = _ZoneInfo("Europe/Moscow")
 
+_RU_MONTHS_GEN = (
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def _format_period_label(d: _dt.date) -> str:
+    """Format date as Russian genitive month string, e.g. '7 июля 2026'.
+    Uses a hardcoded table so the result is locale-independent."""
+    return f"{d.day} {_RU_MONTHS_GEN[d.month]} {d.year}"
+
 
 def _calc_report_date() -> _dt.date:
     """
@@ -111,7 +122,7 @@ class ReportService:
             file_type=file_type or "text",
             original_filename=original_filename,
             report_date=report_date,
-            period_label=report_date.strftime("%-d %B %Y"),
+            period_label=_format_period_label(report_date),
         )
         return report
 
