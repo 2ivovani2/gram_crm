@@ -88,10 +88,9 @@ def send_report_reminders_task():
         )
 
         for worker in tmpl.assigned_users.filter(
-            role=UserRole.WORKER,
             status=UserStatus.ACTIVE,
             is_blocked_bot=False,
-        ).exclude(id__in=submitted_today_ids):
+        ).exclude(role=UserRole.ADMIN).exclude(id__in=submitted_today_ids):
             ok = _send_message_sync(worker.telegram_id, text)
             notified_worker_ids.add(worker.pk)
             sent += 1 if ok else 0
@@ -307,11 +306,15 @@ def _get_missing_items_for_worker(worker, deadline_date) -> list[str]:
             for t in templates
             if t.pk not in submitted_template_ids
         ]
-    else:
+    elif worker.role == UserRole.WORKER:
+        # Generic fallback only for workers without a specific template
         has_any = EmployeeReport.objects.filter(
             user=worker, report_date=deadline_date
         ).exists()
         missing = [] if has_any else ["📋 Отчёт"]
+    else:
+        # Non-workers without a template assigned don't have a required report
+        missing = []
 
     return missing
 
@@ -442,10 +445,9 @@ def deadline_reminder_task(slot: str) -> dict:
     settings = ControlSettings.get()
 
     workers = User.objects.filter(
-        role=UserRole.WORKER,
         status=UserStatus.ACTIVE,
         is_blocked_bot=False,
-    ).only("pk", "telegram_id", "telegram_username", "balance")
+    ).exclude(role=UserRole.ADMIN).only("pk", "telegram_id", "telegram_username", "balance")
 
     sent = skipped = errors = 0
     for worker in workers:

@@ -139,7 +139,7 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
         from apps.users.models import User as U, UserRole
 
         tmpl = get_object_or_404(ReportTemplate, pk=pk)
-        workers = U.objects.filter(role=UserRole.WORKER).order_by("telegram_username")
+        workers = U.objects.exclude(role=UserRole.ADMIN).order_by("role", "telegram_username")
         assigned_ids = set(tmpl.assigned_users.values_list("id", flat=True))
         times = tmpl.notification_times or []
 
@@ -195,7 +195,7 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
             selected_pks = [int(i) for i in selected_ids if i.isdigit()]
         except Exception:
             selected_pks = []
-        tmpl.assigned_users.set(U.objects.filter(pk__in=selected_pks, role=UserRole.WORKER))
+        tmpl.assigned_users.set(U.objects.filter(pk__in=selected_pks).exclude(role=UserRole.ADMIN))
 
         return redirect("control:report_template_edit", pk=tmpl.pk)
 

@@ -106,28 +106,34 @@
     <div class="hint">До 3 напоминаний в день. Оставьте пустым, чтобы не отправлять в это время.</div>
   </div>
 
-  <!-- Assigned workers -->
+  <!-- Assigned users -->
   <div class="card">
-    <div class="card-title">Назначенные сотрудники</div>
+    <div class="card-title">Назначенные пользователи</div>
     {% if workers %}
-    <div class="worker-grid">
-      {% for w in workers %}
-      <label class="worker-item">
-        <input type="checkbox" name="assigned_users" value="{{ w.pk }}"
-               {% if w.pk in assigned_ids %}checked{% endif %}>
-        <div>
-          <div class="worker-name">{{ w.telegram_username|default:"—" }}</div>
-          <div class="worker-id">{{ w.telegram_id }}</div>
-        </div>
-      </label>
-      {% endfor %}
+    {% regroup workers by get_role_display as role_groups %}
+    {% for group in role_groups %}
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px">{{ group.grouper }}</div>
+      <div class="worker-grid">
+        {% for w in group.list %}
+        <label class="worker-item">
+          <input type="checkbox" name="assigned_users" value="{{ w.pk }}"
+                 {% if w.pk in assigned_ids %}checked{% endif %}>
+          <div>
+            <div class="worker-name">{{ w.telegram_username|default:"—" }}</div>
+            <div class="worker-id">{{ w.telegram_id }}</div>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
     </div>
-    <div class="hint" style="margin-top:12px">
-      Отмеченные сотрудники будут видеть этот шаблон при подаче отчёта.
+    {% endfor %}
+    <div class="hint" style="margin-top:4px">
+      Отмеченные пользователи будут получать напоминания и видеть этот шаблон при подаче отчёта.
       Уведомление о новом отчёте придёт создателю шаблона.
     </div>
     {% else %}
-    <div style="color:var(--muted);font-size:13px">Сотрудников с ролью «Воркер» нет.</div>
+    <div style="color:var(--muted);font-size:13px">Пользователей нет.</div>
     {% endif %}
   </div>
 
