@@ -695,17 +695,23 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
 
         logs = qs[:200]
 
-        # Workers eligible but not yet in log for today (never processed)
         import datetime as dt
         from zoneinfo import ZoneInfo
         _MSK = ZoneInfo("Europe/Moscow")
-        today = dt.datetime.now(tz=_MSK).date()
+        now_msk = dt.datetime.now(tz=_MSK)
+        today = now_msk.date()
 
-        workers_without_log_today = U.objects.filter(
-            role=UserRole.WORKER
-        ).exclude(
-            deadline_notifications__deadline_date=today
-        ).only("pk", "telegram_id", "telegram_username")
+        # Only meaningful after 23:00 — before that the reminder task hasn't run yet
+        notifications_started = now_msk.hour >= 23
+
+        if notifications_started:
+            workers_without_log_today = U.objects.filter(
+                role=UserRole.WORKER
+            ).exclude(
+                deadline_notifications__deadline_date=today
+            ).only("pk", "telegram_id", "telegram_username")
+        else:
+            workers_without_log_today = U.objects.none()
 
         return render(request, "control/deadline_notifications.html", self.ctx(request, {
             "page": "deadline_notifications",
@@ -717,6 +723,7 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
             "status_filter": status_filter,
             "user_filter": user_filter,
             "today": today,
+            "notifications_started": notifications_started,
             "workers_without_log": workers_without_log_today,
         }))
 
@@ -746,3 +753,37 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
             return JsonResponse({"ok": True, "msg": f"✅ Сообщение отправлено @{username}"})
         else:
             return JsonResponse({"ok": False, "error": f"Ошибка отправки для @{username} (tg_id={worker.telegram_id})"})
+
+
+# ── Global settings ────────────────────────────────────────────────────────────
+
+class ControlSettingsView(AdminOnlyMixin, View):
+    def get(self, request):
+        from apps.control.models import ControlSettings
+        settings = ControlSettings.get()
+        return render(request, "control/settings.html", self.ctx(request, {
+            "page": "settings",
+            "settings": settings,
+        }))
+
+    def post(self, request):
+        from apps.control.models import ControlSettings
+        from decimal import Decimal, InvalidOperation
+        settings = ControlSettings.get()
+
+        try:
+            settings.late_report_penalty_amount = Decimal(
+                request.POST.get("late_report_penalty_amount", "0") or "0"
+            )
+        except InvalidOperation:
+            pass
+
+        try:
+            h = int(request.POST.get("report_deadline_hour", 23) or 23)
+            settings.report_deadline_hour = max(0, min(23, h))
+        except (ValueError, TypeError):
+            pass
+
+        settings.updated_by = request.crm_user
+        settings.save()
+        return redirect("control:settings")

@@ -35,4 +35,7 @@ urlpatterns = [
 
     # Deadline notification monitoring
     path("deadline-notifications/", views.DeadlineNotificationsView.as_view(), name="deadline_notifications"),
+
+    # Global settings
+    path("settings/", views.ControlSettingsView.as_view(), name="settings"),
 ]

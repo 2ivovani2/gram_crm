@@ -1,0 +1,55 @@
+{% extends "crm/base.html" %}
+{% block title %}Настройки — Контроль{% endblock %}
+{% block page_title %}Настройки{% endblock %}
+{% block nav_ctrl_settings %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+.card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:20px; }
+.card-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:18px; }
+.field-group { display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
+.field-group label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.field-group input { background:var(--surface-2); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 12px; font-size:14px; width:260px; box-sizing:border-box; }
+.hint { font-size:12px; color:var(--muted); margin-top:4px; }
+.btn-save { font-size:13px; padding:9px 24px; border-radius:8px; background:var(--accent); color:#000; font-weight:700; border:none; cursor:pointer; }
+.meta { font-size:12px; color:var(--muted2); margin-top:18px; }
+@media (max-width:700px) { .field-group input { width:100% !important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="card">
+    <div class="card-title">Автоматические штрафы</div>
+
+    <div class="field-group">
+      <label>Штраф за просрочку отчёта (₽)</label>
+      <input type="number" name="late_report_penalty_amount"
+             value="{{ settings.late_report_penalty_amount }}" min="0" step="0.01">
+      <div class="hint">
+        Сумма штрафа, начисляемого автоматически в 23:30 МСК воркерам,
+        не сдавшим отчёт за текущий день. 0 = штрафы отключены.
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label>Час дедлайна отчёта (МСК, 0–23)</label>
+      <input type="number" name="report_deadline_hour"
+             value="{{ settings.report_deadline_hour }}" min="0" max="23">
+      <div class="hint">Информационный параметр — влияет на отображение. Фактическое расписание задач меняется через Celery Beat.</div>
+    </div>
+
+    <button type="submit" class="btn-save">💾 Сохранить</button>
+  </div>
+</form>
+
+{% if settings.updated_by %}
+<div class="meta">
+  Обновлено: {{ settings.updated_at|date:"d.m.Y H:i" }} — @{{ settings.updated_by.telegram_username|default:settings.updated_by.telegram_id }}
+</div>
+{% endif %}
+
+{% endblock %}

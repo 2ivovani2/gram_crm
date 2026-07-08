@@ -145,10 +145,19 @@
 {% if not date_filter and not slot_filter and not status_filter and not user_filter %}
 <div class="section-hdr">
   <h2>Сотрудники без уведомлений сегодня ({{ today|date:"d.m.Y" }})</h2>
+  {% if notifications_started %}
   <span style="font-size:12px;color:var(--muted)">{{ workers_without_log|length }} чел.</span>
+  {% else %}
+  <span style="font-size:12px;color:var(--muted)">первое напоминание в 23:00 МСК</span>
+  {% endif %}
 </div>
 
-{% if workers_without_log %}
+{% if not notifications_started %}
+<div style="color:var(--muted);font-size:13px;margin-bottom:24px;padding:14px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px">
+  ⏳ Уведомления за сегодня ещё не отправлялись — первый слот в <b>23:00 МСК</b>.
+  Этот раздел покажет воркеров, которых обошли уведомления, после запуска задачи.
+</div>
+{% elif workers_without_log %}
 <div style="overflow-x:auto;margin-bottom:32px" class="no-log-table">
 <table class="ctrl-table">
   <thead>
