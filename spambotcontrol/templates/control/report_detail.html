@@ -5,13 +5,14 @@
 {% block extra_css %}
 <style>
 .card { background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:20px; }
-.kv { display:grid; grid-template-columns:160px 1fr; gap:8px 16px; align-items:start; }
+.kv { display:grid; grid-template-columns:180px 1fr; gap:8px 16px; align-items:start; }
 .kv dt { color:var(--muted); font-size:13px; padding-top:2px; }
 .kv dd { font-size:14px; color:var(--text); }
 .badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
 .s-pending       { background:rgba(255,184,77,.15); color:#FFB84D; }
 .s-on_moderation { background:rgba(96,165,250,.15); color:#60A5FA; }
 .s-resubmitted   { background:rgba(167,139,250,.15); color:#A78BFA; }
+.s-updated       { background:rgba(167,139,250,.15); color:#A78BFA; }
 .s-accepted      { background:rgba(74,222,128,.12); color:#4ADE80; }
 .s-rejected      { background:rgba(239,68,68,.12);  color:#F87171; }
 .s-overdue       { background:rgba(239,68,68,.18);  color:#F87171; }
@@ -23,6 +24,19 @@
 .btn-reject { background:rgba(239,68,68,.12);  color:#F87171; border:1px solid rgba(239,68,68,.25); padding:8px 20px; border-radius:8px; cursor:pointer; font-size:14px; }
 .btn-back { background:var(--surface-3); color:var(--text); border:none; padding:8px 18px; border-radius:8px; cursor:pointer; font-size:14px; text-decoration:none; display:inline-block; }
 .instructions-box { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:14px; font-size:13px; }
+.lock-warn { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.25); border-radius:10px; padding:12px 16px; font-size:13px; color:#F87171; }
+
+/* History table */
+.hist-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.hist-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; padding:6px 10px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+.hist-table td { padding:7px 10px; border-bottom:1px solid var(--line-2); color:var(--text); vertical-align:top; }
+.hist-table tr:last-child td { border:none; }
+.action-badge { display:inline-block; padding:2px 7px; border-radius:5px; font-size:11px; font-weight:600; }
+.ab-submit  { background:rgba(96,165,250,.12); color:#60A5FA; }
+.ab-resubmit{ background:rgba(167,139,250,.12); color:#A78BFA; }
+.ab-accept  { background:rgba(74,222,128,.12); color:#4ADE80; }
+.ab-reject  { background:rgba(239,68,68,.12); color:#F87171; }
+.ab-manual_change { background:rgba(255,184,77,.12); color:#FFB84D; }
 </style>
 {% endblock %}
 
@@ -30,44 +44,84 @@
 
 <a href="{% url 'control:reports' %}" class="btn-back" style="margin-bottom:20px">← Все отчёты</a>
 
+<!-- ── Main info ─────────────────────────────────────────────────── -->
 <div class="card">
   <dl class="kv">
     <dt>Сотрудник</dt>
     <dd>@{{ report.user.telegram_username|default:report.user.telegram_id }}</dd>
+
     <dt>Статус</dt>
-    <dd><span class="badge s-{{ report.status }}">{{ report.get_status_display }}</span></dd>
+    <dd>
+      <span class="badge s-{{ report.status }}">{{ report.get_status_display }}</span>
+      {% if report.deadline_met is not None %}
+        {% if report.deadline_met %}
+          <span style="font-size:11px;color:#4ADE80;margin-left:8px">✓ дедлайн соблюдён</span>
+        {% else %}
+          <span style="font-size:11px;color:#F87171;margin-left:8px">✗ дедлайн нарушен</span>
+        {% endif %}
+      {% endif %}
+    </dd>
+
     {% if report.template %}
     <dt>Шаблон</dt>
     <dd><a href="{% url 'control:report_template_edit' report.template.pk %}" style="color:var(--accent);text-decoration:none">{{ report.template.name }}</a></dd>
     {% endif %}
+
     <dt>Отчётная дата</dt>
     <dd>
       {{ report.period_label|default:"—" }}
       {% if report.report_date and report.submitted_at.date != report.report_date %}
-      <span style="font-size:11px;color:#FFB84D;margin-left:6px" title="Отчёт сдан после полуночи ({{ report.submitted_at|date:'d.m.Y H:i' }}), но относится к предыдущему дню">
+      <span style="font-size:11px;color:#FFB84D;margin-left:6px" title="Отчёт сдан после полуночи, относится к предыдущему дню">
         ⚠ сдан {{ report.submitted_at|date:"d.m H:i" }}
       </span>
       {% endif %}
     </dd>
-    <dt>Подан</dt>
-    <dd>{{ report.submitted_at|date:"d.m.Y H:i"|default:"—" }}</dd>
-    {% if report.correction_deadline %}
-    <dt>Срок исправления</dt>
-    <dd style="color:#F87171;font-weight:600">{{ report.correction_deadline|date:"d.m.Y H:i" }}</dd>
+
+    <dt>Первая подача</dt>
+    <dd>{{ report.first_submission_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+
+    <dt>Последняя подача</dt>
+    <dd>{{ report.last_submission_at|date:"d.m.Y H:i"|default:"—" }}</dd>
+
+    {% if report.deadline_at %}
+    <dt>Дедлайн</dt>
+    <dd>
+      {{ report.deadline_at|date:"d.m.Y H:i" }}
+      {% if report.first_submission_at %}
+        {% if report.first_submission_at < report.deadline_at %}
+          <span style="font-size:11px;color:#4ADE80;margin-left:6px">✓ вовремя</span>
+        {% else %}
+          <span style="font-size:11px;color:#F87171;margin-left:6px">✗ просрочен</span>
+        {% endif %}
+      {% endif %}
+    </dd>
     {% endif %}
+
+    {% if report.editing_locked_at %}
+    <dt>Блокировка правок</dt>
+    <dd>{{ report.editing_locked_at|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
+
     {% if report.reviewed_by %}
     <dt>Проверил</dt>
     <dd>@{{ report.reviewed_by.telegram_username|default:report.reviewed_by.telegram_id }}</dd>
     <dt>Проверено</dt>
     <dd>{{ report.reviewed_at|date:"d.m.Y H:i" }}</dd>
     {% endif %}
+
     {% if report.review_comment %}
     <dt>Комментарий</dt>
     <dd style="white-space:pre-wrap">{{ report.review_comment }}</dd>
     {% endif %}
+
+    {% if report.correction_deadline %}
+    <dt>Срок исправления</dt>
+    <dd style="color:#F87171;font-weight:600">{{ report.correction_deadline|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
   </dl>
 </div>
 
+<!-- ── Report content ────────────────────────────────────────────── -->
 {% if report.text_content %}
 <div class="card">
   <h3 style="font-size:14px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:.04em">Текст отчёта</h3>
@@ -86,9 +140,53 @@
 </div>
 {% endif %}
 
-{% if report.status == "pending" or report.status == "on_moderation" or report.status == "resubmitted" %}
+<!-- ── Moderation history ─────────────────────────────────────────── -->
+{% if history %}
 <div class="card">
-  <h3 style="font-size:14px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em">Действие</h3>
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em">История модерации</h3>
+  <table class="hist-table">
+    <thead>
+      <tr>
+        <th>Цикл</th>
+        <th>Действие</th>
+        <th>Кто</th>
+        <th>Статус</th>
+        <th>Время</th>
+        <th>Комментарий</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for h in history %}
+    <tr>
+      <td style="color:var(--muted)">{{ h.cycle }}</td>
+      <td><span class="action-badge ab-{{ h.action }}">{{ h.get_action_display }}</span></td>
+      <td>
+        {% if h.moderator %}@{{ h.moderator.telegram_username|default:h.moderator.telegram_id }}
+        {% else %}<span style="color:var(--muted)">сотрудник</span>{% endif %}
+      </td>
+      <td>
+        {% if h.prev_status %}<span style="color:var(--muted)">{{ h.prev_status }}</span> →{% endif %}
+        {{ h.new_status }}
+      </td>
+      <td style="color:var(--muted);white-space:nowrap">{{ h.created_at|date:"d.m H:i" }}</td>
+      <td style="color:var(--text)">{{ h.comment|default:"" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- ── Action form ────────────────────────────────────────────────── -->
+{% if report.status == "pending" or report.status == "on_moderation" or report.status == "resubmitted" or report.status == "updated" %}
+<div class="card">
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em">Решение по отчёту</h3>
+
+  {% if not can_moderate %}
+  <div class="lock-warn">
+    🔒 Вы не можете модерировать этот отчёт (свой собственный или не в вашей зоне ответственности).
+  </div>
+  {% else %}
   {% if report.template and report.template.format_instructions %}
   <div class="instructions-box">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;color:var(--muted2)">Инструкции шаблона</div>
@@ -103,6 +201,17 @@
       <button name="action" value="reject" class="btn-reject">❌ Отклонить</button>
     </div>
   </form>
+  {% endif %}
+</div>
+{% elif report.status == "rejected" %}
+<div class="card">
+  {% if report.editing_locked_at %}
+    <div class="lock-warn">
+      🔒 Редактирование заблокировано: сотрудник мог исправить отчёт до <b>{{ report.editing_locked_at|date:"d.m.Y H:i" }}</b>.
+    </div>
+  {% else %}
+    <div style="font-size:13px;color:var(--muted)">Отчёт отклонён. Ожидаем повторную подачу от сотрудника.</div>
+  {% endif %}
 </div>
 {% endif %}
 

@@ -21,7 +21,8 @@ class ReportStatus(models.TextChoices):
     REJECTED       = "rejected",       "Отклонён"
     REVISION       = "revision",       "На доработке"       # legacy
     OVERDUE        = "overdue",        "Просрочен"
-    RESUBMITTED    = "resubmitted",    "Повторно отправлен"
+    RESUBMITTED    = "resubmitted",    "Повторно отправлен"  # legacy alias
+    UPDATED        = "updated",        "Обновлён"
 
 
 # Statuses that count as "awaiting review" in admin panels
@@ -29,6 +30,7 @@ REPORT_MODERATION_STATUSES = {
     ReportStatus.PENDING,
     ReportStatus.ON_MODERATION,
     ReportStatus.RESUBMITTED,
+    ReportStatus.UPDATED,
 }
 
 # Statuses that block withdrawal
@@ -36,6 +38,12 @@ REPORT_BLOCKING_STATUSES = {
     ReportStatus.PENDING,
     ReportStatus.ON_MODERATION,
     ReportStatus.RESUBMITTED,
+    ReportStatus.UPDATED,
+}
+
+# Statuses in which the user can still edit (before editing_locked_at)
+REPORT_EDITABLE_STATUSES = {
+    ReportStatus.REJECTED,
 }
 
 
@@ -195,7 +203,40 @@ class EmployeeReport(models.Model):
         help_text="За какой день этот отчёт. Может отличаться от даты подачи при сдаче после 00:00.",
     )
 
-    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата подачи")
+    # Lifecycle timestamps
+    first_submission_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Время первой подачи",
+    )
+    last_submission_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Время последней подачи",
+    )
+
+    # Deadline calculated from template.deadline_time + report_date at submission time.
+    # Stored here so changes to the template do not affect existing reports.
+    deadline_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Дедлайн отчёта",
+        help_text="Рассчитан из шаблона в момент создания; не изменяется при смене дедлайна шаблона",
+    )
+    # Editing is locked after deadline_at + 1 hour.
+    editing_locked_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Блокировка редактирования",
+        help_text="deadline_at + 1 час",
+    )
+
+    # Deadline compliance, computed when the report is accepted.
+    # True  = first submission was before deadline AND last submission before editing_locked_at.
+    # False = missed deadline or last version submitted after editing_locked_at.
+    # None  = not yet determined (report not accepted).
+    deadline_met = models.BooleanField(
+        null=True, blank=True,
+        verbose_name="Дедлайн соблюдён",
+    )
+
+    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания записи")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -209,6 +250,62 @@ class EmployeeReport(models.Model):
     @property
     def is_blocking_withdrawal(self) -> bool:
         return self.status in REPORT_BLOCKING_STATUSES
+
+    def can_user_edit(self) -> bool:
+        """True if the user is still allowed to edit/resubmit this report."""
+        if self.status not in REPORT_EDITABLE_STATUSES:
+            return False
+        if self.editing_locked_at is None:
+            return True
+        from django.utils import timezone
+        return timezone.now() < self.editing_locked_at
+
+
+class ModerationHistory(models.Model):
+    """Immutable audit trail of every moderation action on a report."""
+
+    class Action(models.TextChoices):
+        SUBMIT        = "submit",        "Первичная подача"
+        RESUBMIT      = "resubmit",      "Повторная подача"
+        ACCEPT        = "accept",        "Принятие"
+        REJECT        = "reject",        "Отклонение"
+        MANUAL_CHANGE = "manual_change", "Ручная смена статуса"
+
+    report = models.ForeignKey(
+        EmployeeReport,
+        on_delete=models.CASCADE,
+        related_name="history",
+        verbose_name="Отчёт",
+    )
+    cycle = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name="Цикл модерации",
+        help_text="Номер цикла подача → решение (инкрементируется при каждой повторной подаче)",
+    )
+    action = models.CharField(
+        max_length=20,
+        choices=Action.choices,
+        verbose_name="Действие",
+    )
+    moderator = models.ForeignKey(
+        "users.User",
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name="Модератор / автор",
+    )
+    prev_status = models.CharField(max_length=20, blank=True, verbose_name="Предыдущий статус")
+    new_status  = models.CharField(max_length=20, verbose_name="Новый статус")
+    comment     = models.TextField(blank=True, verbose_name="Комментарий")
+    created_at  = models.DateTimeField(auto_now_add=True, verbose_name="Дата и время")
+
+    class Meta:
+        verbose_name        = "История модерации"
+        verbose_name_plural = "История модерации"
+        ordering            = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"#{self.report_id} {self.action} cycle={self.cycle} @ {self.created_at:%d.%m.%Y %H:%M}"
 
 
 # ── Penalty system ─────────────────────────────────────────────────────────────

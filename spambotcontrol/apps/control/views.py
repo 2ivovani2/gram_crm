@@ -178,6 +178,15 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
             tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
         except InvalidOperation:
             pass
+        # deadline_time — required HH:MM field
+        import datetime as _dt
+        deadline_time_raw = request.POST.get("deadline_time", "").strip()
+        if deadline_time_raw:
+            try:
+                parts = deadline_time_raw.split(":")
+                tmpl.deadline_time = _dt.time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                pass
         # notification_times: collect up to 3 non-empty HH:MM values
         notif_times = []
         for i in range(1, 4):
@@ -259,23 +268,38 @@ class ReportsListView(AdminOrCuratorMixin, View):
 
 class ReportDetailView(AdminOrCuratorMixin, View):
     def get(self, request, pk):
-        from apps.control.models import EmployeeReport
+        from apps.control.models import EmployeeReport, ModerationHistory
+        from apps.control.services import ReportService
+
         report = get_object_or_404(
             EmployeeReport.objects.select_related("user", "template", "reviewed_by"), pk=pk
         )
+        history = list(
+            ModerationHistory.objects.filter(report=report)
+            .select_related("moderator")
+            .order_by("created_at")
+        )
+        can_moderate = ReportService.can_moderate(request.crm_user, report)
         return render(request, "control/report_detail.html", self.ctx(request, {
             "page": "reports",
             "report": report,
+            "history": history,
+            "can_moderate": can_moderate,
         }))
 
     def post(self, request, pk):
         from apps.control.models import EmployeeReport
         from apps.control.services import ReportService
 
-        report = get_object_or_404(EmployeeReport, pk=pk)
+        report = get_object_or_404(
+            EmployeeReport.objects.select_related("user", "template"), pk=pk
+        )
         action = request.POST.get("action")
         comment = request.POST.get("comment", "")
         admin = request.crm_user
+
+        if not ReportService.can_moderate(admin, report):
+            return redirect("control:report_detail", pk=pk)
 
         if action == "accept":
             ReportService.accept_report(report, admin, comment)

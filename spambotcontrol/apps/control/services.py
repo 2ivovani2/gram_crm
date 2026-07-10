@@ -28,8 +28,7 @@ _RU_MONTHS_GEN = (
 
 
 def _format_period_label(d: _dt.date) -> str:
-    """Format date as Russian genitive month string, e.g. '7 июля 2026'.
-    Uses a hardcoded table so the result is locale-independent."""
+    """Format date as Russian genitive month string, e.g. '7 июля 2026'."""
     return f"{d.day} {_RU_MONTHS_GEN[d.month]} {d.year}"
 
 
@@ -49,6 +48,17 @@ def _calc_report_date() -> _dt.date:
     return now_msk.date()
 
 
+def _calc_deadline_at(
+    template: Optional["ReportTemplate"],
+    report_date: _dt.date,
+) -> Optional[_dt.datetime]:
+    """Combine report_date + template.deadline_time in MSK → UTC-aware datetime."""
+    if template is None or template.deadline_time is None or report_date is None:
+        return None
+    naive = _dt.datetime.combine(report_date, template.deadline_time)
+    return naive.replace(tzinfo=_MSK)
+
+
 # ── Report services ────────────────────────────────────────────────────────────
 
 class ReportService:
@@ -65,11 +75,9 @@ class ReportService:
     def get_template_for_user(user: User) -> Optional["ReportTemplate"]:
         """Return the first template assigned to this user (new M2M or legacy OneToOne)."""
         from apps.control.models import ReportTemplate
-        # New: check M2M assignment
         tmpl = ReportTemplate.objects.filter(assigned_users=user).first()
         if tmpl:
             return tmpl
-        # Legacy: per-user OneToOne
         try:
             return user.report_template
         except Exception:
@@ -101,6 +109,25 @@ class ReportService:
         )
 
     @staticmethod
+    def can_moderate(moderator: User, report: "EmployeeReport") -> bool:
+        """
+        Permission check for moderation actions (accept / reject).
+
+        Rules:
+        - ADMIN can moderate all reports except their own.
+        - CURATOR can moderate reports of WORKER and ACCOUNTANT only (not own, not other curators).
+        - WORKER / ACCOUNTANT cannot moderate anyone.
+        """
+        if report.user_id == moderator.pk:
+            return False
+        if moderator.role == UserRole.ADMIN:
+            return True
+        if moderator.role == UserRole.CURATOR:
+            return report.user.role in (UserRole.WORKER, UserRole.ACCOUNTANT)
+        return False
+
+    @staticmethod
+    @transaction.atomic
     def submit_report(
         user: User,
         template: Optional["ReportTemplate"] = None,
@@ -109,10 +136,79 @@ class ReportService:
         file_type: str = "text",
         original_filename: str = "",
     ) -> "EmployeeReport":
-        """Create a new report. Status = ON_MODERATION if template, else PENDING (legacy)."""
-        from apps.control.models import EmployeeReport, ReportStatus
-        status = ReportStatus.ON_MODERATION if template else ReportStatus.PENDING
+        """
+        Submit (or resubmit) a report.
+
+        Single-record rule: one EmployeeReport per (user, template, report_date).
+        • If no existing record → create new (first submission).
+        • If existing record is REJECTED and editing is still allowed → update in-place
+          (status → UPDATED, last_submission_at refreshed).
+        • If existing record is REJECTED but editing is locked → raise ValueError.
+        • Any other blocking status → raise ValueError (already pending/accepted).
+        """
+        from apps.control.models import (
+            EmployeeReport, ModerationHistory, ReportStatus,
+            REPORT_BLOCKING_STATUSES, REPORT_EDITABLE_STATUSES,
+        )
+
         report_date = _calc_report_date()
+        now = timezone.now()
+
+        # Look for an existing report for the same user + template + date
+        existing = (
+            EmployeeReport.objects.select_for_update()
+            .filter(user=user, template=template, report_date=report_date)
+            .first()
+        )
+
+        if existing is not None:
+            if existing.status in REPORT_BLOCKING_STATUSES:
+                raise ValueError(
+                    f"Отчёт уже находится на проверке (статус: {existing.get_status_display()})."
+                )
+            if existing.status in REPORT_EDITABLE_STATUSES:
+                if not existing.can_user_edit():
+                    raise ValueError(
+                        "Время на исправление истекло — редактирование заблокировано."
+                    )
+                # Determine current cycle number from history
+                last_cycle = (
+                    existing.history.order_by("-cycle").values_list("cycle", flat=True).first()
+                    or 1
+                )
+                new_cycle = last_cycle + 1
+                prev_status = existing.status
+                existing.status = ReportStatus.UPDATED
+                existing.text_content = text
+                existing.telegram_file_id = file_id
+                existing.file_type = file_type or "text"
+                existing.original_filename = original_filename
+                existing.last_submission_at = now
+                existing.save(update_fields=[
+                    "status", "text_content", "telegram_file_id",
+                    "file_type", "original_filename", "last_submission_at", "updated_at",
+                ])
+                ModerationHistory.objects.create(
+                    report=existing,
+                    cycle=new_cycle,
+                    action=ModerationHistory.Action.RESUBMIT,
+                    moderator=None,
+                    prev_status=prev_status,
+                    new_status=ReportStatus.UPDATED,
+                )
+                return existing
+            # Any other terminal status (ACCEPTED, OVERDUE…) — start fresh
+            # Fall through to create a new record only when template differs or
+            # truly different report_date, but in practice we block duplicate dates.
+            raise ValueError(
+                f"Отчёт за этот период уже существует (статус: {existing.get_status_display()})."
+            )
+
+        # First submission — create a new record
+        status = ReportStatus.ON_MODERATION if template else ReportStatus.PENDING
+        deadline_at = _calc_deadline_at(template, report_date)
+        editing_locked_at = (deadline_at + _dt.timedelta(hours=1)) if deadline_at else None
+
         report = EmployeeReport.objects.create(
             user=user,
             template=template,
@@ -123,39 +219,97 @@ class ReportService:
             original_filename=original_filename,
             report_date=report_date,
             period_label=_format_period_label(report_date),
+            first_submission_at=now,
+            last_submission_at=now,
+            deadline_at=deadline_at,
+            editing_locked_at=editing_locked_at,
+        )
+        ModerationHistory.objects.create(
+            report=report,
+            cycle=1,
+            action=ModerationHistory.Action.SUBMIT,
+            moderator=None,
+            prev_status="",
+            new_status=status,
         )
         return report
 
     @staticmethod
+    @transaction.atomic
     def accept_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
-        from apps.control.models import ReportStatus
+        from apps.control.models import ReportStatus, ModerationHistory
+
+        prev_status = report.status
+        now = timezone.now()
+
+        # Compute deadline_met
+        deadline_met = None
+        if report.deadline_at and report.first_submission_at and report.editing_locked_at:
+            deadline_met = (
+                report.first_submission_at < report.deadline_at
+                and report.last_submission_at < report.editing_locked_at
+            )
+
         report.status = ReportStatus.ACCEPTED
         report.reviewed_by = admin
-        report.reviewed_at = timezone.now()
+        report.reviewed_at = now
         report.review_comment = comment
         report.correction_deadline = None
+        report.deadline_met = deadline_met
+        report.save(update_fields=[
+            "status", "reviewed_by", "reviewed_at", "review_comment",
+            "correction_deadline", "deadline_met", "updated_at",
+        ])
+
+        cycle = (
+            report.history.order_by("-cycle").values_list("cycle", flat=True).first() or 1
+        )
+        ModerationHistory.objects.create(
+            report=report,
+            cycle=cycle,
+            action=ModerationHistory.Action.ACCEPT,
+            moderator=admin,
+            prev_status=prev_status,
+            new_status=ReportStatus.ACCEPTED,
+            comment=comment,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+        """Reject report. editing_locked_at was set at creation and is not modified here."""
+        from apps.control.models import ReportStatus, ModerationHistory
+
+        prev_status = report.status
+        now = timezone.now()
+
+        report.status = ReportStatus.REJECTED
+        report.reviewed_by = admin
+        report.reviewed_at = now
+        report.review_comment = comment
+        # Keep correction_deadline for legacy display; but editing_locked_at
+        # (set at submit time = deadline_at + 1h) is the authoritative lock.
+        hours = 24
+        if report.template and report.template.correction_deadline_hours:
+            hours = report.template.correction_deadline_hours
+        report.correction_deadline = now + timedelta(hours=hours)
         report.save(update_fields=[
             "status", "reviewed_by", "reviewed_at", "review_comment",
             "correction_deadline", "updated_at",
         ])
 
-    @staticmethod
-    def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
-        """Reject and set correction deadline based on template settings."""
-        from apps.control.models import ReportStatus
-        report.status = ReportStatus.REJECTED
-        report.reviewed_by = admin
-        report.reviewed_at = timezone.now()
-        report.review_comment = comment
-        # Set correction deadline from template, or default 24 hours
-        hours = 24
-        if report.template and report.template.correction_deadline_hours:
-            hours = report.template.correction_deadline_hours
-        report.correction_deadline = timezone.now() + timedelta(hours=hours)
-        report.save(update_fields=[
-            "status", "reviewed_by", "reviewed_at", "review_comment",
-            "correction_deadline", "updated_at",
-        ])
+        cycle = (
+            report.history.order_by("-cycle").values_list("cycle", flat=True).first() or 1
+        )
+        ModerationHistory.objects.create(
+            report=report,
+            cycle=cycle,
+            action=ModerationHistory.Action.REJECT,
+            moderator=admin,
+            prev_status=prev_status,
+            new_status=ReportStatus.REJECTED,
+            comment=comment,
+        )
 
     @staticmethod
     def resubmit_report(
@@ -165,20 +319,18 @@ class ReportService:
         file_type: str = "text",
         original_filename: str = "",
     ) -> "EmployeeReport":
-        """Create a correction/resubmission of a rejected report."""
-        from apps.control.models import EmployeeReport, ReportStatus
-        new_report = EmployeeReport.objects.create(
+        """
+        Legacy shim — now delegates to submit_report so the single-record invariant
+        is preserved. Kept so old call sites don't break.
+        """
+        return ReportService.submit_report(
             user=original_report.user,
             template=original_report.template,
-            status=ReportStatus.RESUBMITTED,
-            text_content=text,
-            telegram_file_id=file_id,
-            file_type=file_type or "text",
+            text=text,
+            file_id=file_id,
+            file_type=file_type,
             original_filename=original_filename,
-            report_date=original_report.report_date,  # resubmission keeps the same report_date
-            period_label=original_report.period_label,
         )
-        return new_report
 
     @staticmethod
     def send_to_revision(report: "EmployeeReport", admin: User, comment: str = "") -> None:
@@ -220,13 +372,13 @@ class ReportService:
 
     @staticmethod
     def mark_overdue_correction_deadlines() -> int:
-        """Mark as OVERDUE all REJECTED reports whose correction_deadline has passed."""
+        """Mark as OVERDUE all REJECTED reports whose editing_locked_at has passed."""
         from apps.control.models import EmployeeReport, ReportStatus
         now = timezone.now()
         qs = EmployeeReport.objects.filter(
             status=ReportStatus.REJECTED,
-            correction_deadline__lt=now,
-            correction_deadline__isnull=False,
+            editing_locked_at__lt=now,
+            editing_locked_at__isnull=False,
         )
         count = qs.count()
         qs.update(status=ReportStatus.OVERDUE, updated_at=now)

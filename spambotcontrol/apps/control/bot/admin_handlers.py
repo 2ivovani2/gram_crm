@@ -75,7 +75,7 @@ async def _show_reports_list(callback: CallbackQuery, db_user: User, only_mine: 
     for r in pending:
         username = f"@{r.user.telegram_username}" if r.user.telegram_username else str(r.user.telegram_id)
         tmpl_label = f" [{r.template.name}]" if r.template and r.template.name else ""
-        status_icon = {"on_moderation": "🔵", "resubmitted": "🔄", "pending": "⏳"}.get(r.status, "📋")
+        status_icon = {"on_moderation": "🔵", "resubmitted": "🔄", "updated": "🔄", "pending": "⏳"}.get(r.status, "📋")
         text += f"{status_icon} #{r.pk} {username}{tmpl_label} — {r.period_label}\n"
         b.button(
             text=f"#{r.pk} {username}",
@@ -112,7 +112,7 @@ async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db
     username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)
     tmpl_label = f"\nШаблон: {report.template.name}" if report.template and report.template.name else ""
     status_icon = {
-        "on_moderation": "🔵", "resubmitted": "🔄", "pending": "⏳",
+        "on_moderation": "🔵", "resubmitted": "🔄", "updated": "🔄", "pending": "⏳",
         "accepted": "✅", "rejected": "❌", "overdue": "🚨",
     }.get(report.status, "📋")
 
@@ -164,6 +164,11 @@ async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_
         await callback.answer("Отчёт не найден", show_alert=True)
         return
 
+    can = await sync_to_async(ReportService.can_moderate)(db_user, report)
+    if not can:
+        await callback.answer("❌ Вы не можете модерировать этот отчёт.", show_alert=True)
+        return
+
     await sync_to_async(ReportService.accept_report)(report, db_user)
 
     # Notify worker
@@ -191,12 +196,18 @@ async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB,
                          db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
+    from apps.control.services import ReportService
 
     report = await sync_to_async(
         lambda: EmployeeReport.objects.select_related("user", "template").filter(pk=callback_data.obj_id).first()
     )()
     if not report:
         await callback.answer("Отчёт не найден", show_alert=True)
+        return
+
+    can = await sync_to_async(ReportService.can_moderate)(db_user, report)
+    if not can:
+        await callback.answer("❌ Вы не можете модерировать этот отчёт.", show_alert=True)
         return
 
     username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)

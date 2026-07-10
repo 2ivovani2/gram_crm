@@ -383,16 +383,23 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
         )
         return
 
-    report = await sync_to_async(ReportService.submit_report)(
-        user=db_user,
-        template=template,
-        text=text_content,
-        file_id=file_id,
-        file_type=file_type,
-        original_filename=original_filename,
-    )
+    try:
+        report = await sync_to_async(ReportService.submit_report)(
+            user=db_user,
+            template=template,
+            text=text_content,
+            file_id=file_id,
+            file_type=file_type,
+            original_filename=original_filename,
+        )
+    except ValueError as e:
+        await state.clear()
+        await message.answer(str(e), reply_markup=worker_back_to_menu())
+        return
 
     await state.clear()
+    from apps.control.models import ReportStatus
+    is_resubmission = report.status == ReportStatus.UPDATED
 
     # Notify the right admin(s)
     from apps.users.models import UserRole, UserStatus
@@ -451,12 +458,19 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
         except Exception:
             pass
 
-    await message.answer(
-        f"✅ <b>Отчёт принят</b>\n\n"
-        f"Ваш отчёт за {report.period_label} отправлен на проверку.\n"
-        f"Вывод средств временно заблокирован до рассмотрения.",
-        reply_markup=worker_back_to_menu(),
-    )
+    if is_resubmission:
+        confirm_text = (
+            f"🔄 <b>Отчёт обновлён</b>\n\n"
+            f"Ваш исправленный отчёт за {report.period_label} отправлен на проверку.\n"
+            f"Вывод средств временно заблокирован до рассмотрения."
+        )
+    else:
+        confirm_text = (
+            f"✅ <b>Отчёт отправлен на проверку</b>\n\n"
+            f"Ваш отчёт за {report.period_label} отправлен администратору.\n"
+            f"Вывод средств временно заблокирован до рассмотрения."
+        )
+    await message.answer(confirm_text, reply_markup=worker_back_to_menu())
 
 
 @router.message(DisputePenaltyState.waiting_for_comment)
