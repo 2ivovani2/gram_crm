@@ -415,7 +415,7 @@ class PenaltyService:
             type=PenaltyType.AUTO,
             amount=amount,
             reason=reason,
-            status=PenaltyStatus.PENDING,
+            status=PenaltyStatus.ACCEPTED,
             report=report,
         )
 
@@ -553,7 +553,11 @@ class ControlBalanceService:
 
     @staticmethod
     def get_total_balance(user: User) -> Decimal:
-        return user.compute_personal_earned() + user.compute_referral_earned()
+        return (
+            user.compute_personal_earned()
+            + user.compute_referral_earned()
+            + (user.daily_accrued or Decimal("0"))
+        )
 
     @staticmethod
     def get_available_balance(user: User) -> Decimal:

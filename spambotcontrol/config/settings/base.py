@@ -178,6 +178,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=0, minute=0),
         "kwargs": {"slot": "00:00"},
     },
+    # Daily rate accrual — runs every hour, task checks if hour matches ControlSettings.daily_rate_hour
+    "control-accrue-daily-rate": {
+        "task": "apps.control.tasks.accrue_daily_rate_task",
+        "schedule": crontab(minute=0),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────

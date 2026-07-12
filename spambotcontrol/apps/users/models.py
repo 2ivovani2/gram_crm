@@ -119,6 +119,22 @@ class User(AbstractUser):
         help_text="Ставка за подписчиков рефералов (руб. за человека), выставляется администратором",
     )
 
+    # ── Daily rate (fixed daily credit, in RUB) ───────────────────────────────
+    daily_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        verbose_name="Ставка в день (₽)",
+        help_text="Фиксированная сумма, начисляемая ежедневно в настроенное время",
+    )
+    daily_accrued = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name="Накоплено по ставке (₽)",
+        help_text="Суммарно начислено по ежедневной ставке за всё время",
+    )
+    daily_rate_last_accrued_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Дата последнего начисления ставки",
+    )
+
     # ── Bot interaction ───────────────────────────────────────────────────────
     is_blocked_bot = models.BooleanField(default=False)  # set when TelegramForbiddenError
 

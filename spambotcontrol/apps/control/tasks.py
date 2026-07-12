@@ -188,7 +188,7 @@ def check_overdue_reports_task():
             type=PenaltyType.AUTO,
             amount=settings.late_report_penalty_amount,
             reason=f"Просрочка подачи отчёта ({today.strftime('%-d %B %Y')})",
-            status=PenaltyStatus.PENDING,
+            status=PenaltyStatus.ACCEPTED,
         )
         created += 1
 
@@ -266,7 +266,7 @@ def check_correction_deadlines_task():
                     type=PenaltyType.AUTO,
                     amount=penalty_amount,
                     reason=reason,
-                    status=PenaltyStatus.PENDING,
+                    status=PenaltyStatus.ACCEPTED,
                     report=report,
                 )
                 penalized += 1
@@ -490,3 +490,49 @@ def deadline_reminder_task(slot: str) -> dict:
         slot, deadline_date, sent, skipped, errors,
     )
     return {"slot": slot, "date": str(deadline_date), "sent": sent, "skipped": skipped, "errors": errors}
+
+
+@shared_task(name="apps.control.tasks.accrue_daily_rate_task", queue="default")
+def accrue_daily_rate_task() -> dict:
+    """
+    Runs every hour. Accrues daily_rate to each eligible active worker
+    when the current MSK hour matches ControlSettings.daily_rate_hour.
+    Idempotent: skips if already accrued today (daily_rate_last_accrued_date == today).
+    """
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+    from django.db.models import F
+    from apps.users.models import User, UserRole, UserStatus
+    from apps.control.models import ControlSettings
+
+    _MSK = ZoneInfo("Europe/Moscow")
+    now_msk = dt.datetime.now(tz=_MSK)
+    today = now_msk.date()
+
+    settings = ControlSettings.get()
+    if now_msk.hour != settings.daily_rate_hour:
+        return {"skipped": True, "reason": "not the accrual hour"}
+
+    workers = User.objects.filter(
+        role=UserRole.WORKER,
+        status=UserStatus.ACTIVE,
+        daily_rate__gt=0,
+    ).exclude(daily_rate_last_accrued_date=today)
+
+    accrued_count = 0
+    for worker in workers:
+        amount = worker.daily_rate
+        User.objects.filter(pk=worker.pk).update(
+            daily_accrued=F("daily_accrued") + amount,
+            daily_rate_last_accrued_date=today,
+        )
+        accrued_count += 1
+
+        text = (
+            f"💰 <b>Начисление ставки</b>\n\n"
+            f"Сегодня вам начислена ежедневная ставка: <b>+{amount:.2f} ₽</b>"
+        )
+        _send_message_sync(worker.telegram_id, text)
+
+    logger.info("[control] Daily rate accrued for %d workers on %s", accrued_count, today)
+    return {"date": str(today), "accrued": accrued_count}

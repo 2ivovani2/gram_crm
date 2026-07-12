@@ -495,6 +495,10 @@ class ControlSettings(models.Model):
         default=23,
         verbose_name="Час дедлайна отчёта (МСК)",
     )
+    daily_rate_hour = models.PositiveSmallIntegerField(
+        default=20,
+        verbose_name="Час начисления ежедневной ставки (МСК, 0–23)",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "users.User",

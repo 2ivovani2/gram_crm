@@ -61,6 +61,13 @@
       <div class="hint">Информационный параметр — влияет на отображение. Фактическое расписание задач меняется через Celery Beat.</div>
     </div>
 
+    <div class="field-group">
+      <label>Час начисления ставки в день (МСК, 0–23)</label>
+      <input type="number" name="daily_rate_hour"
+             value="{{ settings.daily_rate_hour }}" min="0" max="23">
+      <div class="hint">В этот час каждый день сотрудникам начисляется ежедневная ставка (если задана). По умолчанию: 20:00 МСК.</div>
+    </div>
+
     <button type="submit" class="btn-save">💾 Сохранить</button>
   </div>
 </form>

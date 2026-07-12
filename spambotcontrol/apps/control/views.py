@@ -433,6 +433,9 @@ class EmployeeKPIView(AdminOnlyMixin, View):
             kpi.updated_by = admin
             kpi.save()
 
+            worker.daily_rate = _d("daily_rate")
+            worker.save(update_fields=["daily_rate", "updated_at"])
+
         elif action == "save_template":
             content = request.POST.get("content", "")
             ReportTemplate.objects.update_or_create(
@@ -805,6 +808,12 @@ class ControlSettingsView(AdminOnlyMixin, View):
         try:
             h = int(request.POST.get("report_deadline_hour", 23) or 23)
             settings.report_deadline_hour = max(0, min(23, h))
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            drh = int(request.POST.get("daily_rate_hour", 20) or 20)
+            settings.daily_rate_hour = max(0, min(23, drh))
         except (ValueError, TypeError):
             pass
 
