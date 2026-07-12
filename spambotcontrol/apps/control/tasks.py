@@ -12,7 +12,19 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
-def _send_message_sync(telegram_id: int, text: str) -> bool:
+def _submit_report_keyboard():
+    """Inline keyboard with a single '📝 Сдать отчёт' button."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from apps.control.bot.keyboards import CtrlWorkerCB
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="📝 Сдать отчёт",
+            callback_data=CtrlWorkerCB(action="submit_report").pack(),
+        )
+    ]])
+
+
+def _send_message_sync(telegram_id: int, text: str, reply_markup=None) -> bool:
     """Send a Telegram message synchronously using a fresh bot instance."""
     try:
         from apps.control.bot.invite_handlers import _make_bot
@@ -20,7 +32,12 @@ def _send_message_sync(telegram_id: int, text: str) -> bool:
         async def _send():
             bot = _make_bot()
             try:
-                await bot.send_message(chat_id=telegram_id, text=text, parse_mode="HTML")
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup,
+                )
                 return True
             except Exception as e:
                 logger.warning("Failed to send message to %s: %s", telegram_id, e)
@@ -83,15 +100,15 @@ def send_report_reminders_task():
         tmpl_name = tmpl.name or "отчёт"
         text = (
             f"⏰ <b>Напоминание об отчёте</b>\n\n"
-            f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>\n\n"
-            f"Нажмите «📝 Подать отчёт» в меню."
+            f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>"
         )
+        kb = _submit_report_keyboard()
 
         for worker in tmpl.assigned_users.filter(
             status=UserStatus.ACTIVE,
             is_blocked_bot=False,
         ).exclude(role=UserRole.ADMIN).exclude(id__in=submitted_today_ids):
-            ok = _send_message_sync(worker.telegram_id, text)
+            ok = _send_message_sync(worker.telegram_id, text, reply_markup=kb)
             notified_worker_ids.add(worker.pk)
             sent += 1 if ok else 0
             failed += 0 if ok else 1
@@ -110,10 +127,11 @@ def send_report_reminders_task():
             "⏰ <b>Напоминание</b>\n\n"
             "Необходимо подать отчёт, иначе будет начислен штраф за просрочку."
         )
+        kb = _submit_report_keyboard()
         for worker in workers_no_tmpl:
             if worker.pk in notified_worker_ids:
                 continue
-            ok = _send_message_sync(worker.telegram_id, text_generic)
+            ok = _send_message_sync(worker.telegram_id, text_generic, reply_markup=kb)
             sent += 1 if ok else 0
             failed += 0 if ok else 1
 
@@ -389,7 +407,9 @@ def _send_deadline_notification(worker, slot: str, deadline_date, settings) -> N
         f"✅ Доступно для вывода: <b>{available:.2f} ₽</b>"
     )
 
-    ok = _send_message_sync(worker.telegram_id, text)
+    # Only show submit button for non-"missed" slots
+    kb = _submit_report_keyboard() if slot != "00:00" else None
+    ok = _send_message_sync(worker.telegram_id, text, reply_markup=kb)
     error_text = "" if ok else "Ошибка отправки (см. логи)"
 
     try:

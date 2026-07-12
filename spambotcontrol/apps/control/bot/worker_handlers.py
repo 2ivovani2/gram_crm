@@ -199,16 +199,7 @@ async def cb_submit_report(callback: CallbackQuery, db_user: User, state: FSMCon
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService
 
-    # Block if already has a report in moderation
-    blocked = await sync_to_async(ReportService.has_blocking_report)(db_user)
-    if blocked:
-        await callback.answer(
-            "У вас уже есть отчёт на проверке. Дождитесь его рассмотрения.",
-            show_alert=True,
-        )
-        return
-
-    # Get assigned templates
+    # Get assigned templates (no global blocking — per-template blocking handled in submit_report)
     templates = await sync_to_async(ReportService.get_active_templates_for_user)(db_user)
 
     await callback.answer()

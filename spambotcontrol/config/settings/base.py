@@ -147,10 +147,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.control.tasks.send_report_reminders_task",
         "schedule": crontab(minute=0),
     },
-    # Control bot: check overdue reports and create auto-penalties daily at 23:30 МСК
+    # Control bot: check overdue reports and create auto-penalties at 00:05 МСК (after deadline)
     "control-check-overdue": {
         "task": "apps.control.tasks.check_overdue_reports_task",
-        "schedule": crontab(hour=23, minute=30),
+        "schedule": crontab(hour=0, minute=5),
     },
     # Control bot: check expired correction deadlines every hour
     "control-check-corrections": {

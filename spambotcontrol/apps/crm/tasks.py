@@ -74,20 +74,7 @@ def crm_check_deadline_task(self) -> None:
     for workspace in Workspace.objects.filter(is_active=True):
         miss = DeadlineService.check_and_record(workspace)
         if miss:
-            parts = []
-            if miss.finance_missing:
-                parts.append("💳 Финансовые данные (Cash Flow)")
-            if miss.applications_missing:
-                parts.append("📋 Данные по заявкам")
-
-            text = (
-                f"⚠️ <b>[{workspace.name} CRM] Дедлайн пропущен!</b>\n\n"
-                f"Дата: <b>{miss.date.strftime('%d.%m.%Y')}</b>\n\n"
-                f"Не внесено:\n" + "\n".join(f"  • {p}" for p in parts) + "\n\n"
-                f"Данные можно внести задним числом в CRM."
-            )
-            owner_ids = _get_workspace_owner_ids(workspace)
-            asyncio.run(_send_to_ids(owner_ids, text))
+            # Record is saved to DB; Telegram notification intentionally disabled.
             logger.warning(
                 "CRM deadline miss: workspace=%s date=%s finance=%s apps=%s",
                 workspace.slug, miss.date, miss.finance_missing, miss.applications_missing,
