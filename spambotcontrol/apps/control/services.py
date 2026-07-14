@@ -483,6 +483,32 @@ class ControlWithdrawalService:
         )
 
     @staticmethod
+    def get_processor_ids() -> list:
+        """Return telegram_ids of all users who should receive withdrawal notifications."""
+        from apps.users.models import UserRole, UserStatus
+        accountant_ids = list(
+            User.objects.filter(
+                role=UserRole.ACCOUNTANT,
+                status=UserStatus.ACTIVE,
+                is_blocked_bot=False,
+            ).values_list("telegram_id", flat=True)
+        )
+        settings = ControlSettings.get()
+        extra_ids = list(
+            settings.withdrawal_processors.filter(
+                status=UserStatus.ACTIVE,
+                is_blocked_bot=False,
+            ).values_list("telegram_id", flat=True)
+        )
+        seen = set()
+        result = []
+        for tid in accountant_ids + extra_ids:
+            if tid not in seen:
+                seen.add(tid)
+                result.append(tid)
+        return result
+
+    @staticmethod
     def get_saved_addresses(user: User) -> list:
         from apps.withdrawals.models import CryptoAddress
         return list(CryptoAddress.objects.filter(user=user))

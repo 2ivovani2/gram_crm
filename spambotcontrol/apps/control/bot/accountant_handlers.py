@@ -152,6 +152,21 @@ async def _update_withdrawal(callback: CallbackQuery, callback_data: CtrlAccount
             pass
 
     processer = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
+
+    # Edit/clear other processors' notification messages
+    notifications = w.admin_notifications or []
+    for notif in notifications:
+        if notif.get("telegram_id") == db_user.telegram_id:
+            continue
+        try:
+            await callback.bot.edit_message_text(
+                chat_id=notif["telegram_id"],
+                message_id=notif["message_id"],
+                text=f"💳 Заявка #{w.pk} уже обработана\n{result}\nОбработал: {processer}",
+            )
+        except Exception:
+            pass
+
     await callback.answer(result)
     await callback.message.edit_text(
         f"Заявка #{w.pk} — {result}\nОбработал: {processer}",

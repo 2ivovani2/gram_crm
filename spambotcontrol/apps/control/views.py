@@ -786,10 +786,18 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
 class ControlSettingsView(AdminOnlyMixin, View):
     def get(self, request):
         from apps.control.models import ControlSettings
+        from apps.users.models import User as _User, UserStatus, UserRole
         settings = ControlSettings.get()
+        processor_options = _User.objects.filter(
+            status=UserStatus.ACTIVE,
+            role__in=[UserRole.ADMIN, UserRole.ACCOUNTANT, UserRole.CURATOR],
+        ).order_by("telegram_username")
+        selected_processor_ids = set(settings.withdrawal_processors.values_list("pk", flat=True))
         return render(request, "control/settings.html", self.ctx(request, {
             "page": "settings",
             "settings": settings,
+            "processor_options": processor_options,
+            "selected_processor_ids": selected_processor_ids,
         }))
 
     def post(self, request):
@@ -825,4 +833,14 @@ class ControlSettingsView(AdminOnlyMixin, View):
 
         settings.updated_by = request.crm_user
         settings.save()
+
+        # Update M2M withdrawal_processors
+        from apps.users.models import User as _User
+        processor_ids = request.POST.getlist("withdrawal_processors")
+        try:
+            processor_pks = [int(x) for x in processor_ids if x.isdigit()]
+        except (ValueError, AttributeError):
+            processor_pks = []
+        settings.withdrawal_processors.set(_User.objects.filter(pk__in=processor_pks))
+
         return redirect("control:settings")

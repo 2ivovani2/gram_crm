@@ -703,16 +703,7 @@ async def _admin_create_and_notify(message: Message, db_user: User, wallet: str,
 
     await state.clear()
 
-    from apps.users.models import UserRole, UserStatus
-    notified_ids = await sync_to_async(
-        lambda: list(
-            User.objects.filter(
-                role__in=[UserRole.ACCOUNTANT, UserRole.ADMIN],
-                status=UserStatus.ACTIVE,
-                is_blocked_bot=False,
-            ).exclude(pk=db_user.pk).values_list("telegram_id", flat=True)
-        )
-    )()
+    processor_ids = await sync_to_async(ControlWithdrawalService.get_processor_ids)()
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     notify_text = (
@@ -723,14 +714,24 @@ async def _admin_create_and_notify(message: Message, db_user: User, wallet: str,
         f"ID заявки: #{withdrawal.pk}"
     )
     from apps.control.bot.keyboards import accountant_withdrawal_actions
-    for tg_id in notified_ids:
+    from apps.withdrawals.models import WithdrawalRequest
+    notifications = []
+    for tg_id in processor_ids:
+        if tg_id == db_user.telegram_id:
+            continue  # don't notify the admin who created the request
         try:
-            await message.bot.send_message(
+            msg = await message.bot.send_message(
                 tg_id, notify_text, parse_mode="HTML",
                 reply_markup=accountant_withdrawal_actions(withdrawal.pk),
             )
+            notifications.append({"telegram_id": tg_id, "message_id": msg.message_id})
         except Exception:
             pass
+
+    if notifications:
+        await sync_to_async(
+            lambda: WithdrawalRequest.objects.filter(pk=withdrawal.pk).update(admin_notifications=notifications)
+        )()
 
     await message.answer(
         f"✅ <b>Заявка на вывод создана</b>\n\n"

@@ -503,6 +503,12 @@ class ControlSettings(models.Model):
         max_digits=12, decimal_places=2, default=1000,
         verbose_name="Минимальная сумма вывода (₽)",
     )
+    withdrawal_processors = models.ManyToManyField(
+        "users.User",
+        blank=True,
+        related_name="as_withdrawal_processor",
+        verbose_name="Дополнительные обработчики выводов",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "users.User",
