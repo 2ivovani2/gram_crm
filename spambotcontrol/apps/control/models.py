@@ -499,6 +499,10 @@ class ControlSettings(models.Model):
         default=20,
         verbose_name="Час начисления ежедневной ставки (МСК, 0–23)",
     )
+    min_withdrawal_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=1000,
+        verbose_name="Минимальная сумма вывода (₽)",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         "users.User",

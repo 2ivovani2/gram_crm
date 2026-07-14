@@ -118,22 +118,43 @@ async def _update_withdrawal(callback: CallbackQuery, callback_data: CtrlAccount
         )
         return
 
+    notify_text = None
     if action == "processing":
         await sync_to_async(ControlWithdrawalService.mark_processing)(w, db_user)
         result = "В обработке 🔄"
     elif action == "receipt":
         await sync_to_async(ControlWithdrawalService.mark_receipt_sent)(w, db_user)
         result = "Чек отправлен 📤"
+        notify_text = (
+            f"📤 <b>Чек на вывод отправлен</b>\n\n"
+            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> — чек отправлен. "
+            f"Проверьте ваш кошелёк."
+        )
     elif action == "done":
         await sync_to_async(ControlWithdrawalService.mark_completed)(w, db_user)
         result = "Выполнена ✅"
+        notify_text = (
+            f"✅ <b>Вывод выполнен</b>\n\n"
+            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> успешно выполнена."
+        )
     else:
         await sync_to_async(ControlWithdrawalService.reject)(w, db_user)
         result = "Отклонена ❌"
+        notify_text = (
+            f"❌ <b>Заявка на вывод отклонена</b>\n\n"
+            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> отклонена."
+        )
 
+    if notify_text and w.user.telegram_id != db_user.telegram_id:
+        try:
+            await callback.bot.send_message(w.user.telegram_id, notify_text)
+        except Exception:
+            pass
+
+    processer = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     await callback.answer(result)
     await callback.message.edit_text(
-        f"Заявка #{w.pk} — {result}",
+        f"Заявка #{w.pk} — {result}\nОбработал: {processer}",
         reply_markup=accountant_main_menu(),
     )
 

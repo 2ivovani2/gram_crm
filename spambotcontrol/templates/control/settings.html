@@ -68,6 +68,13 @@
       <div class="hint">В этот час каждый день сотрудникам начисляется ежедневная ставка (если задана). По умолчанию: 20:00 МСК.</div>
     </div>
 
+    <div class="field-group">
+      <label>Минимальная сумма вывода (₽)</label>
+      <input type="number" name="min_withdrawal_amount"
+             value="{{ settings.min_withdrawal_amount }}" min="0" step="1">
+      <div class="hint">Сотрудник не сможет запросить вывод на сумму ниже этого значения. По умолчанию: 1000 ₽.</div>
+    </div>
+
     <button type="submit" class="btn-save">💾 Сохранить</button>
   </div>
 </form>

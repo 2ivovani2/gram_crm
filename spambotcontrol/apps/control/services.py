@@ -455,11 +455,18 @@ class PenaltyService:
 class ControlWithdrawalService:
 
     @staticmethod
-    def create(user: User, wallet_address: str) -> "WithdrawalRequest":
+    def create(user: User, wallet_address: str, amount: "Decimal | None" = None) -> "WithdrawalRequest":
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalMethod, WithdrawalStatus
-        amount = ControlBalanceService.get_available_balance(user)
-        if amount <= 0:
+        available = ControlBalanceService.get_available_balance(user)
+        if amount is None:
+            amount = available
+        if amount <= 0 or available <= 0:
             raise ValueError("Недостаточно средств для вывода")
+        if amount > available:
+            raise ValueError(f"Сумма превышает доступный баланс ({available:.2f} ₽)")
+        settings = ControlSettings.get()
+        if amount < settings.min_withdrawal_amount:
+            raise ValueError(f"Минимальная сумма вывода — {settings.min_withdrawal_amount:.0f} ₽")
         if ReportService.has_blocking_report(user):
             raise ValueError("Вывод заблокирован: отчёт ожидает проверки")
         existing = WithdrawalRequest.objects.filter(
@@ -476,23 +483,42 @@ class ControlWithdrawalService:
         )
 
     @staticmethod
+    def get_saved_addresses(user: User) -> list:
+        from apps.withdrawals.models import CryptoAddress
+        return list(CryptoAddress.objects.filter(user=user))
+
+    @staticmethod
+    def save_address(user: User, name: str, address: str) -> "CryptoAddress":
+        from apps.withdrawals.models import CryptoAddress
+        return CryptoAddress.objects.create(user=user, name=name, address=address)
+
+    @staticmethod
+    def delete_address(user: User, address_id: int) -> bool:
+        from apps.withdrawals.models import CryptoAddress
+        deleted, _ = CryptoAddress.objects.filter(pk=address_id, user=user).delete()
+        return deleted > 0
+
+    @staticmethod
     def _notify_sync(telegram_id: int, text: str) -> None:
-        """Send a Telegram message synchronously (for use from sync Django views)."""
+        """Send a Telegram message synchronously (for use from sync Django views / Celery)."""
         import asyncio
         from apps.telegram_bot.bot import get_bot
 
+        bot = get_bot()  # sync call — no await
+
         async def _send():
             try:
-                bot = await get_bot()
                 await bot.send_message(telegram_id, text, parse_mode="HTML")
             except Exception:
                 pass
 
         try:
             loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             loop.run_until_complete(_send())
         finally:
             loop.close()
+            asyncio.set_event_loop(None)
 
     @staticmethod
     def mark_processing(withdrawal, accountant: User) -> None:

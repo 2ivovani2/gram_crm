@@ -7,7 +7,13 @@ class SubmitReportState(StatesGroup):
 
 
 class WithdrawalState(StatesGroup):
+    waiting_for_amount = State()
     waiting_for_wallet = State()
+
+
+class CryptoAddressState(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_address = State()
 
 
 class AdminPenaltyCreateState(StatesGroup):
@@ -31,4 +37,10 @@ class AdminBroadcastControlState(StatesGroup):
 
 
 class AdminWithdrawalState(StatesGroup):
+    waiting_for_amount = State()
     waiting_for_wallet = State()
+
+
+class AdminCryptoAddressState(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_address = State()

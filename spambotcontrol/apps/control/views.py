@@ -816,6 +816,13 @@ class ControlSettingsView(AdminOnlyMixin, View):
         except (ValueError, TypeError):
             pass
 
+        try:
+            settings.min_withdrawal_amount = Decimal(
+                request.POST.get("min_withdrawal_amount", "1000") or "1000"
+            )
+        except InvalidOperation:
+            pass
+
         settings.updated_by = request.crm_user
         settings.save()
         return redirect("control:settings")

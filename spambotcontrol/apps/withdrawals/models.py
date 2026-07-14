@@ -71,3 +71,24 @@ class WithdrawalRequest(models.Model):
 
     def get_method_display_short(self) -> str:
         return dict(WithdrawalMethod.choices).get(self.method, self.method)
+
+
+class CryptoAddress(models.Model):
+    """Saved USDT TRC20 address for a user."""
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="crypto_addresses",
+        verbose_name="Пользователь",
+    )
+    name = models.CharField(max_length=100, verbose_name="Название")
+    address = models.CharField(max_length=200, verbose_name="Адрес TRC20")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Крипто-адрес"
+        verbose_name_plural = "Крипто-адреса"
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.name}: {self.address[:20]}… ({self.user_id})"

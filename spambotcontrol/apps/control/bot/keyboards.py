@@ -28,7 +28,8 @@ def worker_main_menu() -> InlineKeyboardMarkup:
     b.button(text="💸 Вывод", callback_data=CtrlWorkerCB(action="withdraw"))
     b.button(text="📝 Подать отчёт", callback_data=CtrlWorkerCB(action="submit_report"))
     b.button(text="⚠️ Мои штрафы", callback_data=CtrlWorkerCB(action="my_penalties"))
-    b.adjust(2, 1, 1)
+    b.button(text="💳 Мои адреса", callback_data=CtrlWorkerCB(action="my_addresses"))
+    b.adjust(2, 1, 1, 1)
     return b.as_markup()
 
 
@@ -56,6 +57,32 @@ def worker_cancel_report() -> InlineKeyboardMarkup:
 def worker_cancel_withdrawal() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="❌ Отмена", callback_data=CtrlWorkerCB(action="cancel"))
+    return b.as_markup()
+
+
+def worker_address_select_keyboard(addresses: list) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for addr in addresses:
+        b.button(
+            text=f"💳 {addr.name}",
+            callback_data=CtrlWorkerCB(action=f"addr_{addr.pk}"),
+        )
+    b.button(text="✏️ Ввести адрес вручную", callback_data=CtrlWorkerCB(action="addr_new"))
+    b.button(text="❌ Отмена", callback_data=CtrlWorkerCB(action="cancel"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def worker_addresses_list_keyboard(addresses: list) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for addr in addresses:
+        b.button(
+            text=f"🗑 {addr.name} ({addr.address[:12]}…)",
+            callback_data=CtrlWorkerCB(action=f"del_addr_{addr.pk}"),
+        )
+    b.button(text="➕ Добавить адрес", callback_data=CtrlWorkerCB(action="add_addr"))
+    b.button(text="◀️ Назад", callback_data=CtrlWorkerCB(action="main_menu"))
+    b.adjust(1)
     return b.as_markup()
 
 
@@ -99,6 +126,29 @@ def admin_cancel_withdrawal() -> InlineKeyboardMarkup:
     from apps.telegram_bot.callbacks import AdminMenuCallback
     b = InlineKeyboardBuilder()
     b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="main"))
+    return b.as_markup()
+
+
+def admin_address_select_keyboard(addresses: list) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for addr in addresses:
+        b.button(text=f"💳 {addr.name}", callback_data=CtrlAdminCB(action="addr_sel", obj_id=addr.pk))
+    b.button(text="✏️ Ввести адрес вручную", callback_data=CtrlAdminCB(action="addr_new"))
+    b.button(text="❌ Отмена", callback_data=CtrlAdminCB(action="main"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_addresses_list_keyboard(addresses: list) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for addr in addresses:
+        b.button(
+            text=f"🗑 {addr.name} ({addr.address[:12]}…)",
+            callback_data=CtrlAdminCB(action="del_addr", obj_id=addr.pk),
+        )
+    b.button(text="➕ Добавить адрес", callback_data=CtrlAdminCB(action="add_addr"))
+    b.button(text="◀️ Главное меню", callback_data=CtrlAdminCB(action="main"))
+    b.adjust(1)
     return b.as_markup()
 
 

@@ -12,8 +12,9 @@ from apps.control.bot.keyboards import (
     CtrlWorkerCB, worker_main_menu, worker_kpi_keyboard,
     worker_back_to_menu, worker_cancel_report, worker_cancel_withdrawal,
     penalty_dispute_keyboard, worker_template_select_keyboard,
+    worker_address_select_keyboard, worker_addresses_list_keyboard,
 )
-from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState
+from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState, CryptoAddressState
 
 router = Router(name="control_worker")
 
@@ -114,10 +115,7 @@ async def cb_withdraw(callback: CallbackQuery, db_user: User, state: FSMContext)
 
     blocked = await sync_to_async(ReportService.has_blocking_report)(db_user)
     if blocked:
-        await callback.answer(
-            "❌ Вывод заблокирован: ваш отчёт ожидает проверки.",
-            show_alert=True,
-        )
+        await callback.answer("❌ Вывод заблокирован: ваш отчёт ожидает проверки.", show_alert=True)
         return
 
     available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
@@ -125,22 +123,70 @@ async def cb_withdraw(callback: CallbackQuery, db_user: User, state: FSMContext)
         await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
         return
 
-    await state.set_state(WithdrawalState.waiting_for_wallet)
+    await state.set_state(WithdrawalState.waiting_for_amount)
     await callback.answer()
     await callback.message.edit_text(
         f"💸 <b>Вывод средств</b>\n\n"
         f"Доступно: <b>{available:.2f} ₽</b>\n\n"
-        f"Введите адрес USDT TRC20-кошелька для вывода:",
+        f"Введите сумму для вывода (₽):",
         reply_markup=worker_cancel_withdrawal(),
     )
 
 
+@router.message(WithdrawalState.waiting_for_amount)
+async def process_amount_input(message: Message, db_user: User, state: FSMContext):
+    from decimal import Decimal, InvalidOperation
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlBalanceService, ControlWithdrawalService
+    from apps.control.models import ControlSettings
+
+    text = (message.text or "").strip().replace(",", ".")
+    try:
+        amount = Decimal(text)
+    except InvalidOperation:
+        await message.answer("❌ Введите корректную сумму числом:", reply_markup=worker_cancel_withdrawal())
+        return
+
+    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
+    settings = await sync_to_async(ControlSettings.get)()
+
+    if amount <= 0:
+        await message.answer("❌ Сумма должна быть больше 0:", reply_markup=worker_cancel_withdrawal())
+        return
+    if amount > available:
+        await message.answer(
+            f"❌ Сумма превышает доступный баланс ({available:.2f} ₽).\nВведите корректную сумму:",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+        return
+    if amount < settings.min_withdrawal_amount:
+        await message.answer(
+            f"❌ Минимальная сумма вывода — {settings.min_withdrawal_amount:.0f} ₽.\nВведите корректную сумму:",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+        return
+
+    await state.update_data(amount=str(amount))
+
+    addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+    if addresses:
+        await message.answer(
+            f"💳 <b>Выберите адрес</b>\n\nСумма: <b>{amount:.2f} ₽</b>\n\nВыберите сохранённый адрес или введите новый:",
+            reply_markup=worker_address_select_keyboard(addresses),
+        )
+    else:
+        await state.set_state(WithdrawalState.waiting_for_wallet)
+        await message.answer(
+            f"💳 <b>Адрес кошелька</b>\n\nСумма: <b>{amount:.2f} ₽</b>\n\nВведите адрес USDT TRC20-кошелька:",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+
+
 @router.message(WithdrawalState.waiting_for_wallet)
 async def process_wallet_input(message: Message, db_user: User, state: FSMContext):
-    from asgiref.sync import sync_to_async
-    from apps.control.services import ControlWithdrawalService
+    from decimal import Decimal
 
-    wallet = message.text.strip() if message.text else ""
+    wallet = (message.text or "").strip()
     if not wallet or len(wallet) < 20:
         await message.answer(
             "❌ Некорректный адрес кошелька. Введите корректный USDT TRC20-адрес:",
@@ -148,8 +194,18 @@ async def process_wallet_input(message: Message, db_user: User, state: FSMContex
         )
         return
 
+    data = await state.get_data()
+    amount_str = data.get("amount")
+    amount = Decimal(amount_str) if amount_str else None
+    await _create_and_notify_withdrawal(message, db_user, wallet, amount, state)
+
+
+async def _create_and_notify_withdrawal(message: Message, db_user: User, wallet: str, amount, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
     try:
-        withdrawal = await sync_to_async(ControlWithdrawalService.create)(db_user, wallet)
+        withdrawal = await sync_to_async(ControlWithdrawalService.create)(db_user, wallet, amount)
     except ValueError as e:
         await message.answer(f"❌ {e}", reply_markup=worker_back_to_menu())
         await state.clear()
@@ -189,6 +245,63 @@ async def process_wallet_input(message: Message, db_user: User, state: FSMContex
         f"Сумма: <b>{withdrawal.amount:.2f} ₽</b>\n"
         f"Кошелёк: <code>{wallet}</code>\n\n"
         f"Бухгалтер обработает заявку в ближайшее время.",
+        reply_markup=worker_back_to_menu(),
+    )
+
+
+# ── Crypto addresses ───────────────────────────────────────────────────────────
+
+@router.callback_query(CtrlWorkerCB.filter(F.action == "my_addresses"))
+async def cb_my_addresses(callback: CallbackQuery, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+    await state.clear()
+    await callback.answer()
+    if addresses:
+        text = "💳 <b>Мои адреса</b>\n\nНажмите на адрес чтобы удалить его:"
+    else:
+        text = "💳 <b>Мои адреса</b>\n\nУ вас нет сохранённых адресов."
+    await callback.message.edit_text(text, reply_markup=worker_addresses_list_keyboard(addresses))
+
+
+@router.message(CryptoAddressState.waiting_for_name)
+async def process_addr_name(message: Message, db_user: User, state: FSMContext):
+    name = (message.text or "").strip()
+    if not name or len(name) > 100:
+        await message.answer(
+            "❌ Введите название (до 100 символов):",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+        return
+    await state.update_data(addr_name=name)
+    await state.set_state(CryptoAddressState.waiting_for_address)
+    await message.answer(
+        f"✏️ Название: <b>{name}</b>\n\nТеперь введите адрес USDT TRC20-кошелька:",
+        reply_markup=worker_cancel_withdrawal(),
+    )
+
+
+@router.message(CryptoAddressState.waiting_for_address)
+async def process_addr_address(message: Message, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    address = (message.text or "").strip()
+    if not address or len(address) < 20:
+        await message.answer(
+            "❌ Некорректный адрес. Введите адрес USDT TRC20-кошелька:",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+        return
+
+    data = await state.get_data()
+    name = data.get("addr_name", "")
+    await sync_to_async(ControlWithdrawalService.save_address)(db_user, name, address)
+    await state.clear()
+    await message.answer(
+        f"✅ Адрес <b>{name}</b> сохранён:\n<code>{address}</code>",
         reply_markup=worker_back_to_menu(),
     )
 
@@ -264,11 +377,10 @@ async def cb_my_penalties(callback: CallbackQuery, db_user: User):
 @router.callback_query(CtrlWorkerCB.filter())
 async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB,
                              db_user: User, state: FSMContext):
-    """Handle dynamic worker actions: template pick, dispute."""
+    """Handle dynamic worker actions: template pick, dispute, address selection."""
     action = callback_data.action
 
     if action.startswith("pick_tmpl_"):
-        # Worker selected a template from the picker
         try:
             tmpl_id = int(action.split("_", 2)[2])
         except (ValueError, IndexError):
@@ -314,6 +426,73 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
             f"Напишите ваш комментарий для администратора:",
             reply_markup=worker_cancel_report(),
         )
+
+    elif action == "add_addr":
+        await state.set_state(CryptoAddressState.waiting_for_name)
+        await callback.answer()
+        await callback.message.edit_text(
+            "➕ <b>Добавить адрес</b>\n\nВведите название адреса (например: «Основной», «Binance»):",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+
+    elif action == "addr_new":
+        # User chose to enter address manually during withdrawal
+        data = await state.get_data()
+        amount_str = data.get("amount", "")
+        await state.set_state(WithdrawalState.waiting_for_wallet)
+        await callback.answer()
+        await callback.message.edit_text(
+            f"💳 <b>Адрес кошелька</b>\n\nСумма: <b>{amount_str} ₽</b>\n\nВведите адрес USDT TRC20-кошелька:",
+            reply_markup=worker_cancel_withdrawal(),
+        )
+
+    elif action.startswith("addr_"):
+        # User selected a saved address during withdrawal
+        try:
+            addr_id = int(action.split("_", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Ошибка", show_alert=True)
+            return
+
+        from asgiref.sync import sync_to_async
+        from apps.withdrawals.models import CryptoAddress
+
+        addr_obj = await sync_to_async(
+            lambda: CryptoAddress.objects.filter(pk=addr_id, user=db_user).first()
+        )()
+        if not addr_obj:
+            await callback.answer("Адрес не найден", show_alert=True)
+            return
+
+        data = await state.get_data()
+        amount_str = data.get("amount")
+        from decimal import Decimal
+        amount = Decimal(amount_str) if amount_str else None
+
+        await callback.answer()
+        await callback.message.delete()
+        await _create_and_notify_withdrawal(callback.message, db_user, addr_obj.address, amount, state)
+
+    elif action.startswith("del_addr_"):
+        try:
+            addr_id = int(action.split("_", 2)[2])
+        except (ValueError, IndexError):
+            await callback.answer("Ошибка", show_alert=True)
+            return
+
+        from asgiref.sync import sync_to_async
+        from apps.control.services import ControlWithdrawalService
+
+        await sync_to_async(ControlWithdrawalService.delete_address)(db_user, addr_id)
+        await callback.answer("Адрес удалён")
+
+        addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+        if addresses:
+            text = "💳 <b>Мои адреса</b>\n\nНажмите на адрес чтобы удалить его:"
+        else:
+            text = "💳 <b>Мои адреса</b>\n\nУ вас нет сохранённых адресов."
+        await callback.message.edit_text(text, reply_markup=worker_addresses_list_keyboard(addresses))
+
     else:
         await callback.answer()
 

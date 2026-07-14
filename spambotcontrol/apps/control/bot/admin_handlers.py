@@ -11,11 +11,11 @@ from apps.users.models import User
 from apps.control.bot.keyboards import (
     CtrlAdminCB, admin_report_actions,
     admin_penalty_actions, admin_confirm_broadcast, admin_back,
-    admin_cancel_withdrawal,
+    admin_cancel_withdrawal, admin_address_select_keyboard, admin_addresses_list_keyboard,
 )
 from apps.control.bot.states import (
     AdminPenaltyCreateState, AdminBroadcastControlState, AdminReportReviewState,
-    AdminWithdrawalState,
+    AdminWithdrawalState, AdminCryptoAddressState,
 )
 
 router = Router(name="control_admin")
@@ -562,7 +562,7 @@ async def cb_broadcast_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Отменено")
     await callback.message.edit_text(
         "🛠 <b>Грамли Контроль — Панель администратора</b>",
-        reply_markup=admin_control_main_menu(),
+        reply_markup=admin_back(),
     )
 
 
@@ -578,22 +578,105 @@ async def cb_admin_withdraw(callback: CallbackQuery, db_user: User, state: FSMCo
         await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
         return
 
-    await state.set_state(AdminWithdrawalState.waiting_for_wallet)
+    await state.set_state(AdminWithdrawalState.waiting_for_amount)
     await callback.answer()
     await callback.message.edit_text(
         f"💸 <b>Вывод средств</b>\n\n"
         f"Доступно: <b>{available:.2f} ₽</b>\n\n"
-        f"Введите адрес USDT TRC20-кошелька для вывода:",
+        f"Введите сумму для вывода (₽):",
+        reply_markup=admin_cancel_withdrawal(),
+    )
+
+
+@router.message(AdminWithdrawalState.waiting_for_amount, IsAdmin())
+async def process_admin_amount_input(message: Message, db_user: User, state: FSMContext):
+    from decimal import Decimal, InvalidOperation
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlBalanceService, ControlWithdrawalService
+    from apps.control.models import ControlSettings
+
+    text = (message.text or "").strip().replace(",", ".")
+    try:
+        amount = Decimal(text)
+    except InvalidOperation:
+        await message.answer("❌ Введите корректную сумму числом:", reply_markup=admin_cancel_withdrawal())
+        return
+
+    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
+    settings = await sync_to_async(ControlSettings.get)()
+
+    if amount <= 0:
+        await message.answer("❌ Сумма должна быть больше 0:", reply_markup=admin_cancel_withdrawal())
+        return
+    if amount > available:
+        await message.answer(
+            f"❌ Сумма превышает доступный баланс ({available:.2f} ₽).\nВведите корректную сумму:",
+            reply_markup=admin_cancel_withdrawal(),
+        )
+        return
+    if amount < settings.min_withdrawal_amount:
+        await message.answer(
+            f"❌ Минимальная сумма вывода — {settings.min_withdrawal_amount:.0f} ₽.\nВведите корректную сумму:",
+            reply_markup=admin_cancel_withdrawal(),
+        )
+        return
+
+    await state.update_data(amount=str(amount))
+
+    addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+    if addresses:
+        await message.answer(
+            f"💳 <b>Выберите адрес</b>\n\nСумма: <b>{amount:.2f} ₽</b>\n\nВыберите сохранённый адрес или введите новый:",
+            reply_markup=admin_address_select_keyboard(addresses),
+        )
+    else:
+        await state.set_state(AdminWithdrawalState.waiting_for_wallet)
+        await message.answer(
+            f"💳 <b>Адрес кошелька</b>\n\nСумма: <b>{amount:.2f} ₽</b>\n\nВведите адрес USDT TRC20-кошелька:",
+            reply_markup=admin_cancel_withdrawal(),
+        )
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "addr_sel"), IsAdmin())
+async def cb_admin_addr_sel(callback: CallbackQuery, callback_data: CtrlAdminCB,
+                             db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.withdrawals.models import CryptoAddress
+
+    addr_obj = await sync_to_async(
+        lambda: CryptoAddress.objects.filter(pk=callback_data.obj_id, user=db_user).first()
+    )()
+    if not addr_obj:
+        await callback.answer("Адрес не найден", show_alert=True)
+        return
+
+    data = await state.get_data()
+    amount_str = data.get("amount")
+    from decimal import Decimal
+    amount = Decimal(amount_str) if amount_str else None
+
+    await callback.answer()
+    await callback.message.delete()
+    await _admin_create_and_notify(callback.message, db_user, addr_obj.address, amount, state)
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "addr_new"), IsAdmin())
+async def cb_admin_addr_new(callback: CallbackQuery, db_user: User, state: FSMContext):
+    data = await state.get_data()
+    amount_str = data.get("amount", "")
+    await state.set_state(AdminWithdrawalState.waiting_for_wallet)
+    await callback.answer()
+    await callback.message.edit_text(
+        f"💳 <b>Адрес кошелька</b>\n\nСумма: <b>{amount_str} ₽</b>\n\nВведите адрес USDT TRC20-кошелька:",
         reply_markup=admin_cancel_withdrawal(),
     )
 
 
 @router.message(AdminWithdrawalState.waiting_for_wallet, IsAdmin())
 async def process_admin_wallet_input(message: Message, db_user: User, state: FSMContext):
-    from asgiref.sync import sync_to_async
-    from apps.control.services import ControlWithdrawalService
+    from decimal import Decimal
 
-    wallet = message.text.strip() if message.text else ""
+    wallet = (message.text or "").strip()
     if not wallet or len(wallet) < 20:
         await message.answer(
             "❌ Некорректный адрес кошелька. Введите корректный USDT TRC20-адрес:",
@@ -601,8 +684,18 @@ async def process_admin_wallet_input(message: Message, db_user: User, state: FSM
         )
         return
 
+    data = await state.get_data()
+    amount_str = data.get("amount")
+    amount = Decimal(amount_str) if amount_str else None
+    await _admin_create_and_notify(message, db_user, wallet, amount, state)
+
+
+async def _admin_create_and_notify(message: Message, db_user: User, wallet: str, amount, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
     try:
-        withdrawal = await sync_to_async(ControlWithdrawalService.create)(db_user, wallet)
+        withdrawal = await sync_to_async(ControlWithdrawalService.create)(db_user, wallet, amount)
     except ValueError as e:
         await state.clear()
         await message.answer(f"❌ {e}", reply_markup=admin_back())
@@ -610,7 +703,6 @@ async def process_admin_wallet_input(message: Message, db_user: User, state: FSM
 
     await state.clear()
 
-    # Notify accountants and other admins
     from apps.users.models import UserRole, UserStatus
     notified_ids = await sync_to_async(
         lambda: list(
@@ -645,5 +737,79 @@ async def process_admin_wallet_input(message: Message, db_user: User, state: FSM
         f"Сумма: <b>{withdrawal.amount:.2f} ₽</b>\n"
         f"Кошелёк: <code>{wallet}</code>\n\n"
         f"Заявка будет обработана бухгалтером.",
+        reply_markup=admin_back(),
+    )
+
+
+# ── Admin crypto addresses ─────────────────────────────────────────────────────
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "my_addresses"), IsAdmin())
+async def cb_admin_my_addresses(callback: CallbackQuery, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+    await state.clear()
+    await callback.answer()
+    text = ("💳 <b>Мои адреса</b>\n\nНажмите на адрес чтобы удалить его:"
+            if addresses else "💳 <b>Мои адреса</b>\n\nУ вас нет сохранённых адресов.")
+    await callback.message.edit_text(text, reply_markup=admin_addresses_list_keyboard(addresses))
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "add_addr"), IsAdmin())
+async def cb_admin_add_addr(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminCryptoAddressState.waiting_for_name)
+    await callback.answer()
+    await callback.message.edit_text(
+        "➕ <b>Добавить адрес</b>\n\nВведите название адреса (например: «Основной», «Binance»):",
+        reply_markup=admin_cancel_withdrawal(),
+    )
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "del_addr"), IsAdmin())
+async def cb_admin_del_addr(callback: CallbackQuery, callback_data: CtrlAdminCB,
+                             db_user: User):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    await sync_to_async(ControlWithdrawalService.delete_address)(db_user, callback_data.obj_id)
+    await callback.answer("Адрес удалён")
+
+    addresses = await sync_to_async(ControlWithdrawalService.get_saved_addresses)(db_user)
+    text = ("💳 <b>Мои адреса</b>\n\nНажмите на адрес чтобы удалить его:"
+            if addresses else "💳 <b>Мои адреса</b>\n\nУ вас нет сохранённых адресов.")
+    await callback.message.edit_text(text, reply_markup=admin_addresses_list_keyboard(addresses))
+
+
+@router.message(AdminCryptoAddressState.waiting_for_name, IsAdmin())
+async def process_admin_addr_name(message: Message, state: FSMContext):
+    name = (message.text or "").strip()
+    if not name or len(name) > 100:
+        await message.answer("❌ Введите название (до 100 символов):", reply_markup=admin_cancel_withdrawal())
+        return
+    await state.update_data(addr_name=name)
+    await state.set_state(AdminCryptoAddressState.waiting_for_address)
+    await message.answer(
+        f"✏️ Название: <b>{name}</b>\n\nТеперь введите адрес USDT TRC20-кошелька:",
+        reply_markup=admin_cancel_withdrawal(),
+    )
+
+
+@router.message(AdminCryptoAddressState.waiting_for_address, IsAdmin())
+async def process_admin_addr_address(message: Message, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    address = (message.text or "").strip()
+    if not address or len(address) < 20:
+        await message.answer("❌ Некорректный адрес. Введите адрес USDT TRC20-кошелька:", reply_markup=admin_cancel_withdrawal())
+        return
+
+    data = await state.get_data()
+    name = data.get("addr_name", "")
+    await sync_to_async(ControlWithdrawalService.save_address)(db_user, name, address)
+    await state.clear()
+    await message.answer(
+        f"✅ Адрес <b>{name}</b> сохранён:\n<code>{address}</code>",
         reply_markup=admin_back(),
     )

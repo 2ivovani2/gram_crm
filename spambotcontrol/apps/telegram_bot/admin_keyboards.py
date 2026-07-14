@@ -45,6 +45,7 @@ def get_admin_main_menu() -> InlineKeyboardMarkup:
     b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
     b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
     b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
+    b.button(text="💳 Мои адреса", callback_data=CtrlAdminCB(action="my_addresses"))
     # ── Management ────────────────────────────────────────────────────────────
     b.button(text="👥 Пользователи", callback_data=AdminMenuCallback(section="users"))
     b.button(text="📊 CRM", url=crm_url)
