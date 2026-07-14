@@ -96,8 +96,9 @@ def admin_control_main_menu() -> InlineKeyboardMarkup:
 
 
 def admin_cancel_withdrawal() -> InlineKeyboardMarkup:
+    from apps.telegram_bot.callbacks import AdminMenuCallback
     b = InlineKeyboardBuilder()
-    b.button(text="❌ Отмена", callback_data=CtrlAdminCB(action="main"))
+    b.button(text="❌ Отмена", callback_data=AdminMenuCallback(section="main"))
     return b.as_markup()
 
 
@@ -129,8 +130,9 @@ def admin_confirm_broadcast() -> InlineKeyboardMarkup:
 
 
 def admin_back() -> InlineKeyboardMarkup:
+    from apps.telegram_bot.callbacks import AdminMenuCallback
     b = InlineKeyboardBuilder()
-    b.button(text="◀️ Меню контроль", callback_data=CtrlAdminCB(action="main"))
+    b.button(text="◀️ Главное меню", callback_data=AdminMenuCallback(section="main"))
     return b.as_markup()
 
 

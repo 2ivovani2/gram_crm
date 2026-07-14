@@ -34,10 +34,18 @@ def _add_pagination_users(b: InlineKeyboardBuilder, page: int, total: int) -> No
 
 def get_admin_main_menu() -> InlineKeyboardMarkup:
     from django.conf import settings
+    from apps.control.bot.keyboards import CtrlAdminCB
     crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
     docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
 
     b = InlineKeyboardBuilder()
+    # ── Control bot ───────────────────────────────────────────────────────────
+    b.button(text="📋 Отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
+    b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
+    b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
+    b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
+    b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
+    # ── Management ────────────────────────────────────────────────────────────
     b.button(text="👥 Пользователи", callback_data=AdminMenuCallback(section="users"))
     b.button(text="📊 CRM", url=crm_url)
     b.button(text="📖 Документация", url=docs_url)

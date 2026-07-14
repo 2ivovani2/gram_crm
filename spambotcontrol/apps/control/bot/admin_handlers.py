@@ -3,14 +3,13 @@ Admin-facing handlers for the Gramly Control bot.
 Report review (with rejection comment FSM), penalty management, broadcasts.
 """
 from aiogram import Router, F
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from apps.telegram_bot.permissions import IsAdmin
 from apps.users.models import User
 from apps.control.bot.keyboards import (
-    CtrlAdminCB, admin_control_main_menu, admin_report_actions,
+    CtrlAdminCB, admin_report_actions,
     admin_penalty_actions, admin_confirm_broadcast, admin_back,
     admin_cancel_withdrawal,
 )
@@ -22,25 +21,12 @@ from apps.control.bot.states import (
 router = Router(name="control_admin")
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
-
-@router.message(Command("control"), IsAdmin())
-async def cmd_control(message: Message, db_user: User, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "🛠 <b>Грамли Контроль — Панель администратора</b>\n\nВыберите раздел:",
-        reply_markup=admin_control_main_menu(),
-    )
-
-
 @router.callback_query(CtrlAdminCB.filter(F.action == "main"), IsAdmin())
-async def cb_admin_main(callback: CallbackQuery, state: FSMContext):
+async def cb_admin_main(callback: CallbackQuery, db_user: User, state: FSMContext):
     await state.clear()
     await callback.answer()
-    await callback.message.edit_text(
-        "🛠 <b>Грамли Контроль — Панель администратора</b>\n\nВыберите раздел:",
-        reply_markup=admin_control_main_menu(),
-    )
+    from apps.telegram_bot.handlers.admin.menu import send_admin_main_menu
+    await send_admin_main_menu(callback, db_user)
 
 
 # ── Reports ────────────────────────────────────────────────────────────────────

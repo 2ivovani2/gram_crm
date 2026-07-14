@@ -13,16 +13,20 @@ from apps.users.models import User
 router = Router(name="admin_menu")
 
 
-def _admin_menu_text(db_user: User) -> str:
+async def _admin_menu_text(db_user: User) -> str:
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlBalanceService
+    total = await sync_to_async(ControlBalanceService.get_total_balance)(db_user)
+    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
     return (
-        f"🛠 <b>Admin Panel</b>\n\n"
-        f"Привет, <b>{db_user.display_name}</b>!\n"
-        "Выберите раздел:"
+        f"🛠 <b>Главное меню</b>\n\n"
+        f"Привет, <b>{db_user.display_name}</b>!\n\n"
+        f"💰 Баланс: <b>{total:.2f} ₽</b>  |  Доступно: <b>{available:.2f} ₽</b>"
     )
 
 
 async def send_admin_main_menu(event: Message | CallbackQuery, db_user: User) -> None:
-    text   = _admin_menu_text(db_user)
+    text   = await _admin_menu_text(db_user)
     markup = get_admin_main_menu()
     if isinstance(event, Message):
         await event.answer(text, reply_markup=markup)
@@ -30,7 +34,7 @@ async def send_admin_main_menu(event: Message | CallbackQuery, db_user: User) ->
         await safe_edit_text(event, text, markup)
 
 
-@router.message(Command("admin"), IsAdmin())
+@router.message(Command("start", "admin"), IsAdmin())
 async def cmd_admin(message: Message, db_user: User, state: FSMContext) -> None:
     await state.clear()
     await send_admin_main_menu(message, db_user)
@@ -40,7 +44,7 @@ async def cmd_admin(message: Message, db_user: User, state: FSMContext) -> None:
 async def cb_admin_main(callback: CallbackQuery, db_user: User, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
-    await safe_edit_text(callback, _admin_menu_text(db_user), get_admin_main_menu())
+    await send_admin_main_menu(callback, db_user)
 
 
 @router.callback_query(AdminMenuCallback.filter(F.section == "users"), IsAdmin())

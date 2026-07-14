@@ -23,8 +23,7 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
     await state.clear()
 
     if db_user.is_admin():
-        from apps.telegram_bot.handlers.admin.menu import send_admin_main_menu
-        await send_admin_main_menu(message, db_user)
+        # Handled by admin menu router (registered before this one)
         return
 
     if db_user.is_accountant():
