@@ -32,39 +32,19 @@
   </div>
 </div>
 
-<!-- KPI Rates -->
+<!-- Daily Rate -->
 <div class="card">
-  <h3>Ставки KPI</h3>
+  <h3>Ставка в день</h3>
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="save_kpi">
-    <div class="form-row">
-      <div class="form-field">
-        <label>Базовая ставка (₽)</label>
-        <input name="base_rate" type="number" step="0.01" value="{{ kpi.base_rate|default:'0' }}" />
-      </div>
-      <div class="form-field">
-        <label>Бонус (₽)</label>
-        <input name="bonus_rate" type="number" step="0.01" value="{{ kpi.bonus_rate|default:'0' }}" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-field">
-        <label>Штрафная ставка (₽)</label>
-        <input name="penalty_rate" type="number" step="0.01" value="{{ kpi.penalty_rate|default:'0' }}" />
-      </div>
-    </div>
     <div class="form-row">
       <div class="form-field">
         <label>Ставка в день (₽)</label>
         <input name="daily_rate" type="number" step="0.01" min="0" value="{{ worker.daily_rate|default:'0' }}" />
       </div>
     </div>
-    <div class="form-field" style="margin-bottom:14px">
-      <label>Дополнительная информация</label>
-      <textarea name="other_info">{{ kpi.other_info|default:"" }}</textarea>
-    </div>
-    <button type="submit" class="btn">Сохранить ставки</button>
+    <button type="submit" class="btn" style="margin-top:4px">Сохранить</button>
   </form>
 </div>
 

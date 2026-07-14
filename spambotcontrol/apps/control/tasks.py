@@ -148,24 +148,26 @@ def check_overdue_reports_task():
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import EmployeeReport, Penalty, PenaltyType, PenaltyStatus, ControlSettings
     from django.utils import timezone
+    import datetime as dt
 
     settings = ControlSettings.get()
     if settings.late_report_penalty_amount <= 0:
         logger.info("[control] Late report penalty amount is 0 — skipping auto-penalty")
         return {"skipped": True}
 
-    today = timezone.localdate()
+    # Task runs at 00:05 MSK — the deadline was yesterday (the day that just ended)
+    yesterday = timezone.localdate() - dt.timedelta(days=1)
 
-    submitted_today_ids = set(
+    submitted_ids = set(
         EmployeeReport.objects.filter(
-            report_date=today,
+            report_date=yesterday,
         ).values_list("user_id", flat=True)
     )
 
     workers = User.objects.filter(
         role=UserRole.WORKER,
         status=UserStatus.ACTIVE,
-    ).exclude(id__in=submitted_today_ids)
+    ).exclude(id__in=submitted_ids)
 
     created = 0
     admin_ids = list(
@@ -177,8 +179,7 @@ def check_overdue_reports_task():
         already = Penalty.objects.filter(
             user=worker,
             type=PenaltyType.AUTO,
-            created_at__date=today,
-            reason__startswith="Просрочка подачи отчёта",
+            reason__startswith=f"Просрочка подачи отчёта ({yesterday.strftime('%-d %B %Y')})",
         ).exists()
         if already:
             continue
@@ -187,14 +188,14 @@ def check_overdue_reports_task():
             user=worker,
             type=PenaltyType.AUTO,
             amount=settings.late_report_penalty_amount,
-            reason=f"Просрочка подачи отчёта ({today.strftime('%-d %B %Y')})",
+            reason=f"Просрочка подачи отчёта ({yesterday.strftime('%-d %B %Y')})",
             status=PenaltyStatus.ACCEPTED,
         )
         created += 1
 
         worker_text = (
             f"🚨 <b>Начислен штраф за просрочку</b>\n\n"
-            f"За неподанный отчёт {today.strftime('%-d %B %Y')} начислен штраф "
+            f"За неподанный отчёт {yesterday.strftime('%-d %B %Y')} начислен штраф "
             f"<b>{penalty.amount:.2f} ₽</b>.\n\n"
             f"Для оспаривания обратитесь к администратору."
         )
@@ -203,7 +204,7 @@ def check_overdue_reports_task():
         admin_text = (
             f"📋 <b>Автоштраф создан</b>\n\n"
             f"Сотрудник: @{worker.telegram_username or worker.telegram_id}\n"
-            f"Причина: просрочка отчёта {today.strftime('%-d %B %Y')}\n"
+            f"Причина: просрочка отчёта {yesterday.strftime('%-d %B %Y')}\n"
             f"Сумма: <b>{penalty.amount:.2f} ₽</b>"
         )
         for admin_tg_id in admin_ids:
