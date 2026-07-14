@@ -486,6 +486,7 @@ class ControlWithdrawalService:
     def get_processor_ids() -> list:
         """Return telegram_ids of all users who should receive withdrawal notifications."""
         from apps.users.models import UserRole, UserStatus
+        from apps.control.models import ControlSettings
         accountant_ids = list(
             User.objects.filter(
                 role=UserRole.ACCOUNTANT,
