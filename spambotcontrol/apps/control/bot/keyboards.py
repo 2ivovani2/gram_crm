@@ -90,7 +90,14 @@ def admin_control_main_menu() -> InlineKeyboardMarkup:
     b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
     b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
     b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
+    b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
     b.adjust(1)
+    return b.as_markup()
+
+
+def admin_cancel_withdrawal() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="❌ Отмена", callback_data=CtrlAdminCB(action="main"))
     return b.as_markup()
 
 

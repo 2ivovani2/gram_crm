@@ -28,3 +28,7 @@ class DisputePenaltyState(StatesGroup):
 class AdminBroadcastControlState(StatesGroup):
     waiting_for_text = State()
     confirm = State()
+
+
+class AdminWithdrawalState(StatesGroup):
+    waiting_for_wallet = State()

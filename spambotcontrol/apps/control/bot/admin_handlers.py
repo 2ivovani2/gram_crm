@@ -12,9 +12,11 @@ from apps.users.models import User
 from apps.control.bot.keyboards import (
     CtrlAdminCB, admin_control_main_menu, admin_report_actions,
     admin_penalty_actions, admin_confirm_broadcast, admin_back,
+    admin_cancel_withdrawal,
 )
 from apps.control.bot.states import (
     AdminPenaltyCreateState, AdminBroadcastControlState, AdminReportReviewState,
+    AdminWithdrawalState,
 )
 
 router = Router(name="control_admin")
@@ -575,4 +577,83 @@ async def cb_broadcast_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "🛠 <b>Грамли Контроль — Панель администратора</b>",
         reply_markup=admin_control_main_menu(),
+    )
+
+
+# ── Withdrawal ─────────────────────────────────────────────────────────────────
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "withdraw"), IsAdmin())
+async def cb_admin_withdraw(callback: CallbackQuery, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlBalanceService
+
+    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
+    if available <= 0:
+        await callback.answer("❌ Недостаточно средств для вывода.", show_alert=True)
+        return
+
+    await state.set_state(AdminWithdrawalState.waiting_for_wallet)
+    await callback.answer()
+    await callback.message.edit_text(
+        f"💸 <b>Вывод средств</b>\n\n"
+        f"Доступно: <b>{available:.2f} ₽</b>\n\n"
+        f"Введите адрес USDT TRC20-кошелька для вывода:",
+        reply_markup=admin_cancel_withdrawal(),
+    )
+
+
+@router.message(AdminWithdrawalState.waiting_for_wallet, IsAdmin())
+async def process_admin_wallet_input(message: Message, db_user: User, state: FSMContext):
+    from asgiref.sync import sync_to_async
+    from apps.control.services import ControlWithdrawalService
+
+    wallet = message.text.strip() if message.text else ""
+    if not wallet or len(wallet) < 20:
+        await message.answer(
+            "❌ Некорректный адрес кошелька. Введите корректный USDT TRC20-адрес:",
+            reply_markup=admin_cancel_withdrawal(),
+        )
+        return
+
+    try:
+        withdrawal = await sync_to_async(ControlWithdrawalService.create)(db_user, wallet)
+    except ValueError as e:
+        await state.clear()
+        await message.answer(f"❌ {e}", reply_markup=admin_back())
+        return
+
+    await state.clear()
+
+    # Notify accountants and other admins
+    from apps.users.models import UserRole, UserStatus
+    notified_ids = await sync_to_async(
+        lambda: list(
+            User.objects.filter(
+                role__in=[UserRole.ACCOUNTANT, UserRole.ADMIN],
+                status=UserStatus.ACTIVE,
+                is_blocked_bot=False,
+            ).exclude(pk=db_user.pk).values_list("telegram_id", flat=True)
+        )
+    )()
+
+    username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
+    notify_text = (
+        f"💳 <b>Новая заявка на вывод (админ)</b>\n\n"
+        f"От: {username}\n"
+        f"Сумма: <b>{withdrawal.amount:.2f} ₽</b>\n"
+        f"Кошелёк USDT TRC20:\n<code>{wallet}</code>\n\n"
+        f"ID заявки: #{withdrawal.pk}"
+    )
+    for tg_id in notified_ids:
+        try:
+            await message.bot.send_message(tg_id, notify_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+    await message.answer(
+        f"✅ <b>Заявка на вывод создана</b>\n\n"
+        f"Сумма: <b>{withdrawal.amount:.2f} ₽</b>\n"
+        f"Кошелёк: <code>{wallet}</code>\n\n"
+        f"Заявка будет обработана бухгалтером.",
+        reply_markup=admin_back(),
     )
