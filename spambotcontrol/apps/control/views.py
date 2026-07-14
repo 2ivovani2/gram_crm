@@ -385,9 +385,9 @@ class PenaltyActionView(AdminOnlyMixin, View):
 
 class EmployeesView(AdminOnlyMixin, View):
     def get(self, request):
-        workers = User.objects.filter(
-            role=UserRole.WORKER
-        ).prefetch_related("kpi_settings", "kpi_document", "report_template", "assigned_report_templates").order_by("telegram_username")
+        workers = User.objects.exclude(
+            role=UserRole.ANONYMOUS
+        ).prefetch_related("kpi_settings", "kpi_document").order_by("role", "telegram_username")
         return render(request, "control/employees.html", self.ctx(request, {
             "page": "employees",
             "workers": workers,
@@ -396,52 +396,50 @@ class EmployeesView(AdminOnlyMixin, View):
 
 class EmployeeKPIView(AdminOnlyMixin, View):
     def get(self, request, user_id):
-        from apps.control.models import KPISettings, KPIDocument, ReportTemplate
-        worker = get_object_or_404(User, pk=user_id, role=UserRole.WORKER)
+        from apps.control.models import KPISettings, KPIDocument
+        from apps.control.services import ControlBalanceService, PenaltyService
+        worker = get_object_or_404(User, pk=user_id)
         kpi, _ = KPISettings.objects.get_or_create(user=worker)
         doc = KPIDocument.objects.filter(user=worker).first()
-        template = ReportTemplate.objects.filter(user=worker).first()
+        total = ControlBalanceService.get_total_balance(worker)
+        available = ControlBalanceService.get_available_balance(worker)
+        withdrawn = worker.compute_withdrawn()
+        penalties = PenaltyService.total_accepted_penalty(worker)
 
         return render(request, "control/employee_kpi.html", self.ctx(request, {
             "page": "employees",
             "worker": worker,
             "kpi": kpi,
             "doc": doc,
-            "template": template,
+            "saved": request.GET.get("saved"),
+            "total_balance": total,
+            "available_balance": available,
+            "withdrawn": withdrawn,
+            "penalties": penalties,
         }))
 
     def post(self, request, user_id):
-        from apps.control.models import KPISettings, KPIDocument, ReportTemplate
+        from apps.control.models import KPISettings, KPIDocument
         from decimal import Decimal, InvalidOperation
 
-        worker = get_object_or_404(User, pk=user_id, role=UserRole.WORKER)
+        worker = get_object_or_404(User, pk=user_id)
         admin = request.crm_user
         action = request.POST.get("action")
 
+        def _d(key, default="0"):
+            try:
+                v = request.POST.get(key, default)
+                return Decimal(v) if v else Decimal(default)
+            except InvalidOperation:
+                return Decimal(default)
+
         if action == "save_kpi":
-            def _d(key):
-                try:
-                    return Decimal(request.POST.get(key, "0"))
-                except InvalidOperation:
-                    return Decimal("0")
-
-            kpi, _ = KPISettings.objects.get_or_create(user=worker)
-            kpi.base_rate = _d("base_rate")
-            kpi.bonus_rate = _d("bonus_rate")
-            kpi.penalty_rate = _d("penalty_rate")
-            kpi.other_info = request.POST.get("other_info", "")
-            kpi.updated_by = admin
-            kpi.save()
-
             worker.daily_rate = _d("daily_rate")
             worker.save(update_fields=["daily_rate", "updated_at"])
 
-        elif action == "save_template":
-            content = request.POST.get("content", "")
-            ReportTemplate.objects.update_or_create(
-                user=worker,
-                defaults={"content": content, "updated_by": admin},
-            )
+        elif action == "edit_balance":
+            worker.daily_accrued = _d("daily_accrued")
+            worker.save(update_fields=["daily_accrued", "updated_at"])
 
         elif action == "upload_doc" and request.FILES.get("doc_file"):
             f = request.FILES["doc_file"]
@@ -451,7 +449,8 @@ class EmployeeKPIView(AdminOnlyMixin, View):
             doc.uploaded_by = admin
             doc.save()
 
-        return redirect("control:employee_kpi", user_id=user_id)
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(f"{request.path}?saved=1")
 
 
 # ── Withdrawals ────────────────────────────────────────────────────────────────

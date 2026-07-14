@@ -457,7 +457,7 @@ class ControlWithdrawalService:
     @staticmethod
     def create(user: User, wallet_address: str) -> "WithdrawalRequest":
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalMethod, WithdrawalStatus
-        amount = user.compute_balance()
+        amount = ControlBalanceService.get_available_balance(user)
         if amount <= 0:
             raise ValueError("Недостаточно средств для вывода")
         if ReportService.has_blocking_report(user):
