@@ -20,14 +20,12 @@ router = Router(name="control_worker")
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _cabinet_text(db_user: User, total_balance, available_balance) -> str:
+def _cabinet_text(db_user: User, balance) -> str:
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     return (
         f"👤 <b>Личный кабинет</b>\n\n"
-        f"ID: <code>{db_user.telegram_id}</code>\n"
         f"Сотрудник: {username}\n\n"
-        f"💰 Общий баланс: <b>{total_balance:.2f} ₽</b>\n"
-        f"✅ Доступно для вывода: <b>{available_balance:.2f} ₽</b>"
+        f"💰 Баланс: <b>{balance:.2f} ₽</b>"
     )
 
 
@@ -38,9 +36,8 @@ async def send_worker_cabinet(event: Message | CallbackQuery, db_user: User, sta
     from asgiref.sync import sync_to_async
     from apps.control.services import ControlBalanceService
 
-    total = await sync_to_async(ControlBalanceService.get_total_balance)(db_user)
-    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
-    text = _cabinet_text(db_user, total, available)
+    balance = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
+    text = _cabinet_text(db_user, balance)
 
     if isinstance(event, Message):
         await event.answer(text, reply_markup=worker_main_menu())
@@ -177,9 +174,13 @@ async def process_wallet_input(message: Message, db_user: User, state: FSMContex
         f"Кошелёк USDT TRC20:\n<code>{wallet}</code>\n\n"
         f"ID заявки: #{withdrawal.pk}"
     )
+    from apps.control.bot.keyboards import accountant_withdrawal_actions
     for acc_id in accountants:
         try:
-            await message.bot.send_message(acc_id, accountant_text, parse_mode="HTML")
+            await message.bot.send_message(
+                acc_id, accountant_text, parse_mode="HTML",
+                reply_markup=accountant_withdrawal_actions(withdrawal.pk),
+            )
         except Exception:
             pass
 

@@ -110,40 +110,26 @@ async def _update_withdrawal(callback: CallbackQuery, callback_data: CtrlAccount
         await callback.answer("Заявка не найдена", show_alert=True)
         return
 
-    worker_msg = None
+    # Нельзя принять свою же заявку (кроме бухгалтера)
+    if w.user_id == db_user.pk and not db_user.is_accountant():
+        await callback.answer(
+            "❌ Нельзя обработать собственную заявку на вывод",
+            show_alert=True,
+        )
+        return
+
     if action == "processing":
         await sync_to_async(ControlWithdrawalService.mark_processing)(w, db_user)
         result = "В обработке 🔄"
     elif action == "receipt":
         await sync_to_async(ControlWithdrawalService.mark_receipt_sent)(w, db_user)
         result = "Чек отправлен 📤"
-        worker_msg = (
-            f"📤 <b>Чек на вывод отправлен</b>\n\n"
-            f"Заявка #{w.pk} на {w.amount:.2f} ₽ — чек отправлен. "
-            f"Пожалуйста, проверьте ваш кошелёк."
-        )
     elif action == "done":
         await sync_to_async(ControlWithdrawalService.mark_completed)(w, db_user)
         result = "Выполнена ✅"
-        worker_msg = (
-            f"✅ <b>Вывод выполнен</b>\n\n"
-            f"Заявка #{w.pk} на {w.amount:.2f} ₽ успешно выполнена."
-        )
     else:
         await sync_to_async(ControlWithdrawalService.reject)(w, db_user)
         result = "Отклонена ❌"
-        worker_msg = (
-            f"❌ <b>Заявка на вывод отклонена</b>\n\n"
-            f"Заявка #{w.pk} на {w.amount:.2f} ₽ отклонена бухгалтером."
-        )
-
-    if worker_msg:
-        try:
-            await callback.message.bot.send_message(
-                w.user.telegram_id, worker_msg, parse_mode="HTML"
-            )
-        except Exception:
-            pass
 
     await callback.answer(result)
     await callback.message.edit_text(

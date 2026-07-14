@@ -16,12 +16,11 @@ router = Router(name="admin_menu")
 async def _admin_menu_text(db_user: User) -> str:
     from asgiref.sync import sync_to_async
     from apps.control.services import ControlBalanceService
-    total = await sync_to_async(ControlBalanceService.get_total_balance)(db_user)
-    available = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
+    balance = await sync_to_async(ControlBalanceService.get_available_balance)(db_user)
     return (
         f"🛠 <b>Главное меню</b>\n\n"
         f"Привет, <b>{db_user.display_name}</b>!\n\n"
-        f"💰 Баланс: <b>{total:.2f} ₽</b>  |  Доступно: <b>{available:.2f} ₽</b>"
+        f"💰 Баланс: <b>{balance:.2f} ₽</b>"
     )
 
 

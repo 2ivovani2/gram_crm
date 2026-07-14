@@ -476,6 +476,25 @@ class ControlWithdrawalService:
         )
 
     @staticmethod
+    def _notify_sync(telegram_id: int, text: str) -> None:
+        """Send a Telegram message synchronously (for use from sync Django views)."""
+        import asyncio
+        from apps.telegram_bot.bot import get_bot
+
+        async def _send():
+            try:
+                bot = await get_bot()
+                await bot.send_message(telegram_id, text, parse_mode="HTML")
+            except Exception:
+                pass
+
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_send())
+        finally:
+            loop.close()
+
+    @staticmethod
     def mark_processing(withdrawal, accountant: User) -> None:
         from apps.withdrawals.models import WithdrawalStatus
         withdrawal.status = WithdrawalStatus.PROCESSING
@@ -489,6 +508,12 @@ class ControlWithdrawalService:
         withdrawal.processed_by = accountant
         withdrawal.processed_at = timezone.now()
         withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
+        ControlWithdrawalService._notify_sync(
+            withdrawal.user.telegram_id,
+            f"📤 <b>Чек на вывод отправлен</b>\n\n"
+            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> — чек отправлен. "
+            f"Проверьте ваш кошелёк.",
+        )
 
     @staticmethod
     def mark_completed(withdrawal, accountant: User) -> None:
@@ -497,6 +522,11 @@ class ControlWithdrawalService:
         withdrawal.processed_by = accountant
         withdrawal.processed_at = timezone.now()
         withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
+        ControlWithdrawalService._notify_sync(
+            withdrawal.user.telegram_id,
+            f"✅ <b>Вывод выполнен</b>\n\n"
+            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> успешно выполнена.",
+        )
 
     @staticmethod
     def reject(withdrawal, accountant: User) -> None:
@@ -505,6 +535,11 @@ class ControlWithdrawalService:
         withdrawal.processed_by = accountant
         withdrawal.processed_at = timezone.now()
         withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
+        ControlWithdrawalService._notify_sync(
+            withdrawal.user.telegram_id,
+            f"❌ <b>Заявка на вывод отклонена</b>\n\n"
+            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> отклонена.",
+        )
 
     @staticmethod
     def get_pending_list():

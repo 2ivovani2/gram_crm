@@ -624,15 +624,19 @@ async def process_admin_wallet_input(message: Message, db_user: User, state: FSM
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     notify_text = (
-        f"💳 <b>Новая заявка на вывод (админ)</b>\n\n"
+        f"💳 <b>Новая заявка на вывод</b>\n\n"
         f"От: {username}\n"
         f"Сумма: <b>{withdrawal.amount:.2f} ₽</b>\n"
         f"Кошелёк USDT TRC20:\n<code>{wallet}</code>\n\n"
         f"ID заявки: #{withdrawal.pk}"
     )
+    from apps.control.bot.keyboards import accountant_withdrawal_actions
     for tg_id in notified_ids:
         try:
-            await message.bot.send_message(tg_id, notify_text, parse_mode="HTML")
+            await message.bot.send_message(
+                tg_id, notify_text, parse_mode="HTML",
+                reply_markup=accountant_withdrawal_actions(withdrawal.pk),
+            )
         except Exception:
             pass
 
