@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import Sidebar from "@/components/Sidebar";
@@ -27,13 +27,16 @@ export default function AppShell({ children }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen(v => !v), []);
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
-  if (isPublic || !user) {
+  if (isPublic || !mounted || !user) {
     return <>{children}</>;
   }
 
