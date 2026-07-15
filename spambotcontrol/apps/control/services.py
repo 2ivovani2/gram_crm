@@ -457,6 +457,7 @@ class ControlWithdrawalService:
     @staticmethod
     def create(user: User, wallet_address: str, amount: "Decimal | None" = None) -> "WithdrawalRequest":
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalMethod, WithdrawalStatus
+        from apps.control.models import ControlSettings
         available = ControlBalanceService.get_available_balance(user)
         if amount is None:
             amount = available
