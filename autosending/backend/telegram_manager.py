@@ -18,15 +18,20 @@ from typing import Dict, Optional, Set
 
 from telethon import TelegramClient
 from telethon.errors import (
+    ChannelInvalidError,
     ChannelPrivateError,
     ChatAdminRequiredError,
     ChatWriteForbiddenError,
     FloodWaitError,
+    InviteHashExpiredError,
+    InviteHashInvalidError,
     InviteRequestSentError,
     PeerFloodError,
     SessionPasswordNeededError,
     UserAlreadyParticipantError,
     UserBannedInChannelError,
+    UsernameInvalidError,
+    UsernameNotOccupiedError,
     UserNotParticipantError,
 )
 from telethon.tl.types import Channel, Chat
@@ -319,6 +324,9 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
             except InviteRequestSentError:
                 logger.warning(f"[{account_id}] Approval required: {url}")
                 return {"ok": False, "reason": "approval_required"}
+            except (InviteHashExpiredError, InviteHashInvalidError):
+                logger.warning(f"[{account_id}] Invite link expired/invalid: {url}")
+                return {"ok": False, "reason": "expired"}
         else:
             try:
                 entity = await _resolve_channel_entity(client, account_id, url)
@@ -341,18 +349,28 @@ async def ensure_joined(client: TelegramClient, account_id: int, url: str) -> di
     except FloodWaitError as e:
         logger.warning(f"[{account_id}] FloodWait {e.seconds}s on join {url}")
         return {"ok": False, "reason": "flood_wait", "seconds": e.seconds}
+    except TransientResolveError as e:
+        # Network hiccup / timeout / temporary Telegram error resolving the
+        # entity — retry later instead of permanently disabling the channel.
+        return {"ok": False, "reason": "error", "detail": str(e)}
     except Exception as e:
         msg = str(e)
         if "Cannot send requests while disconnected" in msg or "disconnected" in msg.lower():
             logger.warning(f"[{account_id}] Client disconnected on join {url}")
             return {"ok": False, "reason": "disconnected"}
-        if "expired" in msg.lower() or "invalid" in msg.lower():
-            return {"ok": False, "reason": "expired"}
         logger.warning(f"[{account_id}] Could not join {url}: {e}")
         return {"ok": False, "reason": "error", "detail": msg}
 
 
 # ── Entity resolution ──────────────────────────────────────────────────────────
+
+class TransientResolveError(Exception):
+    """
+    Entity resolution failed for a reason that isn't permanent (network hiccup,
+    timeout, temporary Telegram-side error). Callers should retry later instead
+    of treating the channel as unreachable and disabling it forever.
+    """
+
 
 async def _resolve_channel_entity(client: TelegramClient, account_id: int, url: str):
     """
@@ -365,13 +383,22 @@ async def _resolve_channel_entity(client: TelegramClient, account_id: int, url: 
     Fix: check the input-peer type first (InputPeerChannel = it IS a channel),
     then fetch the full entity via that peer. If the input peer is a User and
     it's not a bot, it's a personal DM — skip it.
+
+    Returns None only when the target is definitively not a joinable channel
+    (username doesn't exist / is invalid, or resolves to a private DM). Any
+    other failure (network error, timeout, rate limiting, etc.) raises
+    TransientResolveError so the caller retries instead of permanently
+    disabling the channel.
     """
     from telethon.tl.types import InputPeerChannel, InputPeerChat, User as TGUser
     try:
         input_peer = await client.get_input_entity(url)
-    except Exception as e:
-        logger.warning(f"[{account_id}] get_input_entity failed for {url}: {e}")
+    except (UsernameNotOccupiedError, UsernameInvalidError, ChannelInvalidError):
+        logger.warning(f"[{account_id}] {url} does not exist on Telegram")
         return None
+    except Exception as e:
+        logger.warning(f"[{account_id}] get_input_entity failed for {url} (will retry): {e}")
+        raise TransientResolveError(str(e)) from e
 
     if isinstance(input_peer, (InputPeerChannel, InputPeerChat)):
         return await client.get_entity(input_peer)
@@ -461,6 +488,10 @@ async def send_message_to(
         logger.warning(f"[{account_id}] Not a participant: {url}")
         _member_cache.get(account_id, set()).discard(url)
         return {"ok": False, "reason": "not_member"}
+    except TransientResolveError as e:
+        # Network hiccup / timeout / temporary Telegram error resolving the
+        # entity — retry later instead of permanently disabling the channel.
+        return {"ok": False, "reason": "error", "detail": str(e)}
     except Exception as e:
         msg = str(e)
         if "Cannot send requests while disconnected" in msg or "disconnected" in msg.lower():

@@ -423,6 +423,7 @@ async def _account_worker(
                         _log(account_id, campaign_id, url, None, "join_channel", "success")
                         _campaign_counters.setdefault(campaign_id, {"sent": 0, "joined": 0})["joined"] += 1
                         joins_done += 1
+                        error_retries.pop(url, None)  # reset backoff on success
                     elif join_res["reason"] == "disconnected":
                         logger.warning(f"[Cmp{campaign_id}][{phone}] disconnected — reconnecting")
                         break  # break channel loop → reconnect at top of round loop
@@ -463,8 +464,19 @@ async def _account_worker(
                         skipped_forever += 1
                         continue
                     else:
+                        # Generic/transient join error — exponential backoff, don't
+                        # disable the channel until it has failed several times in a row.
+                        retries = error_retries.get(url, 0)
+                        backoff = _expo_backoff(retries)
+                        error_retries[url] = retries + 1
+                        flood_cooldowns[url] = now + backoff
+                        if retries >= 2:
+                            ls = live_stats.setdefault(url, {"success_count": 0, "fail_streak": 0})
+                            ls["fail_streak"] += 1
+                            _update_channel_stats(ch["id"], False)
                         _log(account_id, campaign_id, url, None, "join_channel",
-                             "error", join_res.get("detail", join_res["reason"]))
+                             "error", f"{join_res.get('detail', join_res['reason'])} — backoff {backoff:.0f}s (retry #{retries + 1})")
+                        skipped_cooldown += 1
                         continue
 
                     # Post-join pause — scales up if floods accumulate
