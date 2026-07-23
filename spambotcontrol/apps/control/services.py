@@ -646,6 +646,7 @@ class ControlBalanceService:
             user.compute_personal_earned()
             + user.compute_referral_earned()
             + (user.daily_accrued or Decimal("0"))
+            + (user.manual_balance_adjustment or Decimal("0"))
         )
 
     @staticmethod
@@ -655,6 +656,37 @@ class ControlBalanceService:
         withdrawn = user.compute_withdrawn()
         available = gross - withdrawn - penalties
         return max(Decimal("0"), available)
+
+    @staticmethod
+    @transaction.atomic
+    def set_available_balance(user: User, amount: Decimal) -> Decimal:
+        """
+        Set the amount that the bot must show as available right now.
+
+        Withdrawals, penalties and earned daily rates are historical facts and
+        must not be overwritten.  Store only the balancing adjustment needed to
+        reach the requested available amount.
+        """
+        amount = Decimal(amount).quantize(Decimal("0.01"))
+        if amount < 0:
+            raise ValueError("Баланс не может быть отрицательным")
+
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        base_gross = (
+            locked_user.compute_personal_earned()
+            + locked_user.compute_referral_earned()
+            + (locked_user.daily_accrued or Decimal("0"))
+        )
+        withdrawn = locked_user.compute_withdrawn()
+        penalties = PenaltyService.total_accepted_penalty(locked_user)
+        adjustment = amount + withdrawn + penalties - base_gross
+
+        locked_user.manual_balance_adjustment = adjustment
+        locked_user.save(update_fields=["manual_balance_adjustment", "updated_at"])
+
+        # Keep the caller usable in the same request without a refresh.
+        user.manual_balance_adjustment = adjustment
+        return amount
 
 
 # ── Worker list helper ─────────────────────────────────────────────────────────

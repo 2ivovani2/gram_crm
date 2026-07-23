@@ -494,7 +494,7 @@ def deadline_reminder_task(slot: str) -> dict:
 
 
 @shared_task(name="apps.control.tasks.accrue_daily_rate_task", queue="default")
-def accrue_daily_rate_task() -> dict:
+def accrue_daily_rate_task(force: bool = False) -> dict:
     """
     Runs every hour. Accrues daily_rate to each eligible active worker
     when the current MSK hour matches ControlSettings.daily_rate_hour.
@@ -502,38 +502,78 @@ def accrue_daily_rate_task() -> dict:
     """
     import datetime as dt
     from zoneinfo import ZoneInfo
-    from django.db.models import F
+    from decimal import Decimal
+    from django.db import transaction
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import ControlSettings
+    from apps.control.services import ControlBalanceService
 
     _MSK = ZoneInfo("Europe/Moscow")
     now_msk = dt.datetime.now(tz=_MSK)
     today = now_msk.date()
 
     settings = ControlSettings.get()
-    if now_msk.hour != settings.daily_rate_hour:
+    if not force and now_msk.hour != settings.daily_rate_hour:
         return {"skipped": True, "reason": "not the accrual hour"}
 
     workers = User.objects.filter(
-        role=UserRole.WORKER,
         status=UserStatus.ACTIVE,
         daily_rate__gt=0,
-    ).exclude(daily_rate_last_accrued_date=today)
+    ).exclude(
+        role=UserRole.ANONYMOUS,
+    ).exclude(
+        daily_rate_last_accrued_date=today,
+    ).values_list("pk", flat=True)
 
     accrued_count = 0
-    for worker in workers:
-        amount = worker.daily_rate
-        User.objects.filter(pk=worker.pk).update(
-            daily_accrued=F("daily_accrued") + amount,
-            daily_rate_last_accrued_date=today,
-        )
+    notification_sent = 0
+    notification_failed = 0
+    for worker_id in workers:
+        # Lock each user so duplicate/retried tasks cannot credit the same day twice.
+        with transaction.atomic():
+            worker = User.objects.select_for_update().get(pk=worker_id)
+            if (
+                worker.status != UserStatus.ACTIVE
+                or worker.role == UserRole.ANONYMOUS
+                or worker.daily_rate <= 0
+                or worker.daily_rate_last_accrued_date == today
+            ):
+                continue
+
+            amount = worker.daily_rate
+            worker.daily_accrued = (
+                (worker.daily_accrued or Decimal("0")) + amount
+            )
+            worker.daily_rate_last_accrued_date = today
+            worker.save(update_fields=[
+                "daily_accrued",
+                "daily_rate_last_accrued_date",
+                "updated_at",
+            ])
+
         accrued_count += 1
+        available = ControlBalanceService.get_available_balance(worker)
 
         text = (
             f"💰 <b>Начисление ставки</b>\n\n"
-            f"Сегодня вам начислена ежедневная ставка: <b>+{amount:.2f} ₽</b>"
+            f"Сегодня вам начислена ежедневная ставка: <b>+{amount:.2f} ₽</b>\n"
+            f"Доступный баланс: <b>{available:.2f} ₽</b>"
         )
-        _send_message_sync(worker.telegram_id, text)
+        if _send_message_sync(worker.telegram_id, text):
+            notification_sent += 1
+        else:
+            notification_failed += 1
 
-    logger.info("[control] Daily rate accrued for %d workers on %s", accrued_count, today)
-    return {"date": str(today), "accrued": accrued_count}
+    logger.info(
+        "[control] Daily rate accrued for %d employees on %s; notifications sent=%d failed=%d",
+        accrued_count,
+        today,
+        notification_sent,
+        notification_failed,
+    )
+    return {
+        "date": str(today),
+        "accrued": accrued_count,
+        "notification_sent": notification_sent,
+        "notification_failed": notification_failed,
+    }

@@ -420,6 +420,7 @@ class EmployeeKPIView(AdminOnlyMixin, View):
 
     def post(self, request, user_id):
         from apps.control.models import KPISettings, KPIDocument
+        from apps.control.services import ControlBalanceService
         from decimal import Decimal, InvalidOperation
 
         worker = get_object_or_404(User, pk=user_id)
@@ -438,8 +439,10 @@ class EmployeeKPIView(AdminOnlyMixin, View):
             worker.save(update_fields=["daily_rate", "updated_at"])
 
         elif action == "edit_balance":
-            worker.daily_accrued = _d("daily_accrued")
-            worker.save(update_fields=["daily_accrued", "updated_at"])
+            ControlBalanceService.set_available_balance(
+                worker,
+                _d("available_balance"),
+            )
 
         elif action == "upload_doc" and request.FILES.get("doc_file"):
             f = request.FILES["doc_file"]

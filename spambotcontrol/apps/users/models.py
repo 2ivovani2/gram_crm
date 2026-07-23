@@ -130,6 +130,14 @@ class User(AbstractUser):
         verbose_name="Накоплено по ставке (₽)",
         help_text="Суммарно начислено по ежедневной ставке за всё время",
     )
+    manual_balance_adjustment = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        verbose_name="Ручная корректировка баланса (₽)",
+        help_text=(
+            "Корректировка, позволяющая администратору выставить текущий доступный "
+            "баланс без изменения истории начислений и выводов"
+        ),
+    )
     daily_rate_last_accrued_date = models.DateField(
         null=True, blank=True,
         verbose_name="Дата последнего начисления ставки",

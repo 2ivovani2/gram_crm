@@ -63,8 +63,11 @@ def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None 
             "💼 <b>Начисления</b>",
             f"  👤 Личное:        <b>{breakdown['personal_earned']:.2f} ₽</b>",
             f"  🤝 Реферальное:   <b>{breakdown['referral_earned']:.2f} ₽</b>",
+            f"  📅 По ставке:     <b>{breakdown['daily_accrued']:.2f} ₽</b>",
+            f"  ✏️ Корректировка: <b>{breakdown['manual_adjustment']:.2f} ₽</b>",
             f"  📊 Начислено:     <b>{breakdown['gross_earned']:.2f} ₽</b>",
             f"  💸 Выведено:      <b>{breakdown['withdrawn']:.2f} ₽</b>",
+            f"  ⚠️ Штрафы:        <b>{breakdown['penalties']:.2f} ₽</b>",
             f"  ✅ Баланс:        <b>{breakdown['balance']:.2f} ₽</b>",
         ]
     else:
@@ -108,9 +111,19 @@ def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None 
 
 def _load_user_data(user_id: int) -> tuple:
     """Load user + referral_count + earnings breakdown in one sync block."""
+    from decimal import Decimal
+    from apps.control.services import ControlBalanceService, PenaltyService
+
     user = User.objects.select_related("referred_by").get(pk=user_id)
     referral_count = user.referrals.count()
     breakdown = UserService.get_earnings_breakdown(user)
+    breakdown.update({
+        "daily_accrued": user.daily_accrued or Decimal("0"),
+        "manual_adjustment": user.manual_balance_adjustment or Decimal("0"),
+        "penalties": PenaltyService.total_accepted_penalty(user),
+        "gross_earned": ControlBalanceService.get_total_balance(user),
+        "balance": ControlBalanceService.get_available_balance(user),
+    })
     return user, referral_count, breakdown
 
 
