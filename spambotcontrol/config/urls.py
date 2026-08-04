@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from apps.common.views import HealthCheckView, LandingView
 from apps.telegram_bot.webhook import TelegramWebhookView
+from apps.welcome_bots.webhooks import ClientBotWebhookView, WelcomeInterfaceWebhookView
 
 urlpatterns = [
     # Landing page (gramly.tech)
@@ -11,6 +12,12 @@ urlpatterns = [
     path("django-admin/", admin.site.urls),
     # Telegram webhook
     path("bot/webhook/", TelegramWebhookView.as_view(), name="telegram-webhook"),
+    path("welcome/webhook/", WelcomeInterfaceWebhookView.as_view(), name="welcome-interface-webhook"),
+    path(
+        "welcome/client/<uuid:public_id>/<str:path_secret>/",
+        ClientBotWebhookView.as_view(),
+        name="welcome-client-webhook",
+    ),
     # Health check for Docker / load balancer
     path("health/", HealthCheckView.as_view(), name="health-check"),
     # CRM web service (crm.gramly.tech)

@@ -108,7 +108,7 @@ services:
     <<: *common
     build:
       context: ./spambotcontrol
-    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts
+    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts,welcome_bots
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
     depends_on:

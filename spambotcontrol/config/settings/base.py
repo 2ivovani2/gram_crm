@@ -45,6 +45,7 @@ LOCAL_APPS = [
     "apps.crm",
     "apps.docs",
     "apps.control",
+    "apps.welcome_bots",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -121,6 +122,7 @@ CELERY_TASK_ROUTES = {
     "apps.stats.tasks.*": {"queue": "default"},
     "apps.crm.tasks.*": {"queue": "default"},
     "apps.control.tasks.*": {"queue": "default"},
+    "apps.welcome_bots.tasks.*": {"queue": "welcome_bots"},
 }
 
 # ── Celery Beat Schedule ──────────────────────────────────────────────────────
@@ -183,6 +185,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.control.tasks.accrue_daily_rate_task",
         "schedule": crontab(minute=0),
     },
+    # Gramly Welcome: webhook update idempotency records are short-lived.
+    "welcome-purge-processed-updates": {
+        "task": "apps.welcome_bots.tasks.purge_processed_updates_task",
+        "schedule": crontab(hour=4, minute=20),
+    },
 }
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -207,6 +214,22 @@ TELEGRAM_WEBHOOK_SECRET = env("TELEGRAM_WEBHOOK_SECRET", default="")
 # Dev:  https://<id>.ngrok-free.app/bot/webhook/
 # Prod: https://yourdomain.com/bot/webhook/
 TELEGRAM_WEBHOOK_URL = env("TELEGRAM_WEBHOOK_URL", default="")
+
+# Gramly Welcome is a separate Telegram product hosted by the same Django
+# deployment.  Its interface bot and all connected customer bots use their own
+# isolated webhook paths and data models.
+WELCOME_BOT_TOKEN = env("WELCOME_BOT_TOKEN", default="")
+WELCOME_BOT_USERNAME = env("WELCOME_BOT_USERNAME", default="")
+WELCOME_WEBHOOK_SECRET = env("WELCOME_WEBHOOK_SECRET", default="")
+WELCOME_WEBHOOK_URL = env(
+    "WELCOME_WEBHOOK_URL",
+    default="https://gramly.tech/welcome/webhook/",
+)
+WELCOME_CLIENT_WEBHOOK_BASE_URL = env(
+    "WELCOME_CLIENT_WEBHOOK_BASE_URL",
+    default="https://gramly.tech/welcome/client",
+)
+WELCOME_MEDIA_MAX_BYTES = env.int("WELCOME_MEDIA_MAX_BYTES", default=20 * 1024 * 1024)
 
 # Shared Google Sheets link shown to workers and curators as "База каналов"
 CHANNELS_DB_URL = env(
