@@ -143,6 +143,9 @@ services:
     depends_on:
       web:
         condition: service_healthy
+    networks:
+      - default
+      - gramly_proxy
 
   certbot:
     image: certbot/certbot:latest
@@ -158,3 +161,7 @@ volumes:
   letsencrypt:
   certbot_www:
   minio_data:
+
+networks:
+  gramly_proxy:
+    external: true
