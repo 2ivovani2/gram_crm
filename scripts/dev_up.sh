@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command local dev startup for the unified Gramly stack.
+# One-command local dev startup for Gramly CRM.
 #
 # Architecture:
 #   User → ngrok (HTTPS) → nginx:80 → path routing → backends
@@ -7,8 +7,6 @@
 # Single entry point via ngrok domain:
 #   https://<ngrok>/           → Django (landing, /crm/, /docs/, /health/)
 #   https://<ngrok>/bot/webhook/ → Telegram webhook
-#   https://<ngrok>/spam/       → autosending Next.js frontend
-#   https://<ngrok>/api/        → autosending FastAPI backend
 #
 # What this script does:
 #   1. Validates BOT_ENV=dev in .env
@@ -21,7 +19,7 @@
 # Prerequisites:
 #   cp .env.example .env
 #       → set BOT_ENV=dev, TEST_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, SECRET_KEY
-#       → set NGROK_AUTHTOKEN, NGROK_DOMAIN, POSTGRES_PASSWORD, AWS_*, SPAM_JWT_SECRET_KEY
+#       → set NGROK_AUTHTOKEN, NGROK_DOMAIN, POSTGRES_PASSWORD, AWS_*
 #
 # Usage: make dev   (or: bash scripts/dev_up.sh)
 
@@ -67,13 +65,11 @@ log "Entry point: $BASE_URL"
 # nginx is the unified entry point — start it alongside the app services.
 # ngrok tunnels to nginx:80, so ALL traffic goes through the same contour.
 # Startup order: infra → web (wait healthy) → nginx → ngrok
-# spam-frontend may take longer to start (next dev) — nginx serves 502 until ready.
 log "Starting services..."
 $COMPOSE up -d \
     postgres redis \
     minio minio-init \
     web celery_worker celery_beat \
-    spam-backend spam-frontend \
     nginx \
     ngrok
 
@@ -111,8 +107,6 @@ echo "║                                                                  ║"
 printf "║  Landing    : %-51s║\n" "${BASE_URL}/"
 printf "║  CRM        : %-51s║\n" "${BASE_URL}/crm/"
 printf "║  Docs       : %-51s║\n" "${BASE_URL}/docs/"
-printf "║  Spam app   : %-51s║\n" "${BASE_URL}/spam/"
-printf "║  API        : %-51s║\n" "${BASE_URL}/api/"
 printf "║  Webhook    : %-51s║\n" "${WEBHOOK_URL}"
 echo "║                                                                  ║"
 echo "║  Inspector  : http://localhost:4040   (ngrok)                   ║"
@@ -122,10 +116,6 @@ echo "║  Postgres   : localhost:5432                                    ║"
 echo "║  Redis      : localhost:6379                                    ║"
 echo "║                                                                  ║"
 echo "║  make logs         — web + celery logs                          ║"
-echo "║  make logs-spam    — spam-backend + spam-frontend logs          ║"
 echo "║  make webhook-info — check webhook status                       ║"
 echo "║  make dev-down     — stop everything                            ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
-echo ""
-echo "  Note: /spam/ routes may return 502 for ~30-60s while Next.js dev"
-echo "  server finishes starting. All other routes are immediately ready."

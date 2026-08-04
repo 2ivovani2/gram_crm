@@ -16,18 +16,13 @@ CSRF_TRUSTED_ORIGINS = [
     f"https://crm.{_domain}",
 ]
 
-# Share session cookie across all subdomains so login on gramly.tech
-# carries over to crm.gramly.tech and spam.gramly.tech
+# Share the session cookie with the CRM subdomain.
 SESSION_COOKIE_DOMAIN = f".{_domain}"
 CSRF_COOKIE_DOMAIN    = f".{_domain}"
 
 # Bot-facing URLs for CRM and docs links
 CRM_URL  = f"https://{_domain}/crm/login/"
 DOCS_URL = f"https://{_domain}/docs/"
-
-# Spam app relay: internal Docker hostname for backend, public URL for redirect
-SPAM_BACKEND_INTERNAL_URL = "http://spam-backend:8000"
-SPAM_APP_URL              = f"https://spam.{_domain}"
 
 # Telegram Login Widget (CRM): same COOP fix as dev — popup must postMessage back.
 # Only needed if COOP is being set; Django's default is same-origin which breaks it.

@@ -341,15 +341,16 @@ def _get_missing_items_for_worker(worker, deadline_date) -> list[str]:
 def _get_available_balance(worker) -> tuple:
     """Return (balance, available_for_withdrawal) for the worker, fresh from DB."""
     from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
+    from apps.control.services import ControlBalanceService
     from django.db.models import Sum
 
-    balance = worker.balance or 0
+    balance = ControlBalanceService.get_total_balance(worker)
     pending = (
         WithdrawalRequest.objects.filter(
             user=worker, status=WithdrawalStatus.PENDING
         ).aggregate(s=Sum("amount"))["s"] or 0
     )
-    available = max(balance - pending, 0)
+    available = max(ControlBalanceService.get_available_balance(worker) - pending, 0)
     return balance, available
 
 
@@ -468,7 +469,7 @@ def deadline_reminder_task(slot: str) -> dict:
     workers = User.objects.filter(
         status=UserStatus.ACTIVE,
         is_blocked_bot=False,
-    ).exclude(role=UserRole.ADMIN).only("pk", "telegram_id", "telegram_username", "balance")
+    ).exclude(role=UserRole.ADMIN)
 
     sent = skipped = errors = 0
     for worker in workers:

@@ -215,7 +215,7 @@ CHANNELS_DB_URL = env(
 )
 
 # Full URL to the worker spam guide in docs (button in bot main menu)
-DOCS_GUIDE_URL = env("DOCS_GUIDE_URL", default="https://gramly.tech/docs/guide/")
+DOCS_GUIDE_URL = env("DOCS_GUIDE_URL", default="https://gramly.tech/docs/crm/")
 
 # ── Channel subscription gate ─────────────────────────────────────────────────
 # Username (with @) for public channels, or numeric ID for private channels.

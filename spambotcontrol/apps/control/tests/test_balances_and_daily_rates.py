@@ -4,7 +4,7 @@ import pytest
 
 from apps.control.models import Penalty, PenaltyStatus, PenaltyType
 from apps.control.services import ControlBalanceService
-from apps.control.tasks import accrue_daily_rate_task
+from apps.control.tasks import _get_available_balance, accrue_daily_rate_task
 from apps.users.models import User, UserRole, UserStatus
 from apps.withdrawals.models import (
     WithdrawalMethod,
@@ -69,6 +69,23 @@ def test_balance_can_be_set_again_after_another_withdrawal():
     worker.refresh_from_db()
 
     assert ControlBalanceService.get_available_balance(worker) == Decimal("400")
+
+
+def test_deadline_balance_uses_control_ledger_and_reserves_pending_withdrawal():
+    worker = _user(2003, daily_accrued=Decimal("1000"))
+    ControlBalanceService.set_available_balance(worker, Decimal("1000"))
+    WithdrawalRequest.objects.create(
+        user=worker,
+        amount=Decimal("300"),
+        method=WithdrawalMethod.USDT_TRC20,
+        details="test-wallet",
+        status=WithdrawalStatus.PENDING,
+    )
+
+    gross, available = _get_available_balance(worker)
+
+    assert gross == Decimal("1000")
+    assert available == Decimal("700")
 
 
 @pytest.mark.parametrize(

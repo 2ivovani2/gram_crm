@@ -455,10 +455,14 @@ class PenaltyService:
 class ControlWithdrawalService:
 
     @staticmethod
+    @transaction.atomic
     def create(user: User, wallet_address: str, amount: "Decimal | None" = None) -> "WithdrawalRequest":
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalMethod, WithdrawalStatus
         from apps.control.models import ControlSettings
-        available = ControlBalanceService.get_available_balance(user)
+        # Serialize requests per employee so two simultaneous bot callbacks cannot
+        # create duplicate pending withdrawals against the same balance.
+        locked_user = User.objects.select_for_update().get(pk=user.pk)
+        available = ControlBalanceService.get_available_balance(locked_user)
         if amount is None:
             amount = available
         if amount <= 0 or available <= 0:
@@ -468,15 +472,15 @@ class ControlWithdrawalService:
         settings = ControlSettings.get()
         if amount < settings.min_withdrawal_amount:
             raise ValueError(f"Минимальная сумма вывода — {settings.min_withdrawal_amount:.0f} ₽")
-        if ReportService.has_blocking_report(user):
+        if ReportService.has_blocking_report(locked_user):
             raise ValueError("Вывод заблокирован: отчёт ожидает проверки")
         existing = WithdrawalRequest.objects.filter(
-            user=user, status=WithdrawalStatus.PENDING
+            user=locked_user, status=WithdrawalStatus.PENDING
         ).first()
         if existing:
             raise ValueError("У вас уже есть активная заявка на вывод")
         return WithdrawalRequest.objects.create(
-            user=user,
+            user=locked_user,
             amount=amount,
             method=WithdrawalMethod.USDT_TRC20,
             details=wallet_address,

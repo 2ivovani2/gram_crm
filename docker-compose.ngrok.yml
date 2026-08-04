@@ -3,8 +3,8 @@
 # In dev, ALL traffic goes through:
 #   User → ngrok (HTTPS) → nginx:80 → backends
 #
-# ngrok tunnels to nginx (not directly to web:8000) so the full routing table
-# (Django + autosending + static files) is accessible through a single URL.
+# ngrok tunnels to nginx (not directly to web:8000) so Django, static files,
+# media and the Telegram webhook are accessible through a single URL.
 #
 # Requires NGROK_AUTHTOKEN and NGROK_DOMAIN in root .env.
 # Use a static ngrok domain (free plan: one domain per account) so the

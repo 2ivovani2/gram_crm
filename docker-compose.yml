@@ -1,13 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Gramly — unified production compose stack
+# Gramly CRM — production compose stack
 #
 # Domains:
 #   gramly.tech       → landing + docs (spambotcontrol Django)
 #   crm.gramly.tech   → CRM  (spambotcontrol Django, /crm/ prefix)
-#   spam.gramly.tech  → spam app (autosending: Next.js + FastAPI)
-#
-# One compose, one PostgreSQL container (two databases: gramly + autosending),
-# one nginx with three server blocks, one certbot for all three domains.
+# One Django application, PostgreSQL, Redis, MinIO, Celery and nginx.
 # ─────────────────────────────────────────────────────────────────────────────
 
 x-common: &common
@@ -32,7 +29,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./spambotcontrol/data/postgres:/var/lib/postgresql/data
-      - ./scripts/pg_init.sh:/docker-entrypoint-initdb.d/pg_init.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gramly}"]
       interval: 10s
@@ -102,7 +98,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/health/ -o /dev/null || true"]
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/health/ -o /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -112,7 +108,7 @@ services:
     <<: *common
     build:
       context: ./spambotcontrol
-    command: celery -A config.celery worker -l info -c 4 -Q celery,default,broadcasts
+    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
     depends_on:
@@ -131,67 +127,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
 
-  # ── autosending (spam.gramly.tech) ────────────────────────────────────────
-
-  spam-backend:
-    build:
-      context: ./autosending
-      dockerfile: docker/backend.Dockerfile
-      target: runtime
-    restart: unless-stopped
-    expose:
-      - "8000"
-    environment:
-      PYTHONUNBUFFERED: "1"
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/autosending"
-      JWT_SECRET_KEY: ${SPAM_JWT_SECRET_KEY}
-      TELEGRAM_BOT_TOKEN: ${PROD_BOT_TOKEN}
-      ADMIN_CHAT_ID: ${ADMIN_CHAT_ID:-}
-    volumes:
-      - spam_sessions:/app/data/sessions
-      - spam_logs:/app/data/logs
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 15s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    networks:
-      - default
-
-  spam-frontend:
-    build:
-      context: ./autosending
-      dockerfile: docker/frontend.Dockerfile
-      target: runner
-      args:
-        NEXT_PUBLIC_API_URL:     "https://spam.gramly.tech"
-        NEXT_PUBLIC_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
-        NEXT_PUBLIC_GRAMLY_URL:  "https://gramly.tech"
-    restart: unless-stopped
-    expose:
-      - "3000"
-    environment:
-      NODE_ENV: production
-      NEXT_TELEMETRY_DISABLED: "1"
-      HOSTNAME: "0.0.0.0"
-    depends_on:
-      spam-backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/', r => process.exit(r.statusCode >= 500 ? 1 : 0)).on('error', () => process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
-    networks:
-      - default
-
-  # ── Nginx (handles all three subdomains) ──────────────────────────────────
+  # ── Nginx ──────────────────────────────────────────────────────────────────
 
   nginx:
     image: nginx:alpine
@@ -206,8 +142,6 @@ services:
       - static_files:/app/staticfiles:ro
     depends_on:
       web:
-        condition: service_healthy
-      spam-frontend:
         condition: service_healthy
 
   certbot:
@@ -224,5 +158,3 @@ volumes:
   letsencrypt:
   certbot_www:
   minio_data:
-  spam_sessions:
-  spam_logs:

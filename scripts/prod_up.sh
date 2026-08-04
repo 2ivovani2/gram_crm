@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# One-command production startup for the unified Gramly stack.
+# One-command production startup for Gramly CRM.
 #
 # Flow:
 #   1. Validate BOT_ENV=prod in spambotcontrol/.env
 #   2. Read DOMAIN from root .env
-#   3. Obtain Let's Encrypt cert for all four domains via certbot standalone
+#   3. Obtain Let's Encrypt cert for the main and CRM domains via certbot standalone
 #      (certbot binds port 80 directly — nginx not needed for this step)
 #   4. Build all Docker images
 #   5. Start all services
@@ -18,7 +18,7 @@
 #   cp .env.example .env
 #       → set BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, TELEGRAM_WEBHOOK_SECRET
 #       → set ALLOWED_HOSTS=gramly.tech,www.gramly.tech,crm.gramly.tech, DEBUG=False
-#       → set POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY, DOMAIN, CERTBOT_EMAIL
+#       → set POSTGRES_PASSWORD, DOMAIN, CERTBOT_EMAIL
 #       → set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME
 #
 # Usage: make prod  (or: bash scripts/prod_up.sh)
@@ -81,7 +81,7 @@ fi
 # ── 4. Obtain cert (first deploy only) ────────────────────────────────────────
 if [ "$CERT_EXISTS" = "false" ]; then
     log "No certificate found. Obtaining Let's Encrypt certificate..."
-    log "DNS A-records must point to this VPS: $DOMAIN, www.$DOMAIN, crm.$DOMAIN, spam.$DOMAIN"
+    log "DNS A-records must point to this VPS: $DOMAIN, www.$DOMAIN, crm.$DOMAIN"
     log ""
 
     # Start only postgres + redis so we don't bind port 80 yet.
@@ -107,10 +107,9 @@ if [ "$CERT_EXISTS" = "false" ]; then
             --domains "$DOMAIN" \
             --domains "www.$DOMAIN" \
             --domains "crm.$DOMAIN" \
-            --domains "spam.$DOMAIN" \
             --non-interactive
 
-    ok "Certificate obtained for $DOMAIN (+ www, crm, spam subdomains)"
+    ok "Certificate obtained for $DOMAIN (+ www and crm subdomain)"
 fi
 
 # ── 5. Build all images ────────────────────────────────────────────────────────
@@ -160,7 +159,6 @@ echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 printf "║  Landing    : %-47s║\n" "https://${DOMAIN}/"
 printf "║  CRM        : %-47s║\n" "https://crm.${DOMAIN}/crm/login/"
-printf "║  Spam app   : %-47s║\n" "https://spam.${DOMAIN}/"
 printf "║  Admin      : %-47s║\n" "https://${DOMAIN}/django-admin/"
 printf "║  Webhook    : %-47s║\n" "$WEBHOOK_URL"
 if [ "$WEBHOOK_REGISTERED" = "true" ]; then
@@ -171,5 +169,4 @@ fi
 echo "║                                                              ║"
 echo "║  make prod-down  — stop everything + delete webhook          ║"
 echo "║  make logs       — follow web + celery logs                  ║"
-echo "║  make logs-spam  — follow spam service logs                  ║"
 echo "╚══════════════════════════════════════════════════════════════╝"

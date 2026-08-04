@@ -1,9 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Gramly — root Makefile
-# All commands operate on the unified compose stack at the project root.
+# All commands operate on the CRM compose stack at the project root.
 #
 # Dev prerequisites:
-#   cp .env.example .env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, SECRET_KEY, NGROK_*, AWS_*, POSTGRES_PASSWORD, SPAM_JWT_SECRET_KEY
+#   cp .env.example .env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, SECRET_KEY, NGROK_*, AWS_*, POSTGRES_PASSWORD
 #
 # Prod prerequisites (on VPS):
 #   apt install -y docker.io docker-compose-plugin curl git
@@ -16,9 +16,9 @@ DOMAIN     ?= gramly.tech
 
 .PHONY: dev dev-down \
         prod prod-down prod-build \
-        logs logs-web logs-spam \
+        logs logs-web \
         cert-renew webhook-set webhook-info webhook-del \
-        crm-setup ps shell-web shell-spam
+        crm-setup ps shell-web
 
 # ── Dev (local, one command) ──────────────────────────────────────────────────
 
@@ -52,9 +52,6 @@ logs:
 logs-web:
 	$(COMPOSE) logs -f web
 
-logs-spam:
-	$(COMPOSE) logs -f spam-backend spam-frontend
-
 # ── Webhook management ────────────────────────────────────────────────────────
 
 webhook-set:
@@ -80,6 +77,3 @@ ps:
 
 shell-web:
 	$(COMPOSE) exec web bash
-
-shell-spam:
-	$(COMPOSE) exec spam-backend bash

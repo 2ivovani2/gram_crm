@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Dev overrides for the unified Gramly stack.
+# Dev overrides for the Gramly CRM stack.
 # Applied on top of docker-compose.yml.
 #
 # Architecture on dev:
@@ -7,17 +7,13 @@
 #
 # Path routing (mirrors prod subdomain layout):
 #   /         → Django  (landing, /crm/, /docs/, /health/, /bot/webhook/)
-#   /api/     → autosending FastAPI
-#   /spam/    → autosending Next.js (basePath=/spam)
 #   /static/  → Django staticfiles
 #   /s3/      → MinIO
 #
 # Dev vs prod differences:
 #   • nginx uses nginx/dev.conf (HTTP-only, path routing) instead of gramly.conf
 #   • ngrok tunnels to nginx:80 (not directly to web:8000)
-#   • All app services use hot-reload + source bind-mounts
-#   • Next.js gets NEXT_PUBLIC_BASE_PATH=/spam for path-based routing
-#   • NEXT_PUBLIC_API_URL points to https://<ngrok>/api (resolved at runtime)
+#   • Django uses hot-reload + source bind-mounts
 #   • postgres, redis, minio ports exposed for local dev tools
 #   • certbot disabled (TLS handled by ngrok)
 #
@@ -86,43 +82,3 @@ services:
       - ./spambotcontrol:/app
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
-
-  # ── autosending: dev overrides ─────────────────────────────────────────────
-
-  spam-backend:
-    build:
-      context: ./autosending
-      dockerfile: docker/backend.Dockerfile
-      target: dev          # uvicorn --reload, source bind-mounted
-    volumes:
-      - ./autosending/backend:/app
-    # No host ports — accessed via nginx/ngrok at /api/
-    environment:
-      PYTHONDONTWRITEBYTECODE: "1"
-      # DATABASE_URL, JWT_SECRET_KEY, TELEGRAM_BOT_TOKEN come from root .env via x-common or here:
-      TELEGRAM_BOT_TOKEN: ${TEST_BOT_TOKEN}
-
-  spam-frontend:
-    build:
-      context: ./autosending
-      dockerfile: docker/frontend.Dockerfile
-      target: dev          # next dev with hot-reload
-    volumes:
-      - ./autosending/frontend:/app   # source bind-mount
-      - /app/node_modules             # preserve image's node_modules (not host's)
-      - /app/.next                    # isolate .next cache inside container
-    # No host ports — accessed via nginx/ngrok at /spam/
-    # healthcheck overrides base: basePath=/spam so / returns 404 in dev
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/spam/"]
-      interval: 15s
-      timeout: 5s
-      start_period: 30s
-      retries: 5
-    environment:
-      # basePath=/spam so Next.js routes, links, and asset URLs all live under /spam/
-      NEXT_PUBLIC_BASE_PATH: /spam
-      NEXT_PUBLIC_API_URL: https://${NGROK_DOMAIN}
-      NEXT_PUBLIC_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
-      NODE_ENV: development
-      WATCHPACK_POLLING: "true"
