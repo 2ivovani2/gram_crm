@@ -52,7 +52,7 @@ SUPPORTED_CONTENT = {
 
 GUIDE = [
     ("✨ <b>Всё управление — в одном месте</b>", "Подключайте свои боты, управляйте каналами, приветствиями и заявками прямо из Telegram."),
-    ("🤖 <b>Подключение бота</b>", "Создайте бота через @BotFather, пришлите его токен и назначьте администратором нужного канала."),
+    ("🤖 <b>Подключение за три шага</b>", "Создайте бота в @BotFather → пришлите сюда его токен → нажмите кнопку «Добавить в канал». Канал определится автоматически."),
     ("💬 <b>Приветственные сообщения</b>", "Сохраняйте текст, форматирование и медиа. Для новых подписчиков можно настроить удобную задержку."),
     ("📥 <b>Заявки на вступление</b>", "Включите автоматическое принятие и задайте задержку. Каждая заявка обрабатывается независимо."),
     ("📊 <b>Актуальная статистика</b>", "Следите за доставкой, языками и общей аудиторией каждого подключённого бота."),
@@ -73,6 +73,20 @@ def main_keyboard() -> ReplyKeyboardMarkup:
 
 def _one_button(text: str, callback: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]])
+
+
+def _add_to_channel_url(bot: ManagedBot) -> str:
+    # Telegram opens the channel picker and promotes the bot with the minimum
+    # right required to receive and approve join requests.
+    return f"https://t.me/{bot.username}?startchannel&admin=invite_users+manage_chat"
+
+
+def _connection_keyboard(bot: ManagedBot) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"➕ Добавить @{bot.username} в канал", url=_add_to_channel_url(bot))],
+        [InlineKeyboardButton(text="🔄 Проверить подключение", callback_data=f"connect-check:{bot.id}")],
+        [InlineKeyboardButton(text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}")],
+    ])
 
 
 def _hero() -> FSInputFile:
@@ -156,9 +170,18 @@ async def paginate_bots(callback: CallbackQuery, owner: Owner) -> None:
 async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AddBotState.waiting_for_token)
     await callback.message.answer(
-        "🔐 <b>Подключение нового бота</b>\n\n"
-        "Отправьте токен, полученный у @BotFather. После проверки сообщение с токеном будет удалено.",
-        reply_markup=_one_button("❌ Отмена", "cancel"),
+        "🤖 <b>Подключение бота · шаг 1 из 3</b>\n\n"
+        "<b>Если бот уже создан:</b> скопируйте его токен из сообщения @BotFather и отправьте сюда.\n\n"
+        "<b>Если бота ещё нет:</b>\n"
+        "1. Откройте @BotFather кнопкой ниже.\n"
+        "2. Нажмите <b>Start</b> и отправьте команду <code>/newbot</code>.\n"
+        "3. Задайте имя и username, заканчивающийся на <code>bot</code>.\n"
+        "4. Скопируйте строку вида <code>123456789:AA...</code> и пришлите её сюда.\n\n"
+        "🔒 Сообщение с токеном удалится сразу после получения.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+        ]),
     )
     await callback.answer()
 
@@ -200,11 +223,59 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
             await probe.session.close()
     await state.clear()
     await message.answer(
-        f"✅ <b>@{managed.username} подключён!</b>\n\n"
-        "Теперь добавьте его администратором канала. Нужны права на приглашение пользователей. "
-        "Канал обнаружится автоматически — его ID или ссылку присылать не нужно.",
-        reply_markup=_one_button("⚙️ Управлять ботом", f"bot:{managed.id}"),
+        f"✅ <b>Токен принят · шаг 2 из 3</b>\n\n"
+        f"Бот <b>@{managed.username}</b> зарегистрирован в Gramly.\n\n"
+        "Теперь нажмите большую кнопку ниже, выберите свой канал и подтвердите добавление бота администратором. "
+        "Право <b>«Добавление подписчиков»</b> нужно для автоматического принятия заявок.\n\n"
+        "Ничего копировать из канала не требуется — Gramly обнаружит его автоматически.",
+        reply_markup=_connection_keyboard(managed),
     )
+
+
+@router.callback_query(F.data.startswith("connect:"))
+async def connection_help(callback: CallbackQuery, owner: Owner) -> None:
+    try:
+        bot = await sync_to_async(owned_bot)(owner.id, int(callback.data.split(":")[1]))
+    except ManagedBot.DoesNotExist:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.message.answer(
+        f"🔗 <b>Подключение @{bot.username} к каналу</b>\n\n"
+        "1. Нажмите «Добавить в канал».\n"
+        "2. Выберите канал, которым Вы управляете.\n"
+        "3. Не отключайте право «Добавление подписчиков».\n"
+        "4. Подтвердите назначение администратором.\n\n"
+        "Обычно Gramly обнаруживает канал за несколько секунд.",
+        reply_markup=_connection_keyboard(bot),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("connect-check:"))
+async def connection_check(callback: CallbackQuery, owner: Owner) -> None:
+    try:
+        bot = await sync_to_async(owned_bot)(owner.id, int(callback.data.split(":")[1]))
+    except ManagedBot.DoesNotExist:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    channels = await sync_to_async(list)(bot.channels.filter(is_active=True).values_list("title", flat=True))
+    if not channels:
+        await callback.answer(
+            "Пока не вижу канал. Убедитесь, что бот добавлен именно администратором, и нажмите ещё раз через несколько секунд.",
+            show_alert=True,
+        )
+        return
+    names = "\n".join(f"• {title}" for title in channels)
+    await callback.message.answer(
+        f"🎉 <b>Подключение завершено · шаг 3 из 3</b>\n\n"
+        f"@{bot.username} обслуживает:\n{names}\n\n"
+        "Теперь откройте карточку и задайте приветствие в разделе «Сообщения».",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💬 Настроить приветствие", callback_data=f"msg:{bot.id}")],
+            [InlineKeyboardButton(text="⚙️ Открыть карточку", callback_data=f"bot:{bot.id}")],
+        ]),
+    )
+    await callback.answer("Канал подключён")
 
 
 @router.callback_query(F.data.startswith("bot:"))
@@ -226,8 +297,12 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         live=Count("id", filter=Q(delivery_status="live")),
         dead=Count("id", filter=Q(delivery_status="dead")),
     ))()
-    channels = await sync_to_async(bot.channels.filter(is_active=True).count)()
+    channels = await sync_to_async(list)(
+        bot.channels.filter(is_active=True).values_list("title", flat=True)[:10]
+    )
+    channel_text = "\n".join(f"  • {title}" for title in channels) if channels else "  ⚠️ Пока не подключено ни одного канала"
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
         [InlineKeyboardButton(text="💬 Сообщения", callback_data=f"msg:{bot.id}"), InlineKeyboardButton(text="📥 Заявки", callback_data=f"requests:{bot.id}")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats:{bot.id}"), InlineKeyboardButton(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}")],
     ])
@@ -235,7 +310,7 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         f"🤖 <b>@{bot.username or bot.display_name}</b>\n"
         f"<code>{bot.telegram_id}</code>\n\n"
         f"🟢 Живые: <b>{counts['live']}</b>\n🔴 Мёртвые: <b>{counts['dead']}</b>\n"
-        f"📣 Активные каналы: <b>{channels}</b>",
+        f"📣 Каналы: <b>{len(channels)}</b>\n{channel_text}",
         reply_markup=kb,
     )
 

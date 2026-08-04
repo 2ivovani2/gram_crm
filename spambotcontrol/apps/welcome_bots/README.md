@@ -31,3 +31,8 @@ docker compose exec web python manage.py setup_welcome_webhooks --customers
 
 The interface is disabled (HTTP 404) while `WELCOME_BOT_TOKEN` is empty, so the
 CRM can be deployed before the production Telegram bot is created.
+
+Customer bots are attached to channels through Telegram's official
+`startchannel&admin=invite_users+manage_chat` deep link. The interface shows a
+channel picker button, automatic discovery status, and the active channel list;
+owners never need to find or submit a numeric chat ID.

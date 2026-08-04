@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.types import Update
 from asgiref.sync import sync_to_async
 from django.utils import timezone
@@ -81,7 +82,15 @@ async def _handle_bot_membership(bot: ManagedBot, event) -> None:
     await _notify_owner(
         bot.owner.telegram_id,
         f"{'✅' if active else '⚠️'} Бот @{bot.username} "
-        f"{'подключён к' if active else 'больше не обслуживает'} каналу «{channel.title}».",
+        f"{'подключён к' if active else 'больше не обслуживает'} каналу «{channel.title}»."
+        + ("\n\nОсталось настроить приветственное сообщение." if active else ""),
+        reply_markup=(
+            InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💬 Настроить приветствие", callback_data=f"msg:{bot.id}")],
+                [InlineKeyboardButton(text="⚙️ Открыть карточку", callback_data=f"bot:{bot.id}")],
+            ])
+            if active else None
+        ),
     )
 
 
@@ -139,7 +148,7 @@ def _active_channel(bot: ManagedBot, chat_id: int, title: str, username: str) ->
     return channel
 
 
-async def _notify_owner(chat_id: int, text: str) -> None:
+async def _notify_owner(chat_id: int, text: str, reply_markup=None) -> None:
     from django.conf import settings
 
     if not settings.WELCOME_BOT_TOKEN:
@@ -147,6 +156,6 @@ async def _notify_owner(chat_id: int, text: str) -> None:
     from .interface import get_interface_bot
 
     try:
-        await get_interface_bot().send_message(chat_id, text)
+        await get_interface_bot().send_message(chat_id, text, reply_markup=reply_markup)
     except Exception:
         logger.exception("Could not notify welcome-bot owner %s", chat_id)
