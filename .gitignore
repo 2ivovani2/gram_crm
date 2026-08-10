@@ -85,3 +85,9 @@ Desktop.ini
 # ── Claude Code ───────────────────────────────────────────────────────────────
 CLAUDE.md
 CHANGELOG_AGENT.md
+
+# ── Kubernetes credentials / generated secrets ─────────────────────────────────────────
+*kubeconfig*
+vke-*.yaml
+infra/kubernetes/**/*.secret.yaml
+infra/kubernetes/**/secrets.yaml

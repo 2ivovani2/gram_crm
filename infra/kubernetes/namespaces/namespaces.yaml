@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: identity
+  labels:
+    gramly.tech/contour: public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vpn
+  labels:
+    gramly.tech/contour: public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gramly-hello
+  labels:
+    gramly.tech/contour: public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gramly-crm
+  labels:
+    gramly.tech/contour: private
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devtools
+  labels:
+    gramly.tech/contour: private
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    gramly.tech/contour: private
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    gramly.tech/contour: private

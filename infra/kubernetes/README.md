@@ -1,0 +1,64 @@
+# Gramly Kubernetes platform
+
+Production target: Vultr Kubernetes Engine, Kubernetes 1.36.
+
+This directory contains the reproducible bootstrap configuration for the new
+cluster. It deliberately contains no credentials, Telegram tokens, kubeconfig,
+database passwords, or DNS API keys.
+
+## Access model
+
+There are two independent traffic planes:
+
+- `public`: a Vultr Load Balancer serving only `hello.gramly.tech`,
+  `auth.gramly.tech`, and `vpn.gramly.tech`;
+- `private`: a ClusterIP-only gateway for CRM, Forgejo, Plane, Outline, Argo CD,
+  and observability. It is reachable through NetBird only.
+
+Authentik is the shared OIDC identity provider. NetBird provides the WireGuard
+VPN and uses the same Authentik identities. Application authorization remains
+role-based: a successful SSO login does not automatically grant administrator
+permissions.
+
+## Pinned platform versions
+
+Versions are declared in `bootstrap/versions.env`. Updates must be performed in
+a separate pull request after reading upstream release notes.
+
+## Bootstrap order
+
+1. Export the downloaded VKE kubeconfig path as `KUBECONFIG`.
+2. Run `scripts/preflight.sh` and confirm the cluster identity.
+3. Install Gateway API CRDs.
+4. Install metrics-server and verify `kubectl top nodes`.
+5. Install cert-manager with Gateway API integration.
+6. Install the public and private Traefik controllers.
+7. Record the public LoadBalancer address, but do not change production DNS yet.
+8. Deploy Authentik and NetBird and verify VPN-only access.
+9. Deploy application staging routes and rehearse all migrations.
+10. Lower DNS TTL and perform the production cutover in a maintenance window.
+
+Run the bootstrap script only after reviewing its rendered Helm output:
+
+```bash
+export KUBECONFIG="/absolute/path/to/downloaded-vke-kubeconfig.yaml"
+infra/kubernetes/scripts/preflight.sh
+infra/kubernetes/scripts/bootstrap-platform.sh
+```
+
+The old VPS and its production database remain untouched throughout bootstrap.
+They are retained as the rollback target for at least 14 days after cutover.
+
+## DNS policy
+
+Public DNS records are changed only after the public gateway, TLS, Authentik,
+NetBird, and Hello staging endpoint have passed smoke tests.
+
+Public records:
+
+- `hello.gramly.tech`
+- `auth.gramly.tech`
+- `vpn.gramly.tech`
+
+Private names (`crm`, `git`, `tasks`, `docs`, `argocd`, `grafana`) are served by
+NetBird split DNS and are not pointed at the public load balancer.

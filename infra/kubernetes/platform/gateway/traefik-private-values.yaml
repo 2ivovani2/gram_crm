@@ -1,0 +1,77 @@
+deployment:
+  replicas: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingressClass:
+  enabled: false
+
+providers:
+  kubernetesIngress:
+    enabled: false
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: false
+    namespaces:
+      - traefik-private
+      - gramly-crm
+      - devtools
+      - argocd
+      - observability
+  kubernetesGateway:
+    enabled: true
+    labelSelector: gramly.tech/controller=private
+    namespaces:
+      - traefik-private
+      - gramly-crm
+      - devtools
+      - argocd
+      - observability
+
+gateway:
+  enabled: false
+
+gatewayClass:
+  enabled: true
+  name: gramly-private
+  labels:
+    gramly.tech/controller: private
+
+service:
+  spec:
+    type: ClusterIP
+
+log:
+  level: INFO
+
+accessLog:
+  enabled: true
+  format: json
+  fields:
+    headers:
+      defaultMode: drop
+    queryParameters:
+      defaultMode: drop
+
+api:
+  dashboard: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
