@@ -33,10 +33,16 @@ a separate pull request after reading upstream release notes.
 4. Install metrics-server and verify `kubectl top nodes`.
 5. Install cert-manager with Gateway API integration.
 6. Install the public and private Traefik controllers.
-7. Record the public LoadBalancer address, but do not change production DNS yet.
-8. Deploy Authentik and NetBird and verify VPN-only access.
-9. Deploy application staging routes and rehearse all migrations.
-10. Lower DNS TTL and perform the production cutover in a maintenance window.
+7. Install CloudNativePG and the dedicated Authentik database.
+8. Record the public LoadBalancer address, but do not change production DNS yet.
+9. Deploy Authentik and NetBird and verify VPN-only access.
+10. Deploy application staging routes and rehearse all migrations.
+11. Lower DNS TTL and perform the production cutover in a maintenance window.
+
+The first Authentik administrator is `i_vovani`. Bootstrap scripts never print
+its generated password. Once public TLS is healthy, issue a one-time recovery
+link, let the user choose a password, enroll MFA, disable the `akadmin`
+break-glass account, and remove bootstrap credentials from the runtime Secret.
 
 Run the bootstrap script only after reviewing its rendered Helm output:
 

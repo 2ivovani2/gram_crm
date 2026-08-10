@@ -25,7 +25,7 @@ fi
 
 if kubectl get deploy,statefulset,daemonset --all-namespaces \
   -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{"\n"}{end}' \
-  | grep -Ev '^(kube-system|irsa-system|cert-manager|traefik-public|traefik-private)/' \
+  | grep -Ev '^(kube-system|irsa-system|cert-manager|traefik-public|traefik-private|cnpg-system|identity)/' \
   | grep -q .; then
   echo "Unexpected non-system workloads found; review them before bootstrap." >&2
   exit 1

@@ -1,0 +1,55 @@
+global:
+  env:
+    - name: AUTHENTIK_POSTGRESQL__HOST
+      value: identity-postgres-rw.identity.svc.cluster.local
+    - name: AUTHENTIK_POSTGRESQL__PORT
+      value: "5432"
+    - name: AUTHENTIK_POSTGRESQL__NAME
+      value: authentik
+    - name: AUTHENTIK_POSTGRESQL__USER
+      value: authentik
+    - name: AUTHENTIK_ERROR_REPORTING__ENABLED
+      value: "false"
+  affinity:
+    podAntiAffinity: soft
+
+authentik:
+  enabled: true
+  existingSecret:
+    secretName: authentik-runtime
+
+server:
+  replicas: 2
+  pdb:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 150m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  route:
+    main:
+      enabled: false
+
+worker:
+  replicas: 2
+  pdb:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+postgresql:
+  enabled: false

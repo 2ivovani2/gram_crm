@@ -1,0 +1,18 @@
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+monitoring:
+  podMonitorEnabled: false
+  grafanaDashboard:
+    create: false
+
+config:
+  clusterWide: true
+  maxConcurrentReconciles: 10
