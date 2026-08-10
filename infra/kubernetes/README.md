@@ -55,6 +55,17 @@ infra/kubernetes/scripts/bootstrap-platform.sh
 The old VPS and its production database remain untouched throughout bootstrap.
 They are retained as the rollback target for at least 14 days after cutover.
 
+Once the authoritative `auth` and `vpn` records both point to `45.77.149.91`,
+enable the public Gateway and certificates:
+
+```bash
+infra/kubernetes/scripts/enable-public-tls.sh
+```
+
+The script refuses to contact ACME while authoritative DNS is missing or points
+at another server. This avoids serving a certificate on the wrong endpoint and
+unnecessary Let's Encrypt failures.
+
 ## DNS policy
 
 Public DNS records are changed only after the public gateway, TLS, Authentik,
