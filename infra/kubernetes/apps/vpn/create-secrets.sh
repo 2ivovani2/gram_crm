@@ -6,6 +6,11 @@ if [[ -z "${KUBECONFIG:-}" ]]; then
   exit 1
 fi
 
+if ! command -v htpasswd >/dev/null 2>&1; then
+  echo "htpasswd is required to generate NetBird's bcrypt owner hash." >&2
+  exit 1
+fi
+
 for secret_ref in \
   identity/netbird-postgres-app \
   vpn/netbird-config; do
@@ -21,6 +26,7 @@ db_password="$(openssl rand -hex 32)"
 relay_secret="$(openssl rand -base64 32 | tr -d '=')"
 encryption_key="$(openssl rand -base64 32)"
 owner_password="$(openssl rand -hex 20)"
+owner_password_hash="$(printf '%s\n' "$owner_password" | htpasswd -niBC 12 netbird-owner | cut -d: -f2-)"
 
 kubectl -n identity create secret generic netbird-postgres-app \
   --type=kubernetes.io/basic-auth \
@@ -52,7 +58,7 @@ config="$(printf '%s\n' \
   '      - "http://localhost:53000/"' \
   '    owner:' \
   '      email: "avyaroslavskiy@miem.hse.ru"' \
-  "      password: \"$owner_password\"" \
+  "      password: \"$owner_password_hash\"" \
   '  reverseProxy:' \
   '    trustedHTTPProxies:' \
   '      - "10.244.0.0/16"' \
@@ -70,5 +76,5 @@ kubectl -n vpn create secret generic netbird-config \
   --from-literal=config.yaml="$config" \
   --from-literal=bootstrap-owner-password="$owner_password" >/dev/null
 
-unset config db_password relay_secret encryption_key owner_password
+unset config db_password relay_secret encryption_key owner_password owner_password_hash
 echo "NetBird secrets created. Values were not written to disk or stdout."

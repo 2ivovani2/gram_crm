@@ -55,6 +55,24 @@ This deliberately denies login to users who have not enrolled MFA. Provision
 new employees with a short-lived recovery or invitation flow so they can enroll
 before their first regular login.
 
+Create the confidential Authentik OIDC application used by NetBird with:
+
+```bash
+infra/kubernetes/apps/identity/configure-netbird-oidc.sh
+```
+
+The script is idempotent and stores generated client credentials only in the
+`identity/netbird-authentik-oidc` Kubernetes Secret. Connect that provider to
+NetBird through its supported management API with:
+
+```bash
+infra/kubernetes/apps/vpn/connect-authentik.sh
+```
+
+The external callback is pinned to `https://vpn.gramly.tech/oauth2/callback`.
+Local NetBird authentication deliberately remains available until an
+administrator has completed a real SSO login; disable it only after that test.
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash
