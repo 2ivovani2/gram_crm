@@ -76,6 +76,13 @@ remain subject to explicit administrator approval.
 Local NetBird authentication deliberately remains available until an
 administrator has completed a real SSO login; disable it only after that test.
 
+After the administrator confirms a successful SSO login, retire local NetBird
+authentication and its reusable bootstrap credential with:
+
+```bash
+infra/kubernetes/apps/vpn/harden-authentication.sh
+```
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash
