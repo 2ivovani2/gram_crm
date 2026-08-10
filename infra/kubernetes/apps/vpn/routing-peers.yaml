@@ -1,0 +1,116 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: netbird-routing-peer
+  namespace: vpn
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netbird-routing-peer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbird-routing-peer
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: netbird-routing-peer
+    app.kubernetes.io/part-of: gramly-vpn
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netbird-routing-peer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netbird-routing-peer
+        app.kubernetes.io/part-of: gramly-vpn
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: netbird-routing-peer
+      containers:
+        - name: netbird
+          image: NETBIRD_CLIENT_IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NB_MANAGEMENT_URL
+              value: https://vpn.gramly.tech
+            - name: NB_SETUP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: netbird-routing-peer
+                  key: setup-key
+            - name: NB_LOG_LEVEL
+              value: info
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+                - SYS_RESOURCE
+          startupProbe:
+            exec:
+              command:
+                - netbird
+                - status
+                - --check
+                - startup
+            periodSeconds: 2
+            timeoutSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - netbird
+                - status
+                - --check
+                - ready
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - netbird
+                - status
+                - --check
+                - live
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/netbird
+      volumes:
+        - name: state
+          emptyDir: {}

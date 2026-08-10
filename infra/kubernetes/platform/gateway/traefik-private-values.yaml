@@ -42,6 +42,9 @@ gatewayClass:
 service:
   spec:
     type: ClusterIP
+    # This address is published only through the NetBird private resource.
+    # Pinning it keeps internal DNS stable across Helm reconciliations.
+    clusterIP: 10.99.132.82
 
 log:
   level: INFO

@@ -83,6 +83,21 @@ authentication and its reusable bootstrap credential with:
 infra/kubernetes/apps/vpn/harden-authentication.sh
 ```
 
+For private Kubernetes ingress, create a reusable, ephemeral NetBird setup key
+with a usage limit of at least two and auto-assign group
+`gramly-cluster-routers`. Store it without echoing it or committing it:
+
+```bash
+infra/kubernetes/apps/vpn/create-routing-peer-secret.sh
+infra/kubernetes/scripts/deploy-routing-peers.sh
+```
+
+The two routing peers run on separate nodes when possible. In NetBird, create a
+Network resource for the pinned private ingress address `10.99.132.82/32`, use
+`gramly-cluster-routers` as its routing-peer group, and grant access only to the
+employee device group. The host route is intentionally narrower than common
+corporate VPN routes covering `10.0.0.0/8`.
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash

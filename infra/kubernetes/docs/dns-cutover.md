@@ -31,6 +31,10 @@ DNS and resolve only for enrolled devices:
 - `argocd.gramly.tech`
 - `grafana.gramly.tech`
 
+They resolve to the pinned private ingress address `10.99.132.82`, distributed
+through the NetBird `gramly-cluster` Network as a `/32` resource. Do not point
+these names to the public VKE Load Balancer.
+
 Public `A` records for private services are removed only after VPN access has
 been tested from at least two administrator devices. They are never pointed at
 the public VKE load balancer.
