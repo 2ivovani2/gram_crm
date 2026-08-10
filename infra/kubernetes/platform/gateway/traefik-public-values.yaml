@@ -37,6 +37,14 @@ gatewayClass:
   labels:
     gramly.tech/controller: public
 
+ports:
+  netbird-stun:
+    port: 3478
+    expose:
+      default: true
+    exposedPort: 3478
+    protocol: UDP
+
 service:
   spec:
     type: LoadBalancer

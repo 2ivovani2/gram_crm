@@ -50,6 +50,8 @@ Run the bootstrap script only after reviewing its rendered Helm output:
 export KUBECONFIG="/absolute/path/to/downloaded-vke-kubeconfig.yaml"
 infra/kubernetes/scripts/preflight.sh
 infra/kubernetes/scripts/bootstrap-platform.sh
+infra/kubernetes/scripts/bootstrap-identity.sh
+infra/kubernetes/scripts/bootstrap-vpn.sh
 ```
 
 The old VPS and its production database remain untouched throughout bootstrap.
@@ -65,6 +67,17 @@ infra/kubernetes/scripts/enable-public-tls.sh
 The script refuses to contact ACME while authoritative DNS is missing or points
 at another server. This avoids serving a certificate on the wrong endpoint and
 unnecessary Let's Encrypt failures.
+
+NetBird uses its own PostgreSQL database and role in the highly available
+CloudNativePG cluster. Its dashboard has two replicas; the combined control
+server uses a retained PVC for embedded-identity bootstrap state and PostgreSQL
+for management data and activity events. TCP 80/443 and UDP 3478 share the
+public Vultr Load Balancer. UDP is routed with Traefik's stable
+`IngressRouteUDP`, while HTTP and HTTPS use Gateway API.
+
+The embedded NetBird identity is bootstrap-only. After the first Authentik
+administrator has set a private password and enrolled MFA, add Authentik as the
+external NetBird IdP, verify a fresh login, and disable NetBird local auth.
 
 ## DNS policy
 

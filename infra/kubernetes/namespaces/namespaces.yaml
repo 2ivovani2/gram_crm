@@ -1,6 +1,20 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: traefik-public
+  labels:
+    gramly.tech/contour: public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik-private
+  labels:
+    gramly.tech/contour: private
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: identity
   labels:
     gramly.tech/contour: public

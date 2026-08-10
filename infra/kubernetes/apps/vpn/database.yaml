@@ -1,0 +1,25 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: netbird
+  namespace: identity
+spec:
+  name: netbird
+  cluster:
+    name: identity-postgres
+  login: true
+  superuser: false
+  passwordSecret:
+    name: netbird-postgres-app
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: identity-postgres-netbird
+  namespace: identity
+spec:
+  name: netbird
+  owner: netbird
+  cluster:
+    name: identity-postgres

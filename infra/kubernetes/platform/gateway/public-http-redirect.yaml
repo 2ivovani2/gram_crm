@@ -10,7 +10,6 @@ spec:
   hostnames:
     - auth.gramly.tech
     - vpn.gramly.tech
-    - hello.gramly.tech
   rules:
     - filters:
         - type: RequestRedirect
