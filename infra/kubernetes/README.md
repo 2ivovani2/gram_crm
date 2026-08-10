@@ -70,6 +70,9 @@ infra/kubernetes/apps/vpn/connect-authentik.sh
 ```
 
 The external callback is pinned to `https://vpn.gramly.tech/oauth2/callback`.
+The connection script also approves and grants the NetBird admin role only to
+the configured bootstrap owner's matching SSO identity. Other new employees
+remain subject to explicit administrator approval.
 Local NetBird authentication deliberately remains available until an
 administrator has completed a real SSO login; disable it only after that test.
 

@@ -96,5 +96,45 @@ if ! jq -e '.[] | select(.issuer == "https://auth.gramly.tech/application/o/netb
   fi
 fi
 
-unset owner_password client_secret access_token token_response code verifier
-echo "Authentik is connected to NetBird through the supported management API."
+http_status="$(curl -sS --config "${task_tmp}/curl.conf" --output "${task_tmp}/users.json" \
+  --write-out '%{http_code}' 'https://vpn.gramly.tech/api/users')"
+if [[ "${http_status}" != "200" ]]; then
+  echo "Unable to list NetBird users (HTTP ${http_status})." >&2
+  exit 1
+fi
+
+pending_user_id="$(jq -r --arg email "${owner_email}" \
+  '.[] | select(.email == $email and .pending_approval == true) | .id' \
+  "${task_tmp}/users.json" | head -1)"
+if [[ -n "${pending_user_id}" ]]; then
+  http_status="$(curl -sS --config "${task_tmp}/curl.conf" --output "${task_tmp}/approved-user.json" \
+    --write-out '%{http_code}' --request POST \
+    "https://vpn.gramly.tech/api/users/${pending_user_id}/approve")"
+  if [[ "${http_status}" != "200" ]]; then
+    echo "Unable to approve the NetBird SSO owner (HTTP ${http_status})." >&2
+    exit 1
+  fi
+
+  jq '{role:"admin",auto_groups:(.auto_groups // []),is_blocked:false}' \
+    "${task_tmp}/approved-user.json" >"${task_tmp}/owner-role.json"
+  http_status="$(curl -sS --config "${task_tmp}/curl.conf" --output "${task_tmp}/admin-user.json" \
+    --write-out '%{http_code}' --request PUT --data-binary "@${task_tmp}/owner-role.json" \
+    "https://vpn.gramly.tech/api/users/${pending_user_id}")"
+  if [[ "${http_status}" != "200" ]]; then
+    echo "The NetBird SSO owner was approved but could not be promoted to admin (HTTP ${http_status})." >&2
+    exit 1
+  fi
+fi
+
+http_status="$(curl -sS --config "${task_tmp}/curl.conf" --output "${task_tmp}/verified-users.json" \
+  --write-out '%{http_code}' 'https://vpn.gramly.tech/api/users')"
+if [[ "${http_status}" != "200" ]] || \
+  ! jq -e --arg email "${owner_email}" \
+    '.[] | select(.email == $email and .pending_approval == false and .role == "admin" and .idp_id != null)' \
+    "${task_tmp}/verified-users.json" >/dev/null; then
+  echo "The NetBird SSO owner did not pass the final approval and admin-role check." >&2
+  exit 1
+fi
+
+unset owner_password client_secret access_token token_response code verifier pending_user_id
+echo "Authentik is connected to NetBird; the SSO owner is approved and has the admin role."
