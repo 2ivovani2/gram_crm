@@ -44,6 +44,17 @@ its generated password. Once public TLS is healthy, issue a one-time recovery
 link, let the user choose a password, enroll MFA, disable the `akadmin`
 break-glass account, and remove bootstrap credentials from the runtime Secret.
 
+After the administrator has confirmed password and TOTP enrollment, enforce MFA
+and retire bootstrap access with:
+
+```bash
+infra/kubernetes/apps/identity/harden-authentication.sh
+```
+
+This deliberately denies login to users who have not enrolled MFA. Provision
+new employees with a short-lived recovery or invitation flow so they can enroll
+before their first regular login.
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash
