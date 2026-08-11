@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: outline-files
+  namespace: devtools
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: vultr-block-storage-retain
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: outline-valkey-data
+  namespace: devtools
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: vultr-block-storage-retain
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline-valkey
+  namespace: devtools
+  labels:
+    app.kubernetes.io/name: outline-valkey
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: outline-valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: outline-valkey
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: VALKEY_IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          command: ["valkey-server", "/etc/valkey/valkey.conf"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            tcpSocket: {port: redis}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: redis}
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - {name: config, mountPath: /etc/valkey/valkey.conf, subPath: valkey.conf, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: config
+          secret: {secretName: outline-valkey-config}
+        - name: data
+          persistentVolumeClaim: {claimName: outline-valkey-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: outline-valkey
+  namespace: devtools
+spec:
+  selector:
+    app.kubernetes.io/name: outline-valkey
+  ports:
+    - {name: redis, port: 6379, targetPort: redis}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: devtools
+  labels:
+    app.kubernetes.io/name: outline
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: outline
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: outline
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: OUTLINE_IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          command: ["npm", "run", "db:migrate", "--", "--env", "production"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - secretRef: {name: outline-runtime}
+            - secretRef: {name: outline-oidc}
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: URL, value: "https://docs.gramly.tech"}
+            - {name: PGSSLMODE, value: disable}
+      containers:
+        - name: outline
+          image: OUTLINE_IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - secretRef: {name: outline-runtime}
+            - secretRef: {name: outline-oidc}
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: URL, value: "https://docs.gramly.tech"}
+            - {name: PORT, value: "3000"}
+            - {name: WEB_CONCURRENCY, value: "1"}
+            - {name: DEFAULT_LANGUAGE, value: en_US}
+            - {name: PGSSLMODE, value: disable}
+            - {name: DATABASE_CONNECTION_POOL_MIN, value: "1"}
+            - {name: DATABASE_CONNECTION_POOL_MAX, value: "10"}
+            - {name: FILE_STORAGE, value: local}
+            - {name: FILE_STORAGE_LOCAL_ROOT_DIR, value: /var/lib/outline/data}
+            - {name: FILE_STORAGE_UPLOAD_MAX_SIZE, value: "262144000"}
+            - {name: FORCE_HTTPS, value: "true"}
+            - {name: PROXY_HEADERS_TRUSTED, value: "true"}
+            - {name: OIDC_AUTH_URI, value: "https://auth.gramly.tech/application/o/authorize/"}
+            - {name: OIDC_TOKEN_URI, value: "https://auth.gramly.tech/application/o/token/"}
+            - {name: OIDC_USERINFO_URI, value: "https://auth.gramly.tech/application/o/userinfo/"}
+            - {name: OIDC_LOGOUT_URI, value: "https://auth.gramly.tech/application/o/outline/end-session/"}
+            - {name: OIDC_USERNAME_CLAIM, value: preferred_username}
+            - {name: OIDC_DISPLAY_NAME, value: Gramly}
+            - {name: OIDC_SCOPES, value: "openid profile email"}
+            - {name: ENABLE_UPDATES, value: "false"}
+            - {name: LOG_LEVEL, value: info}
+          ports:
+            - name: http
+              containerPort: 3000
+          startupProbe:
+            httpGet: {path: /_health, port: http}
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /_health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /_health, port: http}
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          volumeMounts:
+            - {name: files, mountPath: /var/lib/outline/data}
+      volumes:
+        - name: files
+          persistentVolumeClaim: {claimName: outline-files}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: outline
+  namespace: devtools
+spec:
+  selector:
+    app.kubernetes.io/name: outline
+  ports:
+    - {name: http, port: 3000, targetPort: http}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: outline
+  namespace: devtools
+spec:
+  parentRefs:
+    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: http}
+    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: docs-https}
+  hostnames: [docs.gramly.tech]
+  rules:
+    - backendRefs:
+        - {name: outline, port: 3000}

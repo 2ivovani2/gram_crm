@@ -31,13 +31,15 @@ DNS and resolve only for enrolled devices:
 - `argocd.gramly.tech`
 - `grafana.gramly.tech`
 
-They resolve to the pinned private ingress address `10.99.132.82`, distributed
-through the NetBird `gramly-cluster` Network as a `/32` resource. Do not point
-these names to the public VKE Load Balancer.
+Enrolled devices resolve these names through NetBird split DNS. Business apps
+use `10.99.132.83`; collaboration apps use `10.99.132.84`; infrastructure apps
+use `10.99.132.82`. Each address is distributed through a dedicated NetBird
+Network resource.
 
-Public `A` records for private services are removed only after VPN access has
-been tested from at least two administrator devices. They are never pointed at
-the public VKE load balancer.
+Public `A` records may point at `45.77.149.91` solely so cert-manager can renew
+HTTP-01 certificates. The public Gateway has no application route for these
+hostnames and must return `404`; NetBird split DNS overrides the public record
+for enrolled devices and sends application traffic to the private ingress.
 
 ## Phase 3: Hello public cutover
 

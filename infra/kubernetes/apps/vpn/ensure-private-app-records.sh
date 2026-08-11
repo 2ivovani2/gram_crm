@@ -27,7 +27,8 @@ zone_id="$(curl --config "${curl_config}" "${api_url}/dns/zones" | \
 
 desired_records='[
   {"name":"git.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
-  {"name":"tasks.gramly.tech","type":"A","content":"10.99.132.84","ttl":300}
+  {"name":"tasks.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
+  {"name":"docs.gramly.tech","type":"A","content":"10.99.132.84","ttl":300}
 ]'
 curl --config "${curl_config}" "${api_url}/dns/zones/${zone_id}/records" \
   >"${task_tmp}/records.json"
