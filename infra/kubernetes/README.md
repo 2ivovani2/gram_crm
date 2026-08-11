@@ -10,10 +10,10 @@ database passwords, or DNS API keys.
 
 There are two independent traffic planes:
 
-- `public`: a Vultr Load Balancer serving only `hello.gramly.tech`,
-  `auth.gramly.tech`, and `vpn.gramly.tech`;
-- `private`: a ClusterIP-only gateway for CRM, Forgejo, Plane, Outline, Argo CD,
-  and observability. It is reachable through NetBird only.
+- `public`: a Vultr Load Balancer serving identity/VPN, the Gramly landing and
+  Telegram webhooks, and the signed-media S3 endpoint;
+- `private`: separate ClusterIP-only business and collaboration gateways for
+  CRM, Forgejo, Vikunja, and Outline. They are reachable through NetBird only.
 
 Authentik is the shared OIDC identity provider. NetBird provides the WireGuard
 VPN and uses the same Authentik identities. Application authorization remains
@@ -205,8 +205,23 @@ infra/kubernetes/scripts/bootstrap-identity.sh
 infra/kubernetes/scripts/bootstrap-vpn.sh
 ```
 
-The old VPS and its production database remain untouched throughout bootstrap.
-They are retained as the rollback target for at least 14 days after cutover.
+The old VPS remains untouched throughout bootstrap. After cutover its CRM web,
+worker, beat, and nginx containers stay stopped, while PostgreSQL and MinIO are
+retained as a read-only rollback target for at least 14 days. The final source
+dump is retained on the VPS as `/root/gramly-crm-final-20260812.dump`.
+
+## Production cutover state
+
+The CRM production cutover completed on 2026-08-12. The final PostgreSQL dump
+was restored before migrations were applied, all 19 MinIO objects were mirrored
+and verified, and only then were the Kubernetes web, worker, and beat workloads
+started. The standalone `question_bot` on the old VPS is outside this migration
+and remains running.
+
+During authoritative DNS propagation, `gramly-cutover-bridge` on the old VPS
+forwards TCP 80/443 to the VKE public Load Balancer. Keep it until recursive DNS
+caches no longer return the old IP; removing it does not authorize deleting the
+old database, MinIO volume, or final dump.
 
 Once the authoritative `auth` and `vpn` records both point to `45.77.149.91`,
 enable the public Gateway and certificates:
@@ -235,11 +250,16 @@ external NetBird IdP, verify a fresh login, and disable NetBird local auth.
 Public DNS records are changed only after the public gateway, TLS, Authentik,
 NetBird, and Hello staging endpoint have passed smoke tests.
 
-Public records:
+Publicly served records:
 
+- `gramly.tech`
+- `www.gramly.tech`
 - `hello.gramly.tech`
+- `media.gramly.tech`
 - `auth.gramly.tech`
 - `vpn.gramly.tech`
 
-Private names (`crm`, `git`, `tasks`, `docs`, `argocd`, `grafana`) are served by
-NetBird split DNS and are not pointed at the public load balancer.
+Private application names (`crm`, `git`, `tasks`, `docs`) also have public A
+records pointing at the Load Balancer for DNS ownership and certificate flows,
+but the public Gateway has no application routes for them. NetBird split DNS
+overrides those records with the private business/collaboration Gateway IPs.
