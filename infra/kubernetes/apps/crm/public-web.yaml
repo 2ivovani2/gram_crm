@@ -72,7 +72,8 @@ spec:
     - {name: gramly-public, namespace: traefik-public, sectionName: http}
     - {name: gramly-public, namespace: traefik-public, sectionName: gramly-https}
     - {name: gramly-public, namespace: traefik-public, sectionName: www-https}
-  hostnames: [gramly.tech, www.gramly.tech]
+    - {name: gramly-public, namespace: traefik-public, sectionName: hello-https}
+  hostnames: [gramly.tech, www.gramly.tech, hello.gramly.tech]
   rules:
     - matches:
         - {path: {type: Exact, value: /}}

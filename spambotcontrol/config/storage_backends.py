@@ -8,19 +8,17 @@ Architecture
           Django connects via internal Docker hostname; browser needs the public one.
           MEDIA_S3_PUBLIC_URL=http://localhost:9000 rewrites the internal host in URLs.
 
-  Prod → MinIO container (docker-compose.yml, http://minio:9000 internal only).
-          Bucket policy: public-read. No signed URLs (MEDIA_QUERYSTRING_AUTH=false).
-          Port 9000 is NOT exposed on host. Files are served via nginx at /s3/:
-            nginx: https://gramly.tech/s3/* → http://minio:9000/*
-          MEDIA_S3_PUBLIC_URL=https://gramly.tech/s3 rewrites internal Docker hostname.
+  Prod → private S3-compatible storage. Objects use short-lived signed URLs.
+          In Kubernetes, https://media.gramly.tech is the S3 API endpoint and
+          Gateway API forwards only that hostname to the private MinIO service.
 
 Both environments use the same backend class. Only env vars differ.
 
 Required env vars (set in .env):
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_STORAGE_BUCKET_NAME
-  AWS_S3_ENDPOINT_URL=http://minio:9000
-  MEDIA_S3_PUBLIC_URL        dev: http://localhost:9000  prod: https://gramly.tech/s3
-  MEDIA_QUERYSTRING_AUTH=false  (public bucket, no signed URLs needed)
+  AWS_S3_ENDPOINT_URL        dev: http://minio:9000  prod: https://media.gramly.tech
+  MEDIA_S3_PUBLIC_URL        dev: http://localhost:9000  prod: empty
+  MEDIA_QUERYSTRING_AUTH     dev: false  prod: true
 """
 from __future__ import annotations
 

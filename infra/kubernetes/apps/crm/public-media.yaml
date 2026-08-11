@@ -1,0 +1,33 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-public-media-route
+  namespace: gramly-crm
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: gramly-hello
+  to:
+    - group: ""
+      kind: Service
+      name: gramly-crm-minio
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gramly-public-media
+  namespace: gramly-hello
+spec:
+  parentRefs:
+    - name: gramly-public
+      namespace: traefik-public
+      sectionName: media-https
+  hostnames: [media.gramly.tech]
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: gramly-crm-minio
+          namespace: gramly-crm
+          port: 9000
