@@ -8,6 +8,7 @@ spec:
     metadata: {labels: {app.kubernetes.io/name: gramly-crm-worker}}
     spec:
       automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-crm-registry}]
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: worker
@@ -30,6 +31,7 @@ spec:
     metadata: {labels: {app.kubernetes.io/name: gramly-crm-beat}}
     spec:
       automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-crm-registry}]
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: beat

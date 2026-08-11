@@ -9,6 +9,7 @@ spec:
     metadata: {labels: {app.kubernetes.io/name: gramly-crm-web}}
     spec:
       automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-crm-registry}]
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       initContainers:
         - name: collect-static
@@ -26,12 +27,22 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           ports: [{name: http, containerPort: 8000}]
           startupProbe: &probe
-            httpGet: {path: /health/, port: http, httpHeaders: [{name: Host, value: crm.gramly.tech}]}
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders:
+                - {name: Host, value: crm.gramly.tech}
+                - {name: X-Forwarded-Proto, value: https}
             failureThreshold: 30
             periodSeconds: 5
           readinessProbe: *probe
           livenessProbe:
-            httpGet: {path: /health/, port: http, httpHeaders: [{name: Host, value: crm.gramly.tech}]}
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders:
+                - {name: Host, value: crm.gramly.tech}
+                - {name: X-Forwarded-Proto, value: https}
             periodSeconds: 30
           resources:
             requests: {cpu: 200m, memory: 256Mi}
