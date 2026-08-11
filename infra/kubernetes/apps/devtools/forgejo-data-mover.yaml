@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: forgejo-data-mover
+  namespace: devtools
+  labels:
+    app.kubernetes.io/name: forgejo
+    app.kubernetes.io/component: migration
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: mover
+      image: FORGEJO_IMAGE_PLACEHOLDER
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - sleep 86400
+      securityContext:
+        allowPrivilegeEscalation: false
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: forgejo-data

@@ -171,6 +171,17 @@ The target deliberately remains at zero replicas. Copying the old `/data`,
 validating its SQLite database, and switching `git.gramly.tech` are separate
 maintenance steps so the source remains the rollback target.
 
+After approving a brief Forgejo outage, rehearse a consistent data copy with:
+
+```bash
+CONFIRM_FORGEJO_DOWNTIME=true \
+  infra/kubernetes/scripts/rehearse-forgejo-data-copy.sh
+```
+
+The script refuses a non-empty target, always restarts the source through an
+exit trap, runs Forgejo's default doctor checks plus strict Git object checks
+against the copied data, and leaves the target deployment stopped.
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash
