@@ -1,0 +1,17 @@
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: traefik-private
+  namespace: traefik-private
+  labels:
+    app.kubernetes.io/part-of: gramly-private-ingress
+spec:
+  networkRouterRef:
+    name: gramly-private
+    namespace: vpn
+  serviceRef:
+    name: traefik-private
+  groups:
+    # Bootstrap smoke-test destination. Employee-facing applications receive
+    # their own resources and narrower groups during migration.
+    - name: gramly-private-services

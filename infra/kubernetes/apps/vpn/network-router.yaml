@@ -1,0 +1,28 @@
+apiVersion: netbird.io/v1alpha1
+kind: NetworkRouter
+metadata:
+  name: gramly-private
+  namespace: vpn
+  labels:
+    app.kubernetes.io/part-of: gramly-vpn
+spec:
+  dnsZoneRef:
+    name: gramly.tech
+  image: NETBIRD_ROUTING_IMAGE_PLACEHOLDER
+  logLevel: info
+  workloadOverride:
+    # One routing peer per VKE node gives node-level failover. The operator
+    # creates the matching PDB and spreads replicas across nodes.
+    replicas: 3
+    labels:
+      app.kubernetes.io/part-of: gramly-vpn
+    podTemplate:
+      spec:
+        containers:
+          - name: netbird
+            env:
+              # Operator 0.8.0 starts the daemon before invoking `netbird up`.
+              # Client 0.76 rejects the initial setup-key configuration when
+              # update settings are disabled, leaving the pod unregistered.
+              - name: NB_DISABLE_UPDATE_SETTINGS
+                value: "false"

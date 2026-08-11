@@ -83,28 +83,11 @@ authentication and its reusable bootstrap credential with:
 infra/kubernetes/apps/vpn/harden-authentication.sh
 ```
 
-For private Kubernetes ingress, create a reusable, ephemeral NetBird setup key
-with a usage limit of at least two and auto-assign group
-`gramly-cluster-routers`. Store it without echoing it or committing it:
-
-```bash
-infra/kubernetes/apps/vpn/create-routing-peer-secret.sh
-infra/kubernetes/scripts/deploy-routing-peers.sh
-```
-
-The two routing peers run on separate nodes when possible. In NetBird, create a
-Network resource for the pinned private ingress address `10.99.132.82/32`, use
-`gramly-cluster-routers` as its routing-peer group, and grant access only to the
-employee device group. The host route is intentionally narrower than common
-corporate VPN routes covering `10.0.0.0/8`.
-
-The hand-managed routing peers are bootstrap-only. VKE does not allow the
-pod-level `net.ipv4.ip_forward` sysctl they require, so application migration
-uses the official NetBird Kubernetes Operator and one `NetworkResource` per
-service. This also keeps employee-facing and DevOps-only resources in separate
-NetBird destination groups instead of granting both through one shared ingress
-IP. Install the operator after storing its service-user PAT in the
-`vpn/netbird-mgmt-api-key` Secret:
+Private application access uses the official NetBird Kubernetes Operator and
+one `NetworkResource` per service. This keeps employee-facing and DevOps-only
+resources in separate NetBird destination groups instead of granting both
+through one shared ingress IP. Install the operator after storing its service
+user PAT in the `vpn/netbird-mgmt-api-key` Secret:
 
 ```bash
 infra/kubernetes/scripts/deploy-netbird-operator.sh
@@ -135,6 +118,38 @@ are split between `gramly-business-services`,
 `gramly-collaboration-services`, and `gramly-devops-services`. Product and
 repository permissions remain application-level roles; membership in a VPN
 group only makes the corresponding endpoint reachable.
+
+Reconcile the corresponding least-privilege HTTPS policies with:
+
+```bash
+infra/kubernetes/apps/vpn/ensure-access-policies.sh
+```
+
+Employees and application roles can reach business and collaboration services.
+Only the `gramly-devops` and `gramly-owners` groups can reach infrastructure
+administration services. The script does not assign users or devices to roles.
+It keeps the permissive bootstrap `Default` policy unless an approved
+maintenance run explicitly sets `REMOVE_DEFAULT_POLICY=true`; even then, it
+removes the policy only when it matches NetBird's exact All-to-All shape.
+
+Create or reconcile the split-DNS zone used by private application resources:
+
+```bash
+infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh
+```
+
+The zone reuses `gramly.tech`, but NetBird answers only for records explicitly
+present in the zone. Public names such as `auth`, `vpn`, and `hello` continue to
+fall through to authoritative public DNS.
+
+Deploy the operator-managed, three-node private router after the zone exists:
+
+```bash
+infra/kubernetes/scripts/deploy-private-network.sh
+```
+
+Application `NetworkResource` objects are added separately so each service can
+be assigned to the business, collaboration, or DevOps destination group.
 
 Run the bootstrap script only after reviewing its rendered Helm output:
 
