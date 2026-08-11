@@ -1,0 +1,38 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: vikunja-postgres
+  namespace: devtools
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.10-standard-trixie@sha256:78c4fdf165e8ffb1b5b7a7fc6b22b3cf37890a338b4c1c8c4d913896129a86da
+  primaryUpdateStrategy: unsupervised
+  bootstrap:
+    initdb:
+      database: vikunja
+      owner: vikunja
+      secret:
+        name: vikunja-postgres-app
+      encoding: UTF8
+  storage:
+    storageClass: vultr-block-storage-retain
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 750m
+      memory: 768Mi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: 128MB
+      log_min_duration_statement: "1000"
+  monitoring:
+    enablePodMonitor: false
+  enableSuperuserAccess: false

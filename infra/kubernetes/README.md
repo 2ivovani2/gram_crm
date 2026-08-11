@@ -188,6 +188,13 @@ records with:
 infra/kubernetes/apps/vpn/ensure-private-app-records.sh
 ```
 
+Vikunja provides the internal task and Kanban service because its open edition
+supports Authentik OIDC and disabling local authentication. Deploy it with:
+
+```bash
+infra/kubernetes/scripts/deploy-vikunja.sh
+```
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash
