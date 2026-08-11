@@ -98,6 +98,44 @@ Network resource for the pinned private ingress address `10.99.132.82/32`, use
 employee device group. The host route is intentionally narrower than common
 corporate VPN routes covering `10.0.0.0/8`.
 
+The hand-managed routing peers are bootstrap-only. VKE does not allow the
+pod-level `net.ipv4.ip_forward` sysctl they require, so application migration
+uses the official NetBird Kubernetes Operator and one `NetworkResource` per
+service. This also keeps employee-facing and DevOps-only resources in separate
+NetBird destination groups instead of granting both through one shared ingress
+IP. Install the operator after storing its service-user PAT in the
+`vpn/netbird-mgmt-api-key` Secret:
+
+```bash
+infra/kubernetes/scripts/deploy-netbird-operator.sh
+```
+
+The operator is configured for the self-hosted management endpoint and is not
+allowed to read arbitrary workload Secrets.
+
+If an operator PAT is disclosed, rotate it without printing the replacement:
+
+```bash
+infra/kubernetes/apps/vpn/rotate-operator-token.sh
+```
+
+The replacement defaults to a 90-day lifetime, restarts the operator, verifies
+the rollout, and revokes the previous service-user PATs.
+
+Create the empty identity and destination groups before attaching users,
+devices, resources, or policies:
+
+```bash
+infra/kubernetes/apps/vpn/ensure-access-groups.sh
+```
+
+The intended source roles are `gramly-employees`, `gramly-product`,
+`gramly-engineering`, `gramly-devops`, and `gramly-owners`. Destination services
+are split between `gramly-business-services`,
+`gramly-collaboration-services`, and `gramly-devops-services`. Product and
+repository permissions remain application-level roles; membership in a VPN
+group only makes the corresponding endpoint reachable.
+
 Run the bootstrap script only after reviewing its rendered Helm output:
 
 ```bash

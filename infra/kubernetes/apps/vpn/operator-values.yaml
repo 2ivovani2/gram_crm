@@ -1,0 +1,47 @@
+# The operator manages only the private application networking plane. The
+# NetBird control plane itself remains managed by apps/vpn/netbird.yaml.
+managementURL: https://vpn.gramly.tech
+
+cluster:
+  name: gramly-cluster
+  dns: svc.cluster.local
+
+netbirdAPI:
+  keyFromSecret:
+    name: netbird-mgmt-api-key
+    key: NB_API_KEY
+
+# Reading arbitrary workload Secrets is not required for NetworkRouter and
+# NetworkResource resources. Keep this disabled unless a reviewed use case
+# explicitly needs NBSetupKey validation or legacy ingress annotations.
+clusterSecretsPermissions:
+  allowAllSecrets: false
+
+operator:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: operator
+
+webhook:
+  enableCertManager: true
+  failurePolicy: Fail
+
+ingress:
+  enabled: false
+
+gatewayAPI:
+  enabled: false
