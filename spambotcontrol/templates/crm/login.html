@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Вход — Gramly CRM</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --void:    #07080A;
-  --ink:     #0B0C0F;
-  --ink-2:   #111317;
-  --ink-3:   #1A1D24;
+  --void:    #080A12;
+  --ink:     #0D101C;
+  --ink-2:   #14182A;
+  --ink-3:   #1B2138;
   --paper:   #FAFAFB;
   --muted:   rgba(250,250,251,.58);
   --muted-2: rgba(250,250,251,.38);
@@ -20,18 +20,18 @@
   --line:    rgba(250,250,251,.08);
   --line-hi: rgba(250,250,251,.18);
 
-  --brass:      #FFB84D;
-  --brass-soft: #FFD485;
-  --brass-glow: rgba(255,184,77,.32);
+  --brass:      #5B8CFF;
+  --brass-soft: #B9CAFF;
+  --brass-glow: rgba(91,140,255,.36);
 
-  --live:      #7CE2FF;
-  --live-soft: rgba(124,226,255,.18);
-  --ok:        #4ADE80;
+  --live:      #A991FF;
+  --live-soft: rgba(169,145,255,.16);
+  --ok:        #7CF3D0;
   --err:       #FF6B6B;
   --err-soft:  rgba(255,107,107,.12);
 
-  --display: 'Space Grotesk', system-ui, sans-serif;
-  --sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --display: 'Manrope', system-ui, sans-serif;
+  --sans:    'Onest', system-ui, -apple-system, sans-serif;
   --mono:    'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
 }
 body {
@@ -51,15 +51,16 @@ body::before {
   background-image:
     linear-gradient(rgba(250,250,251,.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(250,250,251,.04) 1px, transparent 1px);
-  background-size: 80px 80px;
+  background-image: radial-gradient(rgba(255,255,255,.12) .7px, transparent .7px);
+  background-size: 24px 24px;
   mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
   -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 80%);
 }
 body::after {
   content: ''; position: fixed; inset: -10%; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(ellipse 50% 40% at 20% 30%, rgba(255,184,77,.18) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 40% at 80% 70%, rgba(124,226,255,.10) 0%, transparent 60%);
+    radial-gradient(ellipse 50% 40% at 18% 25%, rgba(91,140,255,.22) 0%, transparent 62%),
+    radial-gradient(ellipse 50% 40% at 82% 72%, rgba(133,108,255,.16) 0%, transparent 62%);
   filter: blur(40px);
   animation: orb 22s ease-in-out infinite alternate;
 }
@@ -88,8 +89,8 @@ body::after {
   color: var(--paper);
 }
 .top-bar .brand-mini .g {
-  width: 18px; height: 18px; border-radius: 4px;
-  background: var(--brass); position: relative;
+  width: 21px; height: 21px; border-radius: 7px;
+  background: linear-gradient(135deg, #62A0FF, #795DFF); position: relative;
   box-shadow: 0 0 12px var(--brass-glow);
 }
 .top-bar .brand-mini .g::before {
@@ -115,32 +116,46 @@ body::after {
 /* ── Login card ──────────────────────────────────────────── */
 .shell {
   position: relative; z-index: 1;
-  width: 100%; max-width: 480px;
+  width: 100%; max-width: 510px;
+}
+.shell::before, .shell::after {
+  content: ''; position: absolute; z-index: -1; border-radius: 26px;
+  border: 1px solid rgba(255,255,255,.08); pointer-events: none;
+}
+.shell::before {
+  width: 180px; height: 180px; left: -94px; top: 55px;
+  background: linear-gradient(145deg, rgba(91,140,255,.18), rgba(91,140,255,.02));
+  transform: rotate(-17deg); box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+.shell::after {
+  width: 130px; height: 130px; right: -70px; bottom: 42px;
+  background: linear-gradient(145deg, rgba(133,108,255,.16), rgba(124,243,208,.03));
+  transform: rotate(21deg); box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
 }
 .card {
   position: relative; overflow: hidden;
-  background: rgba(11,12,15,.7);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  background: linear-gradient(145deg, rgba(24,29,49,.88), rgba(11,14,25,.87));
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 44px 40px 36px;
+  border-radius: 28px;
+  padding: 42px 42px 36px;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.05),
     0 32px 80px -20px rgba(0,0,0,.6),
-    0 16px 40px -16px var(--brass-glow);
+    0 16px 46px -18px var(--brass-glow);
   animation: cardIn .6s cubic-bezier(.2,.8,.3,1) both;
 }
 .card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent 20%, var(--brass) 50%, transparent 80%);
+  background: linear-gradient(90deg, transparent 10%, #7CF3D0 34%, #5B8CFF 60%, #856CFF 82%, transparent);
   pointer-events: none;
 }
 .card::after {
   content: ''; position: absolute; inset: -1px;
   pointer-events: none; border-radius: inherit;
   background: radial-gradient(500px circle at var(--mx,30%) var(--my,20%),
-              rgba(255,184,77,.10) 0%, transparent 40%);
+              rgba(91,140,255,.15) 0%, transparent 42%);
   opacity: 0; transition: opacity .5s;
 }
 .card:hover::after { opacity: 1; }
@@ -188,7 +203,11 @@ h1 {
   color: var(--paper);
   margin-bottom: 12px;
 }
-h1 .accent { color: var(--brass); }
+h1 .accent {
+  color: transparent;
+  background: linear-gradient(95deg, #7CF3D0, #91AEFF 52%, #A991FF);
+  background-clip: text; -webkit-background-clip: text;
+}
 .subtitle {
   font-family: var(--sans);
   font-size: 14.5px; font-weight: 400;
@@ -204,9 +223,9 @@ h1 .accent { color: var(--brass); }
   display: flex; justify-content: center;
   margin-bottom: 24px;
   padding: 28px 22px;
-  background: var(--ink-2);
+  background: rgba(7,10,19,.52);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 17px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
 }
 .tg-widget-wrap::before {
@@ -239,9 +258,9 @@ h1 .accent { color: var(--brass); }
 
 /* Steps */
 .steps {
-  background: var(--ink-2);
+  background: rgba(7,10,19,.45);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 17px;
   padding: 20px 22px;
   margin-bottom: 24px;
 }
@@ -340,9 +359,17 @@ h1 .accent { color: var(--brass); }
 @media (max-width: 540px) {
   .top-bar, .bottom-bar { padding: 14px 18px; font-size: 9.5px; }
   .top-bar .brand-mini span:last-child { display: none; }
-  .card { padding: 36px 26px 30px; border-radius: 14px; }
+  body { padding: 14px; overflow-y: auto; }
+  .card { padding: 34px 22px 28px; border-radius: 22px; }
   h1 { font-size: 34px; }
   .head-pill { font-size: 9px; }
+  .shell::before, .shell::after { display: none; }
+  .steps { padding: 18px 16px; }
+  .step { gap: 9px; font-size: 12.5px; }
+  .bottom-bar .l { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
 </style>
 </head>
@@ -366,7 +393,7 @@ h1 .accent { color: var(--brass); }
 
     <div class="card-head">
       <div class="head-stamp">
-        <span>auth_</span>
+        <span>workspace</span>
         <span class="n">01</span>
         <span class="sep">/</span>
         <span>02</span>
@@ -379,7 +406,7 @@ h1 .accent { color: var(--brass); }
 
     <h1>Войти<br>в <span class="accent">CRM.</span></h1>
     <p class="subtitle">
-      Авторизация через Telegram — без паролей и e-mail. Нажми кнопку, подтверди вход в мессенджере, и ты внутри.
+      Единая точка входа в рабочее пространство Gramly. Подтверди свою личность в Telegram — пароль не потребуется.
     </p>
 
     {% if error %}
@@ -403,7 +430,7 @@ h1 .accent { color: var(--brass); }
     <div class="steps">
       <div class="steps-head">
         <span class="label">Процесс входа</span>
-        <span class="stamp">~ 10 sec</span>
+        <span class="stamp">≈ 10 сек</span>
       </div>
       <div class="step">
         <span class="n">01</span>
@@ -436,7 +463,7 @@ h1 .accent { color: var(--brass); }
     <span class="ln"></span>
     <span>protocol_ hmac-sha256</span>
   </span>
-  <span>v 2.0 · 2025</span>
+  <span>Gramly workspace · 2026</span>
 </div>
 
 <script>

@@ -7,8 +7,12 @@ from django.db import connection
 class LandingView(View):
     def get(self, request, *args, **kwargs):
         from django.conf import settings
-        bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "")
-        return render(request, "landing.html", {"bot_username": bot_username})
+        bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "").lstrip("@")
+        welcome_bot_username = getattr(settings, "WELCOME_BOT_USERNAME", "").lstrip("@")
+        return render(request, "landing.html", {
+            "bot_username": bot_username,
+            "welcome_bot_username": welcome_bot_username,
+        })
 
 
 class HealthCheckView(View):

@@ -6,7 +6,7 @@
 <title>{% block title %}GRAMLY CRM{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -40,17 +40,17 @@
   --border-h:     rgba(255,184,77,.55);
 
   /* ── Brand accent — electric brass ──────────────────────────── */
-  --accent:       #FFB84D;
-  --accent-hi:    #FFD485;
-  --accent-soft:  rgba(255,184,77,.16);
-  --accent-tint:  rgba(255,184,77,.10);
-  --accent-ink:   #FFD485;
-  --accent-glow:  rgba(255,184,77,.32);
-  --gold:         #FFB84D;
-  --gold-dim:     rgba(255,184,77,.10);
-  --gold-glow:    rgba(255,184,77,.32);
-  --amber:        #FFD485;
-  --amber-dim:    rgba(255,212,133,.10);
+  --accent:       #5B8CFF;
+  --accent-hi:    #91AEFF;
+  --accent-soft:  rgba(91,140,255,.18);
+  --accent-tint:  rgba(91,140,255,.10);
+  --accent-ink:   #B9CAFF;
+  --accent-glow:  rgba(91,140,255,.34);
+  --gold:         #856CFF;
+  --gold-dim:     rgba(133,108,255,.10);
+  --gold-glow:    rgba(133,108,255,.30);
+  --amber:        #A991FF;
+  --amber-dim:    rgba(169,145,255,.10);
 
   /* ── Semantic ─────────────────────────────────────────────────── */
   --success:      #4ADE80;
@@ -58,8 +58,8 @@
   --success-line: rgba(74,222,128,.30);
   --green:        #4ADE80;
   --green-dim:    rgba(74,222,128,.12);
-  --warning:      #FFB84D;
-  --warning-soft: rgba(255,184,77,.14);
+  --warning:      #FFB45B;
+  --warning-soft: rgba(255,180,91,.14);
   --yellow:       #FFC65A;
   --yellow-dim:   rgba(255,198,90,.12);
   --danger:       #FF6B6B;
@@ -87,8 +87,8 @@
   --shadow-lg:    inset 0 1px 0 rgba(255,255,255,.04), 0 32px 70px -20px rgba(0,0,0,.6);
 
   /* Fonts */
-  --display: 'Space Grotesk', system-ui, sans-serif;
-  --sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --display: 'Manrope', system-ui, sans-serif;
+  --sans:    'Onest', system-ui, -apple-system, sans-serif;
   --mono:    'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
 }
 
@@ -845,6 +845,144 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
   .stats-grid    { grid-template-columns: 1fr !important; }
   .ctrl-kpi-grid { grid-template-columns: 1fr !important; }
 }
+
+/* ── Gramly 2026 premium skin ────────────────────────────────── */
+:root {
+  --void: #080A12;
+  --bg: #080A12;
+  --bg-2: #0D101C;
+  --bg-3: #131728;
+  --surface: rgba(17,21,36,.76);
+  --surface-2: rgba(21,26,44,.78);
+  --surface-3: rgba(31,37,61,.9);
+  --surface-tint: rgba(91,140,255,.09);
+  --line: rgba(255,255,255,.09);
+  --line-2: rgba(255,255,255,.055);
+  --line-hi: rgba(255,255,255,.17);
+  --border-h: rgba(91,140,255,.62);
+  --r: 14px;
+  --r-md: 18px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+  --sidebar-w: 280px;
+  --topbar-h: 68px;
+}
+body {
+  background:
+    radial-gradient(circle at 12% 5%, rgba(91,140,255,.16), transparent 29rem),
+    radial-gradient(circle at 95% 85%, rgba(133,108,255,.12), transparent 32rem),
+    var(--bg);
+}
+body::before {
+  background-image: radial-gradient(rgba(255,255,255,.105) .7px, transparent .7px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 88%);
+  opacity: .34;
+}
+body::after {
+  background:
+    radial-gradient(ellipse 42% 30% at 8% 12%, rgba(91,140,255,.16), transparent 68%),
+    radial-gradient(ellipse 40% 34% at 94% 86%, rgba(133,108,255,.14), transparent 68%);
+}
+.sidebar {
+  margin: 12px;
+  height: calc(100vh - 24px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(12,15,27,.82);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 30px 80px -28px rgba(0,0,0,.8);
+}
+.sidebar-brand { padding: 20px; }
+.sidebar-brand-icon {
+  width: 38px; height: 38px; border-radius: 12px;
+  background: linear-gradient(135deg, #62A0FF, #795DFF);
+  box-shadow: 0 12px 30px -10px rgba(91,140,255,.8), inset 0 1px 0 rgba(255,255,255,.5);
+}
+.sidebar-brand-icon::before { inset: 7px; border-radius: 7px; background: #101528; }
+.sidebar-brand-icon::after { background: #7CF3D0; box-shadow: 0 0 12px rgba(124,243,208,.9); }
+.sidebar-brand-name { font-size: 16px; font-weight: 800; }
+.sidebar-brand-sub { color: rgba(185,202,255,.62); letter-spacing: .08em; }
+.sidebar-ws { padding: 16px; }
+.sidebar-ws-trigger {
+  padding: 12px 13px; border-radius: 14px;
+  background: linear-gradient(145deg, rgba(91,140,255,.10), rgba(133,108,255,.07));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+.ws-dropdown { border-radius: 16px; background: rgba(18,23,40,.97); }
+.ws-dropdown-item:hover { background: rgba(91,140,255,.1); }
+.sidebar-nav { padding: 17px 12px; }
+.sidebar-section-label { color: rgba(185,202,255,.45); letter-spacing: .11em; }
+.sidebar-item { padding: 10px 12px; border-radius: 12px; font-size: 13.5px; }
+.sidebar-item:hover { background: rgba(91,140,255,.08); }
+.sidebar-item.active {
+  color: #EEF2FF;
+  background: linear-gradient(110deg, rgba(91,140,255,.22), rgba(133,108,255,.12));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 10px 28px -18px rgba(91,140,255,.75);
+}
+.sidebar-footer { background: transparent; padding: 14px; }
+.sidebar-avatar {
+  border-radius: 11px; color: white;
+  background: linear-gradient(135deg, #5B8CFF, #856CFF);
+}
+.logout-btn { border-radius: 10px; }
+.main { margin-left: calc(var(--sidebar-w) + 24px); }
+.topbar {
+  height: var(--topbar-h); padding: 0 34px;
+  border-bottom-color: rgba(255,255,255,.07);
+  background: rgba(8,10,18,.70);
+}
+.topbar-title { font-size: 15px; font-weight: 700; }
+.topbar-title::before { background: #7CF3D0; box-shadow: 0 0 0 4px rgba(124,243,208,.12), 0 0 14px rgba(124,243,208,.45); }
+.content { max-width: 1380px; padding: 36px 34px 60px; }
+.card, .entry-status-card, .table-wrap {
+  background: linear-gradient(145deg, rgba(25,30,51,.86), rgba(15,19,33,.84));
+  border-color: rgba(255,255,255,.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 24px 60px -34px rgba(0,0,0,.9);
+}
+.card { border-radius: 20px; padding: 24px 25px; }
+.card::after {
+  background: radial-gradient(480px circle at var(--mx,30%) var(--my,20%), rgba(91,140,255,.15), transparent 43%);
+}
+.card:hover { border-color: rgba(145,174,255,.34); transform: translateY(-2px); }
+.card-value { font-weight: 700; }
+.card-accent::before { background: linear-gradient(#5B8CFF, #856CFF); }
+.card-amber { background: linear-gradient(145deg, rgba(91,140,255,.15), rgba(133,108,255,.07)); border-color: rgba(91,140,255,.24); }
+.card-amber .card-value { color: #B9CAFF; }
+.btn { min-height: 40px; border-radius: 12px; font-weight: 700; }
+.btn-primary, .btn-accent {
+  color: white; border-color: rgba(255,255,255,.12);
+  background: linear-gradient(135deg, #5B8CFF, #765DFF);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 13px 28px -14px rgba(91,140,255,.9);
+}
+.btn-primary:hover, .btn-accent:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.32), 0 18px 34px -13px rgba(91,140,255,.9); }
+.btn-secondary { background: rgba(255,255,255,.055); border-color: var(--line); }
+.form-input, .form-select, .form-textarea {
+  min-height: 44px; border-radius: 12px;
+  background: rgba(7,10,19,.56); border-color: rgba(255,255,255,.12);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { box-shadow: 0 0 0 4px rgba(91,140,255,.14); }
+.table-wrap { border-radius: 18px; }
+th { background: rgba(8,11,21,.58); color: rgba(185,202,255,.54); }
+tbody tr:hover { background: rgba(91,140,255,.055); }
+#page-progress { background: linear-gradient(90deg, #7CF3D0, #5B8CFF, #856CFF); }
+@media (max-width: 900px) {
+  .sidebar { margin: 8px; height: calc(100vh - 16px); }
+  .main { margin-left: 0; }
+  .content { padding: 24px 18px 44px; }
+  .topbar { padding: 0 18px; }
+}
+@media (max-width: 480px) {
+  :root { --topbar-h: 62px; }
+  .sidebar { width: min(280px, calc(100vw - 28px)); }
+  .sidebar-overlay { left: 0; }
+  .content { padding: 18px 12px 36px; }
+  .card { padding: 20px 18px; border-radius: 17px; }
+  .topbar-actions .btn { padding-left: 11px; padding-right: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
 </style>
 {% block extra_css %}{% endblock %}
 </head>
@@ -861,13 +999,13 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
       <div class="sidebar-brand-icon"></div>
       <div class="sidebar-brand-text">
         <div class="sidebar-brand-name">Gramly CRM</div>
-        <div class="sidebar-brand-sub">finance · v 2.0</div>
+        <div class="sidebar-brand-sub">business workspace</div>
       </div>
     </a>
 
     {% if workspace %}
     <div class="sidebar-ws">
-      <div class="sidebar-ws-label">workspace_</div>
+      <div class="sidebar-ws-label">Пространство</div>
       {% with role_class=membership.role|default:"" %}
       <button
         type="button"
@@ -908,7 +1046,7 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
 
     <nav class="sidebar-nav">
       <div class="sidebar-section">
-        <div class="sidebar-section-label">overview_</div>
+        <div class="sidebar-section-label">Рабочий стол</div>
         <a href="{% url 'crm:dashboard' %}" class="sidebar-item {% block nav_dashboard %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/>
@@ -928,7 +1066,7 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
 
       {% if can_enter_finance %}
       <div class="sidebar-section">
-        <div class="sidebar-section-label">entry_</div>
+        <div class="sidebar-section-label">Операции</div>
         <a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7h18M3 12h18M3 17h12"/><circle cx="18.5" cy="17" r="2.5"/>
@@ -940,7 +1078,7 @@ tbody tr:hover { background: rgba(255,184,77,.04); }
 
       {% if crm_user.is_admin or crm_user.is_accountant or crm_is_owner or crm_user.is_curator %}
       <div class="sidebar-section">
-        <div class="sidebar-section-label">control_</div>
+        <div class="sidebar-section-label">Управление</div>
         <a href="{% url 'control:dashboard' %}" class="sidebar-item {% block nav_control %}{% endblock %}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
