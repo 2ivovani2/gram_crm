@@ -161,15 +161,14 @@ Each access plane has its own Traefik controller, ClusterIP, NetBird
 `NetworkResource`, and destination group. The existing private controller is
 retained as the bootstrap/DevOps plane until its application routes are moved.
 
-Prepare the stopped Forgejo 16.0.2 target and retained data volume with:
+Deploy Forgejo 16.0.2 and its retained data volume with:
 
 ```bash
-infra/kubernetes/scripts/prepare-forgejo-target.sh
+infra/kubernetes/scripts/deploy-forgejo.sh
 ```
 
-The target deliberately remains at zero replicas. Copying the old `/data`,
-validating its SQLite database, and switching `git.gramly.tech` are separate
-maintenance steps so the source remains the rollback target.
+The initial migration copied the old `/data` while its source container was
+stopped and retained the old container as a rollback target.
 
 After approving a brief Forgejo outage, rehearse a consistent data copy with:
 
@@ -181,6 +180,13 @@ CONFIRM_FORGEJO_DOWNTIME=true \
 The script refuses a non-empty target, always restarts the source through an
 exit trap, runs Forgejo's default doctor checks plus strict Git object checks
 against the copied data, and leaves the target deployment stopped.
+
+After application and HTTPS smoke tests pass, reconcile friendly NetBird DNS
+records with:
+
+```bash
+infra/kubernetes/apps/vpn/ensure-private-app-records.sh
+```
 
 Run the bootstrap script only after reviewing its rendered Helm output:
 

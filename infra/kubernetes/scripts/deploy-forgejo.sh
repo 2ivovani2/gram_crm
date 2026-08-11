@@ -14,18 +14,12 @@ fi
 
 sed "s|FORGEJO_IMAGE_PLACEHOLDER|${FORGEJO_IMAGE}|" \
   "${infra_dir}/apps/devtools/forgejo.yaml" | kubectl apply --filename -
-
 kubectl wait persistentvolumeclaim/forgejo-data \
   --namespace devtools \
   --for=jsonpath='{.status.phase}'=Bound \
   --timeout=5m
-
-replicas="$(kubectl get deployment forgejo \
+kubectl rollout status deployment/forgejo \
   --namespace devtools \
-  --output jsonpath='{.spec.replicas}')"
-if [[ "${replicas}" != "0" ]]; then
-  echo "Forgejo target unexpectedly has ${replicas} replicas; refusing to continue." >&2
-  exit 1
-fi
+  --timeout=5m
 
-echo "Forgejo target storage, stopped deployment, service, and HTTP route are prepared."
+echo "Forgejo is deployed on the collaboration access plane."

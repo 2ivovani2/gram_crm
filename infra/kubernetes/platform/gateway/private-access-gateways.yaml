@@ -37,3 +37,18 @@ spec:
           selector:
             matchLabels:
               gramly.tech/access-plane: collaboration
+    - name: git-https
+      hostname: git.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: git-gramly-tech-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: collaboration
