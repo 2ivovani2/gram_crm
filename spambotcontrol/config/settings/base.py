@@ -30,6 +30,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "django_celery_results",
     "django_celery_beat",
+    "mozilla_django_oidc",
 ]
 
 LOCAL_APPS = [
@@ -90,12 +91,48 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 AUTH_USER_MODEL = "users.User"
+AUTHENTICATION_BACKENDS = [
+    "apps.crm.auth.CRMOIDCBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# ── Authentik OIDC (private CRM login) ──────────────────────────────────────
+OIDC_RP_CLIENT_ID = env("CRM_OIDC_CLIENT_ID", default="")
+OIDC_RP_CLIENT_SECRET = env("CRM_OIDC_CLIENT_SECRET", default="")
+OIDC_OP_AUTHORIZATION_ENDPOINT = env(
+    "CRM_OIDC_AUTHORIZATION_ENDPOINT",
+    default="https://auth.gramly.tech/application/o/authorize/",
+)
+OIDC_OP_TOKEN_ENDPOINT = env(
+    "CRM_OIDC_TOKEN_ENDPOINT",
+    default="https://auth.gramly.tech/application/o/token/",
+)
+OIDC_OP_USER_ENDPOINT = env(
+    "CRM_OIDC_USERINFO_ENDPOINT",
+    default="https://auth.gramly.tech/application/o/userinfo/",
+)
+OIDC_OP_JWKS_ENDPOINT = env(
+    "CRM_OIDC_JWKS_ENDPOINT",
+    default="https://auth.gramly.tech/application/o/crm/jwks/",
+)
+OIDC_RP_SIGN_ALGO = "RS256"
+OIDC_RP_SCOPES = "openid profile email"
+OIDC_CREATE_USER = False
+OIDC_USE_PKCE = True
+OIDC_USE_NONCE = True
+OIDC_VERIFY_SSL = True
+OIDC_TIMEOUT = 10
+OIDC_STORE_ACCESS_TOKEN = False
+OIDC_STORE_ID_TOKEN = False
+LOGIN_REDIRECT_URL = "/crm/dashboard/"
+LOGIN_REDIRECT_URL_FAILURE = "/crm/login/?error=oidc"
+LOGOUT_REDIRECT_URL = "/crm/login/"
 
 # ── Cache / Redis ─────────────────────────────────────────────────────────────
 REDIS_URL = env("REDIS_URL", default="redis://redis:6379/0")

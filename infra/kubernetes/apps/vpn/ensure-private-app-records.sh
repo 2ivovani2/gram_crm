@@ -26,6 +26,7 @@ zone_id="$(curl --config "${curl_config}" "${api_url}/dns/zones" | \
 [[ -n "${zone_id}" ]] || { echo "NetBird zone gramly.tech is missing." >&2; exit 1; }
 
 desired_records='[
+  {"name":"crm.gramly.tech","type":"A","content":"10.99.132.83","ttl":300},
   {"name":"git.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
   {"name":"tasks.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
   {"name":"docs.gramly.tech","type":"A","content":"10.99.132.84","ttl":300}

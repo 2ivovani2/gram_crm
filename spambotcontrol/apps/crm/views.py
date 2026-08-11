@@ -3,8 +3,8 @@ CRM web views.
 
 URL prefix: /crm/
 
-Auth: Telegram Login Widget → HMAC-verified → Django session.
-      Any user that exists in the database can authenticate.
+Auth: Authentik OIDC → Django session. Only an existing active CRM user whose
+      Telegram username matches the initial OIDC username can authenticate.
 
 Access model (two levels):
   Authenticated  — any User in DB; sees a limited dashboard only.
@@ -56,20 +56,17 @@ class CRMLoginMixin:
 
     def dispatch(self, request, *args, **kwargs):
         from django.conf import settings as _s
-        _login_url = f"https://{getattr(_s, 'DOMAIN', 'gramly.tech')}/crm/login/"
+        _login_url = f"https://crm.{getattr(_s, 'DOMAIN', 'gramly.tech')}/crm/login/"
 
-        # 1. Session check
-        user_id = request.session.get("crm_user_id")
-        if not user_id:
+        # 1. OIDC-backed Django session check
+        if not request.user.is_authenticated:
             return redirect(_login_url)
 
-        # 2. Load user
+        # 2. Load the current CRM user
         from apps.users.models import User
-        try:
-            request.crm_user = User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            del request.session["crm_user_id"]
+        if not isinstance(request.user, User):
             return redirect(_login_url)
+        request.crm_user = request.user
 
         # 3. Resolve workspace + membership
         workspace, membership = self._resolve_workspace_and_membership(request)
@@ -197,97 +194,18 @@ class LoginView(TemplateView):
     template_name = "crm/login.html"
 
     def get(self, request):
-        from django.conf import settings
         from django.urls import reverse
 
-        # Enforce canonical host — Telegram Widget checks window.location.hostname
-        # against the bot domain registered in BotFather (= settings.DOMAIN).
-        # If this page is reached from crm.gramly.tech or any other host, redirect
-        # to the canonical host so the widget never appears on the wrong domain.
-        canonical = getattr(settings, "DOMAIN", "gramly.tech")
-        current_host = request.get_host().split(":")[0]
-        if not settings.DEBUG and current_host != canonical:
-            return redirect(f"https://{canonical}/crm/login/")
-
-        if request.session.get("crm_user_id"):
+        if request.user.is_authenticated:
             return redirect("crm:dashboard")
-
-        bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "") or ""
-        error = None
-        if not bot_username:
-            error = (
-                "Конфигурация CRM не завершена: "
-                "переменная TELEGRAM_BOT_USERNAME не задана в .env. "
-                "Добавьте имя бота (без @) и перезапустите сервис."
-            )
-            logger.error("TELEGRAM_BOT_USERNAME is not set — CRM login widget will not work")
-
-        # Must be absolute HTTPS URL — Telegram's OAuth server validates the domain
-        # and redirects the popup to this URL. A relative path causes oauth.telegram.org
-        # to redirect to its own domain → 404 → silent failure → user back on login.
-        auth_callback_url = request.build_absolute_uri(reverse("crm:auth_callback"))
-        return render(request, self.template_name, {
-            "bot_username": bot_username,
-            "auth_callback_url": auth_callback_url,
-            "error": error,
-        })
-
-
-class TelegramAuthCallbackView(View):
-    """
-    Telegram Login Widget callback.
-
-    Access rule: any user that exists in users.User (telegram_id match) can
-    authenticate. No workspace membership required for login itself.
-    Non-members land on the dashboard with a limited "no access" view.
-
-    If the user is not in the DB at all, login is denied with a clear message:
-    they must start the bot first to be registered.
-    """
-
-    def get(self, request):
-        from django.conf import settings
-        from apps.crm.services import verify_telegram_login, TelegramAuthError
-
-        params = dict(request.GET)
-        flat = {k: v[0] if isinstance(v, list) else v for k, v in params.items()}
-
-        try:
-            data = verify_telegram_login(flat, settings.TELEGRAM_BOT_TOKEN)
-        except TelegramAuthError as exc:
-            logger.warning("CRM auth failed: %s", exc)
-            return render(request, "crm/login.html", {
-                "error": "Ошибка авторизации через Telegram. Попробуйте ещё раз.",
-                "bot_username": getattr(settings, "TELEGRAM_BOT_USERNAME", ""),
-            })
-
-        telegram_id = int(data["id"])
-
-        from apps.users.models import User
-        user = User.objects.filter(telegram_id=telegram_id).first()
-
-        if user is None:
-            # User doesn't exist in DB — must start the bot first
-            return render(request, "crm/login.html", {
-                "error": (
-                    "Вы не зарегистрированы в системе. "
-                    "Сначала запустите бота — он зарегистрирует вас автоматически."
-                ),
-                "bot_username": getattr(settings, "TELEGRAM_BOT_USERNAME", ""),
-            })
-
-        request.session["crm_user_id"] = user.pk
-        request.session["crm_user_name"] = user.display_name
-        logger.info("CRM login: user %s (tg_id=%s)", user.display_name, telegram_id)
-        # Redirect to crm subdomain so the canonical CRM URL is crm.gramly.tech.
-        # Session cookie is set for .gramly.tech so it works on both domains.
-        domain = getattr(settings, "DOMAIN", "gramly.tech")
-        return redirect(f"https://crm.{domain}/crm/dashboard/")
+        return redirect(f"{reverse('oidc_authentication_init')}?next=/crm/dashboard/")
 
 
 class LogoutView(View):
     def post(self, request):
-        request.session.pop("crm_user_id", None)
+        from django.contrib.auth import logout
+
+        logout(request)
         request.session.pop("active_workspace_id", None)
         return redirect("crm:login")
 

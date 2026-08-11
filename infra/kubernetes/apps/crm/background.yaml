@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-crm-worker, namespace: gramly-crm}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-worker}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-crm-worker}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: worker
+          image: CRM_IMAGE_PLACEHOLDER
+          args: [celery, -A, config.celery, worker, -l, info, -c, "2", -Q, "celery,default,broadcasts,welcome_bots"]
+          envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 150m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-crm-beat, namespace: gramly-crm}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-beat}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-crm-beat}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: beat
+          image: CRM_IMAGE_PLACEHOLDER
+          args: [celery, -A, config.celery, beat, -l, info, --scheduler, django_celery_beat.schedulers:DatabaseScheduler]
+          envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}

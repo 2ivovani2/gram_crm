@@ -1,0 +1,34 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: gramly-crm-postgres
+  namespace: gramly-crm
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.10-standard-trixie@sha256:78c4fdf165e8ffb1b5b7a7fc6b22b3cf37890a338b4c1c8c4d913896129a86da
+  primaryUpdateStrategy: unsupervised
+  bootstrap:
+    initdb:
+      database: gramly
+      owner: gramly
+      secret:
+        name: gramly-crm-postgres-app
+      encoding: UTF8
+  storage:
+    storageClass: vultr-block-storage-retain
+    size: 10Gi
+  resources:
+    requests: {cpu: 150m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+  postgresql:
+    parameters:
+      max_connections: "150"
+      shared_buffers: 256MB
+      log_min_duration_statement: "1000"
+  monitoring:
+    enablePodMonitor: false
+  enableSuperuserAccess: true

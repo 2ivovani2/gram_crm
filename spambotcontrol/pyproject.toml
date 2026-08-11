@@ -25,6 +25,7 @@ dependencies = [
     "openpyxl>=3.1.0",
     "django-storages[boto3]>=1.14",
     "cryptography>=42.0,<46.0",
+    "mozilla-django-oidc==5.0.2",
 ]
 
 [project.optional-dependencies]

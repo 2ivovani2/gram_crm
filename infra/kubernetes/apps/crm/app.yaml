@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-crm-web, namespace: gramly-crm}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-web}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-crm-web}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: collect-static
+          image: CRM_IMAGE_PLACEHOLDER
+          command: [python, manage.py, collectstatic, --noinput, --clear]
+          envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
+          volumeMounts: [{name: static, mountPath: /app/staticfiles}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      containers:
+        - name: web
+          image: CRM_IMAGE_PLACEHOLDER
+          args: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000", --workers, "2"]
+          envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
+          env: [{name: RUN_MIGRATIONS, value: "false"}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          ports: [{name: http, containerPort: 8000}]
+          startupProbe: &probe
+            httpGet: {path: /health/, port: http, httpHeaders: [{name: Host, value: crm.gramly.tech}]}
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe: *probe
+          livenessProbe:
+            httpGet: {path: /health/, port: http, httpHeaders: [{name: Host, value: crm.gramly.tech}]}
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts: [{name: static, mountPath: /app/staticfiles}]
+      volumes: [{name: static, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-crm-web, namespace: gramly-crm}
+spec:
+  selector: {app.kubernetes.io/name: gramly-crm-web}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: gramly-crm-web, namespace: gramly-crm}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-web}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: gramly-crm-private, namespace: gramly-crm}
+spec:
+  parentRefs:
+    - {name: gramly-business, namespace: traefik-business, sectionName: http}
+    - {name: gramly-business, namespace: traefik-business, sectionName: crm-https}
+  hostnames: [crm.gramly.tech]
+  rules:
+    - backendRefs: [{name: gramly-crm-web, port: 8000}]

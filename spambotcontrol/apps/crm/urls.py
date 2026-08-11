@@ -12,7 +12,6 @@ app_name = "crm"
 urlpatterns = [
     # ── Auth ─────────────────────────────────────────────────────────────────
     path("login/",           views.LoginView.as_view(),                name="login"),
-    path("auth/callback/",   views.TelegramAuthCallbackView.as_view(), name="auth_callback"),
     path("logout/",          views.LogoutView.as_view(),               name="logout"),
 
     # ── Root redirect ─────────────────────────────────────────────────────────

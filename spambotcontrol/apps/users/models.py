@@ -77,6 +77,17 @@ class User(AbstractUser):
     telegram_id = models.BigIntegerField(unique=True, db_index=True)
     telegram_username = models.CharField(max_length=150, null=True, blank=True, db_index=True)
 
+    # Stable identity from Authentik. It is populated on the first successful
+    # OIDC login and prevents later username changes from relinking accounts.
+    oidc_subject = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="OIDC subject",
+        help_text="Stable Authentik subject bound to this CRM user",
+    )
+
     # ── Role & Status ─────────────────────────────────────────────────────────
     role = models.CharField(
         max_length=20,

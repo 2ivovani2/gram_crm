@@ -220,11 +220,12 @@ class EmployeeReport(models.Model):
         verbose_name="Дедлайн отчёта",
         help_text="Рассчитан из шаблона в момент создания; не изменяется при смене дедлайна шаблона",
     )
-    # Editing is locked after deadline_at + 1 hour.
+    # Initial editing cutoff is deadline_at + 1 hour.  A rejection replaces it
+    # with the configured correction deadline.
     editing_locked_at = models.DateTimeField(
         null=True, blank=True,
         verbose_name="Блокировка редактирования",
-        help_text="deadline_at + 1 час",
+        help_text="Текущий крайний срок редактирования или исправления",
     )
 
     # Deadline compliance, computed when the report is accepted.

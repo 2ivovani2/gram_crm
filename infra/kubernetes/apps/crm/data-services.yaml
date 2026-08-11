@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: gramly-crm-valkey-data, namespace: gramly-crm}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: vultr-block-storage-retain
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: gramly-crm-minio-data, namespace: gramly-crm}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: vultr-block-storage-retain
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-crm-valkey, namespace: gramly-crm}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-valkey}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-crm-valkey}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 999, runAsGroup: 999, fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: valkey
+          image: valkey/valkey@sha256:d827e7f7552cdee40cc7482dbae9da020f42bc47669af6f71182a4ef76a22773
+          command: [valkey-server, /etc/valkey/valkey.conf]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          ports: [{name: redis, containerPort: 6379}]
+          readinessProbe: {tcpSocket: {port: redis}, periodSeconds: 5}
+          livenessProbe: {tcpSocket: {port: redis}, periodSeconds: 15}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/valkey/valkey.conf, subPath: valkey.conf, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - {name: config, secret: {secretName: gramly-crm-valkey-config}}
+        - {name: data, persistentVolumeClaim: {claimName: gramly-crm-valkey-data}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-crm-valkey, namespace: gramly-crm}
+spec:
+  selector: {app.kubernetes.io/name: gramly-crm-valkey}
+  ports: [{name: redis, port: 6379, targetPort: redis}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-crm-minio, namespace: gramly-crm}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-crm-minio}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-crm-minio}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: minio
+          image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+          args: [server, /data, --console-address, ":9001"]
+          envFrom: [{secretRef: {name: gramly-crm-minio}}]
+          env: [{name: MINIO_BROWSER, value: "off"}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          ports: [{name: s3, containerPort: 9000}]
+          startupProbe: {httpGet: {path: /minio/health/live, port: s3}, failureThreshold: 30, periodSeconds: 5}
+          readinessProbe: {httpGet: {path: /minio/health/ready, port: s3}, periodSeconds: 10}
+          livenessProbe: {httpGet: {path: /minio/health/live, port: s3}, periodSeconds: 30}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts: [{name: data, mountPath: /data}]
+      volumes: [{name: data, persistentVolumeClaim: {claimName: gramly-crm-minio-data}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-crm-minio, namespace: gramly-crm}
+spec:
+  selector: {app.kubernetes.io/name: gramly-crm-minio}
+  ports: [{name: s3, port: 9000, targetPort: s3}]

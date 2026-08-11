@@ -17,6 +17,21 @@ spec:
           selector:
             matchLabels:
               gramly.tech/access-plane: business
+    - name: crm-https
+      hostname: crm.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: crm-gramly-tech-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: business
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

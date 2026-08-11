@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
 from django.conf import settings
 from apps.common.views import HealthCheckView, LandingView
 from apps.telegram_bot.webhook import TelegramWebhookView
@@ -22,10 +23,12 @@ urlpatterns = [
     path("health/", HealthCheckView.as_view(), name="health-check"),
     # CRM web service (crm.gramly.tech)
     path("crm/", include("apps.crm.urls", namespace="crm")),
+    # Shared Authentik OIDC callback/init/logout endpoints.
+    path("oidc/", include("mozilla_django_oidc.urls")),
     # Gramly Control HR dashboard
     path("crm/control/", include("apps.control.urls", namespace="control")),
-    # Manager documentation
-    path("docs/", include("apps.docs.urls", namespace="docs")),
+    # The legacy bundled docs were replaced by the private Outline service.
+    path("docs/", RedirectView.as_view(url="https://docs.gramly.tech/", permanent=False)),
 ]
 
 # Serve media files in development (uploaded CRM screenshots etc.)

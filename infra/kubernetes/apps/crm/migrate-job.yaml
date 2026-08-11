@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: gramly-crm-migrate, namespace: gramly-crm}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: CRM_IMAGE_PLACEHOLDER
+          args: [python, manage.py, migrate, --noinput]
+          envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}

@@ -277,7 +277,7 @@ class ReportService:
     @staticmethod
     @transaction.atomic
     def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
-        """Reject report. editing_locked_at was set at creation and is not modified here."""
+        """Reject a report and open the configured correction window."""
         from apps.control.models import ReportStatus, ModerationHistory
 
         prev_status = report.status
@@ -287,15 +287,18 @@ class ReportService:
         report.reviewed_by = admin
         report.reviewed_at = now
         report.review_comment = comment
-        # Keep correction_deadline for legacy display; but editing_locked_at
-        # (set at submit time = deadline_at + 1h) is the authoritative lock.
         hours = 24
         if report.template and report.template.correction_deadline_hours:
             hours = report.template.correction_deadline_hours
         report.correction_deadline = now + timedelta(hours=hours)
+        # A rejection starts a fresh correction window even when moderation
+        # happens after the original submission deadline.  Previously the old
+        # deadline_at + 1h value remained here and could make an immediately
+        # rejected report impossible to resubmit.
+        report.editing_locked_at = report.correction_deadline
         report.save(update_fields=[
             "status", "reviewed_by", "reviewed_at", "review_comment",
-            "correction_deadline", "updated_at",
+            "correction_deadline", "editing_locked_at", "updated_at",
         ])
 
         cycle = (

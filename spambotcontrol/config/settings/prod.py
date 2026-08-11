@@ -16,13 +16,14 @@ CSRF_TRUSTED_ORIGINS = [
     f"https://crm.{_domain}",
 ]
 
-# Share the session cookie with the CRM subdomain.
-SESSION_COOKIE_DOMAIN = f".{_domain}"
-CSRF_COOKIE_DOMAIN    = f".{_domain}"
+# Keep authenticated CRM sessions host-only. Public landing/webhook hosts must
+# never receive the CRM session or CSRF cookies.
+SESSION_COOKIE_DOMAIN = None
+CSRF_COOKIE_DOMAIN = None
 
 # Bot-facing URLs for CRM and docs links
-CRM_URL  = f"https://{_domain}/crm/login/"
-DOCS_URL = f"https://{_domain}/docs/"
+CRM_URL  = f"https://crm.{_domain}/crm/login/"
+DOCS_URL = f"https://docs.{_domain}/"
 
 # Telegram Login Widget (CRM): same COOP fix as dev — popup must postMessage back.
 # Only needed if COOP is being set; Django's default is same-origin which breaks it.
