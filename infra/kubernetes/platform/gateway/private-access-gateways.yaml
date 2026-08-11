@@ -1,0 +1,39 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gramly-business
+  namespace: traefik-business
+  labels:
+    gramly.tech/controller: business
+spec:
+  gatewayClassName: gramly-business
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: business
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gramly-collaboration
+  namespace: traefik-collaboration
+  labels:
+    gramly.tech/controller: collaboration
+spec:
+  gatewayClassName: gramly-collaboration
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8000
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: collaboration

@@ -127,7 +127,9 @@ infra/kubernetes/apps/vpn/ensure-access-policies.sh
 
 Employees and application roles can reach business and collaboration services.
 Only the `gramly-devops` and `gramly-owners` groups can reach infrastructure
-administration services. The script does not assign users or devices to roles.
+administration services. Bootstrap devices in `gramly-admin-devices` can reach
+all three access planes while SSO role synchronization is being introduced.
+The script does not assign users or devices to roles.
 It keeps the permissive bootstrap `Default` policy unless an approved
 maintenance run explicitly sets `REMOVE_DEFAULT_POLICY=true`; even then, it
 removes the policy only when it matches NetBird's exact All-to-All shape.
@@ -148,8 +150,26 @@ Deploy the operator-managed, three-node private router after the zone exists:
 infra/kubernetes/scripts/deploy-private-network.sh
 ```
 
-Application `NetworkResource` objects are added separately so each service can
-be assigned to the business, collaboration, or DevOps destination group.
+Deploy separate business and collaboration gateways so a user who can reach
+CRM cannot reuse the same ingress address to reach an infrastructure hostname:
+
+```bash
+infra/kubernetes/scripts/deploy-private-access-gateways.sh
+```
+
+Each access plane has its own Traefik controller, ClusterIP, NetBird
+`NetworkResource`, and destination group. The existing private controller is
+retained as the bootstrap/DevOps plane until its application routes are moved.
+
+Prepare the stopped Forgejo 16.0.2 target and retained data volume with:
+
+```bash
+infra/kubernetes/scripts/prepare-forgejo-target.sh
+```
+
+The target deliberately remains at zero replicas. Copying the old `/data`,
+validating its SQLite database, and switching `git.gramly.tech` are separate
+maintenance steps so the source remains the rollback target.
 
 Run the bootstrap script only after reviewing its rendered Helm output:
 

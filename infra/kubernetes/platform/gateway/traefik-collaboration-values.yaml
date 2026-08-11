@@ -1,0 +1,68 @@
+deployment:
+  replicas: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingressClass:
+  enabled: false
+
+providers:
+  kubernetesIngress:
+    enabled: false
+  kubernetesCRD:
+    enabled: false
+  kubernetesGateway:
+    enabled: true
+    labelSelector: gramly.tech/controller=collaboration
+    namespaces:
+      - traefik-collaboration
+      - devtools
+
+gateway:
+  enabled: false
+
+gatewayClass:
+  enabled: true
+  name: gramly-collaboration
+  labels:
+    gramly.tech/controller: collaboration
+
+service:
+  spec:
+    type: ClusterIP
+    clusterIP: 10.99.132.84
+
+log:
+  level: INFO
+
+accessLog:
+  enabled: true
+  format: json
+  fields:
+    headers:
+      defaultMode: drop
+    queryParameters:
+      defaultMode: drop
+
+api:
+  dashboard: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik

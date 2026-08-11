@@ -42,6 +42,7 @@ group_id() {
 }
 
 source_names='[
+  "gramly-admin-devices",
   "gramly-employees",
   "gramly-product",
   "gramly-engineering",
@@ -55,9 +56,10 @@ while IFS= read -r source_name; do
 done < <(jq -r '.[]' <<<"${source_names}")
 
 privileged_source_ids="$(jq -cn \
+  --arg admins "$(group_id gramly-admin-devices)" \
   --arg devops "$(group_id gramly-devops)" \
   --arg owners "$(group_id gramly-owners)" \
-  '[$devops, $owners]')"
+  '[$admins, $devops, $owners]')"
 
 ensure_policy() {
   local policy_name="$1"
@@ -137,7 +139,11 @@ if [[ "${REMOVE_DEFAULT_POLICY:-false}" == "true" ]]; then
     echo "Removed the permissive NetBird Default All-to-All policy."
   fi
 else
-  echo "Kept the NetBird Default policy; set REMOVE_DEFAULT_POLICY=true only in an approved maintenance window."
+  if jq -e '.[] | select(.name == "Default")' "${task_tmp}/policies.json" >/dev/null; then
+    echo "Kept the NetBird Default policy; set REMOVE_DEFAULT_POLICY=true only in an approved maintenance window."
+  else
+    echo "The NetBird Default policy is already absent."
+  fi
 fi
 
 echo "Role-based NetBird policies are present; group membership was not changed."

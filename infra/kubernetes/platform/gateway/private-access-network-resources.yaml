@@ -1,0 +1,31 @@
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: business-gateway
+  namespace: traefik-business
+  labels:
+    app.kubernetes.io/part-of: gramly-private-access
+spec:
+  networkRouterRef:
+    name: gramly-private
+    namespace: vpn
+  serviceRef:
+    name: traefik-business
+  groups:
+    - name: gramly-business-services
+---
+apiVersion: netbird.io/v1alpha1
+kind: NetworkResource
+metadata:
+  name: collaboration-gateway
+  namespace: traefik-collaboration
+  labels:
+    app.kubernetes.io/part-of: gramly-private-access
+spec:
+  networkRouterRef:
+    name: gramly-private
+    namespace: vpn
+  serviceRef:
+    name: traefik-collaboration
+  groups:
+    - name: gramly-collaboration-services

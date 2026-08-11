@@ -15,6 +15,22 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: traefik-business
+  labels:
+    gramly.tech/contour: private
+    gramly.tech/access-plane: business
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traefik-collaboration
+  labels:
+    gramly.tech/contour: private
+    gramly.tech/access-plane: collaboration
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: identity
   labels:
     gramly.tech/contour: public
@@ -39,6 +55,7 @@ metadata:
   name: gramly-crm
   labels:
     gramly.tech/contour: private
+    gramly.tech/access-plane: business
 ---
 apiVersion: v1
 kind: Namespace
@@ -46,6 +63,7 @@ metadata:
   name: devtools
   labels:
     gramly.tech/contour: private
+    gramly.tech/access-plane: collaboration
 ---
 apiVersion: v1
 kind: Namespace
