@@ -17,6 +17,7 @@ providers:
     enabled: true
     labelSelector: gramly.tech/controller=collaboration
     namespaces:
+      - traefik-public
       - traefik-collaboration
       - devtools
 

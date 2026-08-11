@@ -52,3 +52,19 @@ spec:
           selector:
             matchLabels:
               gramly.tech/access-plane: collaboration
+    - name: tasks-https
+      hostname: tasks.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: tasks-gramly-tech-tls
+            namespace: traefik-public
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: collaboration

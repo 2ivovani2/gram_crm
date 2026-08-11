@@ -17,6 +17,10 @@ if ! kubectl -n devtools get secret vikunja-runtime >/dev/null 2>&1; then
 fi
 
 "${infra_dir}/apps/identity/configure-vikunja-oidc.sh"
+kubectl apply -f "${infra_dir}/apps/devtools/vikunja-tls.yaml"
+kubectl wait certificate/tasks-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m
+kubectl apply -f "${infra_dir}/platform/gateway/private-access-gateways.yaml"
+kubectl wait gateway/gramly-collaboration -n traefik-collaboration --for=condition=Programmed --timeout=5m
 kubectl apply -f "${infra_dir}/apps/devtools/vikunja-postgres.yaml"
 kubectl wait cluster/vikunja-postgres -n devtools --for=condition=Ready --timeout=10m
 sed "s|VIKUNJA_IMAGE_PLACEHOLDER|${VIKUNJA_IMAGE}|" "${infra_dir}/apps/devtools/vikunja.yaml" | kubectl apply -f -
