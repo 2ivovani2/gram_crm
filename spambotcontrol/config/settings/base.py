@@ -311,6 +311,7 @@ AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
 #   Prod → https://<account>.r2.cloudflarestorage.com  (omit for AWS S3)
 AWS_S3_ENDPOINT_URL = env("AWS_S3_ENDPOINT_URL", default=None)
 AWS_S3_REGION_NAME  = env("AWS_S3_REGION_NAME", default="auto")
+AWS_S3_ADDRESSING_STYLE = env("AWS_S3_ADDRESSING_STYLE", default="path")
 
 # Signed URLs:
 #   Dev  → false  (MinIO bucket is public-read; no signing overhead)

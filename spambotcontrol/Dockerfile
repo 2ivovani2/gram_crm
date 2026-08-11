@@ -8,28 +8,34 @@ ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+FROM base AS builder
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+ARG INSTALL_DEV_DEPENDENCIES=false
+RUN python3 -c "\
+import os, tomllib, subprocess, sys; \
+d = tomllib.load(open('pyproject.toml', 'rb')); \
+deps = d['project']['dependencies']; \
+dev = d.get('project', {}).get('optional-dependencies', {}).get('dev', []) if os.environ.get('INSTALL_DEV_DEPENDENCIES') == 'true' else []; \
+subprocess.run([sys.executable, '-m', 'pip', 'install', '--prefix=/install'] + deps + dev, check=True)"
+
+# The production layer contains only runtime libraries and main Python
+# dependencies. Compilers, headers, pip caches, and test tooling stay behind in
+# the builder stage. Local/CI test images can opt in with
+# --build-arg INSTALL_DEV_DEPENDENCIES=true.
+FROM base AS final
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# --- deps layer (cached separately from code) ---
-FROM base AS deps
-COPY pyproject.toml .
-# Install all dependencies (main + dev) without building the project package.
-# Python 3.11 stdlib tomllib parses pyproject.toml — no extra tools needed.
-# Backslash continuations are consumed by Docker before the shell sees them,
-# so the shell receives a single-line python3 -c "..." command.
-RUN python3 -c "\
-import tomllib, subprocess, sys; \
-d = tomllib.load(open('pyproject.toml', 'rb')); \
-deps = d['project']['dependencies']; \
-dev = d.get('project', {}).get('optional-dependencies', {}).get('dev', []); \
-subprocess.run([sys.executable, '-m', 'pip', 'install'] + deps + dev, check=True)"
-
-# --- final ---
-FROM deps AS final
+COPY --from=builder /install /usr/local
 COPY . .
 
 RUN chmod +x scripts/entrypoint.sh

@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-public-web, namespace: gramly-hello}
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-public-web}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-public-web}}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-crm-registry}]
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: collect-static
+          image: CRM_IMAGE_PLACEHOLDER
+          command: [python, manage.py, collectstatic, --noinput, --clear]
+          envFrom: [{secretRef: {name: gramly-public-runtime}}]
+          volumeMounts: [{name: static, mountPath: /app/staticfiles}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      containers:
+        - name: web
+          image: CRM_IMAGE_PLACEHOLDER
+          args: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000", --workers, "2"]
+          envFrom: [{secretRef: {name: gramly-public-runtime}}]
+          env: [{name: RUN_MIGRATIONS, value: "false"}]
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          ports: [{name: http, containerPort: 8000}]
+          startupProbe: &probe
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders:
+                - {name: Host, value: gramly.tech}
+                - {name: X-Forwarded-Proto, value: https}
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe: *probe
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders:
+                - {name: Host, value: gramly.tech}
+                - {name: X-Forwarded-Proto, value: https}
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 150m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          volumeMounts: [{name: static, mountPath: /app/staticfiles}]
+      volumes: [{name: static, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-public-web, namespace: gramly-hello}
+spec:
+  selector: {app.kubernetes.io/name: gramly-public-web}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: gramly-public-web, namespace: gramly-hello}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-public-web}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: gramly-public-web, namespace: gramly-hello}
+spec:
+  parentRefs:
+    - {name: gramly-public, namespace: traefik-public, sectionName: http}
+    - {name: gramly-public, namespace: traefik-public, sectionName: gramly-https}
+    - {name: gramly-public, namespace: traefik-public, sectionName: www-https}
+  hostnames: [gramly.tech, www.gramly.tech]
+  rules:
+    - matches:
+        - {path: {type: Exact, value: /}}
+        - {path: {type: PathPrefix, value: /static/}}
+        - {path: {type: PathPrefix, value: /health/}}
+        - {path: {type: PathPrefix, value: /bot/webhook/}}
+        - {path: {type: PathPrefix, value: /welcome/webhook/}}
+        - {path: {type: PathPrefix, value: /welcome/client/}}
+      backendRefs: [{name: gramly-public-web, port: 8000}]
