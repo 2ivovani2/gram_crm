@@ -45,9 +45,12 @@ grafana:
       client_id: $__env{GRAFANA_OIDC_CLIENT_ID}
       client_secret: $__env{GRAFANA_OIDC_CLIENT_SECRET}
       scopes: openid profile email entitlements
-      auth_url: https://auth.gramly.tech/application/o/observability/authorize/
-      token_url: https://auth.gramly.tech/application/o/observability/token/
-      api_url: https://auth.gramly.tech/application/o/observability/userinfo/
+      # The provider-specific issuer owns discovery/JWKS. Authentik's OAuth
+      # protocol endpoints themselves are shared and are advertised by that
+      # discovery document without the provider slug.
+      auth_url: https://auth.gramly.tech/application/o/authorize/
+      token_url: https://auth.gramly.tech/application/o/token/
+      api_url: https://auth.gramly.tech/application/o/userinfo/
       login_attribute_path: preferred_username
       name_attribute_path: name
       email_attribute_path: email
