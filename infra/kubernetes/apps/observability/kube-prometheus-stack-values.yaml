@@ -26,6 +26,30 @@ grafana:
     accessModes: [ReadWriteOnce]
     size: 5Gi
   envFromSecret: grafana-oidc
+  # Provision core data sources directly with Grafana. Unlike the sidecar,
+  # this file exists before the Grafana process starts and cannot lose a
+  # startup race while reload callbacks are disabled.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          url: http://kube-prometheus-stack-prometheus.observability:9090/
+          access: proxy
+          isDefault: true
+          jsonData:
+            httpMethod: POST
+            timeInterval: 30s
+        - name: Alertmanager
+          type: alertmanager
+          uid: alertmanager
+          url: http://kube-prometheus-stack-alertmanager.observability:9093/
+          access: proxy
+          jsonData:
+            handleGrafanaManagedAlerts: false
+            implementation: prometheus
   grafana.ini:
     server:
       domain: grafana.gramly.tech
@@ -85,6 +109,7 @@ grafana:
       # Avoid localhost reload redirects caused by enforce_domain.
       skipReload: true
     datasources:
+      enabled: false
       skipReload: true
 
 # VKE manages these control-plane components outside the worker nodes.
