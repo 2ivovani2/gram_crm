@@ -648,6 +648,28 @@ class KPIService:
 class ControlBalanceService:
 
     @staticmethod
+    def get_balance_snapshot(user: User) -> dict[str, Decimal]:
+        """Return every balance component from the ledger at one point in time."""
+        personal = user.compute_personal_earned()
+        referral = user.compute_referral_earned()
+        daily = user.daily_accrued or Decimal("0")
+        adjustment = user.manual_balance_adjustment or Decimal("0")
+        withdrawn = user.compute_withdrawn()
+        penalties = PenaltyService.total_accepted_penalty(user)
+        gross = personal + referral + daily + adjustment
+
+        return {
+            "personal": personal,
+            "referral": referral,
+            "daily": daily,
+            "adjustment": adjustment,
+            "gross": gross,
+            "withdrawn": withdrawn,
+            "penalties": penalties,
+            "available": max(Decimal("0"), gross - withdrawn - penalties),
+        }
+
+    @staticmethod
     def get_total_balance(user: User) -> Decimal:
         return (
             user.compute_personal_earned()
@@ -658,11 +680,7 @@ class ControlBalanceService:
 
     @staticmethod
     def get_available_balance(user: User) -> Decimal:
-        penalties = PenaltyService.total_accepted_penalty(user)
-        gross = ControlBalanceService.get_total_balance(user)
-        withdrawn = user.compute_withdrawn()
-        available = gross - withdrawn - penalties
-        return max(Decimal("0"), available)
+        return ControlBalanceService.get_balance_snapshot(user)["available"]
 
     @staticmethod
     @transaction.atomic
