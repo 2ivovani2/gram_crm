@@ -39,7 +39,6 @@
     <header class="hero">
       <div class="g-container hero__grid">
         <div class="hero__copy">
-          <div class="hero__status">Telegram-native automation</div>
           <h1><span class="reveal-line"><span>Первое касание.</span></span><span class="reveal-line"><span class="signal">Сразу в точку.</span></span></h1>
           <p class="hero__lead">Gramly Welcome принимает заявки в канал, приветствует каждого человека текстом и медиа и показывает результат — прямо внутри Telegram.</p>
           <div class="hero__actions">
@@ -49,7 +48,7 @@
             </a>
             <a class="g-button g-button--secondary" href="#flow">Посмотреть сценарий <span aria-hidden="true">↓</span></a>
           </div>
-          <div class="hero__proof"><span><i></i>Без отдельной панели</span><span><i></i>Собственный бот</span><span><i></i>Защищённый webhook</span></div>
+          <div class="hero__proof"><span><i></i>Собственный бот</span><span><i></i>Защищённый webhook</span></div>
         </div>
 
         <div class="hero__visual" data-hero-visual aria-label="Коммуникационное ядро Gramly">
@@ -102,16 +101,40 @@
       </div>
     </section>
 
-    <section class="story" id="features"><div class="g-container">
-      <article class="story-chapter"><div class="story-chapter__copy"><span class="g-kicker">Подключение</span><h3>Ваш бот. Ваш канал. Один понятный диалог.</h3><p>Создайте бота через BotFather, безопасно передайте токен Gramly и выберите канал. Система настроит персональный webhook и проверит необходимые права.</p></div><div class="story-chapter__visual" data-story-visual><div class="product-window"><div class="product-window__bar"><i></i><i></i><i></i></div><div class="product-window__body"><div class="bot-row"><span class="bot-avatar">G</span><span><strong>Gramly Welcome</strong><small>Бот подключён</small></span><em>active</em></div><div class="bot-row"><span class="bot-avatar">C</span><span><strong>Рабочий канал</strong><small>Права подтверждены</small></span><em>ready</em></div></div></div></div></article>
-      <article class="story-chapter"><div class="story-chapter__copy"><span class="g-kicker">Сообщение</span><h3>Приветствие, которое похоже на вас.</h3><p>Соберите текст, добавьте изображение или видео и задайте задержку. Gramly сохранит сценарий и покажет итог до запуска.</p></div><div class="story-chapter__visual" data-story-visual><div class="product-window"><div class="product-window__bar"><i></i><i></i><i></i></div><div class="product-window__body"><div class="composer"><div class="composer__media"></div><div class="composer__line"></div><div class="composer__line short"></div><div class="delay-row"><span>Задержка отправки</span><strong>10 секунд</strong></div></div></div></div></div></article>
-      <article class="story-chapter"><div class="story-chapter__copy"><span class="g-kicker">Масштаб</span><h3>Несколько ботов — без смешанных настроек.</h3><p>Каждый бот получает собственные каналы, приветствия и защищённый webhook. Переключение и управление остаются внутри Telegram.</p></div><div class="story-chapter__visual" data-story-visual><div class="product-window"><div class="product-window__bar"><i></i><i></i><i></i></div><div class="product-window__body"><div class="bot-row"><span class="bot-avatar">01</span><span><strong>Community bot</strong><small>2 канала</small></span><em>online</em></div><div class="bot-row"><span class="bot-avatar">02</span><span><strong>Product bot</strong><small>1 канал</small></span><em>online</em></div><div class="bot-row"><span class="bot-avatar">03</span><span><strong>Private bot</strong><small>3 канала</small></span><em>online</em></div></div></div></div></article>
-      <article class="story-chapter" id="security"><div class="story-chapter__copy"><span class="g-kicker">Результат и безопасность</span><h3>Видно, что сработало. Секреты остаются секретами.</h3><p>Gramly показывает результат welcome-сценариев, удаляет сообщение с токеном после подключения и хранит секреты в зашифрованном виде.</p></div><div class="story-chapter__visual" data-story-visual><div class="product-window"><div class="product-window__bar"><i></i><i></i><i></i></div><div class="product-window__body"><div class="mini-chart"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="security-grid"><div class="security-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><strong>Encrypted token</strong>Хранение secret at rest</div><div class="security-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m5 12 4 4L19 6"/></svg><strong>Private webhook</strong>Отдельный адрес для бота</div></div></div></div></div></article>
+    <section class="connection-scene" id="features"><div class="g-container connection-scene__grid">
+      <div class="scene-copy"><span class="g-kicker">01 · Подключение</span><h3>Один диалог — от BotFather до рабочего webhook.</h3><p>Gramly ведёт по реальной последовательности: получает токен, проверяет канал и права, а затем подтверждает подключение.</p></div>
+      <div class="telegram-thread" data-story-visual aria-label="Диалог подключения Telegram-бота">
+        <div class="tg-head"><span class="tg-avatar">G</span><span><strong>Gramly Welcome</strong><small>бот</small></span><i></i></div>
+        <div class="tg-day">Сегодня</div>
+        <div class="tg-message tg-message--bot"><b>Подключим вашего бота</b><span>Создайте его в @BotFather и пришлите сюда токен.</span></div>
+        <div class="tg-message tg-message--user tg-message--secret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 12s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6Z"/><circle cx="12" cy="12" r="2"/></svg><span>Токен безопасно получен</span><small>Сообщение удалено</small></div>
+        <div class="tg-message tg-message--bot"><span>Теперь выберите канал.</span><button type="button">Gramly Community</button></div>
+        <div class="permission-check"><span class="permission-check__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 12 4 4L19 6"/></svg></span><span><b>Права подтверждены</b><small>Webhook настроен · бот готов</small></span><em>Готово</em></div>
+      </div>
     </div></section>
 
-    <section class="crm-bridge" id="crm"><div class="g-container crm-bridge__shell">
-      <div><span class="g-kicker">Gramly ecosystem</span><h2>Welcome — часть большой рабочей системы.</h2><p>Gramly CRM объединяет ежедневные показатели, отчёты, команду и балансы в защищённом пространстве с единым рабочим входом.</p><a class="g-button g-button--secondary" style="margin-top:24px" href="https://crm.gramly.tech/crm/login/">Войти в CRM</a></div>
-      <div class="crm-preview" aria-label="Предпросмотр интерфейса Gramly CRM"><div class="crm-preview__top">Gramly CRM · Обзор бизнеса</div><div class="crm-preview__body"><div class="crm-preview__side"><span>Дашборд</span><span>История</span><span>Cash Flow</span><span>HR Контроль</span></div><div class="crm-preview__main"><div class="crm-preview__metrics"><div class="crm-preview__metric"><span>Статус дня</span><strong>В работе</strong></div><div class="crm-preview__metric"><span>Отчёты</span><strong>Сегодня</strong></div><div class="crm-preview__metric"><span>Команда</span><strong>Активна</strong></div></div><div class="crm-preview__table"><div class="crm-preview__row"><span>Дата</span><span>Cash Flow</span><span>Отчёт</span></div><div class="crm-preview__row"><span>Сегодня</span><span>Заполнено</span><span>Готов</span></div><div class="crm-preview__row"><span>Вчера</span><span>Заполнено</span><span>Готов</span></div><div class="crm-preview__row"><span>Позавчера</span><span>Заполнено</span><span>Готов</span></div></div></div></div></div>
+    <section class="composer-scene"><div class="g-container">
+      <div class="composer-scene__heading"><span class="g-kicker">02 · Приветствие</span><h3>Сообщение, которое<br>уже выглядит живым.</h3><p>Текст, медиа и задержка собираются в Telegram. Preview показывает человеку именно то, что получит новый участник.</p></div>
+      <div class="composer-workspace" data-story-visual>
+        <div class="composer-controls"><div class="control-label">Текст приветствия</div><div class="text-editor">Привет, {first_name}!<br><br>Рады видеть тебя в Gramly Community. Начни со знакомства с командой и закреплённого сообщения.<span>|</span></div><div class="control-row"><b>Медиа</b><span>welcome-cover.jpg</span><em>Изменить</em></div><div class="control-row"><b>Задержка</b><span>10 секунд</span><em>Настроено</em></div><div class="composer-actions"><button type="button">Сохранить сценарий</button><span>Preview обновлён</span></div></div>
+        <div class="phone-preview"><div class="phone-preview__top">Gramly Community <span>сейчас</span></div><div class="welcome-media"><span>WELCOME TO</span><strong>GRAMLY</strong><i></i></div><div class="welcome-copy">Привет, Александр!<br><br>Рады видеть тебя в Gramly Community. Начни со знакомства с командой и закреплённого сообщения.</div><div class="delivery-state"><span>Отправка через 10 секунд</span><b>Preview</b></div></div>
+      </div>
+    </div></section>
+
+    <section class="operations-scene" id="security"><div class="g-container">
+      <div class="operations-scene__heading"><span class="g-kicker">03 · Масштаб и безопасность</span><h3>Каждый бот на своей линии.<br><span>Вся система — под контролем.</span></h3></div>
+      <div class="operations-mosaic" data-story-visual>
+        <article class="ops-module ops-module--bots"><header><span>Боты и каналы</span><b>3 online</b></header><div class="ops-bot"><i>GC</i><span><b>Community bot</b><small>Gramly Community · 2 канала</small></span><em>online</em></div><div class="ops-bot"><i>GP</i><span><b>Product bot</b><small>Product Updates · 1 канал</small></span><em>online</em></div><div class="ops-bot"><i>GT</i><span><b>Team bot</b><small>Private Team · 3 канала</small></span><em>online</em></div></article>
+        <article class="ops-module ops-module--delivery"><span>Последняя доставка</span><strong>Welcome отправлен</strong><p>@new_member · Community bot</p><div><i></i>12:41:08</div></article>
+        <article class="ops-module ops-module--webhook"><span>Webhook</span><strong>/welcome/••••••••</strong><p>HTTPS · отдельный endpoint</p><em>200 OK</em></article>
+        <article class="ops-module ops-module--security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span><b>Секреты зашифрованы</b><small>Токены недоступны в интерфейсе и логах</small></span></article>
+        <p class="operations-note">Результат каждой отправки возвращается владельцу. Настройки разных ботов не смешиваются, а сообщение с токеном удаляется сразу после подключения.</p>
+      </div>
+    </div></section>
+
+    <section class="crm-bridge" id="crm"><div class="g-container">
+      <div class="crm-bridge__copy"><span class="g-kicker">Gramly ecosystem</span><h2>Welcome встречает людей.<br>CRM держит бизнес в фокусе.</h2><p>Ежедневные показатели, отчёты, команда и балансы остаются в защищённом рабочем пространстве с единым входом.</p><a class="g-button g-button--secondary" href="https://crm.gramly.tech/crm/login/">Войти в CRM</a></div>
+      <div class="crm-stage" data-story-visual aria-label="Интерфейс Gramly CRM"><aside><div class="crm-stage__brand">gramly<span>.</span></div><small>Рабочее пространство</small><nav><b>Обзор</b><span>Cash Flow</span><span>История</span><span>HR Контроль</span><span>Аналитика</span></nav><div class="crm-stage__user">AY <span>Александр<br><small>Администратор</small></span></div></aside><main><header><span><small>Среда, 12 августа</small><b>Обзор бизнеса</b></span><em>Данные актуальны</em></header><div class="crm-stage__stats"><div><small>Статус дня</small><b>В работе</b><span>Cash Flow заполнен</span></div><div><small>Отчёты команды</small><b>Сегодня</b><span>Собираются до дедлайна</span></div><div><small>Рабочий контур</small><b>Защищён</b><span>SSO + VPN</span></div></div><section><header><b>Последние рабочие дни</b><span>Открыть историю</span></header><div class="crm-stage__row crm-stage__row--head"><span>Дата</span><span>Cash Flow</span><span>Отчёт</span><span>Статус</span></div><div class="crm-stage__row"><span>Сегодня</span><span>Заполнено</span><span>Собирается</span><b>В работе</b></div><div class="crm-stage__row"><span>11 августа</span><span>Заполнено</span><span>Готов</span><b>Закрыт</b></div><div class="crm-stage__row"><span>10 августа</span><span>Заполнено</span><span>Готов</span><b>Закрыт</b></div></section></main></div>
     </div></section>
 
     <section class="landing-section faq"><div class="g-container faq__grid"><div><span class="g-kicker">Коротко о главном</span><h2>Вопросы без мелкого шрифта.</h2></div><div>

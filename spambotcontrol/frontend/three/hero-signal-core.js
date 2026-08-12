@@ -4,7 +4,7 @@ export function createSignalCore(container) {
   const canvas = container.querySelector("canvas");
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
-  camera.position.set(0, 0, 8.2);
+  camera.position.set(0, 0, 7.15);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, innerWidth < 768 ? 1 : 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -12,13 +12,13 @@ export function createSignalCore(container) {
   const group = new THREE.Group();
   scene.add(group);
   const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.42, 4),
-    new THREE.MeshPhysicalMaterial({ color: 0x31575a, emissive: 0x0c282b, emissiveIntensity: .8, roughness: .18, metalness: .1, transmission: .42, thickness: 1.6, transparent: true, opacity: .82 })
+    new THREE.IcosahedronGeometry(1.62, 5),
+    new THREE.MeshPhysicalMaterial({ color: 0x3f7377, emissive: 0x123e42, emissiveIntensity: 1.12, roughness: .12, metalness: .16, transmission: .3, thickness: 2.1, transparent: true, opacity: .94, clearcoat: .68, clearcoatRoughness: .16 })
   );
   group.add(core);
-  const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 2), new THREE.MeshBasicMaterial({ color: 0x62d5f3, wireframe: true, transparent: true, opacity: .12 }));
+  const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(1.82, 2), new THREE.MeshBasicMaterial({ color: 0xa5edff, wireframe: true, transparent: true, opacity: .1 }));
   group.add(wire);
-  [2.05, 2.62, 3.15].forEach((radius, index) => {
+  [2.25, 2.86].forEach((radius, index) => {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, .012, 8, 128), new THREE.MeshBasicMaterial({ color: index === 1 ? 0x75e6bd : 0x62d5f3, transparent: true, opacity: .28 - index * .045 }));
     ring.rotation.set(index * .72 + .35, index * .55, index * .42);
     group.add(ring);
@@ -30,9 +30,10 @@ export function createSignalCore(container) {
     signals.add(dot);
   }
   group.add(signals);
-  scene.add(new THREE.AmbientLight(0xa5edff, 1.25));
-  const light = new THREE.PointLight(0x62d5f3, 18, 18); light.position.set(3, 2, 5); scene.add(light);
-  const mint = new THREE.PointLight(0x75e6bd, 10, 14); mint.position.set(-3, -2, 3); scene.add(mint);
+  scene.add(new THREE.AmbientLight(0xc8f5ff, 1.55));
+  const light = new THREE.PointLight(0xa5edff, 28, 18); light.position.set(3.2, 2.4, 5); scene.add(light);
+  const mint = new THREE.PointLight(0x75e6bd, 15, 14); mint.position.set(-3, -2, 3); scene.add(mint);
+  const rim = new THREE.DirectionalLight(0xffffff, 2.4); rim.position.set(-1, 3, 4); scene.add(rim);
 
   let pointerX = 0, pointerY = 0, visible = true, raf = 0;
   const resize = () => { const { width, height } = container.getBoundingClientRect(); renderer.setSize(width, height, false); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix(); };
