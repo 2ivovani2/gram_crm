@@ -56,6 +56,10 @@ media/*
 .coverage
 htmlcov/
 .tox/
+node_modules/
+playwright-report/
+test-results/
+static/dist/
 
 # Celery
 celerybeat-schedule

@@ -109,7 +109,7 @@
     <td style="max-width:180px">
       <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px" title="{{ p.reason }}">{{ p.reason }}</div>
       {% if p.comment %}<div style="font-size:11px;color:var(--muted);margin-top:2px">{{ p.comment|truncatechars:50 }}</div>{% endif %}
-      {% if p.dispute_comment %}<div class="dispute-text">💬 {{ p.dispute_comment|truncatechars:60 }}</div>{% endif %}
+      {% if p.dispute_comment %}<div class="dispute-text">Комментарий: {{ p.dispute_comment|truncatechars:60 }}</div>{% endif %}
     </td>
     <td><span class="badge s-{{ p.status }}">{{ p.get_status_display }}</span></td>
     <td style="font-size:12px;color:var(--muted)">
@@ -138,7 +138,7 @@
         <form method="post" action="{% url 'control:penalty_action' p.pk %}"
               onsubmit="return confirm('Удалить штраф #{{ p.pk }}?')">
           {% csrf_token %}
-          <button name="action" value="delete" class="btn-xs btn-delete" title="Удалить">🗑</button>
+          <button name="action" value="delete" class="btn-xs btn-delete" title="Удалить" aria-label="Удалить">×</button>
         </form>
         {% endif %}
       </div>
@@ -150,7 +150,7 @@
 </div>
 {% else %}
 <div style="padding:60px;text-align:center;color:var(--muted)">
-  <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+  <svg style="width:32px;margin:0 auto 12px;color:var(--warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg>
   <div style="font-weight:600;margin-bottom:6px">Штрафов не найдено</div>
 </div>
 {% endif %}

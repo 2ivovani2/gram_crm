@@ -385,9 +385,14 @@ class PenaltyActionView(AdminOnlyMixin, View):
 
 class EmployeesView(AdminOnlyMixin, View):
     def get(self, request):
-        workers = User.objects.exclude(
+        from apps.control.services import ControlBalanceService
+
+        workers = list(User.objects.exclude(
             role=UserRole.ANONYMOUS
-        ).prefetch_related("kpi_settings", "kpi_document").order_by("role", "telegram_username")
+        ).prefetch_related("kpi_settings", "kpi_document").order_by("role", "telegram_username"))
+        for worker in workers:
+            worker.balance_snapshot = ControlBalanceService.get_balance_snapshot(worker)
+
         return render(request, "control/employees.html", self.ctx(request, {
             "page": "employees",
             "workers": workers,
@@ -397,14 +402,11 @@ class EmployeesView(AdminOnlyMixin, View):
 class EmployeeKPIView(AdminOnlyMixin, View):
     def get(self, request, user_id):
         from apps.control.models import KPISettings, KPIDocument
-        from apps.control.services import ControlBalanceService, PenaltyService
+        from apps.control.services import ControlBalanceService
         worker = get_object_or_404(User, pk=user_id)
         kpi, _ = KPISettings.objects.get_or_create(user=worker)
         doc = KPIDocument.objects.filter(user=worker).first()
-        total = ControlBalanceService.get_total_balance(worker)
-        available = ControlBalanceService.get_available_balance(worker)
-        withdrawn = worker.compute_withdrawn()
-        penalties = PenaltyService.total_accepted_penalty(worker)
+        balance = ControlBalanceService.get_balance_snapshot(worker)
 
         return render(request, "control/employee_kpi.html", self.ctx(request, {
             "page": "employees",
@@ -412,10 +414,10 @@ class EmployeeKPIView(AdminOnlyMixin, View):
             "kpi": kpi,
             "doc": doc,
             "saved": request.GET.get("saved"),
-            "total_balance": total,
-            "available_balance": available,
-            "withdrawn": withdrawn,
-            "penalties": penalties,
+            "total_balance": balance["gross"],
+            "available_balance": balance["available"],
+            "withdrawn": balance["withdrawn"],
+            "penalties": balance["penalties"],
         }))
 
     def post(self, request, user_id):

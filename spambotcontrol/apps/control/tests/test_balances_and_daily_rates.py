@@ -53,6 +53,28 @@ def test_set_available_balance_accounts_for_previous_withdrawals_and_penalties()
     assert ControlBalanceService.get_available_balance(worker) == Decimal("650")
 
 
+def test_balance_snapshot_distinguishes_accrual_history_from_available_balance():
+    worker = _user(
+        2004,
+        daily_accrued=Decimal("57000"),
+        manual_balance_adjustment=Decimal("4600"),
+    )
+    WithdrawalRequest.objects.create(
+        user=worker,
+        amount=Decimal("21600"),
+        method=WithdrawalMethod.USDT_TRC20,
+        details="test-wallet",
+        status=WithdrawalStatus.APPROVED,
+    )
+
+    snapshot = ControlBalanceService.get_balance_snapshot(worker)
+
+    assert snapshot["daily"] == Decimal("57000")
+    assert snapshot["gross"] == Decimal("61600")
+    assert snapshot["withdrawn"] == Decimal("21600")
+    assert snapshot["available"] == Decimal("40000")
+
+
 def test_balance_can_be_set_again_after_another_withdrawal():
     worker = _user(2002, daily_accrued=Decimal("1000"))
     ControlBalanceService.set_available_balance(worker, Decimal("1000"))

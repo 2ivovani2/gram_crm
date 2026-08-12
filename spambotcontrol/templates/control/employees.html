@@ -11,7 +11,9 @@
 .worker-stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
 .wstat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
 .wstat-num { font-size:16px; font-weight:700; color:var(--accent); }
+.wstat-num.available { color:#4ADE80; }
 .wstat-label { font-size:11px; color:var(--muted); margin-top:2px; }
+.balance-note { font-size:11px; color:var(--muted); margin:-5px 0 14px; line-height:1.45; }
 .badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
 .badge-active { background:rgba(74,222,128,.12); color:#4ADE80; }
 .badge-inactive { background:rgba(250,250,251,.08); color:var(--muted); }
@@ -40,9 +42,13 @@
       <div class="wstat-label">Ставка в день</div>
     </div>
     <div class="wstat">
-      <div class="wstat-num">{{ w.daily_accrued|default:"0" }} ₽</div>
-      <div class="wstat-label">Начислено</div>
+      <div class="wstat-num available">{{ w.balance_snapshot.available|floatformat:2 }} ₽</div>
+      <div class="wstat-label">Доступный баланс</div>
     </div>
+  </div>
+  <div class="balance-note">
+    В боте: {{ w.balance_snapshot.available|floatformat:2 }} ₽ ·
+    начислено по ставке за всё время: {{ w.daily_accrued|default:"0"|floatformat:2 }} ₽
   </div>
 
   <a href="{% url 'control:employee_kpi' w.pk %}" class="btn-sm">Настройки →</a>

@@ -22,6 +22,11 @@
 .bstat-label { font-size:11px; color:var(--muted); margin-top:3px; }
 .alert-success { background:rgba(74,222,128,.1); border:1px solid rgba(74,222,128,.3); color:#4ADE80; border-radius:10px; padding:12px 18px; margin-bottom:20px; font-size:14px; font-weight:500; }
 .hint { font-size:11px; color:var(--muted); margin-top:4px; }
+.balance-explanation { color:var(--muted); font-size:12px; line-height:1.5; margin:-10px 0 20px; }
+@media (max-width:760px) {
+  .balance-grid { grid-template-columns:1fr 1fr; }
+  .form-row { grid-template-columns:1fr; }
+}
 </style>
 {% endblock %}
 
@@ -30,7 +35,7 @@
 <a href="{% url 'control:employees' %}" class="btn-ghost btn" style="margin-bottom:20px;display:inline-block">← Все сотрудники</a>
 
 {% if saved %}
-<div class="alert-success">✅ Сохранено успешно</div>
+<div class="alert-success">Сохранено успешно</div>
 {% endif %}
 
 <div class="worker-header">
@@ -44,21 +49,25 @@
 <!-- Balance overview -->
 <div class="balance-grid">
   <div class="bstat">
+    <div class="bstat-num" style="color:#4ADE80">{{ available_balance|floatformat:2 }} ₽</div>
+    <div class="bstat-label">Доступно сейчас · как в боте</div>
+  </div>
+  <div class="bstat">
     <div class="bstat-num">{{ total_balance|floatformat:2 }} ₽</div>
-    <div class="bstat-label">Всего начислено</div>
+    <div class="bstat-label">Сумма до вычетов</div>
   </div>
   <div class="bstat">
     <div class="bstat-num">{{ withdrawn|floatformat:2 }} ₽</div>
-    <div class="bstat-label">Выведено</div>
+    <div class="bstat-label">Уже выведено</div>
   </div>
   <div class="bstat">
     <div class="bstat-num">{{ penalties|floatformat:2 }} ₽</div>
-    <div class="bstat-label">Штрафы</div>
+    <div class="bstat-label">Принятые штрафы</div>
   </div>
-  <div class="bstat">
-    <div class="bstat-num" style="color:#4ADE80">{{ available_balance|floatformat:2 }} ₽</div>
-    <div class="bstat-label">Доступно</div>
-  </div>
+</div>
+<div class="balance-explanation">
+  Доступный баланс = сумма начислений и ручных корректировок − подтверждённые выводы − принятые штрафы.
+  Это то же значение, которое сотрудник видит в Telegram-боте.
 </div>
 
 <!-- Daily Rate -->
@@ -103,7 +112,7 @@
   <h3>KPI Документ</h3>
   {% if doc %}
   <p style="font-size:14px;color:var(--text);margin-bottom:14px">
-    📄 <strong>{{ doc.original_filename }}</strong><br>
+    <strong>{{ doc.original_filename }}</strong><br>
     <span style="font-size:12px;color:var(--muted)">Загружен: {{ doc.uploaded_at|date:"d.m.Y H:i" }}</span><br>
     {% if doc.file %}
     <a href="{{ doc.file.url }}" target="_blank" style="color:var(--accent);font-size:13px">Скачать файл →</a>

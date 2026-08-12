@@ -91,7 +91,7 @@
         {% if w.status == "processing" or w.status == "receipt_sent" %}
         <form method="post" action="{% url 'control:withdrawal_action' w.pk %}">
           {% csrf_token %}
-          <button name="action" value="completed" class="btn-sm btn-green">Выполнено ✅</button>
+          <button name="action" value="completed" class="btn-sm btn-green">Выполнено</button>
         </form>
         {% endif %}
         {% if w.status == "pending" or w.status == "processing" %}
@@ -108,7 +108,7 @@
 </table>
 </div>
 {% else %}
-<div style="padding:40px;text-align:center;color:var(--muted)">Заявок на вывод нет ✅</div>
+<div style="padding:40px;text-align:center;color:var(--muted)">Заявок на вывод нет</div>
 {% endif %}
 
 {% endblock %}

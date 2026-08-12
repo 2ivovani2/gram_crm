@@ -1,0 +1,29 @@
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html { background: var(--g-bg); }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--g-bg);
+  color: var(--g-ink);
+  font-family: var(--g-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+img, svg, canvas { display: block; max-width: 100%; }
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; }
+::selection { background: var(--g-signal); color: var(--g-bg); }
+:focus-visible { outline: 0; box-shadow: var(--g-focus); }
+.g-container { width: min(calc(100% - 40px), var(--g-container)); margin-inline: auto; }
+.g-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.g-display { font-family: var(--g-display); letter-spacing: -.04em; }
+.g-tabular { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 767px) {
+  .g-container { width: min(calc(100% - 28px), var(--g-container)); }
+}
