@@ -72,7 +72,7 @@
       {{ report.period_label|default:"—" }}
       {% if report.report_date and report.submitted_at.date != report.report_date %}
       <span style="font-size:11px;color:#FFB84D;margin-left:6px" title="Отчёт сдан после полуночи, относится к предыдущему дню">
-        ⚠ сдан {{ report.submitted_at|date:"d.m H:i" }}
+        Сдан {{ report.submitted_at|date:"d.m H:i" }}
       </span>
       {% endif %}
     </dd>
@@ -184,7 +184,7 @@
 
   {% if not can_moderate %}
   <div class="lock-warn">
-    🔒 Вы не можете модерировать этот отчёт (свой собственный или не в вашей зоне ответственности).
+    Вы не можете модерировать этот отчёт (свой собственный или не в вашей зоне ответственности).
   </div>
   {% else %}
   {% if report.template and report.template.format_instructions %}
@@ -197,8 +197,8 @@
     {% csrf_token %}
     <textarea name="comment" placeholder="Комментарий для сотрудника (при отклонении — обязателен)..."></textarea>
     <div class="actions">
-      <button name="action" value="accept" class="btn-accept">✅ Принять</button>
-      <button name="action" value="reject" class="btn-reject">❌ Отклонить</button>
+      <button name="action" value="accept" class="btn-accept">Принять</button>
+      <button name="action" value="reject" class="btn-reject">Отклонить</button>
     </div>
   </form>
   {% endif %}
@@ -207,7 +207,7 @@
 <div class="card">
   {% if report.editing_locked_at %}
     <div class="lock-warn">
-      🔒 Редактирование заблокировано: сотрудник мог исправить отчёт до <b>{{ report.editing_locked_at|date:"d.m.Y H:i" }}</b>.
+      Редактирование заблокировано: сотрудник мог исправить отчёт до <b>{{ report.editing_locked_at|date:"d.m.Y H:i" }}</b>.
     </div>
   {% else %}
     <div style="font-size:13px;color:var(--muted)">Отчёт отклонён. Ожидаем повторную подачу от сотрудника.</div>

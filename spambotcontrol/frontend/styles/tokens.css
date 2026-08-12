@@ -1,0 +1,52 @@
+:root {
+  color-scheme: dark;
+  --g-bg: #080b0c;
+  --g-bg-raised: #0d1112;
+  --g-surface: #111617;
+  --g-surface-2: #161c1d;
+  --g-surface-3: #1b2324;
+  --g-ink: #f2f0e9;
+  --g-ink-2: #d5d5ce;
+  --g-muted: #8f9997;
+  --g-faint: #626d6b;
+  --g-line: rgba(220, 236, 231, .10);
+  --g-line-strong: rgba(220, 236, 231, .18);
+  --g-signal: #62d5f3;
+  --g-signal-strong: #a5edff;
+  --g-mint: #75e6bd;
+  --g-amber: #f2bd6a;
+  --g-coral: #ff7f73;
+  --g-telegram: #2aabee;
+  --g-display: "Manrope", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --g-body: "Onest", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --g-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --g-space-1: .25rem;
+  --g-space-2: .5rem;
+  --g-space-3: .75rem;
+  --g-space-4: 1rem;
+  --g-space-5: 1.5rem;
+  --g-space-6: 2rem;
+  --g-space-7: 3rem;
+  --g-space-8: 4.5rem;
+  --g-r-sm: 9px;
+  --g-r-md: 14px;
+  --g-r-lg: 22px;
+  --g-r-xl: 32px;
+  --g-shadow-sm: 0 12px 30px rgba(0, 0, 0, .18);
+  --g-shadow-lg: 0 36px 90px rgba(0, 0, 0, .36);
+  --g-focus: 0 0 0 3px rgba(98, 213, 243, .24);
+  --g-fast: 140ms;
+  --g-normal: 240ms;
+  --g-slow: 650ms;
+  --g-ease: cubic-bezier(.2, .8, .2, 1);
+  --g-container: 1360px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

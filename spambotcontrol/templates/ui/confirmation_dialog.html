@@ -1,0 +1,10 @@
+<dialog class="g-dialog" id="g-confirm-dialog" aria-labelledby="g-confirm-title">
+  <div class="g-dialog__body">
+    <h2 class="g-dialog__title" id="g-confirm-title">Подтвердите действие</h2>
+    <p class="g-dialog__copy" data-confirm-copy>Это действие изменит данные.</p>
+    <div class="g-dialog__actions">
+      <button class="g-button g-button--secondary" type="button" onclick="this.closest('dialog').close()">Отмена</button>
+      <button class="g-button g-button--danger" type="button" data-confirm-submit>Подтвердить</button>
+    </div>
+  </div>
+</dialog>

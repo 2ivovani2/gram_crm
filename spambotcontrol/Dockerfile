@@ -8,6 +8,14 @@ ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /frontend
+COPY package.json package-lock.json vite.config.js ./
+RUN npm ci
+COPY frontend ./frontend
+RUN npm run build
+
 FROM base AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /install /usr/local
 COPY . .
+COPY --from=frontend-builder /frontend/static/dist ./static/dist
 
 RUN chmod +x scripts/entrypoint.sh
 

@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+node_modules
+static/dist
+staticfiles
+media
+data
+.pytest_cache
+playwright-report
+test-results
+__pycache__
+*.pyc

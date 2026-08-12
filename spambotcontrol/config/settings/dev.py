@@ -42,6 +42,12 @@ CELERY_TASK_ALWAYS_EAGER = False  # set True to run tasks synchronously in tests
 # Show emails in console
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+# Vite writes development bundles directly into static/dist. Development and
+# tests must resolve them without requiring a production collectstatic manifest.
+STORAGES["staticfiles"] = {
+    "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+}
+
 # Dev bot link overrides (points to local dev server via ngrok)
 CRM_URL  = f"https://{_ngrok_domain}/crm/login/" if _ngrok_domain else "http://localhost:8000/crm/login/"
 DOCS_URL = f"https://{_ngrok_domain}/docs/" if _ngrok_domain else "http://localhost:8000/docs/"
