@@ -16,6 +16,7 @@ spec:
           image: CRM_IMAGE_PLACEHOLDER
           command: [python, manage.py, collectstatic, --noinput, --clear]
           envFrom: [{secretRef: {name: gramly-public-runtime}}]
+          env: [{name: DJANGO_SETTINGS_MODULE, value: config.settings.prod}]
           volumeMounts: [{name: static, mountPath: /app/staticfiles}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
       containers:
