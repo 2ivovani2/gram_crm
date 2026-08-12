@@ -20,7 +20,7 @@ export function initLandingMotion() {
       const fill = flow.querySelector("[data-flow-fill]");
       const setStage = (index) => { steps.forEach((el,i)=>el.classList.toggle("is-active",i===index)); nodes.forEach((el,i)=>{el.classList.toggle("is-active",i===index);el.classList.toggle("is-past",i<index)}); };
       setStage(0);
-      ScrollTrigger.create({ trigger: flow, start: "top top+=90", end: "+=2500", pin: flow.querySelector(".welcome-flow__layout"), scrub: .35, onUpdate: (self) => { const index = Math.min(5, Math.floor(self.progress * 6)); setStage(index); gsap.set(fill,{height:`${self.progress*100}%`}); } });
+      ScrollTrigger.create({ trigger: flow, start: "top top+=90", end: "+=1250", pin: flow.querySelector(".welcome-flow__layout"), scrub: .28, onUpdate: (self) => { const index = Math.min(5, Math.floor(self.progress * 6)); setStage(index); gsap.set(fill,{height:`${self.progress*100}%`}); } });
     }
   });
   return () => { context.revert(); lenis.destroy(); gsap.ticker.remove(raf); ScrollTrigger.getAll().forEach((trigger) => trigger.kill()); };
