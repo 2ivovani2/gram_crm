@@ -70,6 +70,8 @@ grafana:
     analytics:
       reporting_enabled: false
       check_for_updates: false
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/k8s-resources-cluster.json
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1000m, memory: 768Mi}
