@@ -129,7 +129,6 @@ spec:
         certificateRefs:
           - kind: Secret
             name: grafana-gramly-tech-tls
-            namespace: traefik-public
       allowedRoutes:
         namespaces:
           from: Selector
@@ -145,7 +144,6 @@ spec:
         certificateRefs:
           - kind: Secret
             name: cluster-gramly-tech-tls
-            namespace: traefik-public
       allowedRoutes:
         namespaces:
           from: Selector
