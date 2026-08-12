@@ -39,3 +39,19 @@ def test_custom_not_found_page(client):
 
     assert response.status_code == 404
     assert "Здесь ничего нет" in response.content.decode()
+
+
+@override_settings(PUBLIC_ACCESS_GATE=True)
+def test_public_surface_returns_branded_404_for_private_paths(client):
+    response = client.get("/crm/login/", HTTP_HOST="gramly.tech")
+
+    assert response.status_code == 404
+    assert "Здесь ничего нет" in response.content.decode()
+
+
+@override_settings(PUBLIC_ACCESS_GATE=True, ALLOWED_HOSTS=["gramly.tech"])
+def test_public_surface_keeps_landing_available(client):
+    response = client.get("/", HTTP_HOST="gramly.tech")
+
+    assert response.status_code == 200
+    assert "Gramly Welcome" in response.content.decode()

@@ -9,6 +9,15 @@ PRIVATE_HOSTS = {
     "docs.gramly.tech": ("Gramly Docs", "внутренняя база знаний"),
 }
 
+PUBLIC_HOSTS = {"gramly.tech", "www.gramly.tech", "hello.gramly.tech"}
+PUBLIC_PREFIXES = (
+    "/static/",
+    "/health/",
+    "/bot/webhook/",
+    "/welcome/webhook/",
+    "/welcome/client/",
+)
+
 
 class PrivateAccessGateMiddleware:
     """Render the public VPN gate before private application routes resolve."""
@@ -29,4 +38,8 @@ class PrivateAccessGateMiddleware:
                     {"service_name": service[0], "service_description": service[1]},
                     status=403,
                 )
+            if host in PUBLIC_HOSTS:
+                is_public_path = request.path == "/" or request.path.startswith(PUBLIC_PREFIXES)
+                if not is_public_path:
+                    return render(request, "404.html", status=404)
         return self.get_response(request)
