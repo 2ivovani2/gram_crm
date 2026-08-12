@@ -13,7 +13,8 @@
   <link rel="stylesheet" href="{% static 'dist/assets/crm.css' %}">
 </head>
 <body class="crm-page">
-<div class="sidebar-overlay" id="sidebar-overlay"></div>
+<a class="g-skip-link" href="#crm-content">Перейти к содержимому</a>
+<button class="sidebar-overlay" id="sidebar-overlay" type="button" aria-label="Закрыть меню" tabindex="-1"></button>
 <div class="crm-layout">
   <aside class="sidebar" id="sidebar" aria-label="Навигация CRM">
     <a href="{% url 'crm:dashboard' %}" class="sidebar-brand">
@@ -64,11 +65,11 @@
     <div class="sidebar-footer"><div class="sidebar-user"><div class="sidebar-avatar">{{ crm_user.display_name|first|upper|default:"G" }}</div><div class="sidebar-user-info"><div class="sidebar-user-name">{{ crm_user.display_name }}</div><div class="sidebar-user-role">{{ crm_role|default:"Gramly account" }}</div></div><form method="post" action="{% url 'crm:logout' %}" data-no-loading>{% csrf_token %}<button class="logout-btn" type="submit" aria-label="Выйти" title="Выйти"><svg width="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m17 16 4-4-4-4M21 12H7M13 17v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1"/></svg></button></form></div></div>
   </aside>
 
-  <main class="crm-main">
+  <main class="crm-main" id="crm-content" tabindex="-1">
     <header class="topbar">
-      <button class="g-button g-button--secondary g-icon-button sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Открыть меню"><svg width="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      <div class="topbar-title"><h1>{% block page_title %}Gramly CRM{% endblock %}</h1><p>{% block topbar_subtitle %}Защищённое рабочее пространство{% endblock %}</p></div>
-      <div class="topbar-actions"><span class="g-badge g-badge--success"><span aria-hidden="true">●</span> VPN protected</span></div>
+      <button class="g-button g-button--secondary g-icon-button sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Открыть меню" aria-controls="sidebar" aria-expanded="false"><svg width="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="topbar-title"><span class="topbar-kicker">Gramly / Business workspace</span><h1>{% block page_title %}Gramly CRM{% endblock %}</h1><p>{% block topbar_subtitle %}Защищённое рабочее пространство{% endblock %}</p></div>
+      <div class="topbar-actions"><span class="g-badge g-badge--success"><span class="status-dot" aria-hidden="true"></span> VPN protected</span></div>
       <span class="page-progress" id="page-progress"></span>
     </header>
 
