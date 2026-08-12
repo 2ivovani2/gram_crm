@@ -42,6 +42,15 @@ spec:
         - name: forgejo
           image: FORGEJO_IMAGE_PLACEHOLDER
           imagePullPolicy: IfNotPresent
+          env:
+            - name: FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION
+              value: "true"
+            - name: FORGEJO__oauth2_client__USERNAME
+              value: preferred_username
+            - name: FORGEJO__oauth2_client__ACCOUNT_LINKING
+              value: auto
+            - name: FORGEJO__oauth2_client__UPDATE_AVATAR
+              value: "true"
           securityContext:
             allowPrivilegeEscalation: false
           ports:

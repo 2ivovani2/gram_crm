@@ -22,4 +22,6 @@ kubectl rollout status deployment/forgejo \
   --namespace devtools \
   --timeout=5m
 
-echo "Forgejo is deployed on the collaboration access plane."
+"${infra_dir}/apps/identity/configure-forgejo-oidc.sh"
+
+echo "Forgejo is deployed on the collaboration access plane with Gramly SSO."
