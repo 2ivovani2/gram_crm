@@ -26,6 +26,30 @@ grafana:
     accessModes: [ReadWriteOnce]
     size: 5Gi
   envFromSecret: grafana-oidc
+  # Provision core data sources directly with Grafana. Unlike the sidecar,
+  # this file exists before the Grafana process starts and cannot lose a
+  # startup race while reload callbacks are disabled.
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          url: http://kube-prometheus-stack-prometheus.observability:9090/
+          access: proxy
+          isDefault: true
+          jsonData:
+            httpMethod: POST
+            timeInterval: 30s
+        - name: Alertmanager
+          type: alertmanager
+          uid: alertmanager
+          url: http://kube-prometheus-stack-alertmanager.observability:9093/
+          access: proxy
+          jsonData:
+            handleGrafanaManagedAlerts: false
+            implementation: prometheus
   grafana.ini:
     server:
       domain: grafana.gramly.tech
@@ -45,9 +69,12 @@ grafana:
       client_id: $__env{GRAFANA_OIDC_CLIENT_ID}
       client_secret: $__env{GRAFANA_OIDC_CLIENT_SECRET}
       scopes: openid profile email entitlements
-      auth_url: https://auth.gramly.tech/application/o/observability/authorize/
-      token_url: https://auth.gramly.tech/application/o/observability/token/
-      api_url: https://auth.gramly.tech/application/o/observability/userinfo/
+      # The provider-specific issuer owns discovery/JWKS. Authentik's OAuth
+      # protocol endpoints themselves are shared and are advertised by that
+      # discovery document without the provider slug.
+      auth_url: https://auth.gramly.tech/application/o/authorize/
+      token_url: https://auth.gramly.tech/application/o/token/
+      api_url: https://auth.gramly.tech/application/o/userinfo/
       login_attribute_path: preferred_username
       name_attribute_path: name
       email_attribute_path: email
@@ -67,6 +94,8 @@ grafana:
     analytics:
       reporting_enabled: false
       check_for_updates: false
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/k8s-resources-cluster.json
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: 1000m, memory: 768Mi}
@@ -80,6 +109,7 @@ grafana:
       # Avoid localhost reload redirects caused by enforce_domain.
       skipReload: true
     datasources:
+      enabled: false
       skipReload: true
 
 # VKE manages these control-plane components outside the worker nodes.
