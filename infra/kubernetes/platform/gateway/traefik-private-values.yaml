@@ -15,6 +15,7 @@ providers:
     enabled: true
     allowCrossNamespace: false
     namespaces:
+      - traefik-public
       - traefik-private
       - gramly-crm
       - devtools
@@ -24,6 +25,7 @@ providers:
     enabled: true
     labelSelector: gramly.tech/controller=private
     namespaces:
+      - traefik-public
       - traefik-private
       - gramly-crm
       - devtools
