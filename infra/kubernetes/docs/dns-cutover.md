@@ -30,6 +30,7 @@ DNS and resolve only for enrolled devices:
 - `docs.gramly.tech`
 - `argocd.gramly.tech`
 - `grafana.gramly.tech`
+- `cluster.gramly.tech`
 
 Enrolled devices resolve these names through NetBird split DNS. Business apps
 use `10.99.132.83`; collaboration apps use `10.99.132.84`; infrastructure apps

@@ -1,0 +1,35 @@
+replicaCount: 1
+
+config:
+  inCluster: true
+  # Safe only because the service is behind NetBird and the admin-only OIDC proxy.
+  unsafeUseServiceAccountToken: true
+  sessionTTL: 28800
+  enableHelm: false
+  watchPlugins: false
+
+serviceAccount:
+  create: true
+  name: headlamp-readonly
+
+clusterRoleBinding:
+  create: true
+  clusterRoleName: gramly-headlamp-readonly
+
+automountServiceAccountToken: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  privileged: false
+  runAsUser: 100
+  runAsGroup: 101
+  readOnlyRootFilesystem: true
+  seccompProfile: {type: RuntimeDefault}
+  capabilities: {drop: [ALL]}
+
+resources:
+  requests: {cpu: 50m, memory: 96Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+podDisruptionBudget: {enabled: false}
