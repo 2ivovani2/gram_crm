@@ -140,9 +140,11 @@ Create or reconcile the split-DNS zone used by private application resources:
 infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh
 ```
 
-The zone reuses `gramly.tech`, but NetBird answers only for records explicitly
-present in the zone. Public names such as `auth`, `vpn`, and `hello` continue to
-fall through to authoritative public DNS.
+The zone reuses `gramly.tech`, so every public name used by a connected client
+must also have an explicit record in the zone. `ensure-private-app-records.sh`
+pins public hosts (`gramly.tech`, `www`, `auth`, `vpn`, `hello`, and `media`) to
+the public load balancer and private application hosts to their access-plane
+ClusterIPs. This avoids NXDOMAIN responses while split DNS is active.
 
 Deploy the operator-managed, three-node private router after the zone exists:
 
