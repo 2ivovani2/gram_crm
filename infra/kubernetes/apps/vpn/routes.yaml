@@ -24,6 +24,11 @@ spec:
       backendRefs:
         - name: netbird-server
           port: 81
+      # NetBird keeps management and signal gRPC streams open for the full VPN
+      # session. The Gateway default is 60s, which disconnects the management
+      # stream and removes the client's network map and private DNS.
+      timeouts:
+        request: "0s"
     - matches:
         - path:
             type: PathPrefix
