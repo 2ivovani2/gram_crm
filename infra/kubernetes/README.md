@@ -73,7 +73,8 @@ infra/kubernetes/apps/vpn/connect-authentik.sh
 The external callback is pinned to `https://vpn.gramly.tech/oauth2/callback`.
 The connection script also approves and grants the NetBird admin role only to
 the configured bootstrap owner's matching SSO identity. Other new employees
-remain subject to explicit administrator approval.
+remain subject to explicit administrator approval until group-based onboarding
+is enabled below.
 Local NetBird authentication deliberately remains available until an
 administrator has completed a real SSO login; disable it only after that test.
 
@@ -134,6 +135,33 @@ The script does not assign users or devices to roles.
 It keeps the permissive bootstrap `Default` policy unless an approved
 maintenance run explicitly sets `REMOVE_DEFAULT_POLICY=true`; even then, it
 removes the policy only when it matches NetBird's exact All-to-All shape.
+
+Make Authentik the source of truth for application and VPN access with:
+
+```bash
+infra/kubernetes/apps/identity/configure-access-control.sh
+infra/kubernetes/apps/vpn/enable-authentik-group-sync.sh
+```
+
+The first script creates the five canonical workforce groups, adds the Gramly
+owner to `gramly-owners`, and reconciles application bindings. CRM is available
+to employees, product, DevOps, and owners; Forgejo to product, engineering,
+DevOps, and owners; observability only to DevOps and owners; NetBird, Vikunja,
+and Outline accept all five workforce groups.
+
+The second script promotes the existing NetBird identity source groups from
+API-managed to JWT-managed **without changing their IDs**, then enables JWT
+group propagation using Authentik's `groups` claim. By default, a NetBird admin
+still approves each new person once; the employee does not need approval for
+each device. After an explicit security decision, run the second command as
+`AUTO_APPROVE_AUTHENTIK_USERS=true .../enable-authentik-group-sync.sh` to make
+the Authentik application binding the only admission step. NetBird independently
+enforces the same five-group JWT allowlist, so a misconfigured application
+binding does not broaden access.
+Computers and phones belonging to the same user inherit the same current group
+membership at SSO login.
+Removing the user from every allowlisted group blocks the next authentication.
+Group changes take effect when the user signs in again.
 
 Create or reconcile the split-DNS zone used by private application resources:
 
