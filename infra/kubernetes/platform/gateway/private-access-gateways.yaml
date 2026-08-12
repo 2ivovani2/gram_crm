@@ -61,6 +61,7 @@ spec:
         certificateRefs:
           - kind: Secret
             name: git-gramly-tech-tls
+            namespace: traefik-public
       allowedRoutes:
         namespaces:
           from: Selector

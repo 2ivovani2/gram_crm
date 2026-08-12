@@ -109,3 +109,49 @@ spec:
           selector:
             matchLabels:
               gramly.tech/contour: public
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gramly-public-access
+  namespace: traefik-public
+  labels:
+    gramly.tech/controller: public
+spec:
+  gatewayClassName: gramly-public
+  listeners:
+    - name: crm-https
+      hostname: crm.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: crm-gramly-tech-tls}]
+      allowedRoutes: &public-routes
+        namespaces:
+          from: Selector
+          selector: {matchLabels: {gramly.tech/contour: public}}
+    - name: git-https
+      hostname: git.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: git-gramly-tech-tls}]
+      allowedRoutes: *public-routes
+    - name: tasks-https
+      hostname: tasks.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: tasks-gramly-tech-tls}]
+      allowedRoutes: *public-routes
+    - name: docs-https
+      hostname: docs.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: docs-gramly-tech-tls}]
+      allowedRoutes: *public-routes

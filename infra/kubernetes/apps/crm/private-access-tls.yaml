@@ -1,0 +1,112 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: crm-gramly-tech
+  namespace: traefik-public
+spec:
+  secretName: crm-gramly-tech-tls
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-production}
+  dnsNames: [crm.gramly.tech]
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: git-gramly-tech
+  namespace: traefik-public
+spec:
+  secretName: git-gramly-tech-tls
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-production}
+  dnsNames: [git.gramly.tech]
+apiVersion: gateway.networking.k8s.io/v1
+kind: ReferenceGrant
+metadata: {name: collaboration-git-tls, namespace: traefik-public}
+spec:
+  from: [{group: gateway.networking.k8s.io, kind: Gateway, namespace: traefik-collaboration}]
+  to: [{group: "", kind: Secret, name: git-gramly-tech-tls}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: crm-tls-sync, namespace: traefik-business}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: read-crm-public-tls, namespace: traefik-public}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [crm-gramly-tech-tls]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: crm-tls-sync-read, namespace: traefik-public}
+subjects:
+  - {kind: ServiceAccount, name: crm-tls-sync, namespace: traefik-business}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: read-crm-public-tls}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: patch-crm-private-tls, namespace: traefik-business}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [crm-gramly-tech-tls]
+    verbs: [get, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: crm-tls-sync-write, namespace: traefik-business}
+subjects:
+  - {kind: ServiceAccount, name: crm-tls-sync, namespace: traefik-business}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: patch-crm-private-tls}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: crm-tls-sync, namespace: traefik-business}
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: crm-tls-sync
+          restartPolicy: Never
+          automountServiceAccountToken: true
+          securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: sync
+              image: python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 10m, memory: 32Mi}
+                limits: {cpu: 100m, memory: 96Mi}
+              command: [python, -c]
+              args:
+                - |
+                  import json, os, ssl, urllib.request
+                  host = os.environ["KUBERNETES_SERVICE_HOST"]
+                  port = os.environ["KUBERNETES_SERVICE_PORT_HTTPS"]
+                  base = f"https://{host}:{port}/api/v1/namespaces"
+                  token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+                  ca = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  headers = {"Authorization": f"Bearer {token}"}
+                  source = urllib.request.Request(
+                      base + "/traefik-public/secrets/crm-gramly-tech-tls",
+                      headers=headers,
+                  )
+                  with urllib.request.urlopen(source, context=ssl.create_default_context(cafile=ca)) as response:
+                      data = json.load(response)["data"]
+                  body = json.dumps({"data": {"tls.crt": data["tls.crt"], "tls.key": data["tls.key"]}}).encode()
+                  target = urllib.request.Request(
+                      base + "/traefik-business/secrets/crm-gramly-tech-tls",
+                      data=body,
+                      headers={**headers, "Content-Type": "application/merge-patch+json"},
+                      method="PATCH",
+                  )
+                  with urllib.request.urlopen(target, context=ssl.create_default_context(cafile=ca)) as response:
+                      print("crm TLS synchronized", response.status)

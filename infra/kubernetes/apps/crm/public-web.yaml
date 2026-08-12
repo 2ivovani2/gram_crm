@@ -23,7 +23,9 @@ spec:
           image: CRM_IMAGE_PLACEHOLDER
           args: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000", --workers, "2"]
           envFrom: [{secretRef: {name: gramly-public-runtime}}]
-          env: [{name: RUN_MIGRATIONS, value: "false"}]
+          env:
+            - {name: RUN_MIGRATIONS, value: "false"}
+            - {name: PUBLIC_ACCESS_GATE, value: "true"}
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           ports: [{name: http, containerPort: 8000}]
           startupProbe: &probe
@@ -82,4 +84,19 @@ spec:
         - {path: {type: PathPrefix, value: /bot/webhook/}}
         - {path: {type: PathPrefix, value: /welcome/webhook/}}
         - {path: {type: PathPrefix, value: /welcome/client/}}
+      backendRefs: [{name: gramly-public-web, port: 8000}]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: {name: gramly-private-access-gate, namespace: gramly-hello}
+spec:
+  parentRefs:
+    - {name: gramly-public, namespace: traefik-public, sectionName: http}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: crm-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: git-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: tasks-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: docs-https}
+  hostnames: [crm.gramly.tech, git.gramly.tech, tasks.gramly.tech, docs.gramly.tech]
+  rules:
+    - matches: [{path: {type: PathPrefix, value: /}}]
       backendRefs: [{name: gramly-public-web, port: 8000}]
