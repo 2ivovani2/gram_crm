@@ -1,0 +1,25 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: grafana-gramly-tech, namespace: traefik-public}
+spec:
+  secretName: grafana-gramly-tech-tls
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-production}
+  dnsNames: [grafana.gramly.tech]
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: cluster-gramly-tech, namespace: traefik-public}
+spec:
+  secretName: cluster-gramly-tech-tls
+  issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-production}
+  dnsNames: [cluster.gramly.tech]
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata: {name: infrastructure-observability-tls, namespace: traefik-public}
+spec:
+  from:
+    - {group: gateway.networking.k8s.io, kind: Gateway, namespace: traefik-private}
+  to:
+    - {group: "", kind: Secret, name: grafana-gramly-tech-tls}
+    - {group: "", kind: Secret, name: cluster-gramly-tech-tls}

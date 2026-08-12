@@ -12,6 +12,6 @@ spec:
   serviceRef:
     name: traefik-private
   groups:
-    # Bootstrap smoke-test destination. Employee-facing applications receive
-    # their own resources and narrower groups during migration.
-    - name: gramly-private-services
+    # Infrastructure applications are reachable only from the DevOps/owner
+    # source groups allowed by the gramly-devops-infrastructure policy.
+    - name: gramly-devops-services

@@ -12,8 +12,9 @@ There are two independent traffic planes:
 
 - `public`: a Vultr Load Balancer serving identity/VPN, the Gramly landing and
   Telegram webhooks, and the signed-media S3 endpoint;
-- `private`: separate ClusterIP-only business and collaboration gateways for
-  CRM, Forgejo, Vikunja, and Outline. They are reachable through NetBird only.
+- `private`: separate ClusterIP-only business, collaboration, and infrastructure
+  gateways. CRM and employee tools use the first two; Grafana and Headlamp use
+  the infrastructure plane and are reachable only by DevOps/owners via NetBird.
 
 Authentik is the shared OIDC identity provider. NetBird provides the WireGuard
 VPN and uses the same Authentik identities. Application authorization remains
@@ -261,7 +262,34 @@ Publicly served records:
 - `auth.gramly.tech`
 - `vpn.gramly.tech`
 
-Private application names (`crm`, `git`, `tasks`, `docs`) also have public A
+Private application names (`crm`, `git`, `tasks`, `docs`, `grafana`, `cluster`)
+also have public A
 records pointing at the Load Balancer for DNS ownership and certificate flows,
 but the public Gateway has no application routes for them. NetBird split DNS
-overrides those records with the private business/collaboration Gateway IPs.
+overrides those records with private business, collaboration, or infrastructure
+Gateway IPs.
+
+## Observability
+
+The reproducible observability contour is deployed with:
+
+```bash
+infra/kubernetes/scripts/deploy-observability.sh
+```
+
+It installs pinned `kube-prometheus-stack`, Headlamp, and oauth2-proxy releases
+in `observability`. Prometheus retains seven days of metrics on a retained
+20 GiB volume; Grafana stores its state on a retained 5 GiB volume. VKE-managed
+control-plane scrapers are disabled, while API server, kubelet, node, pod,
+workload, and persistent-volume metrics remain enabled.
+
+- `https://grafana.gramly.tech` shows dashboards and uses Authentik Generic
+  OAuth. Only `authentik Admins` map to a Grafana role.
+- `https://cluster.gramly.tech` shows Headlamp behind oauth2-proxy and the same
+  Authentik admin group. Its service account is read-only: it may inspect
+  workloads, events, metrics, and pod logs, but cannot mutate resources or read
+  Secrets.
+
+Both names resolve to `10.99.132.82` through NetBird and are attached to the
+`gramly-devops-services` destination group. Public A records point to the public
+load balancer only for ACME HTTP-01; no public application routes exist.

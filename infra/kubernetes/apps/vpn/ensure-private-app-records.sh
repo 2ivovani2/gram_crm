@@ -35,7 +35,9 @@ desired_records='[
   {"name":"crm.gramly.tech","type":"A","content":"10.99.132.83","ttl":300},
   {"name":"git.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
   {"name":"tasks.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
-  {"name":"docs.gramly.tech","type":"A","content":"10.99.132.84","ttl":300}
+  {"name":"docs.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
+  {"name":"grafana.gramly.tech","type":"A","content":"10.99.132.82","ttl":300},
+  {"name":"cluster.gramly.tech","type":"A","content":"10.99.132.82","ttl":300}
 ]'
 curl --config "${curl_config}" "${api_url}/dns/zones/${zone_id}/records" \
   >"${task_tmp}/records.json"

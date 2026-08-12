@@ -1,0 +1,127 @@
+defaultRules:
+  create: true
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 1
+    retention: 120h
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 384Mi}
+
+grafana:
+  enabled: true
+  replicas: 1
+  defaultDashboardsTimezone: browser
+  defaultDashboardsEditable: false
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    type: sts
+    storageClassName: vultr-block-storage-retain
+    accessModes: [ReadWriteOnce]
+    size: 5Gi
+  envFromSecret: grafana-oidc
+  grafana.ini:
+    server:
+      domain: grafana.gramly.tech
+      root_url: https://grafana.gramly.tech
+      enforce_domain: true
+    users:
+      allow_sign_up: false
+      auto_assign_org: true
+      auto_assign_org_role: Viewer
+    auth:
+      disable_login_form: true
+      oauth_auto_login: true
+    auth.generic_oauth:
+      enabled: true
+      name: Gramly SSO
+      allow_sign_up: true
+      client_id: $__env{GRAFANA_OIDC_CLIENT_ID}
+      client_secret: $__env{GRAFANA_OIDC_CLIENT_SECRET}
+      scopes: openid profile email entitlements
+      auth_url: https://auth.gramly.tech/application/o/observability/authorize/
+      token_url: https://auth.gramly.tech/application/o/observability/token/
+      api_url: https://auth.gramly.tech/application/o/observability/userinfo/
+      login_attribute_path: preferred_username
+      name_attribute_path: name
+      email_attribute_path: email
+      groups_attribute_path: groups
+      role_attribute_path: contains(groups[*], 'authentik Admins') && 'GrafanaAdmin' || 'None'
+      role_attribute_strict: true
+      allow_assign_grafana_admin: true
+      skip_org_role_sync: false
+    security:
+      cookie_secure: true
+      cookie_samesite: strict
+      strict_transport_security: true
+      strict_transport_security_max_age_seconds: 31536000
+      content_type_protection: true
+      x_content_type_options: true
+      x_xss_protection: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 1000m, memory: 768Mi}
+  # VKE currently presents an API serving chain rejected by the Python
+  # sidecar's stricter OpenSSL validation. Prometheus itself still validates
+  # the API server; only dashboard/datasource discovery skips this check.
+  sidecar:
+    skipTlsVerify: true
+    dashboards:
+      # Provisioned dashboards are immutable; Grafana loads them on startup.
+      # Avoid localhost reload redirects caused by enforce_domain.
+      skipReload: true
+    datasources:
+      skipReload: true
+
+# VKE manages these control-plane components outside the worker nodes.
+kubeControllerManager: {enabled: false}
+kubeEtcd: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeProxy: {enabled: false}
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: 14GB
+    walCompression: true
+    replicas: 1
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    resources:
+      requests: {cpu: 250m, memory: 1Gi}
+      limits: {cpu: 2000m, memory: 3Gi}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: vultr-block-storage-retain
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests: {storage: 20Gi}
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+kube-state-metrics:
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 192Mi}
