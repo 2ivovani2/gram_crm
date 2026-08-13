@@ -1,0 +1,7 @@
+[Unit]
+Description=Gramly edge upstream health check
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gramly-edge-healthcheck

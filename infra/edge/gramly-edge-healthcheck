@@ -1,0 +1,14 @@
+#!/bin/bash
+set -eu
+
+upstream=45.77.149.91
+failed=0
+
+systemctl is-active --quiet nginx || failed=1
+timeout 5 bash -c "</dev/tcp/$upstream/80" 2>/dev/null || failed=1
+timeout 5 bash -c "</dev/tcp/$upstream/443" 2>/dev/null || failed=1
+
+if [ "$failed" -ne 0 ]; then
+    logger -t gramly-edge-health "edge health check failed"
+    exit 1
+fi
