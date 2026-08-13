@@ -46,6 +46,10 @@ ports:
     protocol: UDP
 
 service:
+  annotations:
+    # NetBird uses long-lived gRPC streams for management and signalling.
+    # Keep the Vultr Load Balancer from terminating an otherwise healthy stream.
+    service.beta.kubernetes.io/vultr-loadbalancer-timeout: "3600"
   spec:
     type: LoadBalancer
     externalTrafficPolicy: Local
