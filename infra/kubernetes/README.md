@@ -52,9 +52,23 @@ and retire bootstrap access with:
 infra/kubernetes/apps/identity/harden-authentication.sh
 ```
 
-This deliberately denies login to users who have not enrolled MFA. Provision
-new employees with a short-lived recovery or invitation flow so they can enroll
-before their first regular login.
+This keeps MFA mandatory and injects the standard TOTP setup flow when a user
+has no enrolled authenticator. Configure forced password replacement once with:
+
+```bash
+infra/kubernetes/apps/identity/configure-user-onboarding.sh
+```
+
+When an administrator creates a user and assigns an initial password, mark it
+as temporary before handing it to the employee:
+
+```bash
+infra/kubernetes/apps/identity/mark-temporary-password.sh <username>
+```
+
+On first login the employee must replace that password, enroll TOTP, and verify
+the generated code before Authentik creates the application session. The flag
+is cleared only after the password write stage succeeds.
 
 Create the confidential Authentik OIDC application used by NetBird with:
 
