@@ -42,12 +42,7 @@ group_id() {
 }
 
 source_names='[
-  "gramly-admin-devices",
-  "gramly-employees",
-  "gramly-product",
-  "gramly-engineering",
-  "gramly-devops",
-  "gramly-owners"
+  "All"
 ]'
 source_ids='[]'
 while IFS= read -r source_name; do
@@ -55,11 +50,7 @@ while IFS= read -r source_name; do
     <<<"${source_ids}")"
 done < <(jq -r '.[]' <<<"${source_names}")
 
-privileged_source_ids="$(jq -cn \
-  --arg admins "$(group_id gramly-admin-devices)" \
-  --arg devops "$(group_id gramly-devops)" \
-  --arg owners "$(group_id gramly-owners)" \
-  '[$admins, $devops, $owners]')"
+privileged_source_ids="${source_ids}"
 
 ensure_policy() {
   local policy_name="$1"
@@ -104,19 +95,19 @@ ensure_policy() {
 
 ensure_policy \
   gramly-workforce-business \
-  "Employees may reach CRM and other business services over HTTPS." \
+  "Approved VPN peers may reach the business ingress; Authentik authorizes applications." \
   "${source_ids}" \
   gramly-business-services
 
 ensure_policy \
   gramly-workforce-collaboration \
-  "Employees may reach source control, tasks, and documentation over HTTPS." \
+  "Approved VPN peers may reach collaboration ingress; Authentik authorizes applications." \
   "${source_ids}" \
   gramly-collaboration-services
 
 ensure_policy \
   gramly-devops-infrastructure \
-  "DevOps and owners may reach infrastructure administration services." \
+  "Approved VPN peers may reach infrastructure ingress; Authentik authorizes applications." \
   "${privileged_source_ids}" \
   gramly-devops-services
 
@@ -146,4 +137,4 @@ else
   fi
 fi
 
-echo "Role-based NetBird policies are present; group membership was not changed."
+echo "Approved-peer NetBird transport policies are present; Authentik remains the application authorization layer."

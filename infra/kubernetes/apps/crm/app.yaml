@@ -74,4 +74,11 @@ spec:
     - {name: gramly-business, namespace: traefik-business, sectionName: crm-https}
   hostnames: [crm.gramly.tech]
   rules:
+    - matches:
+        - path: {type: Exact, value: /}
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path: {type: ReplaceFullPath, replaceFullPath: /crm/dashboard/}
+            statusCode: 302
     - backendRefs: [{name: gramly-crm-web, port: 8000}]
