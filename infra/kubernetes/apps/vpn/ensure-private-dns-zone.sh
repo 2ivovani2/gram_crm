@@ -29,13 +29,7 @@ printf 'silent\nshow-error\nfail\nconnect-timeout = 10\nmax-time = 30\nretry = 3
 chmod 600 "${curl_config}"
 
 distribution_group_names='[
-  "gramly-admin-devices",
-  "Business",
-  "gramly-employees",
-  "gramly-product",
-  "gramly-engineering",
-  "gramly-devops",
-  "gramly-owners"
+  "All"
 ]'
 
 curl --config "${curl_config}" "${api_url}/groups" >"${task_tmp}/groups.json"
@@ -83,4 +77,4 @@ else
   echo "Created NetBird private DNS zone ${zone_domain}."
 fi
 
-echo "The zone contains no manual records; public DNS remains authoritative for all other names."
+echo "The private zone is distributed to approved peers; record contents are reconciled separately."

@@ -128,12 +128,11 @@ devices, resources, or policies:
 infra/kubernetes/apps/vpn/ensure-access-groups.sh
 ```
 
-The intended source roles are `gramly-employees`, `gramly-product`,
-`gramly-engineering`, `gramly-devops`, and `gramly-owners`. Destination services
-are split between `gramly-business-services`,
-`gramly-collaboration-services`, and `gramly-devops-services`. Product and
-repository permissions remain application-level roles; membership in a VPN
-group only makes the corresponding endpoint reachable.
+Legacy identity groups are retained for audit and JWT group propagation.
+Destination services are split between `gramly-business-services`,
+`gramly-collaboration-services`, and `gramly-devops-services`. Application
+authorization is owned exclusively by Authentik; NetBird only transports an
+approved device to the corresponding private ingress.
 
 Reconcile the corresponding least-privilege HTTPS policies with:
 
@@ -141,11 +140,10 @@ Reconcile the corresponding least-privilege HTTPS policies with:
 infra/kubernetes/apps/vpn/ensure-access-policies.sh
 ```
 
-Employees and application roles can reach business and collaboration services.
-Only the `gramly-devops` and `gramly-owners` groups can reach infrastructure
-administration services. Bootstrap devices in `gramly-admin-devices` can reach
-all three access planes while SSO role synchronization is being introduced.
-The script does not assign users or devices to roles.
+Every approved NetBird peer can reach the three private ingress addresses.
+Authentik application bindings independently decide whether that user may open
+CRM, Forgejo, Vikunja, Outline, Grafana, or Headlamp. The script does not assign
+users, devices, or application permissions.
 It keeps the permissive bootstrap `Default` policy unless an approved
 maintenance run explicitly sets `REMOVE_DEFAULT_POLICY=true`; even then, it
 removes the policy only when it matches NetBird's exact All-to-All shape.
@@ -157,26 +155,21 @@ infra/kubernetes/apps/identity/configure-access-control.sh
 infra/kubernetes/apps/vpn/enable-authentik-group-sync.sh
 ```
 
-The first script creates the canonical workforce groups, preserves the
-`Business` role, adds the Gramly owner to `gramly-owners`, and reconciles
-application bindings. CRM is available to Business, employees, product,
-DevOps, and owners; Forgejo to product, engineering, DevOps, and owners;
-observability only to DevOps and owners; NetBird, Vikunja, and Outline accept
-Business and all canonical workforce groups.
+The first script reconciles application bindings for the protected services.
+The NetBird application intentionally has no group binding: every active
+Authentik user may request enrollment, but cannot join the network until a
+NetBird administrator approves the user once.
 
-The second script promotes the existing NetBird identity source groups from
-API-managed to JWT-managed **without changing their IDs**, then enables JWT
-group propagation using Authentik's `groups` claim. By default, a NetBird admin
-still approves each new person once; the employee does not need approval for
-each device. After an explicit security decision, run the second command as
+The second script enables JWT group propagation for audit and removes the
+redundant NetBird JWT group allowlist. By default, a NetBird admin still
+approves each new person once; the employee does not need approval for each
+device. After an explicit security decision, run the second command as
 `AUTO_APPROVE_AUTHENTIK_USERS=true .../enable-authentik-group-sync.sh` to make
-the Authentik application binding the only admission step. NetBird independently
-enforces the same JWT allowlist, so a misconfigured application
-binding does not broaden access.
+the Authentik account itself the admission step.
 Computers and phones belonging to the same user inherit the same current group
 membership at SSO login.
-Removing the user from every allowlisted group blocks the next authentication.
-Group changes take effect when the user signs in again.
+Application permission changes take effect in Authentik without duplicating
+the same role map in NetBird.
 
 Create or reconcile the split-DNS zone used by private application resources:
 

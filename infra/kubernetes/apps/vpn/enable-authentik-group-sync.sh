@@ -15,14 +15,6 @@ done
 
 readonly api_url="https://vpn.gramly.tech/api"
 readonly auto_approve_authentik_users="${AUTO_APPROVE_AUTHENTIK_USERS:-false}"
-readonly jwt_groups=(
-  Business
-  gramly-employees
-  gramly-product
-  gramly-engineering
-  gramly-devops
-  gramly-owners
-)
 
 task_tmp="$(mktemp -d)"
 trap 'rm -rf "${task_tmp}"; unset api_token' EXIT
@@ -43,42 +35,11 @@ if [[ "${auto_approve_authentik_users}" != "true" && \
   exit 1
 fi
 
-curl --config "${curl_config}" "${api_url}/groups" >"${task_tmp}/groups.json"
-for group_name in "${jwt_groups[@]}"; do
-  jq -e --arg name "${group_name}" \
-    '.[] | select(.name == $name)' "${task_tmp}/groups.json" >/dev/null || {
-      echo "Missing NetBird group ${group_name}; run ensure-access-groups.sh first." >&2
-      exit 1
-    }
-done
-
-# NetBird intentionally refuses to attach JWT membership to an API-issued group
-# with the same name. Promote only the identity source groups in-place so
-# their IDs (and every policy reference to those IDs) remain unchanged.
-sql="UPDATE groups SET issued = 'jwt' WHERE name IN ('Business','gramly-employees','gramly-product','gramly-engineering','gramly-devops','gramly-owners') AND issued = 'api';"
-postgres_primary="$(kubectl get pods --namespace identity \
-  --selector cnpg.io/cluster=identity-postgres,role=primary \
-  --output jsonpath='{.items[0].metadata.name}')"
-if [[ -z "${postgres_primary}" ]]; then
-  echo "The primary identity-postgres pod was not found." >&2
-  exit 1
-fi
-kubectl exec --namespace identity "${postgres_primary}" --container postgres -- \
-  psql --username postgres --dbname netbird --set ON_ERROR_STOP=1 \
-  --command "${sql}" >/dev/null
-
 curl --config "${curl_config}" "${api_url}/accounts" >"${task_tmp}/accounts.json"
 account_id="$(jq -er '.[0].id' "${task_tmp}/accounts.json")"
 
 jq --argjson auto_approve "${auto_approve_authentik_users}" \
-  --argjson allow_groups '[
-      "Business",
-      "gramly-employees",
-      "gramly-product",
-      "gramly-engineering",
-      "gramly-devops",
-      "gramly-owners"
-    ]' \
+  --argjson allow_groups '[]' \
   '.[0]
    | {settings: .settings, onboarding: .onboarding}
    | .settings.jwt_groups_enabled = true
@@ -100,14 +61,7 @@ jq -e '
   .settings.jwt_groups_enabled == true and
   .settings.jwt_groups_claim_name == "groups" and
   .settings.groups_propagation_enabled == true and
-  (.settings.jwt_allow_groups | sort) == ([
-    "Business",
-    "gramly-devops",
-    "gramly-employees",
-    "gramly-engineering",
-    "gramly-owners",
-    "gramly-product"
-  ] | sort)
+  .settings.jwt_allow_groups == []
 ' "${task_tmp}/updated-account.json" >/dev/null
 
 if [[ "${auto_approve_authentik_users}" == "true" ]]; then
@@ -116,7 +70,7 @@ if [[ "${auto_approve_authentik_users}" == "true" ]]; then
 fi
 
 if [[ "${auto_approve_authentik_users}" == "true" ]]; then
-  echo "NetBird accepts allowlisted Authentik users automatically and propagates groups to every device."
+  echo "NetBird accepts Authentik users automatically and propagates identity groups to every device."
 else
-  echo "NetBird propagates Authentik groups to every device; one-time user approval remains enabled."
+  echo "NetBird admits Authentik users after one-time approval and propagates identity groups to every device."
 fi
