@@ -16,6 +16,7 @@ from authentik.core.models import Application, Group, User
 from authentik.policies.models import PolicyBinding
 
 group_names = (
+    'Business',
     'gramly-employees',
     'gramly-product',
     'gramly-engineering',
@@ -25,7 +26,7 @@ group_names = (
 
 application_groups = {
     'netbird': group_names,
-    'crm': ('gramly-employees', 'gramly-product', 'gramly-devops', 'gramly-owners'),
+    'crm': ('Business', 'gramly-employees', 'gramly-product', 'gramly-devops', 'gramly-owners'),
     'forgejo': ('gramly-product', 'gramly-engineering', 'gramly-devops', 'gramly-owners'),
     'vikunja': group_names,
     'outline': group_names,

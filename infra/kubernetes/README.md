@@ -157,11 +157,12 @@ infra/kubernetes/apps/identity/configure-access-control.sh
 infra/kubernetes/apps/vpn/enable-authentik-group-sync.sh
 ```
 
-The first script creates the five canonical workforce groups, adds the Gramly
-owner to `gramly-owners`, and reconciles application bindings. CRM is available
-to employees, product, DevOps, and owners; Forgejo to product, engineering,
-DevOps, and owners; observability only to DevOps and owners; NetBird, Vikunja,
-and Outline accept all five workforce groups.
+The first script creates the canonical workforce groups, preserves the
+`Business` role, adds the Gramly owner to `gramly-owners`, and reconciles
+application bindings. CRM is available to Business, employees, product,
+DevOps, and owners; Forgejo to product, engineering, DevOps, and owners;
+observability only to DevOps and owners; NetBird, Vikunja, and Outline accept
+Business and all canonical workforce groups.
 
 The second script promotes the existing NetBird identity source groups from
 API-managed to JWT-managed **without changing their IDs**, then enables JWT
@@ -170,7 +171,7 @@ still approves each new person once; the employee does not need approval for
 each device. After an explicit security decision, run the second command as
 `AUTO_APPROVE_AUTHENTIK_USERS=true .../enable-authentik-group-sync.sh` to make
 the Authentik application binding the only admission step. NetBird independently
-enforces the same five-group JWT allowlist, so a misconfigured application
+enforces the same JWT allowlist, so a misconfigured application
 binding does not broaden access.
 Computers and phones belonging to the same user inherit the same current group
 membership at SSO login.

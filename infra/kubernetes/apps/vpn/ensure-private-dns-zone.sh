@@ -30,6 +30,7 @@ chmod 600 "${curl_config}"
 
 distribution_group_names='[
   "gramly-admin-devices",
+  "Business",
   "gramly-employees",
   "gramly-product",
   "gramly-engineering",
