@@ -26,12 +26,12 @@ zone_id="$(curl --config "${curl_config}" "${api_url}/dns/zones" | \
 [[ -n "${zone_id}" ]] || { echo "NetBird zone gramly.tech is missing." >&2; exit 1; }
 
 desired_records='[
-  {"name":"gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
-  {"name":"www.gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
-  {"name":"hello.gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
-  {"name":"media.gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
-  {"name":"auth.gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
-  {"name":"vpn.gramly.tech","type":"A","content":"45.77.149.91","ttl":300},
+  {"name":"gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
+  {"name":"www.gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
+  {"name":"hello.gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
+  {"name":"media.gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
+  {"name":"auth.gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
+  {"name":"vpn.gramly.tech","type":"A","content":"192.248.148.140","ttl":300},
   {"name":"crm.gramly.tech","type":"A","content":"10.99.132.83","ttl":300},
   {"name":"git.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},
   {"name":"tasks.gramly.tech","type":"A","content":"10.99.132.84","ttl":300},

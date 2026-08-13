@@ -6,6 +6,18 @@ The production VPS remains at `192.248.148.140`. Existing records must stay on
 that address until the corresponding application has passed its migration
 rehearsal.
 
+## Current compatibility edge
+
+Russian access checks on 2026-08-13 showed operator-dependent timeouts and DNS
+interception when clients connected directly to the VKE LoadBalancer. The old
+VPS now runs a data-free L4 edge that forwards TCP/80, TCP/443, and UDP/3478 to
+the VKE LoadBalancer without terminating TLS.
+
+The public records for `@`, `www`, `hello`, `media`, `auth`, and `vpn` must point
+to `192.248.148.140`. Application workloads, certificates, authentication, and
+data remain in Kubernetes. Private service records continue to be overridden by
+the NetBird split-DNS zone.
+
 ## Phase 1: identity and VPN bootstrap
 
 These records are new and can be created immediately with TTL 300:
