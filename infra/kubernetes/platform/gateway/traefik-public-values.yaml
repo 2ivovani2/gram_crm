@@ -37,6 +37,11 @@ gatewayClass:
   labels:
     gramly.tech/controller: public
 
+# NetBird shares the public TLS entrypoint and uses long-lived streaming POSTs.
+# Traefik's 60s readTimeout otherwise terminates Signal and Management streams.
+additionalArguments:
+  - --entryPoints.websecure.transport.respondingTimeouts.readTimeout=3600s
+
 ports:
   netbird-stun:
     port: 3478
@@ -46,6 +51,10 @@ ports:
     protocol: UDP
 
 service:
+  annotations:
+    # NetBird uses long-lived gRPC streams for management and signalling.
+    # Keep the Vultr Load Balancer from terminating an otherwise healthy stream.
+    service.beta.kubernetes.io/vultr-loadbalancer-timeout: "3600"
   spec:
     type: LoadBalancer
     externalTrafficPolicy: Local

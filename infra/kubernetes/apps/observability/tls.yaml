@@ -14,12 +14,91 @@ spec:
   issuerRef: {group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-production}
   dnsNames: [cluster.gramly.tech]
 ---
-apiVersion: gateway.networking.k8s.io/v1beta1
-kind: ReferenceGrant
-metadata: {name: infrastructure-observability-tls, namespace: traefik-public}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: observability-tls-sync, namespace: traefik-private}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: read-observability-public-tls, namespace: traefik-public}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [grafana-gramly-tech-tls, cluster-gramly-tech-tls]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: observability-tls-sync-read, namespace: traefik-public}
+subjects:
+  - {kind: ServiceAccount, name: observability-tls-sync, namespace: traefik-private}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: read-observability-public-tls}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: patch-observability-private-tls, namespace: traefik-private}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [grafana-gramly-tech-tls, cluster-gramly-tech-tls]
+    verbs: [get, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: observability-tls-sync-write, namespace: traefik-private}
+subjects:
+  - {kind: ServiceAccount, name: observability-tls-sync, namespace: traefik-private}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: patch-observability-private-tls}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: observability-tls-sync, namespace: traefik-private}
 spec:
-  from:
-    - {group: gateway.networking.k8s.io, kind: Gateway, namespace: traefik-private}
-  to:
-    - {group: "", kind: Secret, name: grafana-gramly-tech-tls}
-    - {group: "", kind: Secret, name: cluster-gramly-tech-tls}
+  schedule: "23 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: observability-tls-sync
+          restartPolicy: Never
+          automountServiceAccountToken: true
+          securityContext: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: sync
+              image: python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 10m, memory: 32Mi}
+                limits: {cpu: 100m, memory: 96Mi}
+              command: [python, -c]
+              args:
+                - |
+                  import json, os, ssl, urllib.request
+                  host = os.environ["KUBERNETES_SERVICE_HOST"]
+                  port = os.environ["KUBERNETES_SERVICE_PORT_HTTPS"]
+                  base = f"https://{host}:{port}/api/v1/namespaces"
+                  token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+                  ca = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  headers = {"Authorization": f"Bearer {token}"}
+                  context = ssl.create_default_context(cafile=ca)
+                  for name in ("grafana-gramly-tech-tls", "cluster-gramly-tech-tls"):
+                      source = urllib.request.Request(
+                          base + "/traefik-public/secrets/" + name,
+                          headers=headers,
+                      )
+                      with urllib.request.urlopen(source, context=context) as response:
+                          data = json.load(response)["data"]
+                      body = json.dumps({"data": {"tls.crt": data["tls.crt"], "tls.key": data["tls.key"]}}).encode()
+                      target = urllib.request.Request(
+                          base + "/traefik-private/secrets/" + name,
+                          data=body,
+                          headers={**headers, "Content-Type": "application/merge-patch+json"},
+                          method="PATCH",
+                      )
+                      with urllib.request.urlopen(target, context=context) as response:
+                          print(name, "synchronized", response.status)

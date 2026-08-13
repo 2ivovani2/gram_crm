@@ -56,6 +56,7 @@ config="$(printf '%s\n' \
   '      - "https://vpn.gramly.tech/nb-silent-auth"' \
   '    cliRedirectURIs:' \
   '      - "http://localhost:53000/"' \
+  '      - "http://localhost:54000/"' \
   '    owner:' \
   '      email: "avyaroslavskiy@miem.hse.ru"' \
   "      password: \"$owner_password_hash\"" \

@@ -24,6 +24,11 @@ spec:
       backendRefs:
         - name: netbird-server
           port: 81
+      # NetBird keeps management and signal gRPC streams open for the VPN
+      # session. Traefik treats a zero Gateway API duration as its 60-second
+      # default, so use an explicit long request timeout here.
+      timeouts:
+        request: "3600s"
     - matches:
         - path:
             type: PathPrefix
