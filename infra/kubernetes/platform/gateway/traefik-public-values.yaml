@@ -37,6 +37,11 @@ gatewayClass:
   labels:
     gramly.tech/controller: public
 
+# NetBird shares the public TLS entrypoint and uses long-lived streaming POSTs.
+# Traefik's 60s readTimeout otherwise terminates Signal and Management streams.
+additionalArguments:
+  - --entryPoints.websecure.transport.respondingTimeouts.readTimeout=3600s
+
 ports:
   netbird-stun:
     port: 3478
