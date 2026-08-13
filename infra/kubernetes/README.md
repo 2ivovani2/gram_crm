@@ -295,9 +295,7 @@ external NetBird IdP, verify a fresh login, and disable NetBird local auth.
 Public DNS records are changed only after the public gateway, TLS, Authentik,
 NetBird, and Hello staging endpoint have passed smoke tests.
 
-Publicly served records resolve to the compatibility L4 edge at
-`192.248.148.140`; the edge passes TCP/80, TCP/443, and NetBird UDP/3478 to the
-VKE public LoadBalancer without terminating TLS:
+Publicly served records:
 
 - `gramly.tech`
 - `www.gramly.tech`
