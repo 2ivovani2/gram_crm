@@ -7,11 +7,11 @@ if [[ -z "${KUBECONFIG:-}" ]]; then
 fi
 
 kubectl exec -n identity deployment/authentik-server -c server -- ak shell -c \
-  "from authentik.core.models import User; from authentik.stages.authenticator_totp.models import TOTPDevice; from authentik.stages.authenticator_validate.models import AuthenticatorValidateStage; u=User.objects.get(username='i_vovani'); assert u.is_active and u.has_usable_password(), 'i_vovani must have an active account and a permanent password'; assert TOTPDevice.objects.filter(user=u,confirmed=True).exists(), 'i_vovani must enroll confirmed TOTP before MFA enforcement'; s=AuthenticatorValidateStage.objects.get(name='default-authentication-mfa-validation'); s.not_configured_action='deny'; s.save(update_fields=['not_configured_action']); bootstrap=User.objects.filter(username='akadmin').first(); setattr(bootstrap,'is_active',False) if bootstrap else None; bootstrap.save(update_fields=['is_active']) if bootstrap else None" \
+  "from authentik.core.models import User; from authentik.stages.authenticator_totp.models import TOTPDevice, AuthenticatorTOTPStage; from authentik.stages.authenticator_validate.models import AuthenticatorValidateStage; u=User.objects.get(username='i_vovani'); assert u.is_active and u.has_usable_password(), 'i_vovani must have an active account and a permanent password'; assert TOTPDevice.objects.filter(user=u,confirmed=True).exists(), 'i_vovani must enroll confirmed TOTP before MFA enforcement'; s=AuthenticatorValidateStage.objects.get(name='default-authentication-mfa-validation'); setup=AuthenticatorTOTPStage.objects.get(name='default-authenticator-totp-setup'); s.not_configured_action='configure'; s.device_classes=['totp']; s.save(update_fields=['not_configured_action','device_classes']); s.configuration_stages.set([setup]); bootstrap=User.objects.filter(username='akadmin').first(); setattr(bootstrap,'is_active',False) if bootstrap else None; bootstrap.save(update_fields=['is_active']) if bootstrap else None" \
   >/dev/null
 
 kubectl patch secret authentik-runtime --namespace identity --type=merge \
   --patch='{"data":{"AUTHENTIK_BOOTSTRAP_PASSWORD":null,"AUTHENTIK_BOOTSTRAP_TOKEN":null,"GRAMLY_INITIAL_ADMIN_PASSWORD":null}}' \
   >/dev/null
 
-echo "MFA is mandatory. The bootstrap administrator and reusable bootstrap credentials are disabled."
+echo "MFA is mandatory with self-service TOTP enrollment. Bootstrap access is disabled."
