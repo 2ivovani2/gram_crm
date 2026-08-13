@@ -48,6 +48,7 @@ ensure_group() {
 }
 
 groups=(
+  Business
   gramly-employees
   gramly-product
   gramly-engineering

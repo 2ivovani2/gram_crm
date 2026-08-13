@@ -16,6 +16,7 @@ done
 readonly api_url="https://vpn.gramly.tech/api"
 readonly auto_approve_authentik_users="${AUTO_APPROVE_AUTHENTIK_USERS:-false}"
 readonly jwt_groups=(
+  Business
   gramly-employees
   gramly-product
   gramly-engineering
@@ -52,9 +53,9 @@ for group_name in "${jwt_groups[@]}"; do
 done
 
 # NetBird intentionally refuses to attach JWT membership to an API-issued group
-# with the same name. Promote only the five identity source groups in-place so
+# with the same name. Promote only the identity source groups in-place so
 # their IDs (and every policy reference to those IDs) remain unchanged.
-sql="UPDATE groups SET issued = 'jwt' WHERE name IN ('gramly-employees','gramly-product','gramly-engineering','gramly-devops','gramly-owners') AND issued = 'api';"
+sql="UPDATE groups SET issued = 'jwt' WHERE name IN ('Business','gramly-employees','gramly-product','gramly-engineering','gramly-devops','gramly-owners') AND issued = 'api';"
 postgres_primary="$(kubectl get pods --namespace identity \
   --selector cnpg.io/cluster=identity-postgres,role=primary \
   --output jsonpath='{.items[0].metadata.name}')"
@@ -71,6 +72,7 @@ account_id="$(jq -er '.[0].id' "${task_tmp}/accounts.json")"
 
 jq --argjson auto_approve "${auto_approve_authentik_users}" \
   --argjson allow_groups '[
+      "Business",
       "gramly-employees",
       "gramly-product",
       "gramly-engineering",
@@ -99,6 +101,7 @@ jq -e '
   .settings.jwt_groups_claim_name == "groups" and
   .settings.groups_propagation_enabled == true and
   (.settings.jwt_allow_groups | sort) == ([
+    "Business",
     "gramly-devops",
     "gramly-employees",
     "gramly-engineering",
