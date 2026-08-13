@@ -5,8 +5,9 @@ New VKE public gateway address: `45.77.149.91`.
 Current public L4 edge address: `45.146.131.207`. Public DNS records use this
 address so traffic from Russian networks reaches the VKE gateway through the
 Moscow compatibility edge. The edge does not terminate TLS or contain
-application data. NetBird split-DNS continues to route enrolled devices
-directly to VKE and the private ingress addresses.
+application data. NetBird split-DNS routes public/bootstrap names through the
+Moscow edge and private service names directly to their private ingress
+addresses.
 
 The former production VPS at `192.248.148.140` has been retired. It is not a
 valid rollback target. All public records listed below use the Moscow edge.

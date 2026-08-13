@@ -13,9 +13,10 @@ TLS certificates, application routing, authentication, workloads, secrets,
 databases, and persistent data remain in Kubernetes. The edge must never host
 an application workload or an application backup.
 
-Public DNS records point to `45.146.131.207`. NetBird split-DNS records continue
-to point public/bootstrap names directly to `45.77.149.91` and private service
-names to their private ingress addresses, so enrolled devices bypass the edge.
+Public DNS records point to `45.146.131.207`. NetBird split-DNS also sends
+public/bootstrap names through the Moscow edge so Authentik remains reachable
+from Russian networks during an SSO redirect. Private service names continue to
+resolve to their private ingress addresses.
 
 ## Installed files
 
