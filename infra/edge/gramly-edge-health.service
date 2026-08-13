@@ -1,6 +1,6 @@
 [Unit]
 Description=Gramly edge upstream health check
-After=network-online.target nginx.service
+After=network-online.target nginx.service coturn.service
 
 [Service]
 Type=oneshot

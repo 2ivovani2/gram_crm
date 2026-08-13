@@ -296,9 +296,9 @@ Public DNS records are changed only after the public gateway, TLS, Authentik,
 NetBird, and Hello staging endpoint have passed smoke tests.
 
 Publicly served records resolve to the data-free Moscow L4 edge at
-`45.146.131.207`. The edge forwards TCP/80, TCP/443, and NetBird UDP/3478 to
-the VKE public LoadBalancer without terminating TLS. Its reproducible
-configuration lives in `infra/edge/`.
+`45.146.131.207`. The edge forwards TCP/80 and TCP/443 to the VKE public
+LoadBalancer without terminating TLS and provides a local STUN-only endpoint
+on UDP/3478 for NetBird. Its reproducible configuration lives in `infra/edge/`.
 
 Publicly served records:
 

@@ -3,11 +3,11 @@
 The Moscow edge at `45.146.131.207` is a data-free compatibility proxy for
 networks that cannot reliably reach the VKE LoadBalancer at `45.77.149.91`.
 
-It forwards only:
+It provides only:
 
 - TCP/80 to the public ingress;
 - TCP/443 to the public ingress without terminating TLS;
-- UDP/3478 to NetBird STUN.
+- UDP/3478 as a local STUN-only endpoint for NetBird clients.
 
 TLS certificates, application routing, authentication, workloads, secrets,
 databases, and persistent data remain in Kubernetes. The edge must never host
@@ -22,17 +22,22 @@ names to their private ingress addresses, so enrolled devices bypass the edge.
 - `nginx.conf` -> `/etc/nginx/nginx.conf`
 - `99-gramly-edge.conf` -> `/etc/sysctl.d/99-gramly-edge.conf`
 - `99-gramly-edge-ssh.conf` -> `/etc/ssh/sshd_config.d/99-gramly-edge.conf`
+- `turnserver.conf` -> `/etc/turnserver.conf`
 - `gramly-edge-healthcheck` -> `/usr/local/sbin/gramly-edge-healthcheck`
 - `gramly-edge-health.service` and `.timer` -> `/etc/systemd/system/`
 
 Inbound firewall access is limited to SSH, HTTP, HTTPS, and NetBird STUN.
 Password and keyboard-interactive SSH authentication are disabled.
 
+STUN is intentionally local rather than UDP-proxied to VKE. A proxied STUN
+request would expose the edge address to the backend instead of the client's
+real public address and would degrade NetBird peer-to-peer path discovery.
+
 ## Verification
 
 ```bash
 nginx -t
-systemctl is-active nginx gramly-edge-health.timer
+systemctl is-active nginx coturn gramly-edge-health.timer
 ufw status verbose
 ss -lntup | grep -E ':(22|80|443|3478) '
 ```
