@@ -49,7 +49,7 @@ runtime_args+=(
   "--from-literal=DEBUG=False"
   "--from-literal=BOT_ENV=prod"
   "--from-literal=DOMAIN=gramly.tech"
-  "--from-literal=ALLOWED_HOSTS=gramly.tech,www.gramly.tech,hello.gramly.tech,crm.gramly.tech"
+  "--from-literal=ALLOWED_HOSTS=gramly.tech,www.gramly.tech,hello.gramly.tech,crm.gramly.tech,bot.gramly.tech"
   "--from-literal=DATABASE_URL=postgres://gramly:${db_password}@gramly-crm-postgres-rw.gramly-crm.svc.cluster.local:5432/gramly"
   "--from-literal=REDIS_URL=redis://:${redis_password}@gramly-crm-valkey.gramly-crm.svc.cluster.local:6379/0"
   "--from-literal=AWS_S3_ENDPOINT_URL=https://media.gramly.tech"

@@ -109,6 +109,21 @@ spec:
           selector:
             matchLabels:
               gramly.tech/contour: public
+    - name: bot-https
+      hostname: bot.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: bot-gramly-tech-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/access-plane: business
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

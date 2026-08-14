@@ -56,17 +56,17 @@ provider.redirect_uris = [
 provider.save(update_fields=["_redirect_uris"])
 
 crm_identity_mapping, _ = ScopeMapping.objects.update_or_create(
-    name="Gramly CRM Telegram identity",
+    name="Gramly CRM Telegram ID",
     defaults={
         "scope_name": "profile",
-        "description": "Explicit Telegram username used only for initial CRM identity binding.",
-        "expression": """raw = request.user.attributes.get(\"gramly_crm_telegram_username\")
+        "description": "Stable Telegram user ID used only for initial CRM identity binding.",
+        "expression": """raw = request.user.attributes.get(\"gramly_crm_telegram_id\")
 if not raw:
     return {}
-username = str(raw).strip().lstrip(\"@\").strip().lower()
-if not username:
+telegram_id = str(raw).strip()
+if not telegram_id.isascii() or not telegram_id.isdecimal():
     return {}
-return {\"gramly_crm_telegram_username\": username}""",
+return {\"gramly_crm_telegram_id\": telegram_id}""",
     },
 )
 mappings = list(ScopeMapping.objects.filter(scope_name__in=["openid", "email", "profile"]))
@@ -82,14 +82,14 @@ Application.objects.update_or_create(
         "meta_description": "Private business workspace",
     },
 )
-print("GRAMLY_RESULT crm_oidc_ready=true telegram_identity_claim=true")
+print("GRAMLY_RESULT crm_oidc_ready=true telegram_id_claim=true")
 PY
 )"
 
 printf '%s\n%s\n' "${client_id}" "${client_secret}" | \
   kubectl exec --stdin -n identity deployment/authentik-server -c server -- \
   ak shell -c "${python_code}" 2>&1 | \
-  grep 'GRAMLY_RESULT crm_oidc_ready=true telegram_identity_claim=true' >/dev/null
+  grep 'GRAMLY_RESULT crm_oidc_ready=true telegram_id_claim=true' >/dev/null
 
 unset client_secret
-echo "Authentik OIDC application for CRM and explicit Telegram identity claim are ready."
+echo "Authentik OIDC application for CRM and explicit Telegram ID claim are ready."

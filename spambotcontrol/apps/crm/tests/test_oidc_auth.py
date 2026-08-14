@@ -3,10 +3,10 @@ from django.core.exceptions import SuspiciousOperation
 from django.urls import reverse
 
 from apps.crm.auth import (
-    CRM_USERNAME_CLAIM,
+    CRM_TELEGRAM_ID_CLAIM,
     OIDC_ERROR_SESSION_KEY,
     CRMOIDCBackend,
-    normalize_telegram_username,
+    normalize_telegram_id,
 )
 from apps.crm.identity import terminate_user_sessions
 from apps.users.models import User, UserRole, UserStatus
@@ -34,13 +34,13 @@ def claims(**overrides):
         "sub": "stable-authentik-subject",
         "preferred_username": "unrelated-sso-login",
         "email": "owner@example.com",
-        CRM_USERNAME_CLAIM: "@i_vovani",
+        CRM_TELEGRAM_ID_CLAIM: "10001",
     }
     values.update(overrides)
     return values
 
 
-def test_initial_oidc_login_matches_explicit_telegram_claim(settings):
+def test_initial_oidc_login_matches_explicit_telegram_id_claim(settings):
     settings.OIDC_RP_CLIENT_ID = "client"
     settings.OIDC_RP_CLIENT_SECRET = "secret"
     user = make_user()
@@ -60,7 +60,7 @@ def test_oidc_self_registration_is_disabled_in_settings(settings):
     assert settings.OIDC_CREATE_USER is False
 
 
-def test_bound_subject_takes_precedence_over_changed_username(settings):
+def test_bound_subject_takes_precedence_over_changed_telegram_id(settings):
     settings.OIDC_RP_CLIENT_ID = "client"
     settings.OIDC_RP_CLIENT_SECRET = "secret"
     user = make_user(oidc_subject="stable-authentik-subject")
@@ -69,7 +69,7 @@ def test_bound_subject_takes_precedence_over_changed_username(settings):
     matched = backend.filter_users_by_claims(
         claims(
             preferred_username="renamed-in-authentik",
-            **{CRM_USERNAME_CLAIM: "somebody_else"},
+            **{CRM_TELEGRAM_ID_CLAIM: "99999"},
         )
     )
     assert list(matched) == [user]
@@ -93,7 +93,7 @@ def test_preferred_username_is_never_used_as_binding_fallback(settings):
     backend = CRMOIDCBackend()
 
     unlinked_claims = claims(preferred_username="i_vovani")
-    unlinked_claims.pop(CRM_USERNAME_CLAIM)
+    unlinked_claims.pop(CRM_TELEGRAM_ID_CLAIM)
     assert not backend.filter_users_by_claims(unlinked_claims).exists()
 
 
@@ -109,7 +109,7 @@ def test_create_user_preserves_actionable_binding_failure(settings, rf):
     backend = CRMOIDCBackend()
     backend.request = request
     unlinked_claims = claims()
-    unlinked_claims.pop(CRM_USERNAME_CLAIM)
+    unlinked_claims.pop(CRM_TELEGRAM_ID_CLAIM)
 
     assert not backend.filter_users_by_claims(unlinked_claims).exists()
     with pytest.raises(SuspiciousOperation, match="not linked"):
@@ -117,37 +117,44 @@ def test_create_user_preserves_actionable_binding_failure(settings, rf):
     assert request.session[OIDC_ERROR_SESSION_KEY] == "link_missing"
 
 
-def test_explicit_claim_is_normalized(settings):
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(" 10001 ", 10001), (10001, 10001), ("", None), ("@10001", None), ("-1", None), (True, None)],
+)
+def test_explicit_telegram_id_claim_is_normalized(raw, expected):
+    assert normalize_telegram_id(raw) == expected
+
+
+def test_explicit_telegram_id_claim_matches_exact_user(settings):
     settings.OIDC_RP_CLIENT_ID = "client"
     settings.OIDC_RP_CLIENT_SECRET = "secret"
     user = make_user(telegram_username="Mixed_Case")
     backend = CRMOIDCBackend()
 
     matched = backend.filter_users_by_claims(
-        claims(**{CRM_USERNAME_CLAIM: "  @MIXED_CASE  "})
+        claims(**{CRM_TELEGRAM_ID_CLAIM: "  10001  "})
     )
     assert list(matched) == [user]
-    assert normalize_telegram_username("  @MIXED_CASE  ") == "mixed_case"
 
 
-def test_blocked_or_ambiguous_identity_is_not_bound(settings):
+def test_blocked_identity_is_not_bound(settings):
     settings.OIDC_RP_CLIENT_ID = "client"
     settings.OIDC_RP_CLIENT_SECRET = "secret"
-    make_user(telegram_username="duplicate", oidc_binding_blocked=True)
+    make_user(oidc_binding_blocked=True)
     backend = CRMOIDCBackend()
     assert not backend.filter_users_by_claims(
-        claims(**{CRM_USERNAME_CLAIM: "duplicate"})
+        claims(**{CRM_TELEGRAM_ID_CLAIM: "10001"})
     ).exists()
 
-    User.objects.all().delete()
-    make_user(telegram_username="duplicate")
-    make_user(
-        telegram_id=10002,
-        username="tg_10002",
-        telegram_username="DUPLICATE",
-    )
+
+def test_username_match_cannot_bind_without_matching_telegram_id(settings):
+    settings.OIDC_RP_CLIENT_ID = "client"
+    settings.OIDC_RP_CLIENT_SECRET = "secret"
+    make_user(telegram_username="i_vovani")
+    backend = CRMOIDCBackend()
+
     assert not backend.filter_users_by_claims(
-        claims(**{CRM_USERNAME_CLAIM: "duplicate"})
+        claims(**{CRM_TELEGRAM_ID_CLAIM: "10002"})
     ).exists()
 
 

@@ -20,6 +20,7 @@ These records are new and can be created immediately with TTL 300:
 | --- | --- | --- |
 | A | `auth` | `45.146.131.207` |
 | A | `vpn` | `45.146.131.207` |
+| A | `bot` | `45.77.149.91` |
 
 Do not change `@`, `www`, `crm`, or `git` in this phase. Do not create the
 `hello` record until its landing page and Telegram webhook routes are running in
