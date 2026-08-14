@@ -2,6 +2,9 @@
 Web dashboard views for Gramly Control.
 Accessible at /crm/control/ — uses the existing CRM session auth.
 """
+import logging
+
+from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
 from django.http import HttpResponseForbidden
@@ -10,6 +13,8 @@ from django.db.models import Count, Sum, Q, F
 
 from apps.crm.views import CRMLoginMixin
 from apps.users.models import User, UserRole, UserStatus
+
+logger = logging.getLogger(__name__)
 
 
 def _is_control_admin(request) -> bool:
@@ -692,6 +697,47 @@ class UserEditView(AdminOnlyMixin, View):
                 WorkspaceMembership.objects.filter(
                     workspace=workspace, user=user
                 ).update(is_active=False)
+
+        elif action == "unlink_oidc":
+            if user.pk == request.crm_user.pk:
+                messages.error(request, "Нельзя разорвать собственную активную SSO-связь.")
+            elif user.oidc_subject:
+                from apps.crm.identity import terminate_user_sessions
+
+                user.oidc_subject = None
+                user.oidc_binding_blocked = True
+                user.save(update_fields=[
+                    "oidc_subject",
+                    "oidc_binding_blocked",
+                    "updated_at",
+                ])
+                revoked = terminate_user_sessions(user.pk)
+                logger.info(
+                    "crm_oidc_unlinked crm_user_id=%s actor_user_id=%s sessions_revoked=%s",
+                    user.pk,
+                    request.crm_user.pk,
+                    revoked,
+                )
+                messages.success(
+                    request,
+                    "SSO-связь разорвана. Новая привязка заблокирована до ручного разрешения.",
+                )
+
+        elif action == "allow_oidc_rebind":
+            if user.oidc_subject:
+                messages.error(request, "Сначала разорвите существующую SSO-связь.")
+            else:
+                user.oidc_binding_blocked = False
+                user.save(update_fields=["oidc_binding_blocked", "updated_at"])
+                logger.info(
+                    "crm_oidc_rebind_allowed crm_user_id=%s actor_user_id=%s",
+                    user.pk,
+                    request.crm_user.pk,
+                )
+                messages.success(
+                    request,
+                    "Новая SSO-привязка разрешена. Проверьте Telegram username в Authentik.",
+                )
 
         elif action == "delete":
             if not user.is_admin():

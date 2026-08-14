@@ -128,6 +128,9 @@ OIDC_OP_JWKS_ENDPOINT = env(
 )
 OIDC_RP_SIGN_ALGO = "RS256"
 OIDC_RP_SCOPES = "openid profile email"
+# CRM identities must already exist as Telegram-backed users. The backend also
+# rejects creation defensively, while this setting prevents the library from
+# entering its self-registration branch at all.
 OIDC_CREATE_USER = False
 OIDC_USE_PKCE = True
 OIDC_USE_NONCE = True

@@ -87,6 +87,17 @@ class User(AbstractUser):
         verbose_name="OIDC subject",
         help_text="Stable Authentik subject bound to this CRM user",
     )
+    oidc_linked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="OIDC linked at",
+        help_text="Timestamp of the latest successful Authentik identity binding",
+    )
+    oidc_binding_blocked = models.BooleanField(
+        default=False,
+        verbose_name="OIDC binding blocked",
+        help_text="Prevent automatic rebinding until an administrator allows it",
+    )
 
     # ── Role & Status ─────────────────────────────────────────────────────────
     role = models.CharField(
