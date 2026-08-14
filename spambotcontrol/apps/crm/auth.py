@@ -2,8 +2,8 @@
 
 Authentik proves identity; CRM remains the source of truth for authorization,
 roles, balances, reports, and workspace membership. An OIDC identity can only
-bind to an existing Telegram-backed CRM user through the explicit
-``gramly_crm_telegram_username`` claim.
+bind to an existing Telegram-backed CRM user through the explicit, stable
+``gramly_crm_telegram_id`` claim.
 """
 
 from __future__ import annotations
@@ -21,14 +21,22 @@ from apps.users.models import User, UserStatus
 
 logger = logging.getLogger(__name__)
 
-CRM_USERNAME_CLAIM = "gramly_crm_telegram_username"
+CRM_TELEGRAM_ID_CLAIM = "gramly_crm_telegram_id"
 OIDC_ERROR_SESSION_KEY = "crm_oidc_error"
 
 
-def normalize_telegram_username(value: object) -> str:
-    """Normalize the explicit Authentik-to-CRM link claim."""
+def normalize_telegram_id(value: object) -> int | None:
+    """Return a safe Telegram user ID from the explicit Authentik claim."""
 
-    return str(value or "").strip().lstrip("@").strip().lower()
+    if isinstance(value, bool):
+        return None
+    raw = str(value or "").strip()
+    if not raw.isascii() or not raw.isdecimal() or len(raw) > 19:
+        return None
+    telegram_id = int(raw)
+    if telegram_id <= 0 or telegram_id > 9_223_372_036_854_775_807:
+        return None
+    return telegram_id
 
 
 def _subject_fingerprint(subject: str) -> str:
@@ -71,14 +79,14 @@ class CRMOIDCBackend(OIDCAuthenticationBackend):
             self._set_failure("invalid_claims")
             return User.objects.none()
 
-        # A stable subject always wins. Username and Authentik attribute changes
+        # A stable subject always wins. Telegram ID and Authentik attribute changes
         # can never move an already-bound identity to another CRM account.
         bound = User.objects.filter(oidc_subject=subject)
         if bound.exists():
             return bound
 
-        username = normalize_telegram_username(claims.get(CRM_USERNAME_CLAIM))
-        if not username:
+        telegram_id = normalize_telegram_id(claims.get(CRM_TELEGRAM_ID_CLAIM))
+        if telegram_id is None:
             self._set_failure("link_missing")
             logger.warning(
                 "crm_oidc_rejected reason=link_missing subject_sha256=%s",
@@ -88,7 +96,7 @@ class CRMOIDCBackend(OIDCAuthenticationBackend):
 
         candidates = User.objects.filter(
             Q(oidc_subject__isnull=True) | Q(oidc_subject=""),
-            telegram_username__iexact=username,
+            telegram_id=telegram_id,
             oidc_binding_blocked=False,
             is_active=True,
             status=UserStatus.ACTIVE,
@@ -98,16 +106,14 @@ class CRMOIDCBackend(OIDCAuthenticationBackend):
             return candidates
 
         if User.objects.filter(
-            telegram_username__iexact=username,
+            telegram_id=telegram_id,
             oidc_binding_blocked=True,
         ).exists():
             reason = "link_blocked"
         elif User.objects.filter(
-            telegram_username__iexact=username,
+            telegram_id=telegram_id,
         ).exclude(Q(oidc_subject__isnull=True) | Q(oidc_subject="")).exists():
             reason = "link_occupied"
-        elif count > 1:
-            reason = "link_ambiguous"
         else:
             reason = "link_not_found"
         self._set_failure(reason)
@@ -162,23 +168,23 @@ class CRMOIDCBackend(OIDCAuthenticationBackend):
 
             is_new_binding = not locked.oidc_subject
             if is_new_binding:
-                claimed_username = normalize_telegram_username(
-                    claims.get(CRM_USERNAME_CLAIM)
+                claimed_telegram_id = normalize_telegram_id(
+                    claims.get(CRM_TELEGRAM_ID_CLAIM)
                 )
-                if not claimed_username:
+                if claimed_telegram_id is None:
                     self._reject(
                         "link_missing",
                         "Explicit CRM identity claim is missing",
                         subject=subject,
                     )
-                if normalize_telegram_username(locked.telegram_username) != claimed_username:
+                if locked.telegram_id != claimed_telegram_id:
                     self._reject(
                         "link_conflict",
                         "CRM identity claim no longer matches the selected user",
                         subject=subject,
                     )
                 duplicate_count = User.objects.filter(
-                    telegram_username__iexact=claimed_username,
+                    telegram_id=claimed_telegram_id,
                     is_active=True,
                     status=UserStatus.ACTIVE,
                 ).count()

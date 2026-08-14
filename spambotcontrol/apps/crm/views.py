@@ -4,7 +4,7 @@ CRM web views.
 URL prefix: /crm/
 
 Auth: Authentik OIDC → Django session. Only an existing active CRM user whose
-      Telegram username matches the initial OIDC username can authenticate.
+      Telegram ID matches the explicit Authentik claim can authenticate.
 
 Access model (two levels):
   Authenticated  — any User in DB; sees a limited dashboard only.
@@ -196,15 +196,15 @@ class LoginView(TemplateView):
     ERROR_MESSAGES = {
         "link_missing": (
             "Ваша рабочая учётная запись ещё не связана с Telegram-профилем CRM. "
-            "Попросите администратора заполнить поле Telegram username в Authentik."
+            "Попросите администратора заполнить поле Telegram ID в Authentik."
         ),
         "link_not_found": (
-            "Указанный в Authentik Telegram username не найден в CRM. "
-            "Проверьте значение вместе с администратором."
+            "Указанный в Authentik Telegram ID не найден в CRM. "
+            "Проверьте ID и сначала запустите CRM-бота Gramly."
         ),
         "link_ambiguous": (
-            "CRM обнаружила несколько записей с таким Telegram username. "
-            "Администратору необходимо устранить дубликат."
+            "CRM обнаружила конфликт Telegram ID. "
+            "Администратору необходимо проверить данные сотрудника."
         ),
         "link_occupied": "Этот Telegram-профиль уже связан с другой SSO-учётной записью.",
         "link_blocked": (

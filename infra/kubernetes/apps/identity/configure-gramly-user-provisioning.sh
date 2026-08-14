@@ -55,10 +55,12 @@ prompts = [
     ),
     upsert_prompt(
         "gramly-provision-telegram",
-        field_key="attributes.gramly_crm_telegram_username",
-        label="Telegram username для CRM", type="text", required=False,
-        placeholder="@maria_gramly",
-        sub_text="Необязательно. Должен точно совпадать с username существующего сотрудника в CRM.",
+        # UserWriteStage converts attributes_foo to attributes.foo. Dotted
+        # prompt keys are unreliable in the Authentik 2026.5 frontend.
+        field_key="attributes_gramly_crm_telegram_id",
+        label="Telegram ID для CRM", type="text", required=False,
+        placeholder="1091178415",
+        sub_text="Необязательно. Числовой ID можно узнать в CRM-боте или карточке сотрудника.",
         order=40,
     ),
     upsert_prompt(
@@ -72,7 +74,7 @@ prompts = [
         placeholder="", sub_text="", order=60,
     ),
     upsert_prompt(
-        "gramly-provision-reset-password", field_key="attributes.reset_password",
+        "gramly-provision-reset-password", field_key="attributes_reset_password",
         label="Require password reset", type="hidden", required=False, placeholder="",
         initial_value="return True", initial_value_expression=True, sub_text="", order=70,
     ),
@@ -82,16 +84,14 @@ validation, _ = ExpressionPolicy.objects.update_or_create(
     name="gramly-provisioning-input-validation",
     defaults={
         "expression": """data = request.context.get(\"prompt_data\", {})
-raw = str(data.get(\"attributes.gramly_crm_telegram_username\") or \"\").strip()
-username = raw.lstrip(\"@\").strip().lower()
-allowed = \"abcdefghijklmnopqrstuvwxyz0123456789_\"
-if username and (len(username) < 5 or len(username) > 32 or any(ch not in allowed for ch in username)):
-    ak_message(\"Telegram username: 5–32 символа, только латинские буквы, цифры и _.\")
+raw = str(data.get(\"attributes_gramly_crm_telegram_id\") or \"\").strip()
+if raw and (not raw.isascii() or not raw.isdecimal() or len(raw) < 5 or len(raw) > 16 or int(raw) <= 0):
+    ak_message(\"Telegram ID: от 5 до 16 цифр, без @, пробелов и знаков.\")
     return False
 if data.get(\"password\") != data.get(\"password_repeat\"):
     ak_message(\"Временные пароли не совпадают.\")
     return False
-data[\"attributes.gramly_crm_telegram_username\"] = username
+data[\"attributes_gramly_crm_telegram_id\"] = raw
 return True""",
     },
 )
@@ -147,7 +147,7 @@ application, _ = Application.objects.update_or_create(
         "provider": None,
         "group": "Gramly administration",
         "meta_launch_url": "/if/flow/gramly-user-provisioning/",
-        "meta_description": "Создание рабочей SSO-учётки и необязательная связь с Telegram CRM",
+        "meta_description": "Создание рабочей SSO-учётки и необязательная связь с Telegram CRM по ID",
         "open_in_new_tab": False,
     },
 )
@@ -158,12 +158,12 @@ PolicyBinding.objects.create(
     target=application, policy=access_policy, enabled=True, order=0, negate=False, timeout=30,
 )
 
-print("GRAMLY_RESULT user_provisioning_ready=true crm_link_field=true")
+print("GRAMLY_RESULT user_provisioning_ready=true crm_telegram_id_field=true")
 PY
 )"
 
 kubectl exec -n identity deployment/authentik-server -c server -- \
   ak shell -c "${python_code}" 2>&1 | \
-  grep 'GRAMLY_RESULT user_provisioning_ready=true crm_link_field=true' >/dev/null
+  grep 'GRAMLY_RESULT user_provisioning_ready=true crm_telegram_id_field=true' >/dev/null
 
 echo "Gramly user provisioning flow is ready at /if/flow/gramly-user-provisioning/."

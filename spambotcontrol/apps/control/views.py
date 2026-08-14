@@ -736,7 +736,7 @@ class UserEditView(AdminOnlyMixin, View):
                 )
                 messages.success(
                     request,
-                    "Новая SSO-привязка разрешена. Проверьте Telegram username в Authentik.",
+                    "Новая SSO-привязка разрешена. Проверьте Telegram ID в Authentik.",
                 )
 
         elif action == "delete":
