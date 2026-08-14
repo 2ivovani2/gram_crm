@@ -13,7 +13,83 @@ else
     --from-literal=CRM_OIDC_CLIENT_SECRET="${client_secret}" >/dev/null
 fi
 
-printf '%s\n%s\n' "${client_id}" "${client_secret}" | kubectl exec --stdin -n identity deployment/authentik-server -c server -- ak shell -c \
-  "import sys; from authentik.core.models import Application; from authentik.crypto.models import CertificateKeyPair; from authentik.flows.models import Flow; from authentik.providers.oauth2.models import OAuth2Provider, RedirectURI, RedirectURIMatchingMode, RedirectURIType, ScopeMapping; client_id=sys.stdin.readline().strip(); client_secret=sys.stdin.readline().strip(); provider,_=OAuth2Provider.objects.update_or_create(name='Gramly CRM', defaults={'authentication_flow':Flow.objects.get(slug='default-authentication-flow'),'authorization_flow':Flow.objects.get(slug='default-provider-authorization-implicit-consent'),'invalidation_flow':Flow.objects.get(slug='default-provider-invalidation-flow'),'client_type':'confidential','client_id':client_id,'client_secret':client_secret,'grant_types':['authorization_code','refresh_token'],'include_claims_in_id_token':True,'sub_mode':'hashed_user_id','issuer_mode':'per_provider','signing_key':CertificateKeyPair.objects.get(name='authentik Self-signed Certificate')}); provider.redirect_uris=[RedirectURI(RedirectURIMatchingMode('strict'),'https://crm.gramly.tech/oidc/callback/',RedirectURIType('authorization'))]; provider.save(update_fields=['_redirect_uris']); provider.property_mappings.set(ScopeMapping.objects.filter(scope_name__in=['openid','email','profile'])); Application.objects.update_or_create(slug='crm',defaults={'name':'Gramly CRM','provider':provider,'meta_description':'Private business workspace'}); print('GRAMLY_RESULT crm_oidc_ready=true')" 2>&1 | grep 'GRAMLY_RESULT crm_oidc_ready=true' >/dev/null
+python_code="$(cat <<'PY'
+import sys
+
+from authentik.core.models import Application
+from authentik.crypto.models import CertificateKeyPair
+from authentik.flows.models import Flow
+from authentik.providers.oauth2.models import (
+    OAuth2Provider,
+    RedirectURI,
+    RedirectURIMatchingMode,
+    RedirectURIType,
+    ScopeMapping,
+)
+
+client_id = sys.stdin.readline().strip()
+client_secret = sys.stdin.readline().strip()
+
+provider, _ = OAuth2Provider.objects.update_or_create(
+    name="Gramly CRM",
+    defaults={
+        "authentication_flow": Flow.objects.get(slug="default-authentication-flow"),
+        "authorization_flow": Flow.objects.get(slug="default-provider-authorization-implicit-consent"),
+        "invalidation_flow": Flow.objects.get(slug="default-provider-invalidation-flow"),
+        "client_type": "confidential",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_types": ["authorization_code", "refresh_token"],
+        "include_claims_in_id_token": True,
+        "sub_mode": "hashed_user_id",
+        "issuer_mode": "per_provider",
+        "signing_key": CertificateKeyPair.objects.get(name="authentik Self-signed Certificate"),
+    },
+)
+provider.redirect_uris = [
+    RedirectURI(
+        RedirectURIMatchingMode("strict"),
+        "https://crm.gramly.tech/oidc/callback/",
+        RedirectURIType("authorization"),
+    )
+]
+provider.save(update_fields=["_redirect_uris"])
+
+crm_identity_mapping, _ = ScopeMapping.objects.update_or_create(
+    name="Gramly CRM Telegram identity",
+    defaults={
+        "scope_name": "profile",
+        "description": "Explicit Telegram username used only for initial CRM identity binding.",
+        "expression": """raw = request.user.attributes.get(\"gramly_crm_telegram_username\")
+if not raw:
+    return {}
+username = str(raw).strip().lstrip(\"@\").strip().lower()
+if not username:
+    return {}
+return {\"gramly_crm_telegram_username\": username}""",
+    },
+)
+mappings = list(ScopeMapping.objects.filter(scope_name__in=["openid", "email", "profile"]))
+if crm_identity_mapping not in mappings:
+    mappings.append(crm_identity_mapping)
+provider.property_mappings.set(mappings)
+
+Application.objects.update_or_create(
+    slug="crm",
+    defaults={
+        "name": "Gramly CRM",
+        "provider": provider,
+        "meta_description": "Private business workspace",
+    },
+)
+print("GRAMLY_RESULT crm_oidc_ready=true telegram_identity_claim=true")
+PY
+)"
+
+printf '%s\n%s\n' "${client_id}" "${client_secret}" | \
+  kubectl exec --stdin -n identity deployment/authentik-server -c server -- \
+  ak shell -c "${python_code}" 2>&1 | \
+  grep 'GRAMLY_RESULT crm_oidc_ready=true telegram_identity_claim=true' >/dev/null
+
 unset client_secret
-echo "Authentik OIDC application for CRM is ready."
+echo "Authentik OIDC application for CRM and explicit Telegram identity claim are ready."

@@ -193,11 +193,42 @@ class CRMApplicationsMixin(CRMLoginMixin):
 class LoginView(TemplateView):
     template_name = "crm/login.html"
 
+    ERROR_MESSAGES = {
+        "link_missing": (
+            "Ваша рабочая учётная запись ещё не связана с Telegram-профилем CRM. "
+            "Попросите администратора заполнить поле Telegram username в Authentik."
+        ),
+        "link_not_found": (
+            "Указанный в Authentik Telegram username не найден в CRM. "
+            "Проверьте значение вместе с администратором."
+        ),
+        "link_ambiguous": (
+            "CRM обнаружила несколько записей с таким Telegram username. "
+            "Администратору необходимо устранить дубликат."
+        ),
+        "link_occupied": "Этот Telegram-профиль уже связан с другой SSO-учётной записью.",
+        "link_blocked": (
+            "Автоматическая SSO-привязка для этого сотрудника временно заблокирована "
+            "администратором."
+        ),
+        "user_inactive": "Учётная запись CRM отключена. Обратитесь к администратору.",
+    }
+
     def get(self, request):
         from django.urls import reverse
+        from apps.crm.auth import OIDC_ERROR_SESSION_KEY
 
         if request.user.is_authenticated:
             return redirect("crm:dashboard")
+        if request.GET.get("error") == "oidc":
+            reason = request.session.pop(OIDC_ERROR_SESSION_KEY, "invalid_claims")
+            return render(request, "crm/oidc_error.html", {
+                "error_message": self.ERROR_MESSAGES.get(
+                    reason,
+                    "Не удалось завершить безопасный вход. Повторите попытку или обратитесь к администратору.",
+                ),
+                "retry_url": reverse("crm:login"),
+            }, status=403)
         return redirect(f"{reverse('oidc_authentication_init')}?next=/crm/dashboard/")
 
 

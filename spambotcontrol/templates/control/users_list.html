@@ -35,11 +35,19 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 .create-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
 .create-row input, .create-row select { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; }
 .tg-id { font-family:monospace; font-size:12px; color:var(--muted); }
+.sso-cell { min-width:190px; }
+.sso-meta { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; }
+.sso-actions { margin-top:7px; }
+.sso-linked { background:rgba(74,222,128,.12); color:#4ADE80; }
+.sso-pending { background:rgba(250,250,251,.07); color:var(--muted); }
+.sso-blocked { background:rgba(239,68,68,.12); color:#F87171; }
+.btn-unlink { background:rgba(239,68,68,.10); color:#F87171; }
+.btn-rebind { background:var(--accent-soft); color:var(--accent); }
 
 @media (max-width: 700px) {
-  /* Hide Telegram ID (2) and Status badge (4) — status select already shows current status */
+  /* Hide Telegram ID (2) and Status badge (5) — status select already shows current status */
   .ctrl-table th:nth-child(2), .ctrl-table td:nth-child(2),
-  .ctrl-table th:nth-child(4), .ctrl-table td:nth-child(4) { display: none !important; }
+  .ctrl-table th:nth-child(5), .ctrl-table td:nth-child(5) { display: none !important; }
   /* Compact inline selects so Role+Status fit 4-col layout */
   select.inline { font-size: 11px; padding: 3px 4px; max-width: 130px !important; }
   /* Hire button next to anon badge: full-width */
@@ -122,6 +130,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <tr>
       <th>Пользователь</th>
       <th>Telegram ID</th>
+      <th>SSO</th>
       <th>Роль</th>
       <th>Статус</th>
       <th>Изменить статус</th>
@@ -139,6 +148,40 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
       {% endif %}
     </td>
     <td class="tg-id">{{ u.telegram_id }}</td>
+
+    <!-- Authentik identity link -->
+    <td class="sso-cell">
+      {% if u.oidc_subject %}
+        <span class="badge sso-linked">Подключено</span>
+        <span class="sso-meta">
+          {% if u.email %}{{ u.email }}<br>{% endif %}
+          {% if u.oidc_linked_at %}с {{ u.oidc_linked_at|date:"d.m.Y H:i" }}{% else %}старая привязка{% endif %}
+        </span>
+        {% if u.pk != crm_user.pk %}
+        <form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
+              onsubmit="return confirm('Разорвать SSO-связь и завершить все CRM-сессии пользователя?')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="unlink_oidc">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="btn-xs btn-unlink">Разорвать связь</button>
+        </form>
+        {% else %}
+          <span class="sso-meta">Текущая учётная запись</span>
+        {% endif %}
+      {% elif u.oidc_binding_blocked %}
+        <span class="badge sso-blocked">Перепривязка запрещена</span>
+        <form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
+              onsubmit="return confirm('Разрешить новую SSO-привязку для этого пользователя?')">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="allow_oidc_rebind">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="btn-xs btn-rebind">Разрешить заново</button>
+        </form>
+      {% else %}
+        <span class="badge sso-pending">Ожидает привязки</span>
+        <span class="sso-meta">Укажите @{{ u.telegram_username|default:"username" }} в Authentik</span>
+      {% endif %}
+    </td>
 
     <!-- Bot role -->
     <td>
