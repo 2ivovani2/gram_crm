@@ -99,7 +99,34 @@
 
     {% if report.editing_locked_at %}
     <dt>Блокировка правок</dt>
-    <dd>{{ report.editing_locked_at|date:"d.m.Y H:i" }}</dd>
+    <dd>
+      {{ report.editing_locked_at|date:"d.m.Y H:i" }}
+      {% if report.can_user_edit %}
+        <span style="font-size:11px;color:#4ADE80;margin-left:6px">правки доступны</span>
+      {% else %}
+        <span style="font-size:11px;color:#F87171;margin-left:6px">правки закрыты</span>
+      {% endif %}
+    </dd>
+    {% endif %}
+
+    {% if report.correction_started_at %}
+    <dt>Окно исправления</dt>
+    <dd>{{ report.correction_started_at|date:"d.m.Y H:i" }} — {{ report.correction_deadline|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
+
+    {% if report.late_window_ends_at %}
+    <dt>Окно поздней подачи</dt>
+    <dd>до {{ report.late_window_ends_at|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
+
+    {% if report.initial_penalty_created_at %}
+    <dt>Первый автоштраф</dt>
+    <dd>{{ report.initial_penalty_created_at|date:"d.m.Y H:i" }}</dd>
+    {% endif %}
+
+    {% if report.additional_penalty_created_at %}
+    <dt>Второй автоштраф</dt>
+    <dd>{{ report.additional_penalty_created_at|date:"d.m.Y H:i" }}</dd>
     {% endif %}
 
     {% if report.reviewed_by %}

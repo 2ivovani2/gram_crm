@@ -186,6 +186,27 @@ class EmployeeReport(models.Model):
         null=True, blank=True,
         verbose_name="Срок исправления",
     )
+    correction_started_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Начало исправительного периода",
+    )
+    late_window_ends_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Конец окна просроченной подачи",
+    )
+    is_late_submission = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="Первичная подача после дедлайна",
+    )
+    initial_penalty_created_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Время первого штрафа за дедлайн",
+    )
+    additional_penalty_created_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Время дополнительного штрафа",
+    )
 
     # Period label for display (derived from report_date at submission)
     period_label = models.CharField(
@@ -244,6 +265,18 @@ class EmployeeReport(models.Model):
         verbose_name = "Отчёт сотрудника"
         verbose_name_plural = "Отчёты сотрудников"
         ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "template", "report_date"],
+                condition=models.Q(template__isnull=False, report_date__isnull=False),
+                name="uniq_report_user_template_date",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "report_date"],
+                condition=models.Q(template__isnull=True, report_date__isnull=False),
+                name="uniq_generic_report_user_date",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Отчёт #{self.pk} {self.user} [{self.get_status_display()}]"
@@ -252,14 +285,12 @@ class EmployeeReport(models.Model):
     def is_blocking_withdrawal(self) -> bool:
         return self.status in REPORT_BLOCKING_STATUSES
 
-    def can_user_edit(self) -> bool:
-        """True if the user is still allowed to edit/resubmit this report."""
-        if self.status not in REPORT_EDITABLE_STATUSES:
+    def can_user_edit(self, at=None) -> bool:
+        """Server-side source of truth for all report editing windows."""
+        if self.status == ReportStatus.ACCEPTED:
             return False
-        if self.editing_locked_at is None:
-            return True
-        from django.utils import timezone
-        return timezone.now() < self.editing_locked_at
+        at = at or timezone.now()
+        return bool(self.editing_locked_at and at < self.editing_locked_at)
 
 
 class ModerationHistory(models.Model):
@@ -314,6 +345,13 @@ class ModerationHistory(models.Model):
 class PenaltyType(models.TextChoices):
     AUTO   = "auto",   "Автоматический (просрочка)"
     MANUAL = "manual", "Ручной"
+
+
+class PenaltySource(models.TextChoices):
+    NONE = "", "Не указан"
+    DEADLINE_MISSED = "deadline_missed", "Пропущен первичный дедлайн"
+    CORRECTION_EXPIRED = "correction_expired", "Истёк исправительный период"
+    LATE_WINDOW_EXPIRED = "late_window_expired", "Истекло окно просроченного отчёта"
 
 
 class PenaltyStatus(models.TextChoices):
@@ -380,6 +418,14 @@ class Penalty(models.Model):
         db_index=True,
         verbose_name="Отчётная дата штрафа",
     )
+    source = models.CharField(
+        max_length=32,
+        choices=PenaltySource.choices,
+        default=PenaltySource.NONE,
+        blank=True,
+        db_index=True,
+        verbose_name="Основание автоштрафа",
+    )
 
     # Dispute
     dispute_comment = models.TextField(blank=True, verbose_name="Комментарий при оспаривании")
@@ -405,13 +451,14 @@ class Penalty(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["user", "template", "report_date"],
+                fields=["user", "template", "report_date", "source"],
                 condition=models.Q(
                     type=PenaltyType.AUTO,
                     template__isnull=False,
                     report_date__isnull=False,
+                    source__gt="",
                 ),
-                name="uniq_auto_penalty_user_template_date",
+                name="uniq_auto_penalty_user_template_date_source",
             ),
         ]
 

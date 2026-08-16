@@ -48,16 +48,18 @@ def _deadline_at(template, report_date):
 
 # ── 1. First submission creates a new record ───────────────────────────────────
 
-def test_first_submit_creates_record():
+def test_first_submit_creates_record(monkeypatch):
     worker = _user(1001)
     tmpl = _template()
+    now = datetime.datetime(2026, 8, 16, 20, 0, tzinfo=_MSK)
+    monkeypatch.setattr("apps.control.services.timezone.now", lambda: now)
     report = ReportService.submit_report(worker, template=tmpl, text="Report text")
     assert report.pk is not None
     assert report.status == ReportStatus.ON_MODERATION
     assert report.first_submission_at is not None
     assert report.last_submission_at is not None
     assert report.deadline_at is not None
-    assert report.editing_locked_at == report.deadline_at + datetime.timedelta(hours=1)
+    assert report.editing_locked_at == report.deadline_at
 
 
 # ── 2. First submission without template → PENDING ─────────────────────────────
@@ -86,12 +88,15 @@ def test_first_submit_creates_history():
 
 # ── 4. Double-submit with blocking status raises ValueError ────────────────────
 
-def test_double_submit_blocking_raises():
+def test_repeat_submit_before_deadline_updates_same_report(monkeypatch):
     worker = _user(1004)
     tmpl = _template()
-    ReportService.submit_report(worker, template=tmpl, text="first")
-    with pytest.raises(ValueError):
-        ReportService.submit_report(worker, template=tmpl, text="second")
+    now = datetime.datetime(2026, 8, 16, 20, 0, tzinfo=_MSK)
+    monkeypatch.setattr("apps.control.services.timezone.now", lambda: now)
+    first = ReportService.submit_report(worker, template=tmpl, text="first")
+    second = ReportService.submit_report(worker, template=tmpl, text="second")
+    assert second.pk == first.pk
+    assert second.text_content == "second"
 
 
 # ── 5. Resubmit after rejection updates record in-place ───────────────────────
@@ -228,11 +233,13 @@ def test_deadline_met_none_without_deadline():
 
 # ── 13. editing_locked_at = deadline_at + 1 hour ─────────────────────────────
 
-def test_editing_locked_at_is_deadline_plus_one_hour():
+def test_editing_locked_at_is_main_deadline_before_rejection(monkeypatch):
     worker = _user(1013)
     tmpl = _template(deadline_time=datetime.time(22, 30))
+    now = datetime.datetime(2026, 8, 16, 20, 0, tzinfo=_MSK)
+    monkeypatch.setattr("apps.control.services.timezone.now", lambda: now)
     report = ReportService.submit_report(worker, template=tmpl, text="x")
-    assert report.editing_locked_at == report.deadline_at + datetime.timedelta(hours=1)
+    assert report.editing_locked_at == report.deadline_at
 
 
 # ── 14. can_user_edit() True when before editing_locked_at ───────────────────

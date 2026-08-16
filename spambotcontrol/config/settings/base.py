@@ -194,15 +194,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.control.tasks.send_report_reminders_task",
         "schedule": crontab(minute=0),
     },
-    # Control bot: check overdue reports and create auto-penalties at 00:05 МСК (after deadline)
-    "control-check-overdue": {
-        "task": "apps.control.tasks.check_overdue_reports_task",
-        "schedule": crontab(hour=0, minute=5),
-    },
-    # Control bot: check expired correction deadlines every hour
-    "control-check-corrections": {
-        "task": "apps.control.tasks.check_correction_deadlines_task",
-        "schedule": crontab(minute=0),
+    # Report lifecycle: per-template deadlines and editing windows use server
+    # time and are reconciled every minute. All penalty transitions are idempotent.
+    "control-report-deadline-lifecycle": {
+        "task": "apps.control.tasks.process_report_deadlines_task",
+        "schedule": crontab(minute="*"),
     },
     # Deadline reminders for workers — 4 slots МСК
     "deadline-reminder-2300": {

@@ -5,7 +5,6 @@ All methods are sync — wrap with sync_to_async in async bot handlers.
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from decimal import Decimal
 from typing import Optional, List
 
@@ -20,6 +19,8 @@ from apps.users.models import User, UserRole
 logger = logging.getLogger(__name__)
 
 _MSK = _ZoneInfo("Europe/Moscow")
+_CORRECTION_WINDOW = _dt.timedelta(hours=1)
+_LATE_WINDOW = _dt.timedelta(hours=24)
 
 _RU_MONTHS_GEN = (
     "", "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -57,6 +58,50 @@ def _calc_deadline_at(
         return None
     naive = _dt.datetime.combine(report_date, template.deadline_time)
     return naive.replace(tzinfo=_MSK)
+
+
+def _resolve_report_date(user: User, template: "ReportTemplate", now: _dt.datetime) -> _dt.date:
+    """Resolve the one report obligation the worker is currently allowed to edit."""
+    from apps.control.models import (
+        EmployeeReport, Penalty, PenaltySource,
+        REPORT_MODERATION_STATUSES, ReportStatus,
+    )
+
+    now_msk = now.astimezone(_MSK)
+    today = now_msk.date()
+    previous = today - _dt.timedelta(days=1)
+    previous_deadline = _calc_deadline_at(template, previous)
+    current_deadline = _calc_deadline_at(template, today)
+
+    # Before today's deadline, yesterday may still be inside its fixed 24-hour
+    # late window. It takes precedence until it is accepted/finally rejected.
+    if (
+        previous_deadline
+        and previous_deadline <= now < previous_deadline + _LATE_WINDOW
+        and current_deadline
+        and now < current_deadline
+    ):
+        prior = EmployeeReport.objects.filter(
+            user=user,
+            template=template,
+            report_date=previous,
+        ).first()
+        has_previous_obligation = prior is not None or Penalty.objects.filter(
+            user=user,
+            template=template,
+            report_date=previous,
+            source=PenaltySource.DEADLINE_MISSED,
+        ).exists()
+        if has_previous_obligation and (
+            prior is None or prior.status in REPORT_MODERATION_STATUSES or prior.can_user_edit(now)
+        ):
+            return previous
+        if prior is not None and prior.status not in (
+            ReportStatus.ACCEPTED, ReportStatus.REJECTED, ReportStatus.OVERDUE
+        ):
+            return previous
+
+    return today
 
 
 # ── Report services ────────────────────────────────────────────────────────────
@@ -118,6 +163,12 @@ class ReportService:
         - CURATOR can moderate reports of WORKER and ACCOUNTANT only (not own, not other curators).
         - WORKER / ACCOUNTANT cannot moderate anyone.
         """
+        from apps.control.models import REPORT_MODERATION_STATUSES
+
+        # Accepted/rejected reports are terminal until the employee submits an
+        # allowed edit. This also protects the POST endpoint from stale pages.
+        if report.status not in REPORT_MODERATION_STATUSES:
+            return False
         if report.user_id == moderator.pk:
             return False
         if moderator.role == UserRole.ADMIN:
@@ -135,6 +186,7 @@ class ReportService:
         file_id: str = "",
         file_type: str = "text",
         original_filename: str = "",
+        report_id: Optional[int] = None,
     ) -> "EmployeeReport":
         """
         Submit (or resubmit) a report.
@@ -148,66 +200,96 @@ class ReportService:
         """
         from apps.control.models import (
             EmployeeReport, ModerationHistory, ReportStatus,
-            REPORT_BLOCKING_STATUSES, REPORT_EDITABLE_STATUSES,
+            REPORT_BLOCKING_STATUSES,
         )
 
-        report_date = _calc_report_date()
         now = timezone.now()
+        if report_id is not None:
+            explicit = EmployeeReport.objects.select_for_update().filter(
+                pk=report_id,
+                user=user,
+            ).first()
+            if explicit is None:
+                raise ValueError("Отчёт не найден или принадлежит другому сотруднику.")
+            if template is not None and explicit.template_id != template.pk:
+                raise ValueError("Шаблон отчёта не совпадает.")
+            template = explicit.template
+            report_date = explicit.report_date
+        elif template is not None:
+            report_date = _resolve_report_date(user, template, now)
+            explicit = None
+        else:
+            report_date = _calc_report_date()
+            explicit = None
+
+        # A pending report for an earlier date of this same template must be
+        # moderated before the next daily obligation can be submitted.
+        if template is not None:
+            previous_pending = (
+                EmployeeReport.objects.filter(
+                    user=user,
+                    template=template,
+                    report_date__lt=report_date,
+                    status__in=REPORT_BLOCKING_STATUSES,
+                )
+                .order_by("-report_date")
+                .first()
+            )
+            if previous_pending is not None:
+                raise ValueError(
+                    f"Сначала дождитесь решения по отчёту за {previous_pending.period_label}."
+                )
 
         # Look for an existing report for the same user + template + date
-        existing = (
+        existing = explicit or (
             EmployeeReport.objects.select_for_update()
             .filter(user=user, template=template, report_date=report_date)
             .first()
         )
 
         if existing is not None:
-            if existing.status in REPORT_BLOCKING_STATUSES:
-                raise ValueError(
-                    f"Отчёт уже находится на проверке (статус: {existing.get_status_display()})."
-                )
-            if existing.status in REPORT_EDITABLE_STATUSES:
-                if not existing.can_user_edit():
+            if existing.status == ReportStatus.ACCEPTED:
+                raise ValueError("Принятый отчёт больше нельзя редактировать.")
+            if not existing.can_user_edit(now):
+                if existing.status in REPORT_BLOCKING_STATUSES:
                     raise ValueError(
-                        "Время на исправление истекло — редактирование заблокировано."
+                        "Отчёт уже отправлен на модерацию, а разрешённый период редактирования закончился."
                     )
-                # Determine current cycle number from history
-                last_cycle = (
-                    existing.history.order_by("-cycle").values_list("cycle", flat=True).first()
-                    or 1
-                )
-                new_cycle = last_cycle + 1
-                prev_status = existing.status
-                existing.status = ReportStatus.UPDATED
-                existing.text_content = text
-                existing.telegram_file_id = file_id
-                existing.file_type = file_type or "text"
-                existing.original_filename = original_filename
-                existing.last_submission_at = now
-                existing.save(update_fields=[
-                    "status", "text_content", "telegram_file_id",
-                    "file_type", "original_filename", "last_submission_at", "updated_at",
-                ])
-                ModerationHistory.objects.create(
-                    report=existing,
-                    cycle=new_cycle,
-                    action=ModerationHistory.Action.RESUBMIT,
-                    moderator=None,
-                    prev_status=prev_status,
-                    new_status=ReportStatus.UPDATED,
-                )
-                return existing
-            # Any other terminal status (ACCEPTED, OVERDUE…) — start fresh
-            # Fall through to create a new record only when template differs or
-            # truly different report_date, but in practice we block duplicate dates.
-            raise ValueError(
-                f"Отчёт за этот период уже существует (статус: {existing.get_status_display()})."
+                raise ValueError("Редактирование заблокировано: разрешённый период закончился.")
+
+            last_cycle = (
+                existing.history.order_by("-cycle").values_list("cycle", flat=True).first()
+                or 1
             )
+            prev_status = existing.status
+            existing.status = ReportStatus.UPDATED
+            existing.text_content = text
+            existing.telegram_file_id = file_id
+            existing.file_type = file_type or "text"
+            existing.original_filename = original_filename
+            existing.last_submission_at = now
+            existing.save(update_fields=[
+                "status", "text_content", "telegram_file_id",
+                "file_type", "original_filename", "last_submission_at", "updated_at",
+            ])
+            ModerationHistory.objects.create(
+                report=existing,
+                cycle=last_cycle + 1,
+                action=ModerationHistory.Action.RESUBMIT,
+                moderator=None,
+                prev_status=prev_status,
+                new_status=ReportStatus.UPDATED,
+            )
+            return existing
 
         # First submission — create a new record
         status = ReportStatus.ON_MODERATION if template else ReportStatus.PENDING
         deadline_at = _calc_deadline_at(template, report_date)
-        editing_locked_at = (deadline_at + _dt.timedelta(hours=1)) if deadline_at else None
+        is_late = bool(deadline_at and now >= deadline_at)
+        late_window_ends_at = (deadline_at + _LATE_WINDOW) if is_late else None
+        if late_window_ends_at and now >= late_window_ends_at:
+            raise ValueError("24-часовое окно подачи просроченного отчёта закончилось.")
+        editing_locked_at = late_window_ends_at if is_late else deadline_at
 
         report = EmployeeReport.objects.create(
             user=user,
@@ -223,6 +305,8 @@ class ReportService:
             last_submission_at=now,
             deadline_at=deadline_at,
             editing_locked_at=editing_locked_at,
+            is_late_submission=is_late,
+            late_window_ends_at=late_window_ends_at,
         )
         ModerationHistory.objects.create(
             report=report,
@@ -237,18 +321,21 @@ class ReportService:
     @staticmethod
     @transaction.atomic
     def accept_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
-        from apps.control.models import ReportStatus, ModerationHistory
+        from apps.control.models import (
+            EmployeeReport, ModerationHistory, ReportStatus,
+            REPORT_MODERATION_STATUSES,
+        )
+
+        report = EmployeeReport.objects.select_for_update().get(pk=report.pk)
+        if report.status not in REPORT_MODERATION_STATUSES:
+            raise ValueError("По этому отчёту уже принято решение.")
 
         prev_status = report.status
         now = timezone.now()
 
-        # Compute deadline_met
         deadline_met = None
-        if report.deadline_at and report.first_submission_at and report.editing_locked_at:
-            deadline_met = (
-                report.first_submission_at < report.deadline_at
-                and report.last_submission_at < report.editing_locked_at
-            )
+        if report.deadline_at and report.first_submission_at:
+            deadline_met = report.first_submission_at <= report.deadline_at
 
         report.status = ReportStatus.ACCEPTED
         report.reviewed_by = admin
@@ -273,12 +360,21 @@ class ReportService:
             new_status=ReportStatus.ACCEPTED,
             comment=comment,
         )
+        from apps.control.tasks import queue_report_decision_notification
+        transaction.on_commit(lambda: queue_report_decision_notification(report.pk))
 
     @staticmethod
     @transaction.atomic
     def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
         """Reject a report and open the configured correction window."""
-        from apps.control.models import ReportStatus, ModerationHistory
+        from apps.control.models import (
+            EmployeeReport, ModerationHistory, ReportStatus,
+            REPORT_MODERATION_STATUSES,
+        )
+
+        report = EmployeeReport.objects.select_for_update().get(pk=report.pk)
+        if report.status not in REPORT_MODERATION_STATUSES:
+            raise ValueError("По этому отчёту уже принято решение.")
 
         prev_status = report.status
         now = timezone.now()
@@ -287,18 +383,25 @@ class ReportService:
         report.reviewed_by = admin
         report.reviewed_at = now
         report.review_comment = comment
-        hours = 24
-        if report.template and report.template.correction_deadline_hours:
-            hours = report.template.correction_deadline_hours
-        report.correction_deadline = now + timedelta(hours=hours)
-        # A rejection starts a fresh correction window even when moderation
-        # happens after the original submission deadline.  Previously the old
-        # deadline_at + 1h value remained here and could make an immediately
-        # rejected report impossible to resubmit.
-        report.editing_locked_at = report.correction_deadline
+        if report.is_late_submission:
+            report.correction_deadline = None
+            report.editing_locked_at = report.late_window_ends_at
+        elif report.deadline_at and now <= report.deadline_at:
+            # Rejection before the main deadline does not start a correction
+            # hour; the worker may keep editing until the original deadline.
+            report.correction_deadline = None
+            report.editing_locked_at = report.deadline_at
+        else:
+            # The first rejection after the deadline starts exactly one hour.
+            # Repeated rejections retain the original end timestamp.
+            if report.correction_started_at is None:
+                report.correction_started_at = now
+                report.correction_deadline = now + _CORRECTION_WINDOW
+            report.editing_locked_at = report.correction_deadline
         report.save(update_fields=[
             "status", "reviewed_by", "reviewed_at", "review_comment",
-            "correction_deadline", "editing_locked_at", "updated_at",
+            "correction_started_at", "correction_deadline",
+            "editing_locked_at", "updated_at",
         ])
 
         cycle = (
@@ -313,6 +416,14 @@ class ReportService:
             new_status=ReportStatus.REJECTED,
             comment=comment,
         )
+
+        from apps.control.tasks import queue_report_decision_notification
+        transaction.on_commit(lambda: queue_report_decision_notification(report.pk))
+
+        if report.is_late_submission and report.late_window_ends_at and now >= report.late_window_ends_at:
+            ReportDeadlineService.create_additional_penalty(report)
+        elif report.correction_deadline and now >= report.correction_deadline:
+            ReportDeadlineService.create_correction_penalty(report)
 
     @staticmethod
     def resubmit_report(
@@ -386,6 +497,112 @@ class ReportService:
         count = qs.count()
         qs.update(status=ReportStatus.OVERDUE, updated_at=now)
         return count
+
+
+class ReportDeadlineService:
+    """Idempotent penalty transitions for one report obligation."""
+
+    @staticmethod
+    @transaction.atomic
+    def create_penalty(
+        *,
+        worker: User,
+        template: "ReportTemplate",
+        report_date: _dt.date,
+        source: str,
+        reason: str,
+        report: Optional["EmployeeReport"] = None,
+    ):
+        from apps.control.models import Penalty, PenaltyStatus, PenaltyType
+
+        if template.auto_penalty_amount <= 0:
+            return None, False
+        penalty, created = Penalty.objects.get_or_create(
+            user=worker,
+            template=template,
+            report_date=report_date,
+            source=source,
+            type=PenaltyType.AUTO,
+            defaults={
+                "amount": template.auto_penalty_amount,
+                "reason": reason,
+                "status": PenaltyStatus.ACCEPTED,
+                "report": report,
+            },
+        )
+        if report is not None and penalty.report_id is None:
+            penalty.report = report
+            penalty.save(update_fields=["report", "updated_at"])
+        if created:
+            from apps.control.tasks import queue_auto_penalty_notification
+            transaction.on_commit(lambda: queue_auto_penalty_notification(penalty.pk))
+        return penalty, created
+
+    @staticmethod
+    def create_initial_penalty(worker, template, report_date, report=None):
+        from apps.control.models import PenaltySource
+
+        penalty, created = ReportDeadlineService.create_penalty(
+            worker=worker,
+            template=template,
+            report_date=report_date,
+            source=PenaltySource.DEADLINE_MISSED,
+            reason=f"Пропущен дедлайн отчёта «{template.name or 'Отчёт'}» ({report_date:%d.%m.%Y})",
+            report=report,
+        )
+        if report is not None and penalty is not None:
+            updates = []
+            if report.initial_penalty_created_at is None:
+                report.initial_penalty_created_at = penalty.created_at
+                updates.append("initial_penalty_created_at")
+            if not report.is_late_submission:
+                report.is_late_submission = True
+                updates.append("is_late_submission")
+            if report.deadline_at and report.late_window_ends_at is None:
+                report.late_window_ends_at = report.deadline_at + _LATE_WINDOW
+                report.editing_locked_at = report.late_window_ends_at
+                updates.extend(["late_window_ends_at", "editing_locked_at"])
+            if updates:
+                report.save(update_fields=[*updates, "updated_at"])
+        return penalty, created
+
+    @staticmethod
+    def create_correction_penalty(report):
+        from apps.control.models import PenaltySource
+
+        penalty, created = ReportDeadlineService.create_penalty(
+            worker=report.user,
+            template=report.template,
+            report_date=report.report_date,
+            source=PenaltySource.CORRECTION_EXPIRED,
+            reason=f"Отчёт «{report.template.name or 'Отчёт'}» не исправлен в срок ({report.report_date:%d.%m.%Y})",
+            report=report,
+        )
+        if penalty is not None and report.additional_penalty_created_at is None:
+            report.additional_penalty_created_at = penalty.created_at
+            report.save(update_fields=["additional_penalty_created_at", "updated_at"])
+        return penalty, created
+
+    @staticmethod
+    def create_additional_penalty(report=None, *, worker=None, template=None, report_date=None):
+        from apps.control.models import PenaltySource
+
+        if report is not None:
+            worker = report.user
+            template = report.template
+            report_date = report.report_date
+        penalty, created = ReportDeadlineService.create_penalty(
+            worker=worker,
+            template=template,
+            report_date=report_date,
+            source=PenaltySource.LATE_WINDOW_EXPIRED,
+            reason=f"Просроченный отчёт «{template.name or 'Отчёт'}» не принят за 24 часа ({report_date:%d.%m.%Y})",
+            report=report,
+        )
+        if report is not None and penalty is not None and report.additional_penalty_created_at is None:
+            report.additional_penalty_created_at = penalty.created_at
+            report.save(update_fields=["additional_penalty_created_at", "updated_at"])
+        return penalty, created
 
 
 # ── Penalty services ───────────────────────────────────────────────────────────

@@ -403,6 +403,34 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
         await callback.answer()
         await _start_report_input(callback.message, state, template)
 
+    elif action.startswith("edit_report_"):
+        try:
+            report_id = int(action.rsplit("_", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Ошибка", show_alert=True)
+            return
+        from asgiref.sync import sync_to_async
+        from apps.control.models import EmployeeReport
+
+        report = await sync_to_async(
+            lambda: EmployeeReport.objects.select_related("template").filter(
+                pk=report_id,
+                user=db_user,
+            ).first()
+        )()
+        if report is None or not report.can_user_edit():
+            await callback.answer("Период редактирования уже закончился", show_alert=True)
+            return
+        await callback.answer()
+        await _start_report_input(callback.message, state, report.template, report=report)
+
+    elif action == "close_notice":
+        await callback.answer()
+        try:
+            await callback.message.delete()
+        except Exception:
+            await callback.message.edit_reply_markup(reply_markup=None)
+
     elif action.startswith("dispute_"):
         try:
             penalty_id = int(action.split("_", 1)[1])
@@ -500,12 +528,13 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
         await callback.answer()
 
 
-async def _start_report_input(message: Message, state: FSMContext, template=None):
+async def _start_report_input(message: Message, state: FSMContext, template=None, report=None):
     """Enter the report input state for a given template (or generic if None)."""
     if template:
         await state.update_data(template_id=template.pk)
     else:
         await state.update_data(template_id=None)
+    await state.update_data(report_id=report.pk if report else None)
 
     await state.set_state(SubmitReportState.waiting_for_report)
 
@@ -513,6 +542,8 @@ async def _start_report_input(message: Message, state: FSMContext, template=None
     if template and template.instructions:
         name = template.name or f"Шаблон #{template.pk}"
         text += f"<b>{name}</b>\n\n<b>Инструкции:</b>\n{template.instructions}\n\n"
+    if report:
+        text += f"Вы редактируете отчёт <b>#{report.pk}</b> за {report.report_date:%d.%m.%Y}.\n\n"
     text += "Отправьте ваш отчёт (текст, документ или фото):"
 
     await message.edit_text(text, reply_markup=worker_cancel_report())
@@ -526,6 +557,7 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
 
     data = await state.get_data()
     template_id = data.get("template_id")
+    report_id = data.get("report_id")
     template = None
     if template_id:
         template = await sync_to_async(
@@ -565,6 +597,7 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
             file_id=file_id,
             file_type=file_type,
             original_filename=original_filename,
+            report_id=report_id,
         )
     except ValueError as e:
         await state.clear()

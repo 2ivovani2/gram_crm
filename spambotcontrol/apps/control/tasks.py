@@ -1,8 +1,8 @@
 """
 Celery tasks for Gramly Control bot:
 - send_report_reminders_task      — template-aware reminders (per notification_times)
-- check_overdue_reports_task      — 23:30 МСК — auto-penalty for workers without any report today
-- check_correction_deadlines_task — every hour — auto-penalty for expired rejection deadlines
+- process_report_deadlines_task   — minute-by-minute report lifecycle transitions
+- legacy deadline tasks           — compatibility aliases for persisted beat rows
 """
 import asyncio
 import html
@@ -92,6 +92,115 @@ def queue_penalty_notification(penalty_id: int) -> bool:
         return False
 
 
+@shared_task(name="apps.control.tasks.notify_auto_penalty_created_task", queue="default")
+def notify_auto_penalty_created_task(penalty_id: int) -> dict:
+    """Send a standalone fine notification required by the report lifecycle."""
+    from apps.control.models import Penalty, PenaltySource, PenaltyType
+    from apps.control.bot.keyboards import CtrlWorkerCB
+    from apps.users.models import User, UserRole, UserStatus
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    penalty = Penalty.objects.select_related("user", "template", "report").filter(
+        pk=penalty_id,
+        type=PenaltyType.AUTO,
+    ).first()
+    if penalty is None:
+        return {"sent": False, "reason": "penalty_not_found"}
+    titles = {
+        PenaltySource.DEADLINE_MISSED: "Пропущен дедлайн отчёта",
+        PenaltySource.CORRECTION_EXPIRED: "Истёк исправительный период",
+        PenaltySource.LATE_WINDOW_EXPIRED: "Истекло 24-часовое окно",
+    }
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="✏️ Оспорить",
+            callback_data=CtrlWorkerCB(action=f"dispute_{penalty.pk}").pack(),
+        )
+    ]])
+    text = (
+        f"🚨 <b>[GRAMLY CRM] {titles.get(penalty.source, 'Начислен штраф')}</b>\n\n"
+        f"Отчёт: {html.escape(penalty.template.name if penalty.template else 'Отчёт')}\n"
+        f"Дата отчёта: {penalty.report_date:%d.%m.%Y}\n"
+        f"Сумма: <b>{penalty.amount:.2f} ₽</b>\n"
+        f"Причина: {html.escape(penalty.reason)}"
+    )
+    sent = _send_message_sync(penalty.user.telegram_id, text, reply_markup=keyboard)
+
+    admin_text = (
+        "📋 <b>Автоштраф создан</b>\n\n"
+        f"Сотрудник: @{html.escape(penalty.user.telegram_username or str(penalty.user.telegram_id))}\n"
+        f"Отчёт: {html.escape(penalty.template.name if penalty.template else 'Отчёт')}\n"
+        f"Дата: {penalty.report_date:%d.%m.%Y}\n"
+        f"Сумма: <b>{penalty.amount:.2f} ₽</b>"
+    )
+    for admin_id in User.objects.filter(
+        role=UserRole.ADMIN,
+        status=UserStatus.ACTIVE,
+        is_blocked_bot=False,
+    ).values_list("telegram_id", flat=True):
+        _send_message_sync(admin_id, admin_text)
+    return {"sent": sent, "penalty_id": penalty.pk}
+
+
+def queue_auto_penalty_notification(penalty_id: int) -> bool:
+    try:
+        notify_auto_penalty_created_task.delay(penalty_id)
+        return True
+    except Exception:
+        logger.exception("Failed to enqueue auto penalty notification penalty=%s", penalty_id)
+        return False
+
+
+@shared_task(name="apps.control.tasks.notify_report_decision_task", queue="default")
+def notify_report_decision_task(report_id: int) -> dict:
+    from zoneinfo import ZoneInfo
+    from apps.control.models import EmployeeReport, ReportStatus
+    from apps.control.bot.keyboards import worker_report_decision_keyboard
+
+    report = EmployeeReport.objects.select_related("user", "template").filter(pk=report_id).first()
+    if report is None or report.status not in {ReportStatus.ACCEPTED, ReportStatus.REJECTED}:
+        return {"sent": False, "reason": "report_not_decided"}
+    accepted = report.status == ReportStatus.ACCEPTED
+    reviewed_at = report.reviewed_at or report.updated_at
+    reviewed_msk = reviewed_at.astimezone(ZoneInfo("Europe/Moscow"))
+    report_date_label = (
+        report.report_date.strftime("%d.%m.%Y")
+        if report.report_date
+        else (report.period_label or "Не указана")
+    )
+    can_edit = report.can_user_edit()
+    if can_edit and report.editing_locked_at:
+        lock_msk = report.editing_locked_at.astimezone(ZoneInfo("Europe/Moscow"))
+        editing = f"Доступно до {lock_msk:%H:%M}"
+    else:
+        editing = "Недоступно"
+    text = (
+        f"{'✅' if accepted else '⚠️'} <b>[GRAMLY CRM] Отчёт "
+        f"{'принят' if accepted else 'отклонён'}!</b>\n\n"
+        f"ID отчёта: {report.pk}\n"
+        f"Дата отчёта: {report_date_label}\n"
+        f"Время решения: {reviewed_msk:%H:%M}\n\n"
+        "Комментарий проверяющего:\n"
+        f"{html.escape(report.review_comment or 'Без комментария')}\n\n"
+        f"Редактирование: {editing}"
+    )
+    sent = _send_message_sync(
+        report.user.telegram_id,
+        text,
+        reply_markup=worker_report_decision_keyboard(report.pk, can_edit),
+    )
+    return {"sent": sent, "report_id": report.pk}
+
+
+def queue_report_decision_notification(report_id: int) -> bool:
+    try:
+        notify_report_decision_task.delay(report_id)
+        return True
+    except Exception:
+        logger.exception("Failed to enqueue report decision notification report=%s", report_id)
+        return False
+
+
 @shared_task(name="apps.control.tasks.send_report_reminders_task", queue="default")
 def send_report_reminders_task():
     """
@@ -112,11 +221,6 @@ def send_report_reminders_task():
     current_hhmm = now_msk.strftime("%H:%M")   # e.g. "10:00"
     current_hh00 = now_msk.strftime("%H:00")   # normalised to :00
     today = now_msk.date()
-
-    # Workers who already have a report for today (by report_date, not submission timestamp)
-    submitted_today_ids = set(
-        EmployeeReport.objects.filter(report_date=today).values_list("user_id", flat=True)
-    )
 
     sent = 0
     failed = 0
@@ -144,11 +248,17 @@ def send_report_reminders_task():
             f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>"
         )
         kb = _submit_report_keyboard()
+        submitted_for_template_ids = set(
+            EmployeeReport.objects.filter(
+                report_date=today,
+                template=tmpl,
+            ).values_list("user_id", flat=True)
+        )
 
         for worker in tmpl.assigned_users.filter(
             status=UserStatus.ACTIVE,
             is_blocked_bot=False,
-        ).exclude(role=UserRole.ADMIN).exclude(id__in=submitted_today_ids):
+        ).exclude(role=UserRole.ADMIN).exclude(id__in=submitted_for_template_ids):
             ok = _send_message_sync(worker.telegram_id, text, reply_markup=kb)
             notified_worker_ids.add(worker.pk)
             sent += 1 if ok else 0
@@ -157,6 +267,9 @@ def send_report_reminders_task():
     # ── Generic reminders for workers without template assignment ─────────────
     _DEFAULT_TIMES = {"10:00", "15:00", "23:00"}
     if current_hhmm in _DEFAULT_TIMES or current_hh00 in _DEFAULT_TIMES:
+        submitted_today_ids = set(
+            EmployeeReport.objects.filter(report_date=today).values_list("user_id", flat=True)
+        )
         workers_no_tmpl = User.objects.filter(
             role=UserRole.WORKER,
             status=UserStatus.ACTIVE,
@@ -180,210 +293,114 @@ def send_report_reminders_task():
     return {"sent": sent, "failed": failed}
 
 
-@shared_task(name="apps.control.tasks.check_overdue_reports_task", queue="default")
-def check_overdue_reports_task():
-    """
-    Check every required report independently.
-
-    Assigned templates use their own auto_penalty_amount. Workers without a
-    template keep the legacy generic-report behaviour and global penalty amount.
-    """
-    from apps.users.models import User, UserRole, UserStatus
-    from apps.control.models import EmployeeReport, Penalty, PenaltyType, PenaltyStatus, ControlSettings
-    from django.utils import timezone
+def _process_report_deadlines(now=None):
+    """Evaluate each template obligation using server time; safe to run every minute."""
     import datetime as dt
+    from zoneinfo import ZoneInfo
+    from django.utils import timezone
+    from apps.control.models import EmployeeReport, Penalty, PenaltySource, ReportStatus, ReportTemplate
+    from apps.control.services import ReportDeadlineService
+    from apps.users.models import UserRole, UserStatus
 
-    settings = ControlSettings.get()
-    # Task runs at 00:05 MSK — the deadline was yesterday (the day that just ended)
-    yesterday = timezone.localdate() - dt.timedelta(days=1)
+    now = now or timezone.now()
+    now_msk = now.astimezone(ZoneInfo("Europe/Moscow"))
+    dates = [now_msk.date(), now_msk.date() - dt.timedelta(days=1)]
+    result = {"initial": 0, "correction": 0, "additional": 0}
 
-    created = 0
-    admin_ids = list(
-        User.objects.filter(role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False)
-        .values_list("telegram_id", flat=True)
-    )
-
-    def notify(penalty, worker, report_label):
-        nonlocal created
-        created += 1
-        worker_text = (
-            f"🚨 <b>Начислен штраф за просрочку</b>\n\n"
-            f"За неподанный отчёт «{html.escape(report_label)}» "
-            f"за {yesterday.strftime('%d.%m.%Y')} начислен штраф "
-            f"<b>{penalty.amount:.2f} ₽</b>.\n\n"
-            "Для оспаривания обратитесь к администратору."
-        )
-        _send_message_sync(worker.telegram_id, worker_text)
-        admin_text = (
-            f"📋 <b>Автоштраф создан</b>\n\n"
-            f"Сотрудник: @{html.escape(worker.telegram_username or str(worker.telegram_id))}\n"
-            f"Отчёт: {html.escape(report_label)}\n"
-            f"Дата: {yesterday.strftime('%d.%m.%Y')}\n"
-            f"Сумма: <b>{penalty.amount:.2f} ₽</b>"
-        )
-        for admin_tg_id in admin_ids:
-            _send_message_sync(admin_tg_id, admin_text)
-
-    # Template-aware penalties. A report for another template must not satisfy
-    # this assignment, which was the root cause for newly-created templates.
-    from apps.control.models import ReportTemplate
     templates = ReportTemplate.objects.prefetch_related("assigned_users").filter(
         auto_penalty_amount__gt=0,
-        assigned_users__status=UserStatus.ACTIVE,
-    ).distinct()
-    assigned_worker_ids = set()
+        deadline_time__isnull=False,
+    )
     for template in templates:
-        workers = template.assigned_users.filter(
-            status=UserStatus.ACTIVE,
-        ).exclude(role=UserRole.ADMIN)
+        workers = template.assigned_users.filter(status=UserStatus.ACTIVE).exclude(role=UserRole.ADMIN)
         for worker in workers:
-            assigned_worker_ids.add(worker.pk)
-            submitted = EmployeeReport.objects.filter(
-                user=worker,
-                template=template,
-                report_date=yesterday,
-            ).exists()
-            if submitted:
-                continue
-            penalty, was_created = Penalty.objects.get_or_create(
-                user=worker,
-                template=template,
-                report_date=yesterday,
-                type=PenaltyType.AUTO,
-                defaults={
-                    "amount": template.auto_penalty_amount,
-                    "reason": (
-                        f"Просрочка отчёта «{template.name or 'Отчёт'}» "
-                        f"({yesterday.strftime('%d.%m.%Y')})"
-                    ),
-                    "status": PenaltyStatus.ACCEPTED,
-                },
-            )
-            if was_created:
-                notify(penalty, worker, template.name or "Отчёт")
+            for report_date in dates:
+                deadline_at = dt.datetime.combine(
+                    report_date,
+                    template.deadline_time,
+                    tzinfo=ZoneInfo("Europe/Moscow"),
+                )
+                if now < deadline_at:
+                    continue
+                report = EmployeeReport.objects.select_related("user", "template").filter(
+                    user=worker,
+                    template=template,
+                    report_date=report_date,
+                ).first()
+                if report_date != now_msk.date() and report is None and not Penalty.objects.filter(
+                    user=worker,
+                    template=template,
+                    report_date=report_date,
+                    source=PenaltySource.DEADLINE_MISSED,
+                ).exists():
+                    # Assignment history is not available. Do not back-charge a
+                    # newly assigned worker for yesterday; an obligation enters
+                    # the 24-hour follow-up only if its first penalty exists.
+                    continue
+                timely = bool(
+                    report
+                    and report.first_submission_at
+                    and report.first_submission_at <= deadline_at
+                )
+                if timely:
+                    if (
+                        report.status == ReportStatus.REJECTED
+                        and report.correction_deadline
+                        and now >= report.correction_deadline
+                    ):
+                        _, created = ReportDeadlineService.create_correction_penalty(report)
+                        result["correction"] += int(created)
+                    continue
 
-    # Legacy generic report for workers without a template assignment.
-    if settings.late_report_penalty_amount > 0:
-        submitted_ids = set(
-            EmployeeReport.objects.filter(report_date=yesterday).values_list("user_id", flat=True)
-        )
-        workers = User.objects.filter(
-            role=UserRole.WORKER,
-            status=UserStatus.ACTIVE,
-        ).exclude(id__in=submitted_ids).exclude(id__in=assigned_worker_ids).exclude(
-            assigned_report_templates__isnull=False
-        )
-    else:
-        workers = User.objects.none()
+                _, created = ReportDeadlineService.create_initial_penalty(
+                    worker,
+                    template,
+                    report_date,
+                    report=report,
+                )
+                result["initial"] += int(created)
 
-    for worker in workers:
-        already = Penalty.objects.filter(
-            user=worker,
-            type=PenaltyType.AUTO,
-            reason__startswith=f"Просрочка подачи отчёта ({yesterday.strftime('%-d %B %Y')})",
-        ).exists()
-        if already:
-            continue
+                late_end = deadline_at + dt.timedelta(hours=24)
+                if now < late_end:
+                    continue
+                # A version sent before the window closed must wait for the
+                # moderator; their response time must never punish the worker.
+                if report and report.status == ReportStatus.ACCEPTED:
+                    continue
+                if (
+                    report
+                    and report.status in {ReportStatus.ON_MODERATION, ReportStatus.UPDATED, ReportStatus.PENDING}
+                    and report.last_submission_at
+                    and report.last_submission_at <= late_end
+                ):
+                    continue
+                _, created = ReportDeadlineService.create_additional_penalty(
+                    report,
+                    worker=worker,
+                    template=template,
+                    report_date=report_date,
+                )
+                result["additional"] += int(created)
 
-        penalty = Penalty.objects.create(
-            user=worker,
-            type=PenaltyType.AUTO,
-            amount=settings.late_report_penalty_amount,
-            reason=f"Просрочка подачи отчёта ({yesterday.strftime('%-d %B %Y')})",
-            status=PenaltyStatus.ACCEPTED,
-        )
-        notify(penalty, worker, "Отчёт")
+    logger.info("[control] Report lifecycle processed: %s", result)
+    return result
 
-    logger.info("[control] Auto-penalties created: %d", created)
-    return {"created": created}
+
+@shared_task(name="apps.control.tasks.process_report_deadlines_task", queue="default")
+def process_report_deadlines_task():
+    return _process_report_deadlines()
+
+
+# Compatibility entry points for persisted django-celery-beat rows. They are
+# idempotent and delegate to the same lifecycle engine until old rows disappear.
+@shared_task(name="apps.control.tasks.check_overdue_reports_task", queue="default")
+def check_overdue_reports_task():
+    return _process_report_deadlines()
 
 
 @shared_task(name="apps.control.tasks.check_correction_deadlines_task", queue="default")
 def check_correction_deadlines_task():
-    """
-    Mark as OVERDUE rejected reports whose correction_deadline has passed.
-    Create auto-penalty from template.auto_penalty_amount if > 0.
-    """
-    from apps.control.models import (
-        EmployeeReport, ReportStatus, Penalty, PenaltyType, PenaltyStatus,
-    )
-    from apps.users.models import User, UserRole, UserStatus
-    from django.utils import timezone
-
-    now = timezone.now()
-    today_str = timezone.localdate().strftime("%-d %B %Y")
-
-    expired = list(
-        EmployeeReport.objects.select_related("user", "template")
-        .filter(
-            status=ReportStatus.REJECTED,
-            correction_deadline__lt=now,
-            correction_deadline__isnull=False,
-        )
-    )
-
-    penalized = 0
-    admin_ids = list(
-        User.objects.filter(role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False)
-        .values_list("telegram_id", flat=True)
-    )
-
-    for report in expired:
-        # Mark overdue
-        report.status = ReportStatus.OVERDUE
-        report.save(update_fields=["status", "updated_at"])
-
-        # Create auto-penalty if template has configured amount
-        penalty_amount = None
-        if report.template and report.template.auto_penalty_amount > 0:
-            penalty_amount = report.template.auto_penalty_amount
-
-        if penalty_amount:
-            already = Penalty.objects.filter(
-                user=report.user,
-                type=PenaltyType.AUTO,
-                report=report,
-            ).exists()
-            if not already:
-                reason = f"Не исправил отчёт в срок ({report.period_label or today_str})"
-                Penalty.objects.create(
-                    user=report.user,
-                    type=PenaltyType.AUTO,
-                    amount=penalty_amount,
-                    reason=reason,
-                    status=PenaltyStatus.ACCEPTED,
-                    report=report,
-                )
-                penalized += 1
-
-                worker_text = (
-                    f"🚨 <b>Штраф за просроченное исправление</b>\n\n"
-                    f"Вы не исправили отчёт за {report.period_label} в установленный срок.\n"
-                    f"Начислен штраф: <b>{penalty_amount:.2f} ₽</b>.\n\n"
-                    f"Для оспаривания обратитесь к администратору."
-                )
-                _send_message_sync(report.user.telegram_id, worker_text)
-
-                admin_text = (
-                    f"📋 <b>Автоштраф за просроченное исправление</b>\n\n"
-                    f"Сотрудник: @{report.user.telegram_username or report.user.telegram_id}\n"
-                    f"Отчёт #{report.pk} ({report.period_label})\n"
-                    f"Сумма: <b>{penalty_amount:.2f} ₽</b>"
-                )
-                for admin_id in admin_ids:
-                    _send_message_sync(admin_id, admin_text)
-
-        # Always notify worker that report is overdue (even without penalty)
-        else:
-            worker_text = (
-                f"⏰ <b>Срок исправления истёк</b>\n\n"
-                f"Отчёт за {report.period_label} помечен как просроченный.\n"
-                f"Обратитесь к администратору."
-            )
-            _send_message_sync(report.user.telegram_id, worker_text)
-
-    logger.info("[control] Correction deadlines expired: %d, penalized: %d", len(expired), penalized)
-    return {"expired": len(expired), "penalized": penalized}
+    return _process_report_deadlines()
 
 
 # ── Deadline reminder notifications ───────────────────────────────────────────
