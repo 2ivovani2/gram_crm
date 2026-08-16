@@ -314,10 +314,12 @@ async def cb_submit_report(callback: CallbackQuery, db_user: User, state: FSMCon
     from asgiref.sync import sync_to_async
     from apps.control.services import ReportService
 
+    # Telegram keeps the button spinner active until answerCallbackQuery. Do
+    # this before database work so a slow query cannot look like a frozen bot.
+    await callback.answer()
+
     # Get assigned templates (no global blocking — per-template blocking handled in submit_report)
     templates = await sync_to_async(ReportService.get_active_templates_for_user)(db_user)
-
-    await callback.answer()
 
     if len(templates) > 1:
         # Multiple templates — let worker pick
