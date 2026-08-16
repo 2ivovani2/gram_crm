@@ -46,6 +46,7 @@ LOCAL_APPS = [
     "apps.crm",
     "apps.docs",
     "apps.control",
+    "apps.owners",
     "apps.welcome_bots",
 ]
 
@@ -167,6 +168,7 @@ CELERY_TASK_ROUTES = {
     "apps.stats.tasks.*": {"queue": "default"},
     "apps.crm.tasks.*": {"queue": "default"},
     "apps.control.tasks.*": {"queue": "default"},
+    "apps.owners.tasks.*": {"queue": "default"},
     "apps.welcome_bots.tasks.*": {"queue": "welcome_bots"},
 }
 
@@ -174,6 +176,10 @@ CELERY_TASK_ROUTES = {
 from celery.schedules import crontab  # noqa: E402
 
 CELERY_BEAT_SCHEDULE = {
+    "owners-daily-health-recalculation": {
+        "task": "apps.owners.tasks.recalculate_owner_health_task",
+        "schedule": crontab(hour=2, minute=10),
+    },
     # CRM: check deadline at 00:05 МСК (5 min after midnight)
     "crm-check-deadline": {
         "task": "apps.crm.tasks.crm_check_deadline_task",

@@ -25,6 +25,7 @@ test.describe("Gramly CRM editorial workspace", () => {
     "/crm/control/reports/",
     "/crm/control/employees/",
     "/crm/control/withdrawals/",
+    "/crm/owners/",
   ]) {
     test(`${route} renders without overflow or browser errors`, async ({ page }) => {
       const errors = [];
@@ -78,6 +79,7 @@ test.describe("Gramly CRM editorial workspace", () => {
       { name: "employees", path: "/crm/control/employees/" },
       { name: "reports", path: "/crm/control/reports/" },
       { name: "withdrawals", path: "/crm/control/withdrawals/" },
+      { name: "owners", path: "/crm/owners/" },
     ];
     for (const viewport of [
       { width: 390, height: 844 },

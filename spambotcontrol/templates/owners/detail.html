@@ -1,0 +1,40 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ owner.label }}{% endblock %}
+{% block page_title %}Карточка владельца{% endblock %}
+{% block topbar_subtitle %}Состояние, каналы и неизменяемый журнал действий{% endblock %}
+{% block nav_owners %}active{% endblock %}
+{% block content %}
+<div class="owners-head owner-detail-head">
+  <div><span class="owners-kicker">Owner #{{ owner.pk }} {% if owner.is_archived %}/ Archive{% endif %}</span><h2>{{ owner.label }}</h2><p>{% if owner.telegram_username %}@{{ owner.telegram_username }}{% endif %}{% if owner.phone %} · {{ owner.phone }}{% endif %}{% if owner.telegram_id %} · Telegram ID {{ owner.telegram_id }}{% endif %}</p></div>
+  <div class="action-btns"><a class="g-button g-button--secondary" href="{% url 'owners:activity' owner.pk %}">Вся история</a><a class="g-button g-button--primary" href="{% url 'owners:edit' owner.pk %}">Изменить</a></div>
+</div>
+
+{% if owner.attention_reasons %}<div class="owner-alert"><strong>Требует внимания</strong><span>{{ owner.attention_reasons|join:" · " }}</span></div>{% endif %}
+
+<div class="owner-profile-grid">
+  <section class="owner-profile-main">
+    <div class="owner-scoreboard">
+      <article><span>Автоматический ранг</span><strong class="owner-rank owner-rank--{{ owner.rank|lower }}">{{ owner.rank }}</strong><small>Надёжность и нагрузка</small></article>
+      <article><span>Индекс здоровья</span><strong>{{ owner.health }}%</strong><i><b style="width:{{ owner.health }}%"></b></i><small>Текущее техническое состояние</small></article>
+      <article><span>Каналы</span><strong>{{ owner.active_channel_count }}</strong><small>Активных закреплений</small></article>
+    </div>
+    <section class="owner-panel"><header><h3>Техническое состояние</h3><span>Секреты скрыты</span></header><div class="owner-technical">
+      <div class="state-{{ owner.sim_state }}"><span>SIM</span><strong>{{ owner.get_sim_state_display }}</strong></div>
+      <div class="state-{{ owner.session_state }}"><span>Session</span><strong>{{ owner.get_session_state_display }}</strong></div>
+      <div class="state-{{ owner.twofa_state }}"><span>2FA</span><strong>{{ owner.get_twofa_state_display }}</strong></div>
+      <div class="{% if owner.has_premium %}state-ready{% else %}state-missing{% endif %}"><span>Premium</span><strong>{% if owner.has_premium %}Активен{% else %}Отсутствует{% endif %}</strong></div>
+      <div class="state-{{ owner.proxy_state }}"><span>Proxy</span><strong>{{ owner.get_proxy_state_display }}</strong></div>
+    </div></section>
+    <section class="owner-panel"><header><h3>Закреплённые каналы</h3><span>{{ owner.active_channel_count }} активных</span></header>
+      <div class="owner-channel-list">{% for channel in channels %}<div class="owner-channel {% if channel.is_archived %}is-archived{% endif %}"><div><strong>{{ channel.title }}</strong><span>{% if channel.username %}@{{ channel.username }}{% endif %}{% if channel.telegram_id %} · {{ channel.telegram_id }}{% endif %}</span></div><div><small>{{ channel.status }} · {{ channel.attached_at|date:"d.m.Y" }}</small>{% if not channel.is_archived %}<details class="owner-transfer"><summary>Передать</summary><form method="post" action="{% url 'owners:channel_action' owner.pk channel.pk 'transfer' %}">{% csrf_token %}<select name="target_owner" required><option value="">Новый владелец</option>{% for target in transfer_targets %}<option value="{{ target.pk }}">{{ target.label }}</option>{% endfor %}</select><input name="reason" placeholder="Причина (необязательно)"><button class="btn-xs" type="submit">Подтвердить</button></form></details><form method="post" action="{% url 'owners:channel_action' owner.pk channel.pk 'archive' %}" data-confirm="Архивировать привязку канала?">{% csrf_token %}<button class="btn-xs" type="submit">Архивировать</button></form>{% endif %}</div></div>{% empty %}<div class="owners-empty compact">Каналы ещё не закреплены.</div>{% endfor %}</div>
+      <form method="post" action="{% url 'owners:channel_add' owner.pk %}" class="owner-inline-form">{% csrf_token %}{% for field in channel_form %}<label><span>{{ field.label }}</span>{{ field }}</label>{% endfor %}<button class="g-button g-button--primary" type="submit">Привязать канал</button></form>
+    </section>
+    <section class="owner-panel"><header><h3>Последняя активность</h3><a href="{% url 'owners:activity' owner.pk %}">Открыть журнал</a></header><div class="owner-timeline">{% for event in activity %}<article><time>{{ event.created_at|date:"d.m.Y H:i" }}</time><div><strong>{{ event.description }}</strong><span>@{{ event.actor_username }} · {{ event.actor_role }}</span></div></article>{% empty %}<div class="owners-empty compact">Событий пока нет.</div>{% endfor %}</div></section>
+  </section>
+  <aside class="owner-profile-aside">
+    <section class="owner-panel"><header><h3>Профиль</h3></header><dl class="owner-data"><dt>Статус</dt><dd>{% if owner.status %}<span class="owner-status-chip" style="--status-color:{{ owner.status.color }}">{{ owner.status.emoji }} {{ owner.status.name }}</span>{% else %}Не назначен{% endif %}</dd><dt>Ответственный</dt><dd>{% if owner.responsible %}{{ owner.responsible.display_name }}{% else %}Не назначен{% endif %}</dd><dt>Регистрация</dt><dd>{{ owner.registered_at|date:"d.m.Y"|default:"Неизвестно" }}</dd><dt>В работе с</dt><dd>{{ owner.used_since|date:"d.m.Y" }}</dd><dt>Обновлено</dt><dd>{{ owner.updated_at|date:"d.m.Y H:i" }}</dd></dl></section>
+    <section class="owner-panel"><header><h3>Примечание</h3></header><div class="owner-notes">{{ owner.notes|linebreaksbr|default:"Примечание не заполнено." }}</div>{% if owner.notes_updated_at %}<footer>{{ owner.notes_updated_at|date:"d.m.Y H:i" }} · {{ owner.notes_updated_by.display_name }}</footer>{% endif %}</section>
+    <section class="owner-panel owner-danger"><header><h3>Управление записью</h3></header><div class="owner-stack-actions">{% if owner.is_archived %}<form method="post" action="{% url 'owners:action' owner.pk 'restore' %}">{% csrf_token %}<button class="g-button g-button--secondary" type="submit">Восстановить</button></form>{% else %}<form method="post" action="{% url 'owners:action' owner.pk 'archive' %}" data-confirm="Переместить владельца в архив? Все данные и история сохранятся.">{% csrf_token %}<button class="g-button g-button--secondary" type="submit">Архивировать</button></form>{% endif %}<form method="post" action="{% url 'owners:action' owner.pk 'delete' %}" data-confirm="Удаление необратимо. Продолжить?">{% csrf_token %}<button class="g-button g-button--danger" type="submit">Удалить владельца</button></form></div></section>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "crm/base.html" %}
+{% block title %}История {{ owner.label }}{% endblock %}
+{% block page_title %}История активности{% endblock %}
+{% block topbar_subtitle %}Неизменяемый аудит действий сотрудников и автоматики{% endblock %}
+{% block nav_owners %}active{% endblock %}
+{% block content %}
+<div class="owners-head"><div><span class="owners-kicker">Owner #{{ owner.pk }}</span><h2>{{ owner.label }}</h2><p>Полная последовательность изменений с момента создания.</p></div><a class="g-button g-button--secondary" href="{% url 'owners:detail' owner.pk %}">Вернуться в карточку</a></div>
+<form method="get" class="owners-filter owner-audit-filter"><label class="owners-search"><span>Поиск в журнале</span><input class="g-input" type="search" name="q" value="{{ request.GET.q }}" placeholder="Сотрудник, событие, описание"></label><button class="g-button g-button--primary" type="submit">Найти</button></form>
+<div class="owner-audit-table"><div class="owner-audit-head"><span>Дата и время</span><span>Сотрудник</span><span>Роль</span><span>Событие</span></div>{% for event in events %}<article><time>{{ event.created_at|date:"d.m.Y H:i:s" }}</time><span>@{{ event.actor_username }}</span><span>{{ event.actor_role }}</span><div><strong>{{ event.description }}</strong><small>{{ event.event_type }}</small></div></article>{% empty %}<div class="owners-empty">Записи не найдены.</div>{% endfor %}</div>
+{% if page.paginator.num_pages > 1 %}<nav class="owners-pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Назад</a>{% endif %}<span>{{ page.number }} / {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}">Дальше</a>{% endif %}</nav>{% endif %}
+{% endblock %}

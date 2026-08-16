@@ -1,0 +1,22 @@
+{% extends "crm/base.html" %}
+{% block title %}{% if owner %}Редактирование{% else %}Новый владелец{% endif %}{% endblock %}
+{% block page_title %}{% if owner %}Редактирование владельца{% else %}Новый владелец{% endif %}{% endblock %}
+{% block topbar_subtitle %}Поля с техническими секретами никогда не отображаются повторно{% endblock %}
+{% block nav_owners %}active{% endblock %}
+{% block content %}
+<div class="owners-head"><div><span class="owners-kicker">{% if owner %}Owner #{{ owner.pk }}{% else %}Creation wizard{% endif %}</span><h2>{% if owner %}{{ owner.label }}{% else %}Добавить владельца{% endif %}</h2><p>Заполните известные данные. Ранг и индекс здоровья CRM рассчитает автоматически.</p></div>{% if owner %}<a class="g-button g-button--secondary" href="{% url 'owners:detail' owner.pk %}">Вернуться в карточку</a>{% endif %}</div>
+<form method="post" class="owner-form" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<div class="owner-form-errors">{{ form.non_field_errors }}</div>{% endif %}
+  <section><header><span>01</span><div><h3>Основная информация</h3><p>Телефон или Telegram ID обязателен для защиты от дублей.</p></div></header><div class="owner-form-grid">
+    {% for field in form %}{% if field.name == 'phone' or field.name == 'telegram_id' or field.name == 'telegram_username' or field.name == 'display_name' or field.name == 'registered_at' or field.name == 'used_since' or field.name == 'responsible' or field.name == 'status' %}<label><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<em>{{ field.errors|striptags }}</em>{% endif %}</label>{% endif %}{% endfor %}
+  </div></section>
+  <section><header><span>02</span><div><h3>Техническое состояние</h3><p>Статусы видны в ленте; значения секретов шифруются и скрыты.</p></div></header><div class="owner-form-grid">
+    {% for field in form %}{% if field.name == 'sim_state' or field.name == 'session_state' or field.name == 'twofa_state' or field.name == 'proxy_state' or field.name == 'has_premium' or field.name == 'is_scam' or field.name == 'is_blocked' %}<label class="{% if field.field.widget.input_type == 'checkbox' %}owner-check{% endif %}"><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<em>{{ field.errors|striptags }}</em>{% endif %}</label>{% endif %}{% endfor %}
+  </div></section>
+  <section><header><span>03</span><div><h3>Защищённые данные</h3><p>Оставьте пустым, чтобы сохранить текущее значение. Секреты не попадают в аудит.</p></div></header><div class="owner-form-grid">
+    {% for field in form %}{% if field.name == 'session_secret' or field.name == 'twofa_secret' or field.name == 'proxy_secret' or field.name == 'sim_secret' %}<label><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<em>{{ field.errors|striptags }}</em>{% endif %}</label>{% endif %}{% endfor %}
+  </div></section>
+  <section><header><span>04</span><div><h3>Примечание</h3><p>Операционные ограничения и рекомендации по работе.</p></div></header>{% for field in form %}{% if field.name == 'notes' %}<label><span>{{ field.label }}</span>{{ field }}{% if field.errors %}<em>{{ field.errors|striptags }}</em>{% endif %}</label>{% endif %}{% endfor %}</section>
+  <div class="owner-form-actions"><a class="g-button g-button--secondary" href="{% if owner %}{% url 'owners:detail' owner.pk %}{% else %}{% url 'owners:dashboard' %}{% endif %}">Отмена</a><button class="g-button g-button--primary" type="submit">{% if owner %}Сохранить изменения{% else %}Создать владельца{% endif %}</button></div>
+</form>
+{% endblock %}

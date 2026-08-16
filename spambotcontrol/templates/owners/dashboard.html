@@ -1,0 +1,54 @@
+{% extends "crm/base.html" %}
+{% block title %}Центр владельцев{% endblock %}
+{% block page_title %}Центр владельцев{% endblock %}
+{% block topbar_subtitle %}Telegram-аккаунты, каналы и техническое состояние{% endblock %}
+{% block nav_owners %}active{% endblock %}
+{% block content %}
+<div class="owners-head">
+  <div><span class="owners-kicker">Infrastructure registry</span><h2>Владельцы каналов</h2><p>Единая оперативная лента с автоматической оценкой риска.</p></div>
+  <div class="action-btns"><a class="g-button g-button--secondary" href="{% url 'owners:statuses' %}">Легенда и статусы</a><a class="g-button g-button--primary" href="{% url 'owners:create' %}">Добавить владельца</a></div>
+</div>
+
+<div class="owner-stats">
+  <article><span>Активные владельцы</span><strong>{{ stats.total }}</strong></article>
+  <article><span>Закреплено каналов</span><strong>{{ stats.channels }}</strong></article>
+  <article><span>Среднее здоровье</span><strong>{{ stats.avg_health }}%</strong></article>
+  <article class="{% if stats.attention %}is-critical{% endif %}"><span>Требуют внимания</span><strong>{{ stats.attention }}</strong></article>
+  <article><span>В архиве</span><strong>{{ stats.archived }}</strong></article>
+</div>
+
+<form method="get" class="owners-filter" aria-label="Поиск и фильтры">
+  <label class="owners-search"><span>Поиск</span><input class="g-input" type="search" name="q" value="{{ filters.q|default:'' }}" placeholder="Телефон, @username, канал, заметка..."></label>
+  <label><span>Статус</span><select class="g-input" name="status"><option value="">Все</option>{% for item in statuses %}<option value="{{ item.pk }}" {% if filters.status == item.pk|stringformat:'s' %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label>
+  <label><span>Ранг</span><select class="g-input" name="rank"><option value="">Все</option>{% for value in "SABCD" %}<option {% if filters.rank == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+  <label><span>Состояние</span><select class="g-input" name="state"><option value="">Все</option><option value="attention" {% if filters.state == 'attention' %}selected{% endif %}>Требуют внимания</option><option value="no_session" {% if filters.state == 'no_session' %}selected{% endif %}>Без Session</option><option value="premium" {% if filters.state == 'premium' %}selected{% endif %}>Premium</option></select></label>
+  <label><span>Сортировка</span><select class="g-input" name="sort"><option value="attention">По риску</option><option value="updated" {% if filters.sort == 'updated' %}selected{% endif %}>Недавно изменённые</option><option value="name" {% if filters.sort == 'name' %}selected{% endif %}>По имени</option><option value="health_asc" {% if filters.sort == 'health_asc' %}selected{% endif %}>Здоровье: сначала низкое</option><option value="channels" {% if filters.sort == 'channels' %}selected{% endif %}>По нагрузке</option></select></label>
+  {% if show_archive %}<input type="hidden" name="archive" value="1">{% endif %}
+  <button class="g-button g-button--primary" type="submit">Применить</button>
+</form>
+
+<div class="owners-view-switch"><a class="{% if not show_archive %}active{% endif %}" href="{% url 'owners:dashboard' %}">Активные</a><a class="{% if show_archive %}active{% endif %}" href="?archive=1">Архив</a></div>
+<div class="owner-saved-filters">
+  <form method="post" action="{% url 'owners:filter_action' 'save' %}">{% csrf_token %}<input type="text" name="name" placeholder="Название текущего набора" maxlength="100">{% for key,value in filters.items %}{% if key != 'page' and value %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}<button type="submit">Сохранить фильтр</button></form>
+  {% for saved in saved_filters %}<span><a href="?{{ saved.query_string }}">{{ saved.name }}</a><form method="post" action="{% url 'owners:filter_item_action' 'delete' saved.pk %}">{% csrf_token %}<button type="submit" aria-label="Удалить фильтр {{ saved.name }}">×</button></form></span>{% endfor %}
+</div>
+
+<div class="owner-feed">
+{% for owner in owners %}
+  <article class="owner-row {% if owner.health < 60 or owner.is_scam or owner.is_blocked %}owner-row--critical{% endif %}">
+    <a class="owner-row-main" href="{% url 'owners:detail' owner.pk %}">
+      <div class="owner-identity"><span class="owner-avatar">{{ owner.label|first|upper }}</span><div><h3>{{ owner.label }}</h3><p>{% if owner.telegram_username %}@{{ owner.telegram_username }}{% endif %}{% if owner.phone %} · {{ owner.phone }}{% endif %}</p></div></div>
+      <div class="owner-signal"><span>Ранг</span><strong class="owner-rank owner-rank--{{ owner.rank|lower }}">{{ owner.rank }}</strong></div>
+      <div class="owner-signal"><span>Здоровье</span><strong>{{ owner.health }}%</strong><i><b style="width:{{ owner.health }}%"></b></i></div>
+      <div class="owner-signal"><span>Каналы</span><strong>{{ owner.active_channel_count }}</strong></div>
+      <div class="owner-state-grid" aria-label="Техническое состояние">
+        <span class="state-{{ owner.sim_state }}">SIM</span><span class="state-{{ owner.session_state }}">Session</span><span class="state-{{ owner.twofa_state }}">2FA</span><span class="{% if owner.has_premium %}state-ready{% else %}state-missing{% endif %}">Premium</span><span class="state-{{ owner.proxy_state }}">Proxy</span>
+      </div>
+      <div class="owner-status">{% if owner.status %}<span style="--status-color:{{ owner.status.color }}">{{ owner.status.emoji }} {{ owner.status.name }}</span>{% else %}<span>Без статуса</span>{% endif %}<small>{% if owner.responsible %}{{ owner.responsible.display_name }}{% else %}Не назначен{% endif %}</small></div>
+    </a>
+    {% if owner.attention_reasons %}<div class="owner-reasons"><strong>Внимание:</strong> {{ owner.attention_reasons|join:" · " }}</div>{% endif %}
+  </article>
+{% empty %}<div class="owners-empty"><strong>Владельцы не найдены</strong><p>Измените фильтры или добавьте первую запись.</p></div>{% endfor %}
+</div>
+{% if page.paginator.num_pages > 1 %}<nav class="owners-pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Назад</a>{% endif %}<span>{{ page.number }} / {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}">Дальше</a>{% endif %}</nav>{% endif %}
+{% endblock %}
