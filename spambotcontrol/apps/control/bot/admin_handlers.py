@@ -159,17 +159,6 @@ async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_
 
     await sync_to_async(ReportService.accept_report)(report, db_user)
 
-    # Notify worker
-    worker_msg = (
-        f"✅ <b>Ваш отчёт принят!</b>\n\n"
-        f"Отчёт за {report.period_label} принят администратором.\n"
-        f"Вывод средств разблокирован."
-    )
-    try:
-        await callback.bot.send_message(report.user.telegram_id, worker_msg, parse_mode="HTML")
-    except Exception:
-        pass
-
     await callback.answer("✅ Отчёт принят")
     await callback.message.edit_text(
         f"✅ Отчёт #{report.pk} принят.",
@@ -204,18 +193,14 @@ async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB,
     await state.set_state(AdminReportReviewState.waiting_for_comment)
     await state.update_data(report_id=report.pk, action="reject")
 
-    # Build context about correction deadline
-    hours = 24
-    if report.template and report.template.correction_deadline_hours:
-        hours = report.template.correction_deadline_hours
-
     await callback.answer()
     await callback.message.edit_text(
         f"❌ <b>Отклонение отчёта #{report.pk}</b>\n\n"
         f"Сотрудник: {username}\n"
         f"Период: {report.period_label}\n\n"
         f"Напишите причину отклонения и что нужно исправить.\n"
-        f"Сотруднику будет дано <b>{hours} ч.</b> на повторную подачу.",
+        "CRM сама рассчитает доступное окно: до основного дедлайна, "
+        "1 час после первого позднего отклонения или остаток 24-часового окна.",
         reply_markup=admin_back(),
     )
 
@@ -240,32 +225,6 @@ async def process_reject_comment(message: Message, db_user: User, state: FSMCont
 
     await sync_to_async(ReportService.reject_report)(report, db_user, comment)
     await state.clear()
-
-    # Get template instructions for the notification
-    hours = 24
-    instructions = ""
-    if report.template:
-        hours = report.template.correction_deadline_hours or 24
-        instructions = report.template.instructions
-
-    worker_msg = (
-        f"❌ <b>Ваш отчёт отклонён</b>\n\n"
-        f"Период: {report.period_label}\n\n"
-        f"<b>Причина:</b>\n{comment}\n\n"
-    )
-    if instructions:
-        worker_msg += f"<b>Требования к отчёту:</b>\n{instructions}\n\n"
-    worker_msg += (
-        f"У вас есть <b>{hours} ч.</b> для повторной подачи.\n"
-        f"Нажмите «📝 Подать отчёт» в меню."
-    )
-
-    try:
-        await message.bot.send_message(
-            report.user.telegram_id, worker_msg, parse_mode="HTML"
-        )
-    except Exception:
-        pass
 
     await message.answer(
         f"❌ Отчёт #{report.pk} отклонён. Сотрудник уведомлён.",

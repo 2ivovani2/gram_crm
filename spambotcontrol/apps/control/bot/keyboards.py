@@ -108,6 +108,18 @@ def worker_template_select_keyboard(templates: list) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def worker_report_decision_keyboard(report_id: int, can_edit: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if can_edit:
+        b.button(
+            text="✏️ Редактировать",
+            callback_data=CtrlWorkerCB(action=f"edit_report_{report_id}"),
+        )
+    b.button(text="Закрыть", callback_data=CtrlWorkerCB(action="close_notice"))
+    b.adjust(2 if can_edit else 1)
+    return b.as_markup()
+
+
 # ── Admin keyboards ───────────────────────────────────────────────────────────
 
 def admin_control_main_menu() -> InlineKeyboardMarkup:

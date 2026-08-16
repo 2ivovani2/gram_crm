@@ -80,14 +80,14 @@
         <div class="hint">Время, до которого нужно сдать отчёт. Редактирование блокируется через 1 час после этого времени.</div>
       </div>
       <div class="field-group">
-        <label>Срок исправления (часов)</label>
-        <input type="number" name="correction_deadline_hours" value="{{ tmpl.correction_deadline_hours }}" min="1" max="168"/>
-        <div class="hint">Используется только для отображения в уведомлении об отклонении.</div>
+        <label>Срок исправления</label>
+        <input type="text" value="1 час после первого отклонения" disabled/>
+        <div class="hint">Срок фиксирован. Повторное отклонение его не продлевает.</div>
       </div>
       <div class="field-group">
         <label>Автоштраф за просрочку (₽)</label>
         <input type="number" name="auto_penalty_amount" value="{{ tmpl.auto_penalty_amount }}" min="0" step="0.01"/>
-        <div class="hint">Сумма штрафа, автоматически начисляемого при истечении срока исправления. 0 = без штрафа.</div>
+        <div class="hint">Сумма первого штрафа за пропуск дедлайна и второго — если отчёт не принят за следующие 24 часа. 0 = без штрафов.</div>
       </div>
     </div>
   </div>

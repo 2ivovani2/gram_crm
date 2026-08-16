@@ -123,7 +123,10 @@ class ReportTemplatesView(AdminOrCuratorMixin, View):
                 name=name,
                 description=request.POST.get("description", ""),
                 format_instructions=request.POST.get("format_instructions", ""),
-                correction_deadline_hours=int(request.POST.get("correction_deadline_hours", 24) or 24),
+                # The report lifecycle has a single product-wide correction
+                # window. Keep the legacy field populated for compatibility,
+                # but never accept a per-template override from the browser.
+                correction_deadline_hours=1,
                 created_by=admin,
                 updated_by=admin,
             )
@@ -175,10 +178,9 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
         tmpl.name = request.POST.get("name", tmpl.name).strip()
         tmpl.description = request.POST.get("description", "")
         tmpl.format_instructions = request.POST.get("format_instructions", "")
-        try:
-            tmpl.correction_deadline_hours = int(request.POST.get("correction_deadline_hours", 24) or 24)
-        except (ValueError, TypeError):
-            tmpl.correction_deadline_hours = 24
+        # Fixed by the report lifecycle specification. The model field remains
+        # for backwards compatibility with existing data and integrations.
+        tmpl.correction_deadline_hours = 1
         try:
             tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
         except InvalidOperation:

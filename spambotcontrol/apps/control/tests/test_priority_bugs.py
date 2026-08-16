@@ -14,7 +14,7 @@ from apps.control.models import (
     ReportTemplate,
 )
 from apps.control.services import EmployeeService
-from apps.control.tasks import check_overdue_reports_task, notify_penalty_created_task
+from apps.control.tasks import _process_report_deadlines, notify_penalty_created_task
 from apps.users.models import User, UserRole, UserStatus
 
 
@@ -44,12 +44,16 @@ def test_new_template_penalty_works_when_global_penalty_is_zero(monkeypatch):
     submitted_template.assigned_users.add(worker)
     missing_template.assigned_users.add(worker)
 
-    yesterday = timezone.localdate() - dt.timedelta(days=1)
+    from zoneinfo import ZoneInfo
+    now = dt.datetime(2026, 8, 16, 12, 5, tzinfo=ZoneInfo("Europe/Moscow"))
+    report_date = now.date()
+    deadline = now - dt.timedelta(minutes=5)
     EmployeeReport.objects.create(
         user=worker,
         template=submitted_template,
-        report_date=yesterday,
+        report_date=report_date,
         status=ReportStatus.ACCEPTED,
+        first_submission_at=deadline - dt.timedelta(hours=1),
     )
     settings = ControlSettings.get()
     settings.late_report_penalty_amount = Decimal("0")
@@ -60,18 +64,20 @@ def test_new_template_penalty_works_when_global_penalty_is_zero(monkeypatch):
         lambda telegram_id, text, reply_markup=None: sent.append((telegram_id, text)) or True,
     )
 
-    result = check_overdue_reports_task()
+    submitted_template.deadline_time = deadline.time().replace(tzinfo=None)
+    submitted_template.save(update_fields=["deadline_time"])
+    missing_template.deadline_time = submitted_template.deadline_time
+    missing_template.save(update_fields=["deadline_time"])
+    result = _process_report_deadlines(now=now)
 
-    penalty = Penalty.objects.get(user=worker)
-    assert result["created"] == 1
+    penalty = Penalty.objects.get(user=worker, template=missing_template)
+    assert result["initial"] == 1
     assert penalty.template == missing_template
-    assert penalty.report_date == yesterday
+    assert penalty.report_date == report_date
     assert penalty.amount == Decimal("750")
     assert "New required template" in penalty.reason
-    assert any(item[0] == worker.telegram_id for item in sent)
-
-    second = check_overdue_reports_task()
-    assert second["created"] == 0
+    second = _process_report_deadlines(now=now)
+    assert second["initial"] == 0
     assert Penalty.objects.filter(user=worker).count() == 1
 
 
