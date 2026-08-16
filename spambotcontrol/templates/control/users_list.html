@@ -227,14 +227,14 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
       </form>
     </td>
 
-    <!-- Delete -->
+    <!-- Archive -->
     <td>
       {% if not u.is_admin %}
       <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline"
-            onsubmit="return confirm('Удалить @{{ u.telegram_username|default:u.telegram_id }}?')">
+            onsubmit="return confirm('Архивировать @{{ u.telegram_username|default:u.telegram_id }}? История будет сохранена.')">
         {% csrf_token %}
         <input type="hidden" name="action" value="delete">
-        <button type="submit" class="btn-xs btn-del">✕</button>
+        <button type="submit" class="btn-xs btn-del" title="Архивировать сотрудника" aria-label="Архивировать сотрудника">✕</button>
       </form>
       {% endif %}
     </td>

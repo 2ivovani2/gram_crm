@@ -5,6 +5,7 @@ Celery tasks for Gramly Control bot:
 - check_correction_deadlines_task — every hour — auto-penalty for expired rejection deadlines
 """
 import asyncio
+import html
 import logging
 
 from celery import shared_task
@@ -48,6 +49,46 @@ def _send_message_sync(telegram_id: int, text: str, reply_markup=None) -> bool:
         return asyncio.run(_send())
     except Exception as e:
         logger.error("Error sending message to %s: %s", telegram_id, e)
+        return False
+
+
+@shared_task(name="apps.control.tasks.notify_penalty_created_task", queue="default")
+def notify_penalty_created_task(penalty_id: int) -> dict:
+    """Notify an employee about a manual penalty, regardless of where it was created."""
+    from apps.control.models import Penalty, PenaltyType
+    from apps.control.bot.keyboards import CtrlWorkerCB
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    penalty = Penalty.objects.select_related("user").filter(
+        pk=penalty_id,
+        type=PenaltyType.MANUAL,
+    ).first()
+    if penalty is None:
+        return {"sent": False, "reason": "penalty_not_found"}
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="✏️ Оспорить",
+            callback_data=CtrlWorkerCB(action=f"dispute_{penalty.pk}").pack(),
+        )
+    ]])
+    text = (
+        "⚠️ <b>Вам начислен штраф</b>\n\n"
+        f"Сумма: <b>{penalty.amount:.2f} ₽</b>\n"
+        f"Причина: {html.escape(penalty.reason)}\n\n"
+        "Вы можете оспорить штраф, нажав кнопку ниже."
+    )
+    sent = _send_message_sync(penalty.user.telegram_id, text, reply_markup=keyboard)
+    return {"sent": sent, "penalty_id": penalty.pk}
+
+
+def queue_penalty_notification(penalty_id: int) -> bool:
+    """Enqueue without turning a temporary broker outage into a failed admin action."""
+    try:
+        notify_penalty_created_task.delay(penalty_id)
+        return True
+    except Exception:
+        logger.exception("Failed to enqueue manual penalty notification penalty=%s", penalty_id)
         return False
 
 
@@ -142,8 +183,10 @@ def send_report_reminders_task():
 @shared_task(name="apps.control.tasks.check_overdue_reports_task", queue="default")
 def check_overdue_reports_task():
     """
-    Check for workers who haven't submitted ANY report today.
-    Create auto-penalties using global ControlSettings.late_report_penalty_amount.
+    Check every required report independently.
+
+    Assigned templates use their own auto_penalty_amount. Workers without a
+    template keep the legacy generic-report behaviour and global penalty amount.
     """
     from apps.users.models import User, UserRole, UserStatus
     from apps.control.models import EmployeeReport, Penalty, PenaltyType, PenaltyStatus, ControlSettings
@@ -151,29 +194,87 @@ def check_overdue_reports_task():
     import datetime as dt
 
     settings = ControlSettings.get()
-    if settings.late_report_penalty_amount <= 0:
-        logger.info("[control] Late report penalty amount is 0 — skipping auto-penalty")
-        return {"skipped": True}
-
     # Task runs at 00:05 MSK — the deadline was yesterday (the day that just ended)
     yesterday = timezone.localdate() - dt.timedelta(days=1)
-
-    submitted_ids = set(
-        EmployeeReport.objects.filter(
-            report_date=yesterday,
-        ).values_list("user_id", flat=True)
-    )
-
-    workers = User.objects.filter(
-        role=UserRole.WORKER,
-        status=UserStatus.ACTIVE,
-    ).exclude(id__in=submitted_ids)
 
     created = 0
     admin_ids = list(
         User.objects.filter(role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False)
         .values_list("telegram_id", flat=True)
     )
+
+    def notify(penalty, worker, report_label):
+        nonlocal created
+        created += 1
+        worker_text = (
+            f"🚨 <b>Начислен штраф за просрочку</b>\n\n"
+            f"За неподанный отчёт «{html.escape(report_label)}» "
+            f"за {yesterday.strftime('%d.%m.%Y')} начислен штраф "
+            f"<b>{penalty.amount:.2f} ₽</b>.\n\n"
+            "Для оспаривания обратитесь к администратору."
+        )
+        _send_message_sync(worker.telegram_id, worker_text)
+        admin_text = (
+            f"📋 <b>Автоштраф создан</b>\n\n"
+            f"Сотрудник: @{html.escape(worker.telegram_username or str(worker.telegram_id))}\n"
+            f"Отчёт: {html.escape(report_label)}\n"
+            f"Дата: {yesterday.strftime('%d.%m.%Y')}\n"
+            f"Сумма: <b>{penalty.amount:.2f} ₽</b>"
+        )
+        for admin_tg_id in admin_ids:
+            _send_message_sync(admin_tg_id, admin_text)
+
+    # Template-aware penalties. A report for another template must not satisfy
+    # this assignment, which was the root cause for newly-created templates.
+    from apps.control.models import ReportTemplate
+    templates = ReportTemplate.objects.prefetch_related("assigned_users").filter(
+        auto_penalty_amount__gt=0,
+        assigned_users__status=UserStatus.ACTIVE,
+    ).distinct()
+    assigned_worker_ids = set()
+    for template in templates:
+        workers = template.assigned_users.filter(
+            status=UserStatus.ACTIVE,
+        ).exclude(role=UserRole.ADMIN)
+        for worker in workers:
+            assigned_worker_ids.add(worker.pk)
+            submitted = EmployeeReport.objects.filter(
+                user=worker,
+                template=template,
+                report_date=yesterday,
+            ).exists()
+            if submitted:
+                continue
+            penalty, was_created = Penalty.objects.get_or_create(
+                user=worker,
+                template=template,
+                report_date=yesterday,
+                type=PenaltyType.AUTO,
+                defaults={
+                    "amount": template.auto_penalty_amount,
+                    "reason": (
+                        f"Просрочка отчёта «{template.name or 'Отчёт'}» "
+                        f"({yesterday.strftime('%d.%m.%Y')})"
+                    ),
+                    "status": PenaltyStatus.ACCEPTED,
+                },
+            )
+            if was_created:
+                notify(penalty, worker, template.name or "Отчёт")
+
+    # Legacy generic report for workers without a template assignment.
+    if settings.late_report_penalty_amount > 0:
+        submitted_ids = set(
+            EmployeeReport.objects.filter(report_date=yesterday).values_list("user_id", flat=True)
+        )
+        workers = User.objects.filter(
+            role=UserRole.WORKER,
+            status=UserStatus.ACTIVE,
+        ).exclude(id__in=submitted_ids).exclude(id__in=assigned_worker_ids).exclude(
+            assigned_report_templates__isnull=False
+        )
+    else:
+        workers = User.objects.none()
 
     for worker in workers:
         already = Penalty.objects.filter(
@@ -191,24 +292,7 @@ def check_overdue_reports_task():
             reason=f"Просрочка подачи отчёта ({yesterday.strftime('%-d %B %Y')})",
             status=PenaltyStatus.ACCEPTED,
         )
-        created += 1
-
-        worker_text = (
-            f"🚨 <b>Начислен штраф за просрочку</b>\n\n"
-            f"За неподанный отчёт {yesterday.strftime('%-d %B %Y')} начислен штраф "
-            f"<b>{penalty.amount:.2f} ₽</b>.\n\n"
-            f"Для оспаривания обратитесь к администратору."
-        )
-        _send_message_sync(worker.telegram_id, worker_text)
-
-        admin_text = (
-            f"📋 <b>Автоштраф создан</b>\n\n"
-            f"Сотрудник: @{worker.telegram_username or worker.telegram_id}\n"
-            f"Причина: просрочка отчёта {yesterday.strftime('%-d %B %Y')}\n"
-            f"Сумма: <b>{penalty.amount:.2f} ₽</b>"
-        )
-        for admin_tg_id in admin_ids:
-            _send_message_sync(admin_tg_id, admin_text)
+        notify(penalty, worker, "Отчёт")
 
     logger.info("[control] Auto-penalties created: %d", created)
     return {"created": created}

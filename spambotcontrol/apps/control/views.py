@@ -362,7 +362,9 @@ class PenaltiesListView(AdminOnlyMixin, View):
             comment = request.POST.get("comment", "")
             try:
                 worker = User.objects.get(telegram_username__iexact=username)
-                PenaltyService.create_manual(admin, worker, amount, reason, comment)
+                penalty = PenaltyService.create_manual(admin, worker, amount, reason, comment)
+                from apps.control.tasks import queue_penalty_notification
+                queue_penalty_notification(penalty.pk)
             except User.DoesNotExist:
                 pass
 
@@ -741,7 +743,16 @@ class UserEditView(AdminOnlyMixin, View):
 
         elif action == "delete":
             if not user.is_admin():
-                user.delete()
+                # Employee records own financial history, reports, penalties and
+                # audit trails through cascading relations. "Delete" therefore
+                # archives access instead of physically deleting that history.
+                from apps.control.services import EmployeeService
+
+                EmployeeService.archive(user)
+                messages.success(
+                    request,
+                    "Сотрудник архивирован. Отчёты, штрафы и финансовая история сохранены.",
+                )
                 return redirect("control:users")
 
         return redirect(next_url)

@@ -459,24 +459,8 @@ async def penalty_got_reason(message: Message, db_user: User, state: FSMContext)
         admin=db_user, worker=worker, amount=amount, reason=reason
     )
     await state.clear()
-
-    from apps.control.bot.keyboards import CtrlWorkerCB
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    b = InlineKeyboardBuilder()
-    b.button(text="✏️ Оспорить", callback_data=CtrlWorkerCB(action=f"dispute_{penalty.pk}"))
-
-    try:
-        await message.bot.send_message(
-            worker.telegram_id,
-            f"⚠️ <b>Вам начислен штраф</b>\n\n"
-            f"Сумма: <b>{amount:.2f} ₽</b>\n"
-            f"Причина: {reason}\n\n"
-            f"Вы можете оспорить штраф, нажав кнопку ниже.",
-            parse_mode="HTML",
-            reply_markup=b.as_markup(),
-        )
-    except Exception:
-        pass
+    from apps.control.tasks import queue_penalty_notification
+    await sync_to_async(queue_penalty_notification)(penalty.pk)
 
     await message.answer(
         f"✅ Штраф #{penalty.pk} создан:\n"
