@@ -453,6 +453,17 @@ class PenaltyService:
         return result or Decimal("0")
 
 
+class EmployeeService:
+    @staticmethod
+    @transaction.atomic
+    def archive(user: User) -> None:
+        """Disable an employee while retaining all CRM and financial history."""
+        from apps.crm.identity import terminate_user_sessions
+
+        user.deactivate()
+        terminate_user_sessions(user.pk)
+
+
 # ── Withdrawal services ────────────────────────────────────────────────────────
 
 class ControlWithdrawalService:

@@ -368,6 +368,18 @@ class Penalty(models.Model):
         related_name="penalties",
         verbose_name="Связанный отчёт",
     )
+    template = models.ForeignKey(
+        ReportTemplate,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="missed_report_penalties",
+        verbose_name="Пропущенный шаблон отчёта",
+    )
+    report_date = models.DateField(
+        null=True, blank=True,
+        db_index=True,
+        verbose_name="Отчётная дата штрафа",
+    )
 
     # Dispute
     dispute_comment = models.TextField(blank=True, verbose_name="Комментарий при оспаривании")
@@ -391,6 +403,17 @@ class Penalty(models.Model):
         verbose_name = "Штраф"
         verbose_name_plural = "Штрафы"
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "template", "report_date"],
+                condition=models.Q(
+                    type=PenaltyType.AUTO,
+                    template__isnull=False,
+                    report_date__isnull=False,
+                ),
+                name="uniq_auto_penalty_user_template_date",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Штраф #{self.pk} {self.user} {self.amount}₽ [{self.get_status_display()}]"
