@@ -263,6 +263,7 @@ class ReportService:
             )
             prev_status = existing.status
             existing.status = ReportStatus.UPDATED
+            existing.current_revision += 1
             existing.text_content = text
             existing.telegram_file_id = file_id
             existing.file_type = file_type or "text"
@@ -270,7 +271,8 @@ class ReportService:
             existing.last_submission_at = now
             existing.save(update_fields=[
                 "status", "text_content", "telegram_file_id",
-                "file_type", "original_filename", "last_submission_at", "updated_at",
+                "file_type", "original_filename", "current_revision",
+                "last_submission_at", "updated_at",
             ])
             ModerationHistory.objects.create(
                 report=existing,
@@ -317,6 +319,30 @@ class ReportService:
             new_status=status,
         )
         return report
+
+    @staticmethod
+    @transaction.atomic
+    def append_to_current_revision(
+        report: "EmployeeReport",
+        user: User,
+        *,
+        text: str = "",
+    ) -> "EmployeeReport":
+        """Append content to an in-progress multi-attachment submission."""
+        from apps.control.models import EmployeeReport
+
+        locked = EmployeeReport.objects.select_for_update().get(pk=report.pk, user=user)
+        if not locked.can_user_edit():
+            raise ValueError("Период редактирования уже закончился.")
+        locked.last_submission_at = timezone.now()
+        if text:
+            locked.text_content = "\n\n".join(
+                part for part in (locked.text_content.strip(), text.strip()) if part
+            )
+            locked.save(update_fields=["text_content", "last_submission_at", "updated_at"])
+        else:
+            locked.save(update_fields=["last_submission_at", "updated_at"])
+        return locked
 
     @staticmethod
     @transaction.atomic

@@ -13,6 +13,11 @@ urlpatterns = [
     # Reports
     path("reports/", views.ReportsListView.as_view(), name="reports"),
     path("reports/<int:pk>/", views.ReportDetailView.as_view(), name="report_detail"),
+    path(
+        "reports/<int:report_pk>/media/<int:media_pk>/",
+        views.ReportMediaView.as_view(),
+        name="report_media",
+    ),
 
     # Penalties
     path("penalties/", views.PenaltiesListView.as_view(), name="penalties"),

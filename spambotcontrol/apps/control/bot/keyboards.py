@@ -54,6 +54,14 @@ def worker_cancel_report() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def worker_report_upload_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Завершить отчёт", callback_data=CtrlWorkerCB(action="finish_report"))
+    b.button(text="➕ Отправить ещё файл", callback_data=CtrlWorkerCB(action="report_more"))
+    b.adjust(1)
+    return b.as_markup()
+
+
 def worker_cancel_withdrawal() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="❌ Отмена", callback_data=CtrlWorkerCB(action="cancel"))

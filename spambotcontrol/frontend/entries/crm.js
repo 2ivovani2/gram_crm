@@ -50,3 +50,33 @@ document.querySelectorAll("table").forEach((table) => {
   }));
 });
 addEventListener("pageshow",()=>document.querySelectorAll("[aria-busy='true']").forEach((el)=>el.removeAttribute("aria-busy")));
+
+const galleryDialog = document.querySelector("[data-report-gallery]");
+const galleryItems = [...document.querySelectorAll("[data-report-gallery-item]")];
+if (galleryDialog && galleryItems.length) {
+  const image = galleryDialog.querySelector("[data-gallery-image]");
+  const name = galleryDialog.querySelector("[data-gallery-name]");
+  const download = galleryDialog.querySelector("[data-gallery-download]");
+  let activeIndex = 0;
+  const renderGalleryItem = (index) => {
+    activeIndex = (index + galleryItems.length) % galleryItems.length;
+    const item = galleryItems[activeIndex];
+    image.src = item.dataset.src;
+    image.alt = item.dataset.name || "Изображение отчёта";
+    name.textContent = item.dataset.name || "Изображение";
+    download.href = item.dataset.download;
+  };
+  galleryItems.forEach((item, index) => item.addEventListener("click", () => {
+    renderGalleryItem(index);
+    galleryDialog.showModal();
+  }));
+  galleryDialog.querySelector("[data-gallery-prev]")?.addEventListener("click", () => renderGalleryItem(activeIndex - 1));
+  galleryDialog.querySelector("[data-gallery-next]")?.addEventListener("click", () => renderGalleryItem(activeIndex + 1));
+  galleryDialog.querySelector("[data-gallery-close]")?.addEventListener("click", () => galleryDialog.close());
+  galleryDialog.addEventListener("click", (event) => { if (event.target === galleryDialog) galleryDialog.close(); });
+  galleryDialog.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") renderGalleryItem(activeIndex - 1);
+    if (event.key === "ArrowRight") renderGalleryItem(activeIndex + 1);
+  });
+  galleryDialog.addEventListener("close", () => { image.removeAttribute("src"); });
+}

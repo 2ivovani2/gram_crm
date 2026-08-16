@@ -329,6 +329,7 @@ AWS_QUERYSTRING_EXPIRE = env.int("MEDIA_QUERYSTRING_EXPIRE", default=3600)
 # Dev:  http://localhost:9000
 # Prod: leave empty — R2/S3 endpoint URLs are directly accessible.
 MEDIA_S3_PUBLIC_URL = env("MEDIA_S3_PUBLIC_URL", default="")
+REPORT_MEDIA_MAX_BYTES = env.int("REPORT_MEDIA_MAX_BYTES", default=20 * 1024 * 1024)
 
 # MEDIA_URL is used by Django admin file widgets as a prefix fallback.
 # With S3 backend the actual URL always comes from storage.url() (full S3 URL).
