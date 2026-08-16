@@ -3,11 +3,14 @@ Web dashboard views for Gramly Control.
 Accessible at /crm/control/ — uses the existing CRM session auth.
 """
 import logging
+import re
 
 from django.contrib import messages
+from django.core.files.storage import default_storage
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views import View
-from django.http import HttpResponseForbidden
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden, StreamingHttpResponse
+from django.utils.http import content_disposition_header
 from django.utils import timezone
 from django.db.models import Count, Sum, Q, F
 
@@ -286,11 +289,16 @@ class ReportDetailView(AdminOrCuratorMixin, View):
             .select_related("moderator")
             .order_by("created_at")
         )
+        current_media = list(
+            report.media_files.filter(revision=report.current_revision)
+            .order_by("position", "id")
+        )
         can_moderate = ReportService.can_moderate(request.crm_user, report)
         return render(request, "control/report_detail.html", self.ctx(request, {
             "page": "reports",
             "report": report,
             "history": history,
+            "current_media": current_media,
             "can_moderate": can_moderate,
         }))
 
@@ -316,6 +324,102 @@ class ReportDetailView(AdminOrCuratorMixin, View):
             ReportService.send_to_revision(report, admin, comment)
 
         return redirect("control:reports")
+
+
+class ReportMediaView(AdminOrCuratorMixin, View):
+    """Authorized media stream; storage object URLs are never exposed."""
+
+    _range_re = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+    @staticmethod
+    def _chunks(handle, remaining, chunk_size=256 * 1024):
+        try:
+            while remaining > 0:
+                chunk = handle.read(min(chunk_size, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+        finally:
+            handle.close()
+
+    def get(self, request, report_pk, media_pk):
+        from apps.control.models import ReportMedia, ReportMediaStatus
+
+        media = get_object_or_404(
+            ReportMedia.objects.select_related("report"),
+            pk=media_pk,
+            report_id=report_pk,
+        )
+        if media.status != ReportMediaStatus.READY or not media.storage_key:
+            return HttpResponse("Файл недоступен", status=404, content_type="text/plain; charset=utf-8")
+
+        try:
+            size = media.file_size or default_storage.size(media.storage_key)
+            handle = default_storage.open(media.storage_key, "rb")
+        except Exception:
+            logger.exception("Unable to open report media id=%s", media.pk)
+            return HttpResponse("Файл недоступен", status=404, content_type="text/plain; charset=utf-8")
+
+        requested_download = request.GET.get("download") == "1"
+        filename = media.original_filename or f"report-{report_pk}-file-{media.pk}"
+        content_type = media.mime_type or "application/octet-stream"
+        safe_inline = (
+            content_type in {
+                "image/jpeg", "image/png", "image/gif", "image/webp",
+                "application/pdf", "text/plain",
+            }
+            or content_type.startswith("video/")
+        )
+        download = requested_download or not safe_inline
+        if not safe_inline:
+            content_type = "application/octet-stream"
+        range_header = request.headers.get("Range", "")
+        match = self._range_re.match(range_header)
+        if not match:
+            response = FileResponse(
+                handle,
+                as_attachment=download,
+                filename=filename,
+                content_type=content_type,
+            )
+            response["Accept-Ranges"] = "bytes"
+            response["Cache-Control"] = "private, no-store"
+            response["X-Content-Type-Options"] = "nosniff"
+            return response
+
+        first, last = match.groups()
+        if not first and not last:
+            handle.close()
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{size}"
+            return response
+        if first:
+            start = int(first)
+            end = min(int(last), size - 1) if last else size - 1
+        else:
+            suffix = min(int(last), size)
+            start, end = size - suffix, size - 1
+        if start >= size or start > end:
+            handle.close()
+            response = HttpResponse(status=416)
+            response["Content-Range"] = f"bytes */{size}"
+            return response
+
+        handle.seek(start)
+        length = end - start + 1
+        response = StreamingHttpResponse(
+            self._chunks(handle, length),
+            status=206,
+            content_type=content_type,
+        )
+        response["Content-Length"] = str(length)
+        response["Content-Range"] = f"bytes {start}-{end}/{size}"
+        response["Accept-Ranges"] = "bytes"
+        response["Content-Disposition"] = content_disposition_header(download, filename)
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 # ── Penalties ──────────────────────────────────────────────────────────────────

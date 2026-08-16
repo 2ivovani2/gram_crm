@@ -169,6 +169,10 @@ class EmployeeReport(models.Model):
         help_text="document / photo / text",
     )
     original_filename = models.CharField(max_length=255, blank=True)
+    current_revision = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Текущая версия содержимого",
+    )
 
     # Admin review
     reviewed_by = models.ForeignKey(
@@ -241,8 +245,8 @@ class EmployeeReport(models.Model):
         verbose_name="Дедлайн отчёта",
         help_text="Рассчитан из шаблона в момент создания; не изменяется при смене дедлайна шаблона",
     )
-    # Initial editing cutoff is deadline_at + 1 hour.  A rejection replaces it
-    # with the configured correction deadline.
+    # Initial editing cutoff is the main deadline. A rejection after it opens
+    # the fixed correction window; a late report keeps its fixed 24-hour end.
     editing_locked_at = models.DateTimeField(
         null=True, blank=True,
         verbose_name="Блокировка редактирования",
@@ -250,8 +254,8 @@ class EmployeeReport(models.Model):
     )
 
     # Deadline compliance, computed when the report is accepted.
-    # True  = first submission was before deadline AND last submission before editing_locked_at.
-    # False = missed deadline or last version submitted after editing_locked_at.
+    # True  = first submission was on or before the main deadline.
+    # False = the first submission missed the main deadline.
     # None  = not yet determined (report not accepted).
     deadline_met = models.BooleanField(
         null=True, blank=True,
@@ -291,6 +295,61 @@ class EmployeeReport(models.Model):
             return False
         at = at or timezone.now()
         return bool(self.editing_locked_at and at < self.editing_locked_at)
+
+
+class ReportMediaStatus(models.TextChoices):
+    READY = "ready", "Доступен"
+    FAILED = "failed", "Недоступен"
+
+
+class ReportMedia(models.Model):
+    """A durable, private copy of one Telegram attachment."""
+
+    report = models.ForeignKey(
+        EmployeeReport,
+        on_delete=models.CASCADE,
+        related_name="media_files",
+        verbose_name="Отчёт",
+    )
+    revision = models.PositiveIntegerField(default=1, db_index=True, verbose_name="Версия отчёта")
+    position = models.PositiveIntegerField(default=0, verbose_name="Позиция")
+    telegram_file_id = models.CharField(max_length=255, blank=True, verbose_name="Telegram file_id")
+    storage_key = models.CharField(max_length=512, blank=True, verbose_name="Ключ приватного хранилища")
+    media_type = models.CharField(max_length=32, blank=True, db_index=True, verbose_name="Тип медиа")
+    mime_type = models.CharField(max_length=127, blank=True, verbose_name="MIME-тип")
+    original_filename = models.CharField(max_length=255, blank=True, verbose_name="Имя файла")
+    file_size = models.PositiveBigIntegerField(default=0, verbose_name="Размер файла")
+    status = models.CharField(
+        max_length=16,
+        choices=ReportMediaStatus.choices,
+        default=ReportMediaStatus.READY,
+        db_index=True,
+        verbose_name="Статус",
+    )
+    error_message = models.CharField(max_length=255, blank=True, verbose_name="Ошибка сохранения")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["revision", "position", "id"]
+        verbose_name = "Медиафайл отчёта"
+        verbose_name_plural = "Медиафайлы отчётов"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report", "revision", "position"],
+                name="uniq_report_media_revision_position",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.original_filename or self.media_type or 'file'} — report #{self.report_id}"
+
+    @property
+    def is_image(self) -> bool:
+        return self.media_type in {"photo", "sticker"} or self.mime_type.startswith("image/")
+
+    @property
+    def is_video(self) -> bool:
+        return self.media_type in {"video", "animation", "video_note"} or self.mime_type.startswith("video/")
 
 
 class ModerationHistory(models.Model):

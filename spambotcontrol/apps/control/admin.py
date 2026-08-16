@@ -4,7 +4,7 @@ from unfold.admin import ModelAdmin, TabularInline
 
 from apps.control.models import (
     ReportTemplate, EmployeeReport, Penalty,
-    KPISettings, KPIDocument, ControlSettings,
+    KPISettings, KPIDocument, ControlSettings, ReportMedia,
 )
 
 
@@ -53,6 +53,15 @@ class EmployeeReportAdmin(ModelAdmin):
             color, obj.get_status_display(),
         )
     status_badge.short_description = "Статус"
+
+
+@admin.register(ReportMedia)
+class ReportMediaAdmin(ModelAdmin):
+    list_display = ["id", "report", "revision", "position", "media_type", "status", "file_size", "created_at"]
+    list_filter = ["status", "media_type", "created_at"]
+    search_fields = ["report__id", "report__user__telegram_username", "original_filename"]
+    readonly_fields = ["storage_key", "telegram_file_id", "created_at"]
+    list_select_related = ["report", "report__user"]
 
 
 @admin.register(Penalty)

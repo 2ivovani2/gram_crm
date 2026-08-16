@@ -37,6 +37,23 @@
 .ab-accept  { background:rgba(74,222,128,.12); color:#4ADE80; }
 .ab-reject  { background:rgba(239,68,68,.12); color:#F87171; }
 .ab-manual_change { background:rgba(255,184,77,.12); color:#FFB84D; }
+.report-media-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+.report-media-item { min-width:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); }
+.report-media-preview { display:block; width:100%; aspect-ratio:16/10; border:0; padding:0; background:#080a09; cursor:pointer; overflow:hidden; }
+.report-media-preview img,.report-media-video { width:100%; height:100%; object-fit:contain; background:#080a09; }
+.report-media-video { display:block; aspect-ratio:16/10; }
+.report-media-meta { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-top:1px solid var(--border); }
+.report-media-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+.report-media-actions { display:flex; gap:8px; flex:none; }
+.report-media-link { color:var(--accent); font-size:12px; text-decoration:none; }
+.report-media-failed { padding:18px; color:#F87171; font-size:13px; }
+.media-dialog { width:min(1080px,calc(100vw - 32px)); max-height:calc(100svh - 32px); padding:0; border:1px solid var(--border); border-radius:8px; background:#080a09; color:var(--text); }
+.media-dialog::backdrop { background:rgba(0,0,0,.82); }
+.media-dialog-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.media-dialog-image { display:block; width:100%; max-height:calc(100svh - 130px); object-fit:contain; }
+.media-dialog-nav { position:absolute; inset:50% 12px auto; transform:translateY(-50%); display:flex; width:calc(100% - 24px); justify-content:space-between; pointer-events:none; }
+.media-dialog-nav button { pointer-events:auto; width:42px; height:42px; border:1px solid var(--border); border-radius:4px; background:#141815; color:var(--text); cursor:pointer; }
+@media (max-width:600px) { .report-media-grid { grid-template-columns:1fr; } .media-dialog { width:calc(100vw - 16px); } }
 </style>
 {% endblock %}
 
@@ -156,7 +173,7 @@
 </div>
 {% endif %}
 
-{% if report.telegram_file_id %}
+{% if report.telegram_file_id and not current_media %}
 <div class="card">
   <h3 style="font-size:14px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Прикреплённый файл</h3>
   <p style="font-size:14px;color:var(--text)">
@@ -165,6 +182,66 @@
     <span style="color:var(--muted);font-size:12px">Файл доступен через Telegram Bot</span>
   </p>
 </div>
+{% endif %}
+
+{% if current_media %}
+<div class="card">
+  <h3 style="font-size:14px;color:var(--muted);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em">Медиафайлы · версия {{ report.current_revision }}</h3>
+  <div class="report-media-grid">
+    {% for media in current_media %}
+    <article class="report-media-item">
+      {% if media.status == "failed" %}
+        <div class="report-media-failed">Файл недоступен{% if media.error_message %}: {{ media.error_message }}{% endif %}</div>
+      {% elif media.is_image %}
+        <button
+          class="report-media-preview"
+          type="button"
+          data-report-gallery-item
+          data-src="{% url 'control:report_media' report.pk media.pk %}"
+          data-download="{% url 'control:report_media' report.pk media.pk %}?download=1"
+          data-name="{{ media.original_filename|default:'Изображение' }}"
+          aria-label="Открыть {{ media.original_filename|default:'изображение' }}"
+        >
+          <img src="{% url 'control:report_media' report.pk media.pk %}" alt="{{ media.original_filename|default:'Изображение отчёта' }}" loading="lazy"/>
+        </button>
+      {% elif media.is_video %}
+        <video class="report-media-video" controls preload="metadata">
+          <source src="{% url 'control:report_media' report.pk media.pk %}" type="{{ media.mime_type|default:'video/mp4' }}"/>
+          Ваш браузер не поддерживает воспроизведение видео.
+        </video>
+      {% else %}
+        <div style="padding:22px 14px;font-size:13px;color:var(--muted)">
+          {{ media.mime_type|default:media.media_type|default:"Файл" }}
+        </div>
+      {% endif %}
+      <div class="report-media-meta">
+        <span class="report-media-name" title="{{ media.original_filename }}">{{ media.original_filename|default:"Файл" }}</span>
+        {% if media.status == "ready" %}
+        <span class="report-media-actions">
+          {% if not media.is_image and not media.is_video %}<a class="report-media-link" href="{% url 'control:report_media' report.pk media.pk %}" target="_blank" rel="noopener">Открыть</a>{% endif %}
+          <a class="report-media-link" href="{% url 'control:report_media' report.pk media.pk %}?download=1">Скачать</a>
+        </span>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</div>
+
+<dialog class="media-dialog" data-report-gallery aria-label="Просмотр изображений">
+  <div class="media-dialog-toolbar">
+    <span data-gallery-name></span>
+    <span class="report-media-actions">
+      <a class="report-media-link" data-gallery-download href="#">Скачать оригинал</a>
+      <button class="btn-back" type="button" data-gallery-close>Закрыть</button>
+    </span>
+  </div>
+  <img class="media-dialog-image" data-gallery-image alt=""/>
+  <div class="media-dialog-nav">
+    <button type="button" data-gallery-prev aria-label="Предыдущее изображение">←</button>
+    <button type="button" data-gallery-next aria-label="Следующее изображение">→</button>
+  </div>
+</dialog>
 {% endif %}
 
 <!-- ── Moderation history ─────────────────────────────────────────── -->

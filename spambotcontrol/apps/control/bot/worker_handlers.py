@@ -13,6 +13,7 @@ from apps.control.bot.keyboards import (
     worker_back_to_menu, worker_cancel_report, worker_cancel_withdrawal,
     penalty_dispute_keyboard, worker_template_select_keyboard,
     worker_address_select_keyboard, worker_addresses_list_keyboard,
+    worker_report_upload_keyboard,
 )
 from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState, CryptoAddressState
 
@@ -54,8 +55,16 @@ async def cb_main_menu(callback: CallbackQuery, db_user: User, state: FSMContext
 
 @router.callback_query(CtrlWorkerCB.filter(F.action == "cancel"))
 async def cb_cancel(callback: CallbackQuery, db_user: User, state: FSMContext):
-    await callback.answer("Отменено")
+    data = await state.get_data()
+    report_id = data.get("active_report_id")
+    await callback.answer("Отчёт уже сохранён" if report_id else "Отменено")
     await state.clear()
+    if report_id:
+        await callback.message.edit_text(
+            f"✅ <b>Отчёт #{report_id} отправлен на проверку</b>",
+            reply_markup=worker_back_to_menu(),
+        )
+        return
     await send_worker_cabinet(callback, db_user, state)
 
 
@@ -431,6 +440,23 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
         except Exception:
             await callback.message.edit_reply_markup(reply_markup=None)
 
+    elif action == "finish_report":
+        data = await state.get_data()
+        report_id = data.get("active_report_id")
+        if not report_id:
+            await callback.answer("Сначала отправьте текст или файл", show_alert=True)
+            return
+        await state.clear()
+        await callback.answer("Отчёт завершён")
+        await callback.message.edit_text(
+            f"✅ <b>Отчёт #{report_id} отправлен на проверку</b>\n\n"
+            "Все приложенные файлы сохранены в CRM.",
+            reply_markup=worker_back_to_menu(),
+        )
+
+    elif action == "report_more":
+        await callback.answer("Отправьте следующий файл или текст")
+
     elif action.startswith("dispute_"):
         try:
             penalty_id = int(action.split("_", 1)[1])
@@ -535,6 +561,7 @@ async def _start_report_input(message: Message, state: FSMContext, template=None
     else:
         await state.update_data(template_id=None)
     await state.update_data(report_id=report.pk if report else None)
+    await state.update_data(active_report_id=None)
 
     await state.set_state(SubmitReportState.waiting_for_report)
 
@@ -544,7 +571,11 @@ async def _start_report_input(message: Message, state: FSMContext, template=None
         text += f"<b>{name}</b>\n\n<b>Инструкции:</b>\n{template.instructions}\n\n"
     if report:
         text += f"Вы редактируете отчёт <b>#{report.pk}</b> за {report.report_date:%d.%m.%Y}.\n\n"
-    text += "Отправьте ваш отчёт (текст, документ или фото):"
+    text += (
+        "Отправьте текст или первый файл. Поддерживаются фото, видео, "
+        "документы, анимации, стикеры и видеосообщения. После этого можно "
+        "добавить ещё файлы и завершить отчёт."
+    )
 
     await message.edit_text(text, reply_markup=worker_cancel_report())
 
@@ -558,6 +589,7 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
     data = await state.get_data()
     template_id = data.get("template_id")
     report_id = data.get("report_id")
+    active_report_id = data.get("active_report_id")
     template = None
     if template_id:
         template = await sync_to_async(
@@ -570,47 +602,94 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
     file_type = "text"
     original_filename = ""
 
+    media_object = None
     if message.document:
-        file_id = message.document.file_id
+        media_object = message.document
         file_type = "document"
-        original_filename = message.document.file_name or "document"
-        text_content = message.caption or ""
     elif message.photo:
-        file_id = message.photo[-1].file_id
+        media_object = message.photo[-1]
         file_type = "photo"
+    elif message.video:
+        media_object = message.video
+        file_type = "video"
+    elif message.animation:
+        media_object = message.animation
+        file_type = "animation"
+    elif message.sticker:
+        media_object = message.sticker
+        file_type = "sticker"
+    elif message.video_note:
+        media_object = message.video_note
+        file_type = "video_note"
+
+    if media_object:
+        file_id = media_object.file_id
+        original_filename = getattr(media_object, "file_name", "") or file_type
         text_content = message.caption or ""
     elif message.text:
         text_content = message.text
         file_type = "text"
     else:
         await message.answer(
-            "❌ Неподдерживаемый тип файла. Отправьте текст, документ или фото.",
+            "❌ Неподдерживаемый тип. Аудио и голосовые сообщения нельзя прикреплять к отчёту.",
             reply_markup=worker_cancel_report(),
         )
         return
 
     try:
-        report = await sync_to_async(ReportService.submit_report)(
-            user=db_user,
-            template=template,
-            text=text_content,
-            file_id=file_id,
-            file_type=file_type,
-            original_filename=original_filename,
-            report_id=report_id,
-        )
+        if active_report_id:
+            from apps.control.models import EmployeeReport
+            report = await sync_to_async(
+                lambda: EmployeeReport.objects.select_related("template").get(
+                    pk=active_report_id,
+                    user=db_user,
+                )
+            )()
+            report = await sync_to_async(ReportService.append_to_current_revision)(
+                report,
+                db_user,
+                text=text_content,
+            )
+        else:
+            report = await sync_to_async(ReportService.submit_report)(
+                user=db_user,
+                template=template,
+                text=text_content,
+                file_id=file_id,
+                file_type=file_type,
+                original_filename=original_filename,
+                report_id=report_id,
+            )
     except ValueError as e:
         await state.clear()
         await message.answer(str(e), reply_markup=worker_back_to_menu())
         return
 
-    await state.clear()
+    if media_object:
+        from apps.control.report_media import ReportMediaSaveError, save_message_attachment
+        try:
+            await save_message_attachment(message.bot, message, report)
+        except ReportMediaSaveError as exc:
+            await state.update_data(
+                report_id=report.pk,
+                active_report_id=report.pk,
+            )
+            await message.answer(
+                f"⚠️ {exc}\nОтчёт сохранён; отправьте файл повторно или завершите отчёт.",
+                reply_markup=worker_report_upload_keyboard(),
+            )
+            return
+
+    await state.update_data(
+        report_id=report.pk,
+        active_report_id=report.pk,
+    )
     from apps.control.models import ReportStatus
     is_resubmission = report.status == ReportStatus.UPDATED
 
     # Notify the right admin(s)
     from apps.users.models import UserRole, UserStatus
-    from apps.control.bot.keyboards import CtrlAdminCB, admin_report_actions
+    from apps.control.bot.keyboards import admin_report_actions
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     template_label = ""
@@ -655,6 +734,14 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
                     parse_mode="HTML",
                     reply_markup=admin_report_actions(report.pk),
                 )
+            elif file_id and file_type in {"video", "animation", "video_note"}:
+                await message.bot.send_video(
+                    admin_id,
+                    video=file_id,
+                    caption=admin_text,
+                    parse_mode="HTML",
+                    reply_markup=admin_report_actions(report.pk),
+                )
             else:
                 await message.bot.send_message(
                     admin_id,
@@ -669,15 +756,15 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
         confirm_text = (
             f"🔄 <b>Отчёт обновлён</b>\n\n"
             f"Ваш исправленный отчёт за {report.period_label} отправлен на проверку.\n"
-            f"Вывод средств временно заблокирован до рассмотрения."
+            "Файл сохранён. Можно отправить ещё один или завершить отчёт."
         )
     else:
         confirm_text = (
             f"✅ <b>Отчёт отправлен на проверку</b>\n\n"
             f"Ваш отчёт за {report.period_label} отправлен администратору.\n"
-            f"Вывод средств временно заблокирован до рассмотрения."
+            "Можно отправить ещё один файл или завершить отчёт."
         )
-    await message.answer(confirm_text, reply_markup=worker_back_to_menu())
+    await message.answer(confirm_text, reply_markup=worker_report_upload_keyboard())
 
 
 @router.message(DisputePenaltyState.waiting_for_comment)
