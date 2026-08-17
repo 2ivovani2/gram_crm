@@ -222,6 +222,24 @@ Deploy Forgejo 16.0.2 and its retained data volume with:
 infra/kubernetes/scripts/deploy-forgejo.sh
 ```
 
+Forgejo Actions uses a repository-scoped runner in `devtools`. It has capacity
+`1` and a dedicated Docker-in-Docker sidecar. The sidecar is privileged by
+necessity, but the pod has no host Docker socket, `hostPath`, or Kubernetes API
+token. A default-deny NetworkPolicy permits only DNS, Forgejo, and public
+HTTP(S) package registries.
+
+Deploy or reconcile it explicitly after Forgejo is healthy:
+
+```bash
+KUBECONFIG=/absolute/path/to/kubeconfig \
+  infra/kubernetes/scripts/deploy-forgejo-runner.sh
+```
+
+The script performs offline registration only for `gramly/gram_crm`. Its UUID
+and generated token are stored in the `forgejo-runner-connection` Kubernetes
+Secret and are never committed. Normal runs preserve the existing identity;
+deleting that Secret intentionally requests fresh registration.
+
 The initial migration copied the old `/data` while its source container was
 stopped and retained the old container as a rollback target.
 

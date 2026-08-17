@@ -60,9 +60,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
-        with:
-          version: v1.36.3
+      - name: Install pinned kubectl
+        run: |
+          curl --fail --location --silent --show-error \
+            --output kubectl \
+            https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kubectl
+          echo "ebbd080e7c2e275093b55915722043257eb24004363e20acb3c4d71919f88336  kubectl" | sha256sum --check
+          install --mode 0755 kubectl /usr/local/bin/kubectl
       - run: make manifests
 
   security:
