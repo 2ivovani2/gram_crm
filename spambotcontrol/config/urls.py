@@ -27,6 +27,7 @@ urlpatterns = [
     path("oidc/", include("mozilla_django_oidc.urls")),
     # Gramly Control HR dashboard
     path("crm/control/", include("apps.control.urls", namespace="control")),
+    path("crm/owners/", include("apps.owners.urls", namespace="owners")),
     # The legacy bundled docs were replaced by the private Outline service.
     path("docs/", RedirectView.as_view(url="https://docs.gramly.tech/", permanent=False)),
 ]
