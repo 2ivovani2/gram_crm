@@ -9,8 +9,11 @@ render_targets=(
   "infra/kubernetes/base/public-web"
   "infra/kubernetes/base/crm-migrations"
   "infra/kubernetes/base/welcome"
+  "infra/kubernetes/base/welcome-runtime"
+  "infra/kubernetes/base/welcome-autoscaling"
   "infra/kubernetes/base/welcome-migrations"
   "infra/kubernetes/overlays/staging"
+  "infra/kubernetes/overlays/staging/welcome-migrations"
   "infra/kubernetes/overlays/production"
   "infra/kubernetes/overlays/production/migrations"
 )

@@ -14,12 +14,18 @@ data migration and explicit cutover.
 - workers claim batches with `FOR UPDATE SKIP LOCKED` and expiring leases;
 - failed events use bounded exponential retry with jitter and end in `dead`;
 - delayed deliveries live in PostgreSQL instead of broker memory;
-- delivery claims take at most one item per bot per batch.
+- fair queue windows cap each source/bot inside a claim so a noisy customer
+  cannot occupy the full worker batch;
+- delivery and approval workers use fail-closed Valkey rate limits, stream
+  S3 media through bounded temporary files, honour Telegram `retry_after` and
+  rotate versioned bot-token encryption keys;
+- event, delivery and approval queues expose depth, age, retries and worker
+  liveness to Prometheus.
 
-The delivery consumer is disabled in normal compose and production manifests
-until the next MR migrates encrypted tokens and media, implements streaming S3
-delivery, and passes staging smoke/load gates. Do not route `/welcome/*` to this
-service before that cutover gate.
+The delivery consumer is available only through Compose's `welcome-cutover`
+profile and the isolated staging overlay. Production routing remains on Django
+until data/media migration and the explicit cutover gate pass. Do not route
+production `/welcome/*` to this service before that gate.
 
 ## Local verification
 
@@ -32,3 +38,23 @@ curl http://127.0.0.1:8080/health/ready
 ```
 
 The metrics endpoint is internal-only at `/metrics`.
+
+## Staging migration gates
+
+`ops/welcome/migrate_data.py` replaces only the explicitly confirmed target
+database inside one transaction. The source connection is read-only and bot
+tokens are decrypted with the legacy Django key before being encrypted with
+the new versioned keyring. `ops/welcome/copy_media.py` is dry-run by default;
+its execute mode verifies SHA-256 metadata and object size after every copy.
+
+```bash
+python ops/welcome/migrate_data.py \
+  --confirm-target-database gramly_welcome_staging
+python ops/welcome/copy_media.py
+python ops/welcome/load_test.py \
+  --url https://gramly.tech/welcome-staging/client/ID/SECRET/
+```
+
+Secrets are passed through environment variables and must never be placed on
+the command line, committed, or printed. Keep the legacy consumer authoritative
+until the final delta copy during the approved maintenance window.

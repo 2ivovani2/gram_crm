@@ -7,6 +7,9 @@ nameSuffix: -staging
 resources:
   - namespace.yaml
   - ../../base/crm
+  - ../../base/welcome-runtime
+  - ../../base/welcome-autoscaling
+  - welcome-route.yaml
 
 labels:
   - pairs:
@@ -16,6 +19,7 @@ labels:
 patches:
   - path: routes.yaml
   - path: workloads.yaml
+  - path: welcome-workloads.yaml
   # Gateway API backendRefs are custom-resource fields, so Kustomize cannot
   # infer nameSuffix references without an OpenAPI schema. Patch them
   # explicitly to keep the staging routes internally consistent.

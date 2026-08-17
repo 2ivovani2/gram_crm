@@ -216,6 +216,40 @@ Each access plane has its own Traefik controller, ClusterIP, NetBird
 `NetworkResource`, and destination group. The existing private controller is
 retained as the bootstrap/DevOps plane until its application routes are moved.
 
+## Gramly Welcome staging plane
+
+Welcome uses a dedicated database and login in the existing HA CloudNativePG
+cluster. Both `Database` resources use the `retain` reclaim policy. Create the
+role/runtime secrets before applying `apps/crm/postgres.yaml`; never store the
+environment file in Git:
+
+```bash
+infra/kubernetes/scripts/prepare-welcome-secrets.sh /secure/welcome.env staging
+kubectl apply -f infra/kubernetes/apps/crm/postgres.yaml
+kubectl wait database/gramly-welcome-staging -n gramly-crm \
+  --for=jsonpath='{.status.applied}'=true --timeout=5m
+```
+
+Install pinned KEDA before applying overlays containing `ScaledObject`:
+
+```bash
+infra/kubernetes/scripts/deploy-keda.sh
+```
+
+The default-deny policy intentionally blocks RFC1918 destinations. After
+Terraform provisions Managed Valkey, allow only its resolved VPC `/32` and TLS
+port; do not open the entire VPC:
+
+```bash
+infra/kubernetes/scripts/apply-welcome-valkey-egress.sh \
+  staging 10.0.0.42/32 16769
+```
+
+The staging HTTPRoute exposes only `/welcome-staging/` and rewrites it to the
+service's `/welcome/` API. It does not update a Telegram webhook and cannot
+receive production `/welcome/*` traffic. Run the staging database/media copy,
+smoke test and bounded load gate before proposing a production route change.
+
 Deploy Forgejo 16.0.2 and its retained data volume with:
 
 ```bash

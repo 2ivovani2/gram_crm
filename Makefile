@@ -12,6 +12,7 @@ install:
 build:
 	npm run build
 	$(COMPOSE) build crm-web
+	$(COMPOSE) build welcome-api
 
 check:
 	cd services/crm && python manage.py check
@@ -23,7 +24,7 @@ lint-crm:
 	cd services/crm && python -m ruff check .
 
 lint-welcome:
-	cd services/welcome && ../../$(WELCOME_PY) -m ruff check .
+	$(WELCOME_PY) -m ruff check services/welcome ops/welcome
 
 typecheck: typecheck-crm typecheck-welcome
 
@@ -31,10 +32,10 @@ typecheck-crm:
 	cd services/crm && python -m mypy apps/welcome_bots/crypto.py apps/crm/calculator.py
 
 typecheck-welcome:
-	cd services/welcome && ../../$(WELCOME_PY) -m mypy src
+	cd services/welcome && ../../$(WELCOME_PY) -m mypy src tests
 
 security:
-	cd services/crm && python -m bandit -q -r . -x './**/tests,./**/migrations' -lll
+	python -m bandit -q -r services/crm services/welcome ops/welcome -x 'services/crm/**/tests,services/crm/**/migrations,services/welcome/tests,services/welcome/alembic' -lll
 	npm audit --audit-level=high
 
 manifests:
@@ -46,7 +47,7 @@ test-crm:
 	cd services/crm && pytest -q
 
 test-welcome:
-	cd services/welcome && ../../$(WELCOME_PY) -m pytest -q
+	$(WELCOME_PY) -m pytest services/welcome/tests ops/welcome/tests -q
 
 test-frontend:
 	npm run test:e2e
@@ -64,7 +65,7 @@ down:
 	$(COMPOSE) --profile tunnel down
 
 logs:
-	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-worker-events
+	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-worker-events welcome-worker-delivery
 
 shell:
 	$(COMPOSE) exec crm-web bash

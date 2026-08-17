@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     technical_retention_days: int = Field(default=180, ge=7, le=730)
     token_encryption_keys: str = ""
     telegram_api_base_url: str = "https://api.telegram.org"
+    valkey_url: str = "redis://redis:6379/1"
+    bot_rate_limit_per_second: int = Field(default=25, ge=1, le=30)
+    chat_rate_limit_per_second: int = Field(default=1, ge=1, le=5)
+    s3_endpoint_url: str = "http://minio:9000"
+    s3_region_name: str = "auto"
+    s3_bucket_name: str = "gramly-welcome-media"
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_addressing_style: str = "path"
+    media_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1, le=20 * 1024 * 1024)
 
 
 @lru_cache

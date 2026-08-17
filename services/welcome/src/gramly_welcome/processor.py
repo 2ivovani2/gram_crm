@@ -123,6 +123,7 @@ async def _schedule_greeting(
             version_id=version_id,
             event_key=event_key,
             status="scheduled",
+            delay_snapshot_seconds=bot.welcome_delay_seconds,
             due_at=datetime.now(UTC) + timedelta(seconds=bot.welcome_delay_seconds),
         )
         .on_conflict_do_nothing(constraint="uq_delivery_bot_event")
@@ -214,9 +215,12 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                 contact_id=contact_id,
                 telegram_update_id=event.update_id,
                 status="scheduled" if bot.auto_approve else "pending",
+                delay_snapshot_seconds=bot.approval_delay_seconds,
                 due_at=due_at,
             )
-            .on_conflict_do_nothing(constraint="uq_join_bot_update")
+            # Either a Telegram retry or another still-open request for this
+            # person is harmless. Avoid turning the race into a worker retry.
+            .on_conflict_do_nothing()
         )
         return
 

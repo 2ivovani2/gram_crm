@@ -1,0 +1,81 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gramly-welcome
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: gramly-welcome-alerts
+    app.kubernetes.io/part-of: gramly-platform
+spec:
+  groups:
+    - name: gramly.welcome.slo
+      rules:
+        - alert: GramlyWelcomeWebhookErrors
+          expr: >-
+            sum(rate(welcome_webhook_requests_total{result="error"}[5m]))
+            / clamp_min(sum(rate(welcome_webhook_requests_total[5m])), 0.001) > 0.01
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome webhook error rate is over 1%"
+            description: "The webhook service is returning server errors above the service SLO."
+        - alert: GramlyWelcomeWebhookP95Slow
+          expr: >-
+            histogram_quantile(0.95,
+              sum by (le) (rate(welcome_webhook_duration_seconds_bucket[5m]))) > 0.25
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome webhook p95 latency is over 250 ms"
+            description: "Webhook acknowledgement latency has exceeded the target for ten minutes."
+        - alert: GramlyWelcomeOldestPending
+          expr: max(welcome_oldest_pending_age_seconds) > 30
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome queue is delayed"
+            description: "The oldest actionable item has waited more than 30 seconds."
+        - alert: GramlyWelcomeDeadEvents
+          expr: max(welcome_queue_depth{status="dead"}) > 0
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome has dead queue items"
+            description: "At least one item exhausted retries and requires investigation."
+        - alert: GramlyWelcomeDeliveryFailures
+          expr: >-
+            sum(rate(welcome_delivery_attempts_total{result=~"failed|approval_failed"}[5m]))
+            / clamp_min(sum(rate(welcome_delivery_attempts_total[5m])), 0.001) > 0.02
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome delivery failure rate is over 2%"
+            description: "Telegram deliveries or join approvals are failing above the threshold."
+        - alert: GramlyWelcomeTelegramRateLimited
+          expr: sum(rate(welcome_delivery_attempts_total{result="telegram_429"}[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Telegram is rate-limiting Welcome"
+            description: "Telegram 429 responses have continued for five minutes."
+        - alert: GramlyWelcomeDependencyErrors
+          expr: sum by (dependency) (increase(welcome_dependency_errors_total[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome dependency {{ $labels.dependency }} is failing"
+            description: "Welcome has continuously failed to use an external dependency for five minutes."
+        - alert: GramlyWelcomeEventWorkersMissing
+          expr: absent(welcome_worker_active{kind="events"}) == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome event workers are missing"
+            description: "Prometheus has not observed an active event worker for five minutes."
+        - alert: GramlyWelcomeDeliveryWorkersMissing
+          expr: absent(welcome_worker_active{kind="delivery"}) == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome delivery workers are missing"
+            description: "Prometheus has not observed an active delivery worker for five minutes."

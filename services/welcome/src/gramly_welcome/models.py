@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -41,7 +42,10 @@ class Owner(Base):
     username: Mapped[str] = mapped_column(String(64), default="")
     first_name: Mapped[str] = mapped_column(String(128), default="")
     last_name: Mapped[str] = mapped_column(String(128), default="")
+    guide_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    guide_step: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ManagedBot(Base):
@@ -61,6 +65,7 @@ class ManagedBot(Base):
     webhook_secret: Mapped[str] = mapped_column(String(64))
     path_secret: Mapped[str] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    webhook_configured: Mapped[bool] = mapped_column(Boolean, default=False)
     welcome_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     approval_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     auto_approve: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -78,6 +83,8 @@ class Channel(Base):
     username: Mapped[str] = mapped_column(String(64), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     can_invite_users: Mapped[bool] = mapped_column(Boolean, default=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WelcomeMessageVersion(Base):
@@ -114,6 +121,7 @@ class Contact(Base):
     first_name: Mapped[str] = mapped_column(String(128), default="")
     last_name: Mapped[str] = mapped_column(String(128), default="")
     language_code: Mapped[str] = mapped_column(String(16), default="unknown")
+    gender: Mapped[str] = mapped_column(String(16), default="unknown", index=True)
     delivery_status: Mapped[str] = mapped_column(String(16), default="unknown", index=True)
     bot_started: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -156,6 +164,7 @@ class GreetingDelivery(Base):
     version_id: Mapped[int | None] = mapped_column(ForeignKey("welcome_message_version.id", ondelete="SET NULL"))
     event_key: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    delay_snapshot_seconds: Mapped[int] = mapped_column(Integer, default=0)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     lease_owner: Mapped[str | None] = mapped_column(String(64))
@@ -167,13 +176,23 @@ class GreetingDelivery(Base):
 
 class JoinRequest(Base):
     __tablename__ = "join_request"
-    __table_args__ = (UniqueConstraint("bot_id", "telegram_update_id", name="uq_join_bot_update"),)
+    __table_args__ = (
+        UniqueConstraint("bot_id", "telegram_update_id", name="uq_join_bot_update"),
+        Index(
+            "uq_join_open_contact",
+            "channel_id",
+            "contact_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'scheduled', 'processing')"),
+        ),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
     contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"))
     telegram_update_id: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    delay_snapshot_seconds: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     lease_owner: Mapped[str | None] = mapped_column(String(64))

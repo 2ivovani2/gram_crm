@@ -94,3 +94,11 @@ CHANGELOG_AGENT.md
 vke-*.yaml
 infra/kubernetes/**/*.secret.yaml
 infra/kubernetes/**/secrets.yaml
+
+# ── Terraform local state and plans ──────────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+crash.log
