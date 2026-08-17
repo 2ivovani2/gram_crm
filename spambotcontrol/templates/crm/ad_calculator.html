@@ -1,0 +1,53 @@
+{% extends "crm/base.html" %}
+{% block title %}Калькулятор слотов{% endblock %}
+{% block page_title %}Калькулятор рекламных слотов{% endblock %}
+{% block topbar_subtitle %}План выручки при фиксированных семи слотах в день{% endblock %}
+{% block nav_calculator %}active{% endblock %}
+
+{% block content %}
+<section class="slot-calculator" data-ad-calculator>
+  <header class="slot-calculator__head">
+    <div>
+      <span class="slot-calculator__kicker">Планирование / 7 слотов</span>
+      <h2>Соберите рабочий рекламный день.</h2>
+      <p>Распределите семь публикаций и сразу проверьте, достигается ли недельная цель. ВП и отбив учитываются как занятые слоты без выручки.</p>
+    </div>
+    <div class="slot-calculator__rule"><strong>7 × 7</strong><span>слотов в день<br>дней в неделю</span></div>
+  </header>
+
+  <form class="slot-calculator__layout" method="get" novalidate>
+    <div class="slot-calculator__controls">
+      {% if form.non_field_errors %}<div class="slot-calculator__error" role="alert" data-calculator-error>{{ form.non_field_errors.0 }}</div>{% else %}<div class="slot-calculator__error" role="alert" data-calculator-error hidden></div>{% endif %}
+      <div class="slot-money-grid">
+        <label><span>{{ form.weekly_target.label }}</span><span class="slot-input-wrap">{{ form.weekly_target }}<b>₽</b></span>{% if form.weekly_target.errors %}<em>{{ form.weekly_target.errors.0 }}</em>{% endif %}</label>
+        <label><span>{{ form.average_price.label }}</span><span class="slot-input-wrap">{{ form.average_price }}<b>₽</b></span>{% if form.average_price.errors %}<em>{{ form.average_price.errors.0 }}</em>{% endif %}</label>
+      </div>
+
+      <fieldset class="slot-distribution">
+        <legend>Распределение дня <span data-slot-total>7 / 7</span></legend>
+        <label class="slot-counter slot-counter--paid"><span><b>Платная реклама</b><small>формирует выручку</small></span><span class="slot-counter__input"><button type="button" data-step="-1" aria-label="Уменьшить платную рекламу">−</button>{{ form.paid_slots }}<button type="button" data-step="1" aria-label="Увеличить платную рекламу">+</button></span></label>
+        <label class="slot-counter slot-counter--vp"><span><b>Взаимный пиар</b><small>занимает слот</small></span><span class="slot-counter__input"><button type="button" data-step="-1" aria-label="Уменьшить ВП">−</button>{{ form.vp_slots }}<button type="button" data-step="1" aria-label="Увеличить ВП">+</button></span></label>
+        <label class="slot-counter slot-counter--repayment"><span><b>Отбив</b><small>занимает слот</small></span><span class="slot-counter__input"><button type="button" data-step="-1" aria-label="Уменьшить отбив">−</button>{{ form.repayment_slots }}<button type="button" data-step="1" aria-label="Увеличить отбив">+</button></span></label>
+      </fieldset>
+
+      <div class="slot-strip" aria-label="Семь слотов дня" data-slot-strip>
+        {% for slot_type in slot_types %}<span class="slot-strip__item slot-strip__item--{{ slot_type }}"><i>{{ forloop.counter }}</i></span>{% empty %}{% for field in "1234567" %}<span class="slot-strip__item"><i>{{ forloop.counter }}</i></span>{% endfor %}{% endfor %}
+      </div>
+      <div class="slot-legend"><span><i class="is-paid"></i>Реклама</span><span><i class="is-vp"></i>ВП</span><span><i class="is-repayment"></i>Отбив</span></div>
+      <button class="g-button g-button--secondary slot-fallback-submit" type="submit">Рассчитать</button>
+    </div>
+
+    {% if result %}<div class="slot-results{% if not result.achievable %} is-impossible{% endif %}" data-slot-results>
+      <div class="slot-results__status"><span data-achievable-label>{% if result.achievable %}Цель достижима{% else %}Цель выше ёмкости{% endif %}</span><i aria-hidden="true"></i></div>
+      <article class="slot-results__primary"><span>Прогноз недели</span><strong data-actual-weekly>{{ result.actual_weekly|floatformat:0 }} ₽</strong><small data-deviation class="{% if result.deviation < 0 %}is-negative{% else %}is-positive{% endif %}">{% if result.deviation > 0 %}+{% endif %}{{ result.deviation|floatformat:0 }} ₽ к цели</small></article>
+      <div class="slot-results__grid">
+        <article><span>Нужно в день</span><strong data-daily-target>{{ result.daily_target|floatformat:0 }} ₽</strong></article>
+        <article><span>Факт в день</span><strong data-actual-daily>{{ result.actual_daily|floatformat:0 }} ₽</strong></article>
+        <article><span>Нужно платных слотов</span><strong data-required-slots>{% if result.required_paid_slots is None %}—{% else %}{{ result.required_paid_slots }}{% endif %}</strong><small>в день</small></article>
+        <article><span>Предел недели</span><strong data-maximum-weekly>{{ result.maximum_weekly|floatformat:0 }} ₽</strong></article>
+      </div>
+      <p class="slot-results__note" data-capacity-note>{% if result.achievable %}Текущая цена позволяет достичь цели в пределах 7 слотов в день.{% else %}Даже семь платных размещений в день не закрывают цель. Увеличьте среднюю цену или скорректируйте план.{% endif %}</p>
+    </div>{% endif %}
+  </form>
+</section>
+{% endblock %}

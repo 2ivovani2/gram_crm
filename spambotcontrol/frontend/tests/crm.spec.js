@@ -20,6 +20,7 @@ test.describe("Gramly CRM editorial workspace", () => {
   for (const route of [
     "/crm/dashboard/",
     "/crm/entry/finance/",
+    "/crm/calculator/",
     "/crm/history/",
     "/crm/control/",
     "/crm/control/reports/",
@@ -76,6 +77,7 @@ test.describe("Gramly CRM editorial workspace", () => {
       { name: "dashboard", path: "/crm/dashboard/" },
       { name: "control", path: "/crm/control/" },
       { name: "finance", path: "/crm/entry/finance/" },
+      { name: "calculator", path: "/crm/calculator/" },
       { name: "employees", path: "/crm/control/employees/" },
       { name: "reports", path: "/crm/control/reports/" },
       { name: "withdrawals", path: "/crm/control/withdrawals/" },
