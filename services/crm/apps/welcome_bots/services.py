@@ -4,7 +4,7 @@ import hashlib
 import logging
 from datetime import timedelta
 
-from aiogram.types import Message, User
+from aiogram.types import User
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
 from django.utils import timezone

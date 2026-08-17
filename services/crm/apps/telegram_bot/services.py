@@ -4,7 +4,7 @@ but are shared across multiple handlers (e.g. safe_edit, safe_send).
 """
 from __future__ import annotations
 import logging
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
 
 logger = logging.getLogger(__name__)

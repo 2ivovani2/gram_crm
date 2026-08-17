@@ -30,5 +30,5 @@ spec:
       shared_buffers: 256MB
       log_min_duration_statement: "1000"
   monitoring:
-    enablePodMonitor: false
+    enablePodMonitor: true
   enableSuperuserAccess: true

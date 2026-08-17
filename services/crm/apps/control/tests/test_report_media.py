@@ -6,7 +6,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.urls import reverse
 
-from apps.control.models import EmployeeReport, ReportMedia, ReportMediaStatus, ReportTemplate
+from apps.control.models import ReportMedia, ReportMediaStatus, ReportTemplate
 from apps.control.report_media import message_attachment
 from apps.control.services import ReportService
 from apps.users.models import User, UserRole, UserStatus

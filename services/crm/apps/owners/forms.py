@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 
 from apps.users.models import User, UserStatus
 
-from .models import OwnerChannel, OwnerStatus, TechnicalState, TelegramOwner
+from .models import OwnerChannel, OwnerStatus, TelegramOwner
 
 
 class OwnerForm(forms.ModelForm):

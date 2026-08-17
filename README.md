@@ -29,6 +29,10 @@ Use `make dev-tunnel` only when Telegram must reach a local webhook.
 make install
 make build
 make check
+make lint
+make typecheck
+make security
+make manifests
 make test
 make test-frontend
 ```
@@ -43,3 +47,8 @@ Changes are merged through protected `main`. CI builds immutable images,
 deploys staging after merge and requires an explicit production promotion.
 Secrets, kubeconfigs, generated static files and local service data never
 belong in Git.
+
+Forgejo Actions runs backend, frontend, manifest, security and production-image
+build gates for every pull request. A green image build does not publish or
+deploy anything; immutable publishing and staging promotion are introduced in
+the dedicated release phase.

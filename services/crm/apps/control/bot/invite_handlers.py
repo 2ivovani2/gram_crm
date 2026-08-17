@@ -11,7 +11,6 @@ from aiogram import Router, F
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from apps.telegram_bot.permissions import IsAdmin
 
 logger = logging.getLogger(__name__)
 router = Router(name="control_invite")

@@ -28,7 +28,9 @@ kubectl delete referencegrant allow-public-media-route -n gramly-crm --ignore-no
 kubectl rollout status deployment/gramly-media-proxy -n gramly-hello --timeout=10m
 current_image="$(kubectl -n gramly-hello get deployment gramly-public-web -o jsonpath='{.spec.template.spec.containers[0].image}')"
 [[ -n "${current_image}" ]] || { echo "Public web deployment image could not be resolved." >&2; exit 1; }
-sed "s|CRM_IMAGE_PLACEHOLDER|${current_image}|g" "${infra_dir}/apps/crm/public-web.yaml" | kubectl apply -f -
+kubectl kustomize "${infra_dir}/base/public-web" \
+  | sed "s|CRM_IMAGE_PLACEHOLDER|${current_image}|g" \
+  | kubectl apply -f -
 kubectl rollout restart deployment/gramly-public-web -n gramly-hello
 kubectl rollout status deployment/gramly-public-web -n gramly-hello --timeout=10m
 kubectl wait certificate/hello-gramly-tech-tls -n traefik-public --for=condition=Ready --timeout=10m

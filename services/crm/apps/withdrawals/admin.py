@@ -1,5 +1,4 @@
 from django.contrib import admin
-from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.contrib.filters.admin import ChoicesDropdownFilter
 from .models import WithdrawalRequest, WithdrawalStatus

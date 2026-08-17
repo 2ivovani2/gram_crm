@@ -14,8 +14,12 @@ kubectl rollout status deployment/gramly-crm-minio -n gramly-crm --timeout=10m
 # Background schedulers deliberately stay off during rehearsal: the old server
 # remains the only system allowed to accrue balances or send Telegram messages.
 kubectl -n gramly-crm delete job gramly-crm-migrate --ignore-not-found=true >/dev/null
-sed "s|CRM_IMAGE_PLACEHOLDER|${crm_image}|g" "${infra_dir}/apps/crm/migrate-job.yaml" | kubectl apply -f -
+kubectl kustomize "${infra_dir}/overlays/production/migrations" \
+  | sed "s|CRM_IMAGE_PLACEHOLDER|${crm_image}|g" \
+  | kubectl apply -f -
 kubectl wait job/gramly-crm-migrate -n gramly-crm --for=condition=Complete --timeout=10m
-sed "s|CRM_IMAGE_PLACEHOLDER|${crm_image}|g" "${infra_dir}/apps/crm/app.yaml" | kubectl apply -f -
+kubectl kustomize "${infra_dir}/base/crm-web" \
+  | sed "s|CRM_IMAGE_PLACEHOLDER|${crm_image}|g" \
+  | kubectl apply -f -
 kubectl rollout status deployment/gramly-crm-web -n gramly-crm --timeout=10m
 echo "CRM rehearsal web tier is ready; worker and beat remain intentionally disabled."

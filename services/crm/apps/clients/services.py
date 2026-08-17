@@ -482,7 +482,6 @@ class AutoModeService:
         Returns {ok: bool, invite_link: bool, detail: str}
         """
         import asyncio
-        from apps.clients.models import BotCheckStatus
 
         if not client.channel_id:
             return {
