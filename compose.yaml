@@ -1,0 +1,108 @@
+name: gramly
+
+x-crm: &crm
+  build:
+    context: .
+    dockerfile: services/crm/Dockerfile
+  env_file:
+    - path: .env.example
+    - path: .env
+      required: false
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    minio-init:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gramly}
+      POSTGRES_USER: ${POSTGRES_USER:-gramly}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gramly}
+    ports: ["5432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: valkey/valkey:8-alpine
+    ports: ["6379:6379"]
+    volumes: [valkey_data:/data]
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio_data:/data]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${AWS_ACCESS_KEY_ID:-minioadmin}:${AWS_SECRET_ACCESS_KEY:-minioadmin}@minio:9000
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mc mb --ignore-existing local/${AWS_STORAGE_BUCKET_NAME:-gramly-media} &&
+        mc anonymous set download local/${AWS_STORAGE_BUCKET_NAME:-gramly-media}
+
+  crm-web:
+    <<: *crm
+    command: uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      RUN_MIGRATIONS: "true"
+    ports: ["8000:8000"]
+    volumes: [./services/crm:/app]
+
+  crm-worker:
+    <<: *crm
+    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts,welcome_bots
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+    volumes: [./services/crm:/app]
+
+  crm-beat:
+    <<: *crm
+    command: celery -A config.celery beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+    volumes: [./services/crm:/app]
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles: [tunnel]
+    command: http crm-web:8000 --domain=${NGROK_DOMAIN}
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    ports: ["4040:4040"]
+    depends_on: [crm-web]
+
+volumes:
+  postgres_data:
+  valkey_data:
+  minio_data:

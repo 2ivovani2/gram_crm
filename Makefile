@@ -1,79 +1,42 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Gramly — root Makefile
-# All commands operate on the CRM compose stack at the project root.
-#
-# Dev prerequisites:
-#   cp .env.example .env  → fill BOT_ENV=dev, TEST_BOT_TOKEN, SECRET_KEY, NGROK_*, AWS_*, POSTGRES_PASSWORD
-#
-# Prod prerequisites (on VPS):
-#   apt install -y docker.io docker-compose-plugin curl git
-#   cp .env.example .env  → fill BOT_ENV=prod, PROD_BOT_TOKEN, SECRET_KEY, DOMAIN, CERTBOT_EMAIL, POSTGRES_PASSWORD, AWS_*
-# ─────────────────────────────────────────────────────────────────────────────
+COMPOSE := docker compose -f compose.yaml
 
-COMPOSE     = docker compose -f docker-compose.yml
-COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.ngrok.yml
-DOMAIN     ?= gramly.tech
+.PHONY: install build check test test-frontend dev dev-tunnel down logs shell migrate
 
-.PHONY: dev dev-down \
-        prod prod-down prod-build \
-        logs logs-web \
-        cert-renew webhook-set webhook-info webhook-del \
-        crm-setup ps shell-web
+install:
+	python -m pip install -e "services/crm[dev]"
+	npm ci
 
-# ── Dev (local, one command) ──────────────────────────────────────────────────
+build:
+	npm run build
+	$(COMPOSE) build crm-web
+
+check:
+	cd services/crm && python manage.py check
+	cd services/crm && python manage.py makemigrations --check --dry-run
+
+test:
+	cd services/crm && pytest -q
+
+test-frontend:
+	npm run test:e2e
+	npm run test:visual
 
 dev:
-	@bash scripts/dev_up.sh
+	npm run build
+	$(COMPOSE) up --build
 
-dev-down:
-	@bash scripts/dev_down.sh
+dev-tunnel:
+	npm run build
+	$(COMPOSE) --profile tunnel up --build
 
-# ── Production (VPS, one command) ────────────────────────────────────────────
-
-prod:
-	@bash scripts/prod_up.sh
-
-prod-down:
-	@bash scripts/prod_down.sh
-
-prod-build:
-	$(COMPOSE) build --pull
-
-# ── Let's Encrypt renewal ─────────────────────────────────────────────────────
-
-cert-renew:
-	$(COMPOSE) exec certbot certbot renew --quiet
-
-# ── Logs ──────────────────────────────────────────────────────────────────────
+down:
+	$(COMPOSE) --profile tunnel down
 
 logs:
-	$(COMPOSE) logs -f web celery_worker
+	$(COMPOSE) logs -f crm-web crm-worker crm-beat
 
-logs-web:
-	$(COMPOSE) logs -f web
+shell:
+	$(COMPOSE) exec crm-web bash
 
-# ── Webhook management ────────────────────────────────────────────────────────
-
-webhook-set:
-	$(COMPOSE) exec web python manage.py setup_webhook \
-		--url https://$(DOMAIN)/bot/webhook/
-
-webhook-info:
-	$(COMPOSE) exec web python manage.py setup_webhook --info
-
-webhook-del:
-	$(COMPOSE) exec web python manage.py setup_webhook --delete
-
-# ── CRM first-run setup ───────────────────────────────────────────────────────
-
-crm-setup:
-	@[ "$(OWNER)" ] || (echo "Usage: make crm-setup OWNER=<telegram_id>"; exit 1)
-	$(COMPOSE) exec web python manage.py setup_crm --owner $(OWNER)
-
-# ── Utility ───────────────────────────────────────────────────────────────────
-
-ps:
-	$(COMPOSE) ps
-
-shell-web:
-	$(COMPOSE) exec web bash
+migrate:
+	$(COMPOSE) run --rm crm-web python manage.py migrate
