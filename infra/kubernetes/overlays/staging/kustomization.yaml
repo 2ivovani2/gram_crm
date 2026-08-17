@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: gramly-staging
+nameSuffix: -staging
+
+resources:
+  - namespace.yaml
+  - ../../base/crm
+
+labels:
+  - pairs:
+      gramly.tech/environment: staging
+    includeSelectors: false
+
+patches:
+  - path: routes.yaml
+  - path: workloads.yaml
+  # Gateway API backendRefs are custom-resource fields, so Kustomize cannot
+  # infer nameSuffix references without an OpenAPI schema. Patch them
+  # explicitly to keep the staging routes internally consistent.
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: HTTPRoute
+      name: gramly-crm-private
+      namespace: gramly-crm
+    patch: |-
+      - op: replace
+        path: /spec/rules/1/backendRefs/0/name
+        value: gramly-crm-web-staging
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: HTTPRoute
+      name: gramly-crm-telegram-webhook
+      namespace: gramly-crm
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/backendRefs/0/name
+        value: gramly-crm-web-staging
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: HTTPRoute
+      name: gramly-private-access-gate
+      namespace: gramly-hello
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/backendRefs/0/name
+        value: gramly-public-web-staging
+  - target:
+      group: gateway.networking.k8s.io
+      version: v1
+      kind: HTTPRoute
+      name: gramly-public-web
+      namespace: gramly-hello
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/backendRefs/0/name
+        value: gramly-public-web-staging

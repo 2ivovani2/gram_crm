@@ -10,7 +10,7 @@ from apps.owners.models import (
     OwnerAuditLog, OwnerChannel, OwnerChannelHistory, OwnerStatus, SavedOwnerFilter,
     TechnicalState, TelegramOwner,
 )
-from apps.owners.services import create_owner, recalculate
+from apps.owners.services import recalculate
 from apps.users.models import User, UserRole, UserStatus
 
 

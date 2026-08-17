@@ -2,7 +2,7 @@
 from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from .callbacks import AdminMenuCallback, AdminUserCallback, AdminSettingsCallback
+from .callbacks import AdminMenuCallback, AdminUserCallback
 
 PAGE_SIZE = 10
 

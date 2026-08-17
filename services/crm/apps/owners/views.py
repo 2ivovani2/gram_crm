@@ -14,7 +14,7 @@ from apps.crm.views import CRMOwnerMixin
 
 from .forms import ChannelForm, OwnerForm, StatusForm
 from .models import (
-    OwnerAuditLog, OwnerChannel, OwnerChannelHistory, OwnerStatus, SavedOwnerFilter,
+    OwnerChannel, OwnerChannelHistory, OwnerStatus, SavedOwnerFilter,
     TechnicalState, TelegramOwner,
 )
 from .services import create_owner, log_event, recalculate, update_owner

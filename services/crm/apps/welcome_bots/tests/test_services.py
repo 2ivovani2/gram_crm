@@ -20,7 +20,6 @@ from apps.welcome_bots.models import (
 from apps.welcome_bots.services import (
     append_album_item,
     contact_from_user,
-    create_join_request,
     disable_auto_approve,
     enable_auto_approve,
     finalize_album,

@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
-from typing import Optional
 
-from django.db.models import Count, Q
+from django.db.models import Q
 from django.utils import timezone
 
 

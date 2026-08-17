@@ -6,9 +6,8 @@ from __future__ import annotations
 import datetime
 
 from django import forms
-from django.utils import timezone
 
-from apps.crm.models import FinanceEntry, ApplicationEntry, WeeklyPlan, WorkspaceMembership, CRMRole
+from apps.crm.models import FinanceEntry, ApplicationEntry, WeeklyPlan, CRMRole
 
 
 class FinanceEntryForm(forms.ModelForm):

@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from apps.users.models import User, UserRole, UserStatus
 from apps.control.models import (
-    ReportTemplate, EmployeeReport, ModerationHistory,
+    ReportTemplate, ModerationHistory,
     ReportStatus, REPORT_BLOCKING_STATUSES,
 )
 from apps.control.services import ReportService

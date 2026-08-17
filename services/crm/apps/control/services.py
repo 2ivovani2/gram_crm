@@ -890,7 +890,6 @@ class KPIService:
 
     @staticmethod
     def get_document(user: User) -> Optional["KPIDocument"]:
-        from apps.control.models import KPIDocument
         try:
             return user.kpi_document
         except Exception:

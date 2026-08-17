@@ -53,7 +53,7 @@ class AdminOrCuratorMixin(ControlAccessMixin):
 
 class ControlDashboardView(ControlAccessMixin, View):
     def get(self, request):
-        from apps.control.models import EmployeeReport, Penalty, ReportStatus, PenaltyStatus
+        from apps.control.models import EmployeeReport, Penalty, PenaltyStatus
         from apps.withdrawals.models import WithdrawalRequest
 
         today = timezone.localdate()
@@ -113,7 +113,6 @@ class ReportTemplatesView(AdminOrCuratorMixin, View):
 
     def post(self, request):
         from apps.control.models import ReportTemplate
-        from apps.users.models import User as U
 
         action = request.POST.get("action")
         admin = request.crm_user
@@ -534,7 +533,7 @@ class EmployeeKPIView(AdminOnlyMixin, View):
         }))
 
     def post(self, request, user_id):
-        from apps.control.models import KPISettings, KPIDocument
+        from apps.control.models import KPIDocument
         from apps.control.services import ControlBalanceService
         from decimal import Decimal, InvalidOperation
 
@@ -937,9 +936,9 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
             return JsonResponse({"ok": False, "error": "Пользователь не найден"})
 
         text = (
-            f"🔔 <b>[Тест] GRAMLY CRM — проверка уведомлений</b>\n\n"
-            f"Этот тест был отправлен вручную из CRM администратором.\n"
-            f"Если вы видите это сообщение — бот работает корректно ✅"
+            "🔔 <b>[Тест] GRAMLY CRM — проверка уведомлений</b>\n\n"
+            "Этот тест был отправлен вручную из CRM администратором.\n"
+            "Если вы видите это сообщение — бот работает корректно ✅"
         )
         ok = _send_message_sync(worker.telegram_id, text)
         username = worker.telegram_username or str(worker.telegram_id)

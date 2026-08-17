@@ -11,7 +11,7 @@ from apps.users.models import User
 from apps.control.bot.keyboards import (
     CtrlWorkerCB, worker_main_menu, worker_kpi_keyboard,
     worker_back_to_menu, worker_cancel_report, worker_cancel_withdrawal,
-    penalty_dispute_keyboard, worker_template_select_keyboard,
+    worker_template_select_keyboard,
     worker_address_select_keyboard, worker_addresses_list_keyboard,
     worker_report_upload_keyboard,
 )
@@ -801,7 +801,7 @@ async def process_dispute_comment(message: Message, db_user: User, state: FSMCon
         f"Штраф: {penalty.amount:.2f} ₽ — {penalty.reason}\n\n"
         f"<b>Комментарий сотрудника:</b>\n{message.text}"
     )
-    from apps.control.bot.keyboards import CtrlAdminCB, admin_penalty_actions
+    from apps.control.bot.keyboards import admin_penalty_actions
     for admin_id in admin_ids:
         try:
             await message.bot.send_message(

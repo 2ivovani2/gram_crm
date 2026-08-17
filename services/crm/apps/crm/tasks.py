@@ -114,7 +114,7 @@ def crm_weekly_report_task(self) -> None:
     Runs every Monday at 08:00 MSK.
     Sends a weekly summary for last week to workspace OWNER(s).
     """
-    from apps.crm.models import Workspace, DailySummaryReport, FinanceEntry, ApplicationEntry
+    from apps.crm.models import Workspace, FinanceEntry, ApplicationEntry
     from django.db.models import Sum
 
     now_msk  = datetime.datetime.now(tz=_MSK)

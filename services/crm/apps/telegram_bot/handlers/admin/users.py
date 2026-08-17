@@ -14,9 +14,9 @@ from apps.telegram_bot.admin_keyboards import (
     get_users_list_keyboard, get_user_card_keyboard,
     get_user_status_keyboard, get_admin_cancel_keyboard, get_admin_main_menu,
 )
-from apps.telegram_bot.callbacks import AdminMenuCallback, AdminUserCallback
+from apps.telegram_bot.callbacks import AdminUserCallback
 from apps.telegram_bot.permissions import IsAdmin
-from apps.telegram_bot.services import answer_and_edit, safe_edit_text
+from apps.telegram_bot.services import safe_edit_text
 from apps.telegram_bot.states import AdminUserSearchState
 from apps.users.models import User, UserRole
 from apps.users.services import UserService
@@ -33,7 +33,6 @@ async def send_users_list(target, page: int = 1) -> None:
     if isinstance(target, CallbackQuery):
         await safe_edit_text(target, text, get_users_list_keyboard(users, page=page, total=total))
     else:
-        from aiogram.types import Message
         await target.answer(text, reply_markup=get_users_list_keyboard(users, page=page, total=total))
 
 

@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gramly-crm-web
+  namespace: gramly-crm
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gramly-public-web
+  namespace: gramly-hello
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gramly-crm-worker
+  namespace: gramly-crm
+spec:
+  replicas: 1

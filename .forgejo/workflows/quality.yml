@@ -1,0 +1,86 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: quality-${{ forgejo.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+  SECRET_KEY: ci-only-secret-key
+  DATABASE_URL: sqlite:////tmp/gramly-ci.sqlite3
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  TEST_BOT_TOKEN: 123456:test-token
+  AWS_ACCESS_KEY_ID: ci
+  AWS_SECRET_ACCESS_KEY: ci
+  AWS_STORAGE_BUCKET_NAME: ci
+  AWS_S3_ENDPOINT_URL: http://127.0.0.1:9000
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/crm/pyproject.toml
+      - name: Install backend
+        run: python -m pip install -e "services/crm[dev]"
+      - name: Lint
+        run: make lint
+      - name: Typecheck baseline
+        run: make typecheck
+      - name: Django checks and migration gate
+        run: make check
+      - name: Unit and integration tests
+        run: make test
+      - name: Static files
+        run: cd services/crm && python manage.py collectstatic --noinput --clear
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.3
+      - run: make manifests
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/crm/pyproject.toml
+      - run: python -m pip install -e "services/crm[dev]"
+      - name: High severity Python findings
+        run: python -m bandit -q -r services/crm -x 'services/crm/**/tests,services/crm/**/migrations' -lll
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image without publishing
+        run: docker build --file services/crm/Dockerfile --tag gramly-crm:ci .

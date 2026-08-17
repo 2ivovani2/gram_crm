@@ -40,6 +40,22 @@ a separate pull request after reading upstream release notes.
 10. Deploy application staging routes and rehearse all migrations.
 11. Lower DNS TTL and perform the production cutover in a maintenance window.
 
+## Kustomize application layout
+
+Application workloads are composed from `base/` and environment-specific
+configuration in `overlays/`:
+
+```bash
+kubectl kustomize infra/kubernetes/overlays/staging
+kubectl kustomize infra/kubernetes/overlays/production
+kubectl kustomize infra/kubernetes/overlays/production/migrations
+```
+
+The migration Job is deliberately rendered and applied separately before a
+rollout. Checked-in manifests contain an image placeholder; release automation
+must replace it with one already-tested immutable image digest. Rendering does
+not apply resources, change DNS, update Telegram webhooks, or switch traffic.
+
 The first Authentik administrator is `i_vovani`. Bootstrap scripts never print
 its generated password. Once public TLS is healthy, issue a one-time recovery
 link, let the user choose a password, enroll MFA, disable the `akadmin`
@@ -254,8 +270,8 @@ dump is retained on the VPS as `/root/gramly-crm-final-20260812.dump`.
 The CRM production cutover completed on 2026-08-12. The final PostgreSQL dump
 was restored before migrations were applied, all 19 MinIO objects were mirrored
 and verified, and only then were the Kubernetes web, worker, and beat workloads
-started. The standalone `question_bot` on the old VPS is outside this migration
-and remains running.
+started. Non-Gramly workloads from the retired edge/VPS are intentionally not
+part of this repository or platform.
 
 During authoritative DNS propagation, `gramly-cutover-bridge` on the old VPS
 forwards TCP 80/443 to the VKE public Load Balancer. Keep it until recursive DNS
@@ -323,6 +339,12 @@ in `observability`. Prometheus retains seven days of metrics on a retained
 20 GiB volume; Grafana stores its state on a retained 5 GiB volume. VKE-managed
 control-plane scrapers are disabled, while API server, kubelet, node, pod,
 workload, and persistent-volume metrics remain enabled.
+
+The deployment also provisions the immutable `Gramly / Platform overview`
+dashboard and alerts for unavailable workloads, repeated restarts, filling
+volumes, and missing/down CloudNativePG collectors. The CRM CloudNativePG
+cluster and operator both expose PodMonitor resources; no database credentials
+are included in metrics or dashboards.
 
 - `https://grafana.gramly.tech` shows dashboards and uses Authentik Generic
   OAuth. Only `authentik Admins` map to a Grafana role.

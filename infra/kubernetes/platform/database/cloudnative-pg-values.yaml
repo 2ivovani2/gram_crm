@@ -9,7 +9,7 @@ resources:
     memory: 384Mi
 
 monitoring:
-  podMonitorEnabled: false
+  podMonitorEnabled: true
   grafanaDashboard:
     create: false
 
