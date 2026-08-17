@@ -32,3 +32,41 @@ spec:
   monitoring:
     enablePodMonitor: true
   enableSuperuserAccess: true
+  managed:
+    roles:
+      - name: gramly_welcome
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret: {name: gramly-welcome-postgres-role}
+      - name: gramly_welcome_staging
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret: {name: gramly-welcome-staging-postgres-role}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: gramly-welcome
+  namespace: gramly-crm
+spec:
+  name: gramly_welcome
+  owner: gramly_welcome
+  cluster: {name: gramly-crm-postgres}
+  databaseReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: gramly-welcome-staging
+  namespace: gramly-crm
+spec:
+  name: gramly_welcome_staging
+  owner: gramly_welcome_staging
+  cluster: {name: gramly-crm-postgres}
+  databaseReclaimPolicy: retain

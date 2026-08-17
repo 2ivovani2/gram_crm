@@ -17,6 +17,7 @@ fi
 # Grafana's dashboard sidecar deliberately has runtime reload disabled. Make
 # the provisioned dashboard available before the Grafana pod starts/restarts.
 kubectl apply -f "${infra_dir}/apps/observability/gramly-platform-dashboard.yaml"
+kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-dashboard.yaml"
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null
 helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/ --force-update >/dev/null
@@ -34,6 +35,7 @@ helm upgrade --install observability-oauth2-proxy oauth2-proxy/oauth2-proxy \
   --values "${infra_dir}/apps/observability/oauth2-proxy-values.yaml" --wait --timeout 10m
 
 kubectl apply -f "${infra_dir}/apps/observability/gramly-platform-alerts.yaml"
+kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-alerts.yaml"
 
 kubectl apply -f "${infra_dir}/apps/observability/tls.yaml"
 kubectl wait certificate/grafana-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m

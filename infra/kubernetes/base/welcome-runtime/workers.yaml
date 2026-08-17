@@ -21,6 +21,7 @@ spec:
           image: WELCOME_IMAGE_PLACEHOLDER
           command: [welcome-worker-events]
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          ports: [{name: metrics, containerPort: 9090}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           resources:
             requests: {cpu: 200m, memory: 256Mi}
@@ -44,10 +45,13 @@ spec:
           image: WELCOME_IMAGE_PLACEHOLDER
           command: [welcome-worker-delivery]
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          ports: [{name: metrics, containerPort: 9090}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          volumeMounts: [{name: temporary-media, mountPath: /tmp}]
           resources:
             requests: {cpu: 200m, memory: 256Mi}
             limits: {cpu: "2", memory: 1Gi}
+      volumes: [{name: temporary-media, emptyDir: {sizeLimit: 256Mi}}]
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -62,3 +66,23 @@ metadata: {name: gramly-welcome-worker-delivery, namespace: gramly-welcome}
 spec:
   minAvailable: 1
   selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery}}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gramly-welcome-worker-events
+  namespace: gramly-welcome
+  labels: {release: kube-prometheus-stack}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-events}}
+  podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gramly-welcome-worker-delivery
+  namespace: gramly-welcome
+  labels: {release: kube-prometheus-stack}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery}}
+  podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]

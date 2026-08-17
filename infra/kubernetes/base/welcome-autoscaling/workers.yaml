@@ -1,0 +1,55 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: {name: gramly-welcome-worker-events, namespace: gramly-welcome}
+spec:
+  scaleTargetRef: {name: gramly-welcome-worker-events, envSourceContainerName: worker}
+  pollingInterval: 10
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown: {stabilizationWindowSeconds: 300}
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: WELCOME_KEDA_DATABASE_URL
+        query: >-
+          SELECT CEIL(COUNT(*)::numeric / 50)
+          FROM inbox_event
+          WHERE (status IN ('pending', 'retry') AND available_at <= NOW())
+             OR (status = 'processing' AND lease_expires_at <= NOW())
+        targetQueryValue: "1"
+        activationTargetQueryValue: "0"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: {name: gramly-welcome-worker-delivery, namespace: gramly-welcome}
+spec:
+  scaleTargetRef: {name: gramly-welcome-worker-delivery, envSourceContainerName: worker}
+  pollingInterval: 10
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown: {stabilizationWindowSeconds: 300}
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: WELCOME_KEDA_DATABASE_URL
+        query: >-
+          SELECT CEIL(SUM(pending)::numeric / 25)
+          FROM (
+            SELECT COUNT(*) AS pending FROM greeting_delivery
+            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+            UNION ALL
+            SELECT COUNT(*) AS pending FROM join_request
+            WHERE (status = 'scheduled' AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+          ) queues
+        targetQueryValue: "1"
+        activationTargetQueryValue: "0"

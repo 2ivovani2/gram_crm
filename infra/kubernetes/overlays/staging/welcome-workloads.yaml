@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-api, namespace: gramly-welcome}
+spec: {replicas: 2}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-worker-events, namespace: gramly-welcome}
+spec: {replicas: 2}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-worker-delivery, namespace: gramly-welcome}
+spec: {replicas: 2}

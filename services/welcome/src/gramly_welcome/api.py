@@ -91,6 +91,12 @@ async def interface_webhook(
         response = await _accept(request, session, settings, source_key="interface", bot_id=None)
         result = "duplicate" if response.duplicate else "accepted"
         return response
+    except HTTPException as exc:
+        result = "error" if exc.status_code >= 500 else "rejected"
+        raise
+    except Exception:
+        result = "error"
+        raise
     finally:
         WEBHOOK_REQUESTS.labels("interface", result).inc()
         WEBHOOK_LATENCY.labels("interface").observe(monotonic() - started)
@@ -124,6 +130,12 @@ async def client_webhook(
         )
         result = "duplicate" if response.duplicate else "accepted"
         return response
+    except HTTPException as exc:
+        result = "error" if exc.status_code >= 500 else "rejected"
+        raise
+    except Exception:
+        result = "error"
+        raise
     finally:
         WEBHOOK_REQUESTS.labels("client", result).inc()
         WEBHOOK_LATENCY.labels("client").observe(monotonic() - started)
