@@ -34,15 +34,29 @@ jobs:
       - name: Install backend
         run: python -m pip install -e "services/crm[dev]"
       - name: Lint
-        run: make lint
+        run: make lint-crm
       - name: Typecheck baseline
-        run: make typecheck
+        run: make typecheck-crm
       - name: Django checks and migration gate
         run: make check
       - name: Unit and integration tests
-        run: make test
+        run: make test-crm
       - name: Static files
         run: cd services/crm && python manage.py collectstatic --noinput --clear
+
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: services/welcome/pyproject.toml
+      - run: python -m pip install -e "services/welcome[dev]"
+      - run: cd services/welcome && python -m ruff check .
+      - run: cd services/welcome && python -m mypy src
+      - run: cd services/welcome && pytest -q
 
   frontend:
     runs-on: ubuntu-latest
@@ -80,11 +94,13 @@ jobs:
           cache-dependency-path: services/crm/pyproject.toml
       - run: python -m pip install -e "services/crm[dev]"
       - name: High severity Python findings
-        run: python -m bandit -q -r services/crm -x 'services/crm/**/tests,services/crm/**/migrations' -lll
+        run: python -m bandit -q -r services/crm services/welcome -x 'services/crm/**/tests,services/crm/**/migrations,services/welcome/tests,services/welcome/alembic' -lll
 
   image:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Build production image without publishing
-        run: docker build --file services/crm/Dockerfile --tag gramly-crm:ci .
+        run: |
+          docker build --file services/crm/Dockerfile --tag gramly-crm:ci .
+          docker build --file services/welcome/Dockerfile --tag gramly-welcome:ci .

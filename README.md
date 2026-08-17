@@ -6,8 +6,9 @@ automation services.
 ## Layout
 
 - `services/crm` — Django CRM, control bot and CRM background jobs.
-- `services/welcome` — standalone Gramly Welcome service (introduced in the
-  next migration phase).
+- `services/welcome` — standalone FastAPI webhook ingress, durable PostgreSQL
+  inbox, async workers and Alembic migrations. It remains parallel-only until
+  the staged migration and explicit cutover.
 - `frontend` — Vite sources for the landing and CRM interface.
 - `infra` — reproducible cloud and Kubernetes configuration.
 - `ops` — operational migration, smoke-test and release utilities.
@@ -19,8 +20,9 @@ cp .env.example .env
 make dev
 ```
 
-The CRM is available at `http://localhost:8000`, PostgreSQL at `localhost:5432`,
-Valkey at `localhost:6379`, and the MinIO console at `localhost:9001`.
+The CRM is available at `http://localhost:8000`, Welcome API at
+`http://localhost:8080`, CRM PostgreSQL at `localhost:5432`, Welcome PostgreSQL
+at `localhost:5433`, Valkey at `localhost:6379`, and MinIO at `localhost:9001`.
 Use `make dev-tunnel` only when Telegram must reach a local webhook.
 
 ## Checks
