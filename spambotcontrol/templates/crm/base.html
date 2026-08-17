@@ -41,7 +41,10 @@
         <a href="{% url 'crm:dashboard' %}" class="sidebar-item {% block nav_dashboard %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Дашборд</span></a>
         {% if is_owner %}<a href="{% url 'crm:history' %}" class="sidebar-item {% block nav_history %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><span>История</span></a>{% endif %}
       </div>
-      {% if can_enter_finance %}<div class="sidebar-section"><div class="sidebar-section-label">Операции</div><a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h12"/><circle cx="18.5" cy="17" r="2.5"/></svg><span>Cash Flow</span></a></div>{% endif %}
+      <div class="sidebar-section"><div class="sidebar-section-label">Операции</div>
+        {% if can_enter_finance %}<a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h12"/><circle cx="18.5" cy="17" r="2.5"/></svg><span>Cash Flow</span></a>{% endif %}
+        <a href="{% url 'crm:ad_calculator' %}" class="sidebar-item {% block nav_calculator %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h2m4 0h2m-8 4h2m4 0h2m-8 4h2m4 0h2"/></svg><span>Калькулятор слотов</span></a>
+      </div>
 
       {% if crm_user.is_admin or crm_user.is_accountant or is_owner or crm_user.is_curator %}
       <div class="sidebar-section"><div class="sidebar-section-label">Управление</div>

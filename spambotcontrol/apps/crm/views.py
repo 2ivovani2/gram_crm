@@ -335,6 +335,43 @@ class FinanceEntryView(CRMFinanceMixin, View):
             return datetime.datetime.now(tz=_MSK).date()
 
 
+class AdSlotCalculatorView(CRMLoginMixin, TemplateView):
+    """Stateless planner for the fixed seven daily advertising slots."""
+
+    template_name = "crm/ad_calculator.html"
+    defaults = {
+        "weekly_target": "125000",
+        "average_price": "5000",
+        "paid_slots": "4",
+        "vp_slots": "2",
+        "repayment_slots": "1",
+    }
+
+    def get(self, request):
+        from apps.crm.calculator import calculate_ad_slots
+        from apps.crm.forms import AdSlotCalculatorForm
+
+        form = AdSlotCalculatorForm(request.GET if request.GET else self.defaults)
+        result = None
+        slot_types = []
+        if form.is_valid():
+            values = form.cleaned_data
+            result = calculate_ad_slots(
+                weekly_target=values["weekly_target"],
+                average_price=values["average_price"],
+                paid_slots=values["paid_slots"],
+            )
+            slot_types = (
+                ["paid"] * values["paid_slots"]
+                + ["vp"] * values["vp_slots"]
+                + ["repayment"] * values["repayment_slots"]
+            )
+
+        ctx = self.get_crm_context(request)
+        ctx.update({"form": form, "result": result, "slot_types": slot_types})
+        return render(request, self.template_name, ctx)
+
+
 class ApplicationEntryView(CRMApplicationsMixin, View):
     template_name = "crm/entry_applications.html"
 

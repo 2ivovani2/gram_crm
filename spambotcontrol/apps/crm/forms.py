@@ -116,3 +116,24 @@ class DateRangeForm(forms.Form):
         if start and end and start > end:
             raise forms.ValidationError("Дата начала должна быть раньше даты окончания.")
         return cleaned
+
+
+class AdSlotCalculatorForm(forms.Form):
+    weekly_target = forms.DecimalField(
+        label="Цель на неделю", min_value=0, max_digits=14, decimal_places=2,
+        widget=forms.NumberInput(attrs={"min": "0", "step": "0.01", "inputmode": "decimal"}),
+    )
+    average_price = forms.DecimalField(
+        label="Средняя цена рекламы", min_value=0, max_digits=14, decimal_places=2,
+        widget=forms.NumberInput(attrs={"min": "0", "step": "0.01", "inputmode": "decimal"}),
+    )
+    paid_slots = forms.IntegerField(label="Платная реклама", min_value=0, max_value=7)
+    vp_slots = forms.IntegerField(label="Взаимный пиар", min_value=0, max_value=7)
+    repayment_slots = forms.IntegerField(label="Отбив", min_value=0, max_value=7)
+
+    def clean(self):
+        cleaned = super().clean()
+        values = [cleaned.get(name) for name in ("paid_slots", "vp_slots", "repayment_slots")]
+        if all(value is not None for value in values) and sum(values) != 7:
+            raise forms.ValidationError("Распределите ровно 7 слотов между рекламой, ВП и отбивом.")
+        return cleaned

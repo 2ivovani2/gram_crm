@@ -1,7 +1,9 @@
 import "../styles/crm.css";
 import { initCommonUI } from "../ui/common.js";
+import { initAdCalculator } from "../ui/ad-calculator.js";
 
 initCommonUI();
+initAdCalculator();
 const sidebar = document.querySelector("#sidebar");
 const overlay = document.querySelector("#sidebar-overlay");
 const sidebarToggle = document.querySelector("#sidebar-toggle");

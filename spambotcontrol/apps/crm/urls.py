@@ -23,6 +23,7 @@ urlpatterns = [
 
     # ── Cash Flow entry ───────────────────────────────────────────────────────
     path("entry/finance/",    views.FinanceEntryView.as_view(),    name="entry_finance"),
+    path("calculator/",       views.AdSlotCalculatorView.as_view(), name="ad_calculator"),
 
     # ── History & reports ─────────────────────────────────────────────────────
     path("history/",                views.HistoryView.as_view(),       name="history"),
