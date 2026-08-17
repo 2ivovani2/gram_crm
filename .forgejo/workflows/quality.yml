@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: https://github.com/hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.15.8
       - run: terraform -chdir=infra/terraform fmt -check -diff
