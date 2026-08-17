@@ -64,6 +64,8 @@ ssl/
 htmlcov/
 .tox/
 coverage/
+playwright-report/
+test-results/
 
 # ── IDE ───────────────────────────────────────────────────────────────────────
 .idea/
