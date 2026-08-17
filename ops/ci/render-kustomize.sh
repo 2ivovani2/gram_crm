@@ -8,6 +8,8 @@ render_targets=(
   "infra/kubernetes/base/crm-background"
   "infra/kubernetes/base/public-web"
   "infra/kubernetes/base/crm-migrations"
+  "infra/kubernetes/base/welcome"
+  "infra/kubernetes/base/welcome-migrations"
   "infra/kubernetes/overlays/staging"
   "infra/kubernetes/overlays/production"
   "infra/kubernetes/overlays/production/migrations"

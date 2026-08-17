@@ -16,6 +16,21 @@ x-crm: &crm
     minio-init:
       condition: service_completed_successfully
 
+x-welcome: &welcome
+  build:
+    context: .
+    dockerfile: services/welcome/Dockerfile
+  env_file:
+    - path: .env.example
+    - path: .env
+      required: false
+  environment:
+    WELCOME_DATABASE_URL: postgresql+asyncpg://gramly_welcome:gramly_welcome@welcome-postgres:5432/gramly_welcome
+    WELCOME_INTERFACE_WEBHOOK_SECRET: ${WELCOME_INTERFACE_WEBHOOK_SECRET:-local-interface-secret}
+  depends_on:
+    welcome-postgres:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -39,6 +54,20 @@ services:
       test: [CMD, valkey-cli, ping]
       interval: 5s
       timeout: 3s
+      retries: 10
+
+  welcome-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: gramly_welcome
+      POSTGRES_USER: gramly_welcome
+      POSTGRES_PASSWORD: gramly_welcome
+    ports: ["5433:5432"]
+    volumes: [welcome_postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U gramly_welcome -d gramly_welcome"]
+      interval: 5s
+      timeout: 5s
       retries: 10
 
   minio:
@@ -93,6 +122,42 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.dev
     volumes: [./services/crm:/app]
 
+  welcome-migrate:
+    <<: *welcome
+    command: alembic upgrade head
+    restart: "no"
+
+  welcome-api:
+    <<: *welcome
+    depends_on:
+      welcome-postgres:
+        condition: service_healthy
+      welcome-migrate:
+        condition: service_completed_successfully
+    ports: ["8080:8080"]
+    volumes: [./services/welcome:/app]
+
+  welcome-worker-events:
+    <<: *welcome
+    command: welcome-worker-events
+    depends_on:
+      welcome-postgres:
+        condition: service_healthy
+      welcome-migrate:
+        condition: service_completed_successfully
+    volumes: [./services/welcome:/app]
+
+  welcome-worker-delivery:
+    <<: *welcome
+    command: welcome-worker-delivery
+    profiles: [welcome-cutover]
+    depends_on:
+      welcome-postgres:
+        condition: service_healthy
+      welcome-migrate:
+        condition: service_completed_successfully
+    volumes: [./services/welcome:/app]
+
   ngrok:
     image: ngrok/ngrok:latest
     profiles: [tunnel]
@@ -104,5 +169,6 @@ services:
 
 volumes:
   postgres_data:
+  welcome_postgres_data:
   valkey_data:
   minio_data:

@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: gramly-welcome-maintenance, namespace: gramly-welcome}
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets: [{name: gramly-welcome-registry}]
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: maintenance
+              image: WELCOME_IMAGE_PLACEHOLDER
+              command: [welcome-maintenance]
+              envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 500m, memory: 256Mi}
