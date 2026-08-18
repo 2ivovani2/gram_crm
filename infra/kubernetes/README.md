@@ -220,15 +220,40 @@ retained as the bootstrap/DevOps plane until its application routes are moved.
 
 Welcome uses a dedicated database and login in the existing HA CloudNativePG
 cluster. Both `Database` resources use the `retain` reclaim policy. Create the
-role/runtime secrets before applying `apps/crm/postgres.yaml`; never store the
-environment file in Git:
+role/runtime and backup secrets before applying `apps/crm/postgres.yaml`; never
+store the environment file or decoded S3 credentials in Git:
 
 ```bash
+infra/kubernetes/scripts/deploy-barman-cloud-plugin.sh
 infra/kubernetes/scripts/prepare-welcome-secrets.sh /secure/welcome.env staging
+infra/kubernetes/scripts/prepare-cnpg-backup-secret.sh
 kubectl apply -f infra/kubernetes/apps/crm/postgres.yaml
 kubectl wait database/gramly-welcome-staging -n gramly-crm \
   --for=jsonpath='{.status.applied}'=true --timeout=5m
 ```
+
+The CRM cluster archives WAL and daily base backups to the private,
+versioned `gramly-backups` bucket. Backups run at 01:30 UTC, prefer the standby
+instance and are retained for 30 days. The pinned Barman Cloud CNPG-I plugin is
+used instead of the deprecated in-tree backup API. Before a migration or
+release that can change persistent data, create and verify an on-demand backup:
+
+```bash
+infra/kubernetes/scripts/run-cnpg-backup.sh
+```
+
+Do not treat a `Backup` object alone as proof of recoverability. A restore drill
+into an isolated database must pass before the Welcome production cutover:
+
+```bash
+infra/kubernetes/scripts/verify-cnpg-restore.sh
+infra/kubernetes/scripts/verify-cnpg-restore.sh cleanup
+```
+
+The drill restores the latest backup into `gramly-restore-check`, validates the
+Django and Welcome schemas, and leaves that isolated namespace available for
+inspection. The explicit `cleanup` command removes only this temporary
+namespace and its 10 GiB restore volume, which uses a delete-reclaim class.
 
 Install pinned KEDA before applying overlays containing `ScaledObject`:
 
