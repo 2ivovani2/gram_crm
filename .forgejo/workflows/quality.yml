@@ -77,6 +77,8 @@ jobs:
       - name: Install pinned kubectl
         run: |
           curl --fail --location --silent --show-error \
+            --connect-timeout 20 --max-time 90 \
+            --retry 5 --retry-delay 2 --retry-all-errors \
             --output kubectl \
             https://dl.k8s.io/release/v1.36.3/bin/linux/amd64/kubectl
           echo "ebbd080e7c2e275093b55915722043257eb24004363e20acb3c4d71919f88336  kubectl" | sha256sum --check
