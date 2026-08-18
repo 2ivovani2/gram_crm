@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     max_webhook_body_bytes: int = Field(default=1_048_576, ge=1024, le=4_194_304)
     lease_seconds: int = Field(default=60, ge=15, le=600)
     worker_batch_size: int = Field(default=50, ge=1, le=500)
+    worker_concurrency: int = Field(default=8, ge=1, le=64)
     worker_poll_seconds: float = Field(default=0.25, ge=0.05, le=10)
     max_attempts: int = Field(default=12, ge=1, le=100)
+    database_pool_size: int = Field(default=4, ge=1, le=50)
+    database_max_overflow: int = Field(default=2, ge=0, le=50)
     raw_event_retention_days: int = Field(default=7, ge=1, le=30)
     technical_retention_days: int = Field(default=180, ge=7, le=730)
     token_encryption_keys: str = ""

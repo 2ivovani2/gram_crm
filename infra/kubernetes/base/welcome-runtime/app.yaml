@@ -21,13 +21,16 @@ spec:
         - name: api
           image: WELCOME_IMAGE_PLACEHOLDER
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          env:
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "4"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "2"}
           ports: [{name: http, containerPort: 8080}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           startupProbe: &live {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
           readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
           livenessProbe: *live
           resources:
-            requests: {cpu: 100m, memory: 128Mi}
+            requests: {cpu: 250m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}
 ---
 apiVersion: v1

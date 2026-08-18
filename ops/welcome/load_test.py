@@ -142,7 +142,7 @@ async def cleanup_database(
 
 async def run(args: argparse.Namespace) -> int:
     results = Results()
-    first_id = int(time.time() * 1_000_000)
+    first_id = getattr(args, "first_id", 0) or int(time.time() * 1_000_000)
     total = args.rate * args.seconds
     timeout = httpx.Timeout(args.timeout)
     queue: asyncio.Queue[tuple[int, float] | None] = asyncio.Queue(
@@ -241,6 +241,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-schedule-p95", type=float, default=0.100)
     parser.add_argument("--max-overrun", type=float, default=5.0)
     parser.add_argument("--drain-timeout", type=float, default=180.0)
+    parser.add_argument(
+        "--first-id",
+        type=int,
+        default=0,
+        help="fixed first update_id for collision-free sharded runs",
+    )
     parser.add_argument(
         "--database-url", default=os.environ.get("WELCOME_LOAD_TEST_DATABASE_URL", "")
     )
