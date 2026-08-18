@@ -135,6 +135,13 @@ class InboxEvent(Base):
     __table_args__ = (
         UniqueConstraint("source_key", "update_id", name="uq_inbox_source_update"),
         Index("ix_inbox_claim", "status", "available_at", "lease_expires_at"),
+        Index(
+            "ix_inbox_fair_pending",
+            "source_key",
+            "available_at",
+            "id",
+            postgresql_where=text("status IN ('pending', 'retry')"),
+        ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_key: Mapped[str] = mapped_column(String(96))

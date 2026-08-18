@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import Select, and_, func, or_, select, update
+from sqlalchemy import Select, and_, func, or_, select, true, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,35 +82,47 @@ async def insert_inbox_event(
 
 
 def _inbox_claim_query(now: datetime, per_source_limit: int) -> Select[tuple[InboxEvent]]:
-    eligible = (
-        select(
-            InboxEvent.id,
-            func.row_number()
-            .over(
-                partition_by=InboxEvent.source_key,
-                order_by=(InboxEvent.available_at, InboxEvent.id),
-            )
-            .label("source_rank"),
-        )
+    sources = (
+        select(InboxEvent.source_key)
         .where(
-            or_(
-                and_(
-                    InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
-                    InboxEvent.available_at <= now,
-                ),
-                and_(
-                    InboxEvent.status == QueueStatus.PROCESSING.value,
-                    InboxEvent.lease_expires_at < now,
-                ),
-            )
+            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
+            InboxEvent.available_at <= now,
         )
-        .subquery()
+        .distinct()
+        .cte("eligible_sources")
+    )
+    candidate = (
+        select(InboxEvent.id, InboxEvent.available_at)
+        .where(
+            InboxEvent.source_key == sources.c.source_key,
+            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
+            InboxEvent.available_at <= now,
+        )
+        .order_by(InboxEvent.available_at, InboxEvent.id)
+        .limit(per_source_limit)
+        .lateral("source_candidates")
+    )
+    candidates = (
+        select(candidate.c.id, candidate.c.available_at)
+        .select_from(sources.join(candidate, true()))
+        .cte("eligible_candidates")
     )
     return (
         select(InboxEvent)
-        .join(eligible, eligible.c.id == InboxEvent.id)
-        .where(eligible.c.source_rank <= per_source_limit)
-        .order_by(InboxEvent.available_at, InboxEvent.id)
+        .join(candidates, candidates.c.id == InboxEvent.id)
+        .order_by(candidates.c.available_at, candidates.c.id)
+        .with_for_update(of=InboxEvent, skip_locked=True)
+    )
+
+
+def _expired_inbox_claim_query(now: datetime) -> Select[tuple[InboxEvent]]:
+    return (
+        select(InboxEvent)
+        .where(
+            InboxEvent.status == QueueStatus.PROCESSING.value,
+            InboxEvent.lease_expires_at < now,
+        )
+        .order_by(InboxEvent.lease_expires_at, InboxEvent.id)
         .with_for_update(of=InboxEvent, skip_locked=True)
     )
 
@@ -120,16 +132,23 @@ async def claim_inbox_batch(
 ) -> list[InboxEvent]:
     now = datetime.now(UTC)
     async with session.begin():
-        # Keep a bounded fair window per bot, but make it wider than a single
-        # worker batch. With SKIP LOCKED this lets another worker claim the
-        # next slice instead of repeatedly observing the same locked five rows.
+        # Recover expired leases separately so the hot pending path can use a
+        # narrow partial index without an expensive OR across queue states.
         events = list(
-            (
-                await session.scalars(
-                    _inbox_claim_query(now, per_source_limit=limit * 2).limit(limit)
-                )
-            ).all()
+            (await session.scalars(_expired_inbox_claim_query(now).limit(limit))).all()
         )
+        remaining = limit - len(events)
+        if remaining:
+            # LATERAL takes a bounded slice from every active source. This
+            # preserves noisy-neighbour fairness without ranking and sorting
+            # every pending event on each poll.
+            events.extend(
+                (
+                    await session.scalars(
+                        _inbox_claim_query(now, per_source_limit=limit * 2).limit(remaining)
+                    )
+                ).all()
+            )
         lease_until = now + timedelta(seconds=lease_seconds)
         for event in events:
             event.status = QueueStatus.PROCESSING.value
