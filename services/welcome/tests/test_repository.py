@@ -18,7 +18,11 @@ def test_inbox_claim_query_uses_bounded_source_window_and_skip_locked() -> None:
 
     assert "JOIN LATERAL" in compiled
     assert "LIMIT 100" in compiled
-    assert "eligible_sources" in compiled
+    assert "eligible_bots" in compiled
+    assert "inbox_event.bot_id = eligible_bots.bot_id" in compiled
+    assert "inbox_event.bot_id IS NULL" in compiled
+    assert "UNION ALL" in compiled
+    assert "MATERIALIZED" in compiled
     assert "LIMIT 50" in compiled
     assert "SKIP LOCKED" in compiled
 

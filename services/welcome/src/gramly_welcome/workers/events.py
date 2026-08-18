@@ -25,8 +25,7 @@ async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts:
         async with session_factory() as session:
             async with session.begin():
                 await process_event(session, event)
-        async with session_factory() as session:
-            await finish_inbox_event(session, event.id, worker_id)
+                await finish_inbox_event(session, event.id, worker_id)
         WORKER_EVENTS.labels("completed").inc()
     except Exception as exc:
         logger.exception(
