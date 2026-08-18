@@ -81,7 +81,7 @@ async def insert_inbox_event(
     return (await session.scalar(statement)) is not None
 
 
-def _inbox_claim_query(now: datetime) -> Select[tuple[InboxEvent]]:
+def _inbox_claim_query(now: datetime, per_source_limit: int) -> Select[tuple[InboxEvent]]:
     eligible = (
         select(
             InboxEvent.id,
@@ -109,7 +109,7 @@ def _inbox_claim_query(now: datetime) -> Select[tuple[InboxEvent]]:
     return (
         select(InboxEvent)
         .join(eligible, eligible.c.id == InboxEvent.id)
-        .where(eligible.c.source_rank <= 5)
+        .where(eligible.c.source_rank <= per_source_limit)
         .order_by(InboxEvent.available_at, InboxEvent.id)
         .with_for_update(of=InboxEvent, skip_locked=True)
     )
@@ -120,7 +120,16 @@ async def claim_inbox_batch(
 ) -> list[InboxEvent]:
     now = datetime.now(UTC)
     async with session.begin():
-        events = list((await session.scalars(_inbox_claim_query(now).limit(limit))).all())
+        # Keep a bounded fair window per bot, but make it wider than a single
+        # worker batch. With SKIP LOCKED this lets another worker claim the
+        # next slice instead of repeatedly observing the same locked five rows.
+        events = list(
+            (
+                await session.scalars(
+                    _inbox_claim_query(now, per_source_limit=limit * 2).limit(limit)
+                )
+            ).all()
+        )
         lease_until = now + timedelta(seconds=lease_seconds)
         for event in events:
             event.status = QueueStatus.PROCESSING.value
