@@ -12,8 +12,8 @@ labels:
 
 # Production is bootstrapped dark: no public route and no consumers are
 # started until the final data copy has completed. The cutover overlay removes
-# these pauses and adds only the customer webhook route. The owner-facing
-# control webhook remains on Django until its native consumer is available.
+# these pauses and adds both standalone Welcome webhook routes. CRM is not in
+# the Welcome runtime or control path.
 patches:
   - target:
       group: apps

@@ -112,6 +112,53 @@ class WelcomeMedia(Base):
     size: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
+class WelcomeDraft(Base):
+    __tablename__ = "welcome_draft"
+    __table_args__ = (
+        UniqueConstraint("bot_id", "media_group_id", name="uq_welcome_draft_group"),
+        Index("ix_welcome_draft_finalize", "finalize_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    media_group_id: Mapped[str] = mapped_column(String(128))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    finalize_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finalized_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("welcome_message_version.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WelcomeDraftMedia(Base):
+    __tablename__ = "welcome_draft_media"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "telegram_message_id", name="uq_welcome_draft_message"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    draft_id: Mapped[int] = mapped_column(
+        ForeignKey("welcome_draft.id", ondelete="CASCADE"), index=True
+    )
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger)
+    media_type: Mapped[str] = mapped_column(String(32))
+    storage_key: Mapped[str] = mapped_column(String(500))
+    original_name: Mapped[str] = mapped_column(String(255), default="")
+    mime_type: Mapped[str] = mapped_column(String(128), default="")
+    size: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Contact(Base):
     __tablename__ = "contact"
     __table_args__ = (UniqueConstraint("bot_id", "telegram_id", name="uq_contact_bot_telegram"),)
