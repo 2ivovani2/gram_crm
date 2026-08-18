@@ -22,9 +22,10 @@ spec:
           command: [welcome-worker-events]
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
           env:
-            - {name: WELCOME_WORKER_CONCURRENCY, value: "8"}
-            - {name: WELCOME_DATABASE_POOL_SIZE, value: "6"}
-            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "2"}
+            # Bound database usage while KEDA scales the number of consumers.
+            - {name: WELCOME_WORKER_CONCURRENCY, value: "3"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "3"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: metrics, containerPort: 9090}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           resources:
@@ -50,8 +51,9 @@ spec:
           command: [welcome-worker-delivery]
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
           env:
-            - {name: WELCOME_DATABASE_POOL_SIZE, value: "4"}
-            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "2"}
+            # Delivery processing is sequential inside each pod.
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "1"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: metrics, containerPort: 9090}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           volumeMounts: [{name: temporary-media, mountPath: /tmp}]

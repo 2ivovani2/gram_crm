@@ -184,10 +184,20 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     if event.bot_id is None:
         raise RuntimeError("interface consumer is not enabled before cutover")
 
+    # Telegram can deliver many update types that Welcome does not consume
+    # (polls, reactions, edited posts, and others). Completing those events is
+    # enough: loading the bot and writing one EventLog row per ignored update
+    # turns harmless traffic into avoidable database pressure. Keep the raw
+    # inbox payload for retention/debugging and only enter the business path
+    # for update shapes that can change Welcome state.
+    payload = event.payload
+    actionable_keys = ("my_chat_member", "message", "chat_join_request", "chat_member")
+    if not any(isinstance(payload.get(key), dict) for key in actionable_keys):
+        return
+
     bot = await session.get(ManagedBot, event.bot_id)
     if bot is None or not bot.is_active:
         return
-    payload = event.payload
     bot_membership = payload.get("my_chat_member")
     if isinstance(bot_membership, dict) and await _process_bot_membership(session, bot, bot_membership):
         return
@@ -236,14 +246,3 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
         if old_status not in active and new_status in active:
             await _schedule_greeting(session, bot, channel_id, contact_id, f"chat-member:{event.update_id}")
         return
-
-    await session.execute(
-        insert(EventLog).values(
-            bot_id=bot.id,
-            owner_id=bot.owner_id,
-            event_type="ignored_update",
-            level="info",
-            message="Telegram update type is not actionable",
-            context={"update_id": event.update_id},
-        )
-    )

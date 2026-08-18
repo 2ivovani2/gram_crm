@@ -22,8 +22,9 @@ spec:
           image: WELCOME_IMAGE_PLACEHOLDER
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
           env:
-            - {name: WELCOME_DATABASE_POOL_SIZE, value: "4"}
-            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "2"}
+            # Ten API replicas still consume at most twenty database sessions.
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "2"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: http, containerPort: 8080}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           startupProbe: &live {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
