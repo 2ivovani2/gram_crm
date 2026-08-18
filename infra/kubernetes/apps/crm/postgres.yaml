@@ -1,3 +1,35 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: gramly-crm-backups
+  namespace: gramly-crm
+spec:
+  configuration:
+    destinationPath: s3://gramly-backups/cnpg/gramly-crm
+    endpointURL: https://ewr1.vultrobjects.com
+    s3Credentials:
+      accessKeyId:
+        name: gramly-cnpg-backup-s3
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKey:
+        name: gramly-cnpg-backup-s3
+        key: AWS_SECRET_ACCESS_KEY
+      region:
+        name: gramly-cnpg-backup-s3
+        key: AWS_REGION
+    wal:
+      compression: gzip
+      maxParallel: 4
+    data:
+      compression: gzip
+      jobs: 2
+      immediateCheckpoint: false
+  retentionPolicy: 30d
+  instanceSidecarConfiguration:
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -31,6 +63,11 @@ spec:
       log_min_duration_statement: "1000"
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: gramly-crm-backups
   enableSuperuserAccess: true
   managed:
     roles:
@@ -48,6 +85,20 @@ spec:
         createdb: false
         createrole: false
         passwordSecret: {name: gramly-welcome-staging-postgres-role}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gramly-crm-postgres-daily
+  namespace: gramly-crm
+spec:
+  schedule: "0 30 1 * * *"
+  backupOwnerReference: self
+  cluster: {name: gramly-crm-postgres}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  target: prefer-standby
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
