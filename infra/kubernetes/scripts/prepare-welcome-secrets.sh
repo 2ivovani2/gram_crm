@@ -75,7 +75,10 @@ database_host=gramly-crm-postgres-rw.gramly-crm.svc.cluster.local
 runtime_args=(
   "--from-literal=WELCOME_DATABASE_URL=postgresql+asyncpg://${database_user}:${database_password}@${database_host}:5432/${database_name}"
   "--from-literal=WELCOME_KEDA_DATABASE_URL=postgresql://${database_user}:${database_password}@${database_host}:5432/${database_name}?sslmode=require"
+  "--from-literal=WELCOME_INTERFACE_BOT_TOKEN=${WELCOME_INTERFACE_BOT_TOKEN:-}"
+  "--from-literal=WELCOME_INTERFACE_BOT_USERNAME=${WELCOME_INTERFACE_BOT_USERNAME:-}"
   "--from-literal=WELCOME_INTERFACE_WEBHOOK_SECRET=${interface_secret}"
+  "--from-literal=WELCOME_PUBLIC_WEBHOOK_BASE_URL=${WELCOME_PUBLIC_WEBHOOK_BASE_URL:-https://gramly.tech/welcome/client}"
   "--from-literal=WELCOME_TOKEN_ENCRYPTION_KEYS=${token_keys}"
   "--from-literal=WELCOME_VALKEY_URL=${WELCOME_VALKEY_URL}"
   "--from-literal=WELCOME_S3_ENDPOINT_URL=${WELCOME_S3_ENDPOINT_URL}"

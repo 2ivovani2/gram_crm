@@ -18,6 +18,7 @@ render_targets=(
   "infra/kubernetes/overlays/production/migrations"
   "infra/kubernetes/overlays/production/welcome"
   "infra/kubernetes/overlays/production/welcome-migrations"
+  "infra/kubernetes/overlays/production/welcome-pause"
   "infra/kubernetes/overlays/production/welcome-cutover"
 )
 

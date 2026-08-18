@@ -20,6 +20,8 @@ from ..config import Settings, get_settings
 from ..crypto import TokenDecryptionError, TokenKeyring
 from ..db import session_factory
 from ..metrics import DELIVERY_ATTEMPTS, DEPENDENCY_ERRORS, WORKER_ACTIVE
+from ..owner_bot import _one_button, interface_bot, interface_dispatcher
+from ..owner_repository import complete_album_notification, finalize_due_albums
 from ..rate_limit import RateLimitUnavailable, TelegramRateLimiter
 from ..repository import (
     claim_delivery_batch,
@@ -272,6 +274,28 @@ async def serve() -> None:
     WORKER_ACTIVE.labels("delivery").inc()
     try:
         while not stopping.is_set():
+            async with session_factory() as session:
+                finalized_albums = await finalize_due_albums(session)
+            for draft_id, owner_telegram_id, bot_id, version in finalized_albums:
+                try:
+                    context = interface_dispatcher().fsm.get_context(
+                        bot=interface_bot(),
+                        chat_id=owner_telegram_id,
+                        user_id=owner_telegram_id,
+                    )
+                    await context.clear()
+                    await interface_bot().send_message(
+                        owner_telegram_id,
+                        f"✅ Альбом сохранён · версия {version}",
+                        reply_markup=_one_button(
+                            "⏱ Настроить задержку", f"show-wdelay:{bot_id}"
+                        ),
+                    )
+                except Exception:
+                    logger.exception("owner album notification failed draft_id=%s", draft_id)
+                    continue
+                async with session_factory() as session:
+                    await complete_album_notification(session, draft_id)
             async with session_factory() as session:
                 deliveries = await claim_delivery_batch(
                     session,

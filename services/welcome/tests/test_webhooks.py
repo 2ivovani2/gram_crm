@@ -116,6 +116,27 @@ def test_database_outage_returns_503(client: TestClient, monkeypatch: pytest.Mon
     assert response.status_code == 503
 
 
+def test_cutover_pause_returns_503_before_processing(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def must_not_lookup(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("paused ingestion must not query webhook state")
+
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        interface_webhook_secret="interface-secret",
+        accept_webhooks=False,
+    )
+    monkeypatch.setattr(api, "find_active_bot", must_not_lookup)
+
+    interface = client.post(
+        "/welcome/webhook/",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "interface-secret"},
+        json={"update_id": 1},
+    )
+    customer = client.post(f"/welcome/client/{uuid.uuid4()}/path-secret/", json={"update_id": 2})
+
+    assert interface.status_code == 503
+    assert customer.status_code == 503
+
+
 def test_live_probe_does_not_depend_on_database(client: TestClient) -> None:
     response = client.get("/health/live")
     assert response.status_code == 200

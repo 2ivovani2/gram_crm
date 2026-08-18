@@ -86,6 +86,8 @@ async def interface_webhook(
     started = monotonic()
     result = "rejected"
     try:
+        if not settings.accept_webhooks:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook ingestion is paused")
         if not _secret_valid(request, settings.interface_webhook_secret):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid secret token")
         response = await _accept(request, session, settings, source_key="interface", bot_id=None)
@@ -113,6 +115,8 @@ async def client_webhook(
     started = monotonic()
     result = "rejected"
     try:
+        if not settings.accept_webhooks:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook ingestion is paused")
         try:
             bot = await find_active_bot(session, public_id)
         except SQLAlchemyError as exc:

@@ -10,7 +10,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="WELCOME_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://gramly_welcome:gramly_welcome@postgres:5432/gramly_welcome"
+    interface_bot_token: str = ""
+    interface_bot_username: str = ""
     interface_webhook_secret: str = ""
+    public_webhook_base_url: str = "https://gramly.tech/welcome/client"
+    accept_webhooks: bool = True
     max_webhook_body_bytes: int = Field(default=1_048_576, ge=1024, le=4_194_304)
     lease_seconds: int = Field(default=60, ge=15, le=600)
     worker_batch_size: int = Field(default=50, ge=1, le=500)

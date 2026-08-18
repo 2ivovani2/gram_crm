@@ -14,6 +14,7 @@ from ..config import get_settings
 from ..db import session_factory
 from ..metrics import OLDEST_PENDING_AGE, QUEUE_DEPTH, WORKER_ACTIVE, WORKER_EVENTS
 from ..models import InboxEvent
+from ..owner_bot import process_interface_update
 from ..processor import is_actionable_payload, process_event
 from ..repository import (
     claim_inbox_batch,
@@ -28,10 +29,19 @@ logger = logging.getLogger(__name__)
 
 async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts: int) -> None:
     try:
-        async with session_factory() as session:
-            async with session.begin():
-                await process_event(session, event)
-                await finish_inbox_event(session, event.id, worker_id)
+        if event.bot_id is None:
+            # Owner-facing bot is part of the standalone Welcome product too.
+            # Telegram I/O happens outside a database transaction; the durable
+            # inbox lease remains the retry boundary.
+            await process_interface_update(event.payload)
+            async with session_factory() as session:
+                async with session.begin():
+                    await finish_inbox_event(session, event.id, worker_id)
+        else:
+            async with session_factory() as session:
+                async with session.begin():
+                    await process_event(session, event)
+                    await finish_inbox_event(session, event.id, worker_id)
         WORKER_EVENTS.labels("completed").inc()
     except Exception as exc:
         logger.exception(
@@ -72,7 +82,15 @@ async def process_claimed_batch(
         async with semaphore:
             await process_claimed_event(event, worker_id, max_attempts)
 
-    await asyncio.gather(*(guarded(event) for event in actionable))
+    interface_events = sorted(
+        (event for event in actionable if event.bot_id is None), key=lambda event: event.update_id
+    )
+    client_events = [event for event in actionable if event.bot_id is not None]
+    # Preserve the conversational order of the owner bot inside each claimed
+    # batch. High-volume customer bot events remain concurrent.
+    for event in interface_events:
+        await process_claimed_event(event, worker_id, max_attempts)
+    await asyncio.gather(*(guarded(event) for event in client_events))
 
 
 async def serve() -> None:

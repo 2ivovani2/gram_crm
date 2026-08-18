@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../welcome
+  - route.yaml
+
+# This is the bounded cutover state. Both Telegram routes already terminate in
+# standalone Welcome, but ingestion deliberately returns 503 so Telegram will
+# retry while the final database/media delta is copied. Workers remain paused
+# through the production/welcome overlay inherited above.
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-api
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: WELCOME_ACCEPT_WEBHOOKS, value: "false"}

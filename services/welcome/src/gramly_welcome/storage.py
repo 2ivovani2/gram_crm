@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import tempfile
 from collections.abc import AsyncIterator
@@ -63,6 +64,44 @@ class ObjectStorage:
             raise
         except (BotoCoreError, ClientError, OSError) as exc:
             raise ObjectStorageError("Object Storage request failed") from exc
+
+    def _upload(self, key: str, body: bytes, content_type: str) -> None:
+        if len(body) > self.max_bytes:
+            raise MediaTooLargeError("Media exceeds the configured limit")
+        try:
+            self.client.upload_fileobj(
+                io.BytesIO(body),
+                self.bucket,
+                key,
+                ExtraArgs={"ContentType": content_type or "application/octet-stream"},
+            )
+        except (BotoCoreError, ClientError, OSError) as exc:
+            raise ObjectStorageError("Object Storage upload failed") from exc
+
+    async def upload(self, key: str, body: bytes, content_type: str) -> None:
+        await asyncio.to_thread(self._upload, key, body, content_type)
+
+    def _delete_many(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        try:
+            for offset in range(0, len(keys), 1000):
+                response = self.client.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={
+                        "Objects": [{"Key": key} for key in keys[offset : offset + 1000]],
+                        "Quiet": True,
+                    },
+                )
+                if response.get("Errors"):
+                    raise ObjectStorageError("Object Storage reported delete failures")
+        except ObjectStorageError:
+            raise
+        except (BotoCoreError, ClientError, OSError) as exc:
+            raise ObjectStorageError("Object Storage delete failed") from exc
+
+    async def delete_many(self, keys: list[str]) -> None:
+        await asyncio.to_thread(self._delete_many, keys)
 
     @asynccontextmanager
     async def materialize(self, media: StoredMedia) -> AsyncIterator[Path]:
