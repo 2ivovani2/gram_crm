@@ -6,7 +6,7 @@ spec:
   pollingInterval: 10
   cooldownPeriod: 300
   minReplicaCount: 2
-  maxReplicaCount: 8
+  maxReplicaCount: 20
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
@@ -16,7 +16,7 @@ spec:
       metadata:
         connectionFromEnv: WELCOME_KEDA_DATABASE_URL
         query: >-
-          SELECT CEIL(COUNT(*)::numeric / 50)
+          SELECT CEIL(COUNT(*)::numeric / 25)
           FROM inbox_event
           WHERE (status IN ('pending', 'retry') AND available_at <= NOW())
              OR (status = 'processing' AND lease_expires_at <= NOW())
