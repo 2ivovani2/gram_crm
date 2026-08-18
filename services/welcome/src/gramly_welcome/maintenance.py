@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select, text
 
 from .config import get_settings
 from .db import session_factory
-from .models import EventLog, InboxEvent, QueueStatus
+from .models import EventLog, InboxEvent, InboxSource, QueueStatus
 
 
 async def maintain() -> None:
@@ -15,6 +15,29 @@ async def maintain() -> None:
     now = datetime.now(UTC)
     async with session_factory() as session:
         async with session.begin():
+            # Lock the tiny scheduler table so webhook increments and worker
+            # decrements cannot race this defensive reconciliation.
+            await session.execute(select(InboxSource.source_key).with_for_update())
+            await session.execute(
+                text(
+                    """
+                    UPDATE inbox_source AS source
+                    SET pending_count = queue.pending_count,
+                        next_available_at = queue.next_available_at
+                    FROM (
+                      SELECT source.source_key,
+                             count(event.id) AS pending_count,
+                             min(event.available_at) AS next_available_at
+                      FROM inbox_source AS source
+                      LEFT JOIN inbox_event AS event
+                        ON event.source_key = source.source_key
+                       AND event.status IN ('pending', 'retry')
+                      GROUP BY source.source_key
+                    ) AS queue
+                    WHERE queue.source_key = source.source_key
+                    """
+                )
+            )
             await session.execute(
                 delete(InboxEvent).where(
                     InboxEvent.status == QueueStatus.COMPLETED.value,

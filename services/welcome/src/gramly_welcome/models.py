@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -133,7 +134,7 @@ class Contact(Base):
 class InboxSource(Base):
     __tablename__ = "inbox_source"
     __table_args__ = (
-        Index("ix_inbox_source_claim_order", "last_claimed_at", "source_key"),
+        CheckConstraint("pending_count >= 0", name="ck_inbox_source_pending_count"),
     )
     source_key: Mapped[str] = mapped_column(String(96), primary_key=True)
     bot_id: Mapped[int | None] = mapped_column(
@@ -143,6 +144,8 @@ class InboxSource(Base):
         DateTime(timezone=True),
         server_default=text("'1970-01-01 00:00:00+00'::timestamptz"),
     )
+    pending_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    next_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -152,7 +155,6 @@ class InboxEvent(Base):
     __tablename__ = "inbox_event"
     __table_args__ = (
         UniqueConstraint("source_key", "update_id", name="uq_inbox_source_update"),
-        Index("ix_inbox_claim", "status", "available_at", "lease_expires_at"),
         Index(
             "ix_inbox_fair_pending",
             "source_key",
@@ -160,13 +162,25 @@ class InboxEvent(Base):
             "id",
             postgresql_where=text("status IN ('pending', 'retry')"),
         ),
+        Index(
+            "ix_inbox_expired_lease",
+            "lease_expires_at",
+            "available_at",
+            "id",
+            postgresql_where=text("status = 'processing'"),
+        ),
+        Index(
+            "ix_inbox_dead",
+            "id",
+            postgresql_where=text("status = 'dead'"),
+        ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     source_key: Mapped[str] = mapped_column(String(96))
     bot_id: Mapped[int | None] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     update_id: Mapped[int] = mapped_column(BigInteger)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    status: Mapped[str] = mapped_column(String(16), default=QueueStatus.PENDING.value, index=True)
+    status: Mapped[str] = mapped_column(String(16), default=QueueStatus.PENDING.value)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     lease_owner: Mapped[str | None] = mapped_column(String(64))
