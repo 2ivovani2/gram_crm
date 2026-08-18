@@ -350,6 +350,15 @@ and verified, and only then were the Kubernetes web, worker, and beat workloads
 started. Non-Gramly workloads from the retired edge/VPS are intentionally not
 part of this repository or platform.
 
+The standalone Welcome event plane uses two separate production overlays. Apply
+`overlays/production/welcome` first: it creates the API with both worker pools
+paused at zero and intentionally exposes no public route. After migrations and
+the final data/media copy, `overlays/production/welcome-cutover` starts the
+workers and gives the FastAPI service only `/welcome/client/`. The owner-facing
+`/welcome/webhook/` route remains on the Django control plane until the native
+control consumer is released; routing it to FastAPI earlier would accept owner
+commands into an inbox that cannot yet execute them.
+
 During authoritative DNS propagation, `gramly-cutover-bridge` on the old VPS
 forwards TCP 80/443 to the VKE public Load Balancer. Keep it until recursive DNS
 caches no longer return the old IP; removing it does not authorize deleting the

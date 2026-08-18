@@ -1,0 +1,57 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/welcome
+  - ../../../base/welcome-autoscaling
+
+labels:
+  - pairs:
+      gramly.tech/environment: production
+    includeSelectors: false
+
+# Production is bootstrapped dark: no public route and no consumers are
+# started until the final data copy has completed. The cutover overlay removes
+# these pauses and adds only the customer webhook route. The owner-facing
+# control webhook remains on Django until its native consumer is available.
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-worker-events
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-worker-delivery
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - target:
+      group: keda.sh
+      version: v1alpha1
+      kind: ScaledObject
+      name: gramly-welcome-worker-events
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          autoscaling.keda.sh/paused: "true"
+          autoscaling.keda.sh/paused-replicas: "0"
+  - target:
+      group: keda.sh
+      version: v1alpha1
+      kind: ScaledObject
+      name: gramly-welcome-worker-delivery
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          autoscaling.keda.sh/paused: "true"
+          autoscaling.keda.sh/paused-replicas: "0"

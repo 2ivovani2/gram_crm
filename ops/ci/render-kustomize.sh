@@ -16,6 +16,9 @@ render_targets=(
   "infra/kubernetes/overlays/staging/welcome-migrations"
   "infra/kubernetes/overlays/production"
   "infra/kubernetes/overlays/production/migrations"
+  "infra/kubernetes/overlays/production/welcome"
+  "infra/kubernetes/overlays/production/welcome-migrations"
+  "infra/kubernetes/overlays/production/welcome-cutover"
 )
 
 for target in "${render_targets[@]}"; do
