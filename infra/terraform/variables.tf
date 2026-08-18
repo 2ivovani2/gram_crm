@@ -23,7 +23,7 @@ variable "valkey_plan" {
 variable "valkey_version" {
   description = "Managed Valkey engine version available in the selected region."
   type        = string
-  default     = "8"
+  default     = "8.1"
 }
 
 variable "trusted_sources" {
