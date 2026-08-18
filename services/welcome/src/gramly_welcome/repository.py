@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import Select, and_, func, or_, select, true, union_all, update
+from sqlalchemy import Select, and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from .models import (
     Contact,
     GreetingDelivery,
     InboxEvent,
+    InboxSource,
     JoinRequest,
     ManagedBot,
     QueueStatus,
@@ -72,6 +73,11 @@ async def insert_inbox_event(
     payload: dict[str, Any],
     bot_id: int | None,
 ) -> bool:
+    await session.execute(
+        insert(InboxSource)
+        .values(source_key=source_key, bot_id=bot_id)
+        .on_conflict_do_nothing(index_elements=[InboxSource.source_key])
+    )
     statement = (
         insert(InboxEvent)
         .values(source_key=source_key, update_id=update_id, payload=payload, bot_id=bot_id)
@@ -81,44 +87,33 @@ async def insert_inbox_event(
     return (await session.scalar(statement)) is not None
 
 
-def _inbox_claim_query(now: datetime, per_source_limit: int) -> Select[tuple[InboxEvent]]:
-    # The durable API has exactly two source shapes: a managed bot or the
-    # owner-facing interface (bot_id IS NULL). Drive the fair scan from the
-    # small managed_bot table, not from a DISTINCT over the growing inbox.
-    bot_sources = select(ManagedBot.id.label("bot_id")).cte("eligible_bots")
-    bot_candidate = (
-        select(InboxEvent.id, InboxEvent.available_at)
+def _inbox_source_claim_query(now: datetime) -> Select[tuple[InboxSource]]:
+    eligible_event = (
+        select(InboxEvent.id)
         .where(
-            InboxEvent.bot_id == bot_sources.c.bot_id,
+            InboxEvent.source_key == InboxSource.source_key,
             InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
             InboxEvent.available_at <= now,
         )
-        .order_by(InboxEvent.available_at, InboxEvent.id)
-        .limit(per_source_limit)
-        .lateral("bot_candidates")
-    )
-    per_bot = select(bot_candidate.c.id, bot_candidate.c.available_at).select_from(
-        bot_sources.join(bot_candidate, true())
-    )
-    interface = (
-        select(InboxEvent.id, InboxEvent.available_at)
-        .where(
-            InboxEvent.bot_id.is_(None),
-            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
-            InboxEvent.available_at <= now,
-        )
-        .order_by(InboxEvent.available_at, InboxEvent.id)
-        .limit(per_source_limit)
-    )
-    candidates = (
-        union_all(per_bot, interface)
-        .cte("eligible_candidates")
-        .prefix_with("MATERIALIZED")
+        .limit(1)
     )
     return (
+        select(InboxSource)
+        .where(eligible_event.exists())
+        .order_by(InboxSource.last_claimed_at, InboxSource.source_key)
+        .with_for_update(of=InboxSource, skip_locked=True)
+    )
+
+
+def _inbox_claim_query(now: datetime, source_key: str) -> Select[tuple[InboxEvent]]:
+    return (
         select(InboxEvent)
-        .join(candidates, candidates.c.id == InboxEvent.id)
-        .order_by(candidates.c.available_at, candidates.c.id)
+        .where(
+            InboxEvent.source_key == source_key,
+            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
+            InboxEvent.available_at <= now,
+        )
+        .order_by(InboxEvent.available_at, InboxEvent.id)
         .with_for_update(of=InboxEvent, skip_locked=True)
     )
 
@@ -147,16 +142,20 @@ async def claim_inbox_batch(
         )
         remaining = limit - len(events)
         if remaining:
-            # LATERAL takes a bounded slice from every active source. This
-            # preserves noisy-neighbour fairness without ranking and sorting
-            # every pending event on each poll.
-            events.extend(
-                (
-                    await session.scalars(
-                        _inbox_claim_query(now, per_source_limit=limit * 2).limit(remaining)
-                    )
-                ).all()
-            )
+            # Lock one tiny source row, rotate it to the back of the scheduler,
+            # then use the source-key partial index for a bounded event slice.
+            # Other workers skip this source and claim the next one, preserving
+            # fairness without scanning or joining the growing inbox.
+            source = await session.scalar(_inbox_source_claim_query(now).limit(1))
+            if source is not None:
+                events.extend(
+                    (
+                        await session.scalars(
+                            _inbox_claim_query(now, source.source_key).limit(remaining)
+                        )
+                    ).all()
+                )
+                source.last_claimed_at = now
         lease_until = now + timedelta(seconds=lease_seconds)
         for event in events:
             event.status = QueueStatus.PROCESSING.value

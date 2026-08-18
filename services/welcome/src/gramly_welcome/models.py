@@ -130,6 +130,24 @@ class Contact(Base):
     last_error: Mapped[str] = mapped_column(String(500), default="")
 
 
+class InboxSource(Base):
+    __tablename__ = "inbox_source"
+    __table_args__ = (
+        Index("ix_inbox_source_claim_order", "last_claimed_at", "source_key"),
+    )
+    source_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    bot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
+    )
+    last_claimed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("'1970-01-01 00:00:00+00'::timestamptz"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class InboxEvent(Base):
     __tablename__ = "inbox_event"
     __table_args__ = (
@@ -137,7 +155,7 @@ class InboxEvent(Base):
         Index("ix_inbox_claim", "status", "available_at", "lease_expires_at"),
         Index(
             "ix_inbox_fair_pending",
-            "bot_id",
+            "source_key",
             "available_at",
             "id",
             postgresql_where=text("status IN ('pending', 'retry')"),
