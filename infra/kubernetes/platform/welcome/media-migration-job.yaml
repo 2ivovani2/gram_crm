@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gramly-welcome-media-migration
+  namespace: gramly-welcome
+  labels:
+    app.kubernetes.io/name: gramly-welcome-media-migration
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gramly-welcome-media-migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: copy-media
+          image: WELCOME_IMAGE_PLACEHOLDER
+          command: [python, /ops/copy_media.py, --execute]
+          envFrom:
+            - secretRef: {name: gramly-welcome-media-migration}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - {name: migration-script, mountPath: /ops, readOnly: true}
+            - {name: temporary-media, mountPath: /tmp}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+      volumes:
+        - name: migration-script
+          configMap: {name: gramly-welcome-media-migration}
+        - name: temporary-media
+          emptyDir: {sizeLimit: 256Mi}
