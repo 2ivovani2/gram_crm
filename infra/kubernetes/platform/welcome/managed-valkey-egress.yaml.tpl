@@ -4,7 +4,9 @@ metadata:
   name: allow-managed-valkey
   namespace: __WELCOME_NAMESPACE__
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gramly-welcome-worker-delivery
   policyTypes: [Egress]
   egress:
     - to:

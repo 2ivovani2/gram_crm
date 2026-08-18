@@ -2,4 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: gramly-welcome
-  labels: {app.kubernetes.io/part-of: gramly}
+  labels:
+    app.kubernetes.io/part-of: gramly
+    gramly.tech/contour: public
+    gramly.tech/environment: production
