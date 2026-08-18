@@ -11,6 +11,8 @@ explicit prerequisite for every init.
    `AWS_SECRET_ACCESS_KEY` through the protected CI environment.
 3. Run `terraform init -backend-config=/secure/backend.hcl`; the backend uses
    S3 lockfiles and must never be initialized without this configuration.
+   Vultr encrypts Object Storage at rest at the platform layer; do not enable
+   the AWS SSE-S3 `encrypt` backend option because Vultr rejects that header.
 4. Import the bootstrap Object Storage subscription into
    `vultr_object_storage.gramly` before the first plan.
 5. Export `TF_VAR_vultr_api_key` through the protected CI environment.

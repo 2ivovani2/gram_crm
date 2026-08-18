@@ -4,7 +4,6 @@ region                       = "us-east-1"
 endpoints                    = { s3 = "https://ewr1.vultrobjects.com" }
 use_path_style               = true
 use_lockfile                 = true
-encrypt                      = true
 skip_credentials_validation  = true
 skip_region_validation       = true
 skip_requesting_account_id   = true
