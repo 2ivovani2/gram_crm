@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import Select, and_, func, or_, select, true, update
+from sqlalchemy import Select, and_, func, or_, select, true, union_all, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,30 +82,38 @@ async def insert_inbox_event(
 
 
 def _inbox_claim_query(now: datetime, per_source_limit: int) -> Select[tuple[InboxEvent]]:
-    sources = (
-        select(InboxEvent.source_key)
-        .where(
-            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
-            InboxEvent.available_at <= now,
-        )
-        .distinct()
-        .cte("eligible_sources")
-    )
-    candidate = (
+    # The durable API has exactly two source shapes: a managed bot or the
+    # owner-facing interface (bot_id IS NULL). Drive the fair scan from the
+    # small managed_bot table, not from a DISTINCT over the growing inbox.
+    bot_sources = select(ManagedBot.id.label("bot_id")).cte("eligible_bots")
+    bot_candidate = (
         select(InboxEvent.id, InboxEvent.available_at)
         .where(
-            InboxEvent.source_key == sources.c.source_key,
+            InboxEvent.bot_id == bot_sources.c.bot_id,
             InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
             InboxEvent.available_at <= now,
         )
         .order_by(InboxEvent.available_at, InboxEvent.id)
         .limit(per_source_limit)
-        .lateral("source_candidates")
+        .lateral("bot_candidates")
+    )
+    per_bot = select(bot_candidate.c.id, bot_candidate.c.available_at).select_from(
+        bot_sources.join(bot_candidate, true())
+    )
+    interface = (
+        select(InboxEvent.id, InboxEvent.available_at)
+        .where(
+            InboxEvent.bot_id.is_(None),
+            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
+            InboxEvent.available_at <= now,
+        )
+        .order_by(InboxEvent.available_at, InboxEvent.id)
+        .limit(per_source_limit)
     )
     candidates = (
-        select(candidate.c.id, candidate.c.available_at)
-        .select_from(sources.join(candidate, true()))
+        union_all(per_bot, interface)
         .cte("eligible_candidates")
+        .prefix_with("MATERIALIZED")
     )
     return (
         select(InboxEvent)
@@ -174,7 +182,6 @@ async def finish_inbox_event(session: AsyncSession, event_id: int, worker_id: st
             last_error="",
         )
     )
-    await session.commit()
     return bool(cast(CursorResult[tuple[int]], result).rowcount)
 
 

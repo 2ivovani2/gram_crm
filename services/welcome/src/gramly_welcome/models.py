@@ -137,7 +137,7 @@ class InboxEvent(Base):
         Index("ix_inbox_claim", "status", "available_at", "lease_expires_at"),
         Index(
             "ix_inbox_fair_pending",
-            "source_key",
+            "bot_id",
             "available_at",
             "id",
             postgresql_where=text("status IN ('pending', 'retry')"),
