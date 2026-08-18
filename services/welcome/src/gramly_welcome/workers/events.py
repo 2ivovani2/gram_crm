@@ -14,8 +14,14 @@ from ..config import get_settings
 from ..db import session_factory
 from ..metrics import OLDEST_PENDING_AGE, QUEUE_DEPTH, WORKER_ACTIVE, WORKER_EVENTS
 from ..models import InboxEvent
-from ..processor import process_event
-from ..repository import claim_inbox_batch, finish_inbox_event, queue_snapshot, retry_inbox_event
+from ..processor import is_actionable_payload, process_event
+from ..repository import (
+    claim_inbox_batch,
+    finish_inbox_event,
+    finish_inbox_events,
+    queue_snapshot,
+    retry_inbox_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +47,32 @@ async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts:
 async def process_claimed_batch(
     events: list[InboxEvent], worker_id: str, max_attempts: int, concurrency: int
 ) -> None:
+    # Unsupported client updates have no business side effects. A single
+    # guarded UPDATE acknowledges the whole slice instead of opening one
+    # transaction per event. Interface events are deliberately excluded until
+    # their control-plane consumer is enabled during cutover.
+    discardable = [
+        event
+        for event in events
+        if event.bot_id is not None and not is_actionable_payload(event.payload)
+    ]
+    discardable_ids = {event.id for event in discardable}
+    actionable = [event for event in events if event.id not in discardable_ids]
+    if discardable:
+        async with session_factory() as session:
+            async with session.begin():
+                completed = await finish_inbox_events(
+                    session, [event.id for event in discardable], worker_id
+                )
+        WORKER_EVENTS.labels("completed").inc(completed)
+
     semaphore = asyncio.Semaphore(concurrency)
 
     async def guarded(event: InboxEvent) -> None:
         async with semaphore:
             await process_claimed_event(event, worker_id, max_attempts)
 
-    await asyncio.gather(*(guarded(event) for event in events))
+    await asyncio.gather(*(guarded(event) for event in actionable))
 
 
 async def serve() -> None:
