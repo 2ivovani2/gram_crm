@@ -20,6 +20,8 @@ providers:
       - vpn
       - gramly-hello
       - gramly-crm
+      - gramly-staging
+      - gramly-welcome
   kubernetesGateway:
     enabled: true
     labelSelector: gramly.tech/controller=public
@@ -29,6 +31,8 @@ providers:
       - vpn
       - gramly-hello
       - gramly-crm
+      - gramly-staging
+      - gramly-welcome
 
 gateway:
   enabled: false

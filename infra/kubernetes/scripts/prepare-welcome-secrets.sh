@@ -37,6 +37,14 @@ done
 
 kubectl get namespace "${target_namespace}" >/dev/null 2>&1 \
   || kubectl create namespace "${target_namespace}" >/dev/null
+kubectl label namespace "${target_namespace}" \
+  gramly.tech/contour=public \
+  gramly.tech/environment="${environment}" \
+  --overwrite >/dev/null
+if [[ "${environment}" == staging ]]; then
+  kubectl label namespace "${target_namespace}" \
+    gramly.tech/access-plane=business --overwrite >/dev/null
+fi
 
 if kubectl -n gramly-crm get secret "${role_secret}" >/dev/null 2>&1; then
   database_password="$(kubectl -n gramly-crm get secret "${role_secret}" \

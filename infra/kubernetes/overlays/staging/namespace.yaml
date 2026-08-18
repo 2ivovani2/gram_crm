@@ -3,5 +3,6 @@ kind: Namespace
 metadata:
   name: gramly-staging
   labels:
-    gramly.tech/contour: private
+    gramly.tech/contour: public
+    gramly.tech/access-plane: business
     gramly.tech/environment: staging
