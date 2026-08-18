@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gramly-welcome-data-migration
+  namespace: gramly-welcome
+  labels:
+    app.kubernetes.io/name: gramly-welcome-data-migration
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gramly-welcome-data-migration
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate-data
+          image: WELCOME_IMAGE_PLACEHOLDER
+          command:
+            - python
+            - /ops/migrate_data.py
+            - --confirm-target-database
+            - gramly_welcome
+          envFrom:
+            - secretRef: {name: gramly-welcome-runtime}
+            - secretRef: {name: gramly-welcome-migration}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - {name: migration-script, mountPath: /ops, readOnly: true}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+      volumes:
+        - name: migration-script
+          configMap: {name: gramly-welcome-data-migration}
