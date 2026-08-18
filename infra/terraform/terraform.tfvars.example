@@ -1,7 +1,7 @@
 region                    = "ewr"
 vpc_id                    = "replace-with-vke-vpc-id"
 valkey_plan                = "replace-with-ha-valkey-plan"
-valkey_version             = "8"
+valkey_version             = "8.1"
 trusted_sources            = []
 object_storage_cluster_id  = 0
 object_storage_tier_id     = 0
