@@ -23,6 +23,14 @@ TARGET_TABLES = (
 )
 
 
+def asyncpg_dsn(value: str) -> str:
+    """Convert SQLAlchemy's async driver URL into an asyncpg-compatible DSN."""
+    for scheme in ("postgresql+asyncpg://", "postgres+asyncpg://"):
+        if value.startswith(scheme):
+            return "postgresql://" + value.removeprefix(scheme)
+    return value
+
+
 async def copy_query(
     source: asyncpg.Connection,
     target: asyncpg.Connection,
@@ -54,8 +62,8 @@ async def reset_sequences(target: asyncpg.Connection, tables: Iterable[str]) -> 
 
 
 async def migrate(args: argparse.Namespace) -> None:
-    source = await asyncpg.connect(args.source_database_url)
-    target = await asyncpg.connect(args.target_database_url)
+    source = await asyncpg.connect(asyncpg_dsn(args.source_database_url))
+    target = await asyncpg.connect(asyncpg_dsn(args.target_database_url))
     keyring = TokenKeyring.parse(args.token_encryption_keys)
     try:
         await source.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
