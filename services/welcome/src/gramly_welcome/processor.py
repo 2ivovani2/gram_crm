@@ -18,6 +18,12 @@ from .models import (
     WelcomeMessageVersion,
 )
 
+ACTIONABLE_UPDATE_KEYS = ("my_chat_member", "message", "chat_join_request", "chat_member")
+
+
+def is_actionable_payload(payload: dict[str, Any]) -> bool:
+    return any(isinstance(payload.get(key), dict) for key in ACTIONABLE_UPDATE_KEYS)
+
 
 def _telegram_user(payload: dict[str, Any]) -> dict[str, Any] | None:
     for event_name in ("chat_join_request", "chat_member"):
@@ -191,8 +197,7 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     # inbox payload for retention/debugging and only enter the business path
     # for update shapes that can change Welcome state.
     payload = event.payload
-    actionable_keys = ("my_chat_member", "message", "chat_join_request", "chat_member")
-    if not any(isinstance(payload.get(key), dict) for key in actionable_keys):
+    if not is_actionable_payload(payload):
         return
 
     bot = await session.get(ManagedBot, event.bot_id)

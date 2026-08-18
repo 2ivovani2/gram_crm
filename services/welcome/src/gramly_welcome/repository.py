@@ -166,10 +166,18 @@ async def claim_inbox_batch(
 
 
 async def finish_inbox_event(session: AsyncSession, event_id: int, worker_id: str) -> bool:
+    return bool(await finish_inbox_events(session, [event_id], worker_id))
+
+
+async def finish_inbox_events(
+    session: AsyncSession, event_ids: list[int], worker_id: str
+) -> int:
+    if not event_ids:
+        return 0
     result = await session.execute(
         update(InboxEvent)
         .where(
-            InboxEvent.id == event_id,
+            InboxEvent.id.in_(event_ids),
             InboxEvent.status == QueueStatus.PROCESSING.value,
             InboxEvent.lease_owner == worker_id,
         )
@@ -181,7 +189,7 @@ async def finish_inbox_event(session: AsyncSession, event_id: int, worker_id: st
             last_error="",
         )
     )
-    return bool(cast(CursorResult[tuple[int]], result).rowcount)
+    return int(cast(CursorResult[tuple[int]], result).rowcount)
 
 
 async def retry_inbox_event(
