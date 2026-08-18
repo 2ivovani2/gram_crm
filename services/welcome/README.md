@@ -52,9 +52,17 @@ python ops/welcome/migrate_data.py \
   --confirm-target-database gramly_welcome_staging
 python ops/welcome/copy_media.py
 python ops/welcome/load_test.py \
-  --url https://gramly.tech/welcome-staging/client/ID/SECRET/
+  --url https://gramly.tech/welcome-staging/client/ID/SECRET/ \
+  --source-key bot:ID \
+  --rate 100 \
+  --seconds 60 \
+  --cleanup
 ```
 
 Secrets are passed through environment variables and must never be placed on
-the command line, committed, or printed. Keep the legacy consumer authoritative
-until the final delta copy during the approved maintenance window.
+the command line, committed, or printed. The load gate sends neutral Telegram
+poll updates, verifies both persistence and worker completion, and `--cleanup`
+deletes only the generated update-ID range. Set `WELCOME_LOAD_TEST_SECRET` and
+`WELCOME_LOAD_TEST_DATABASE_URL` in the execution environment. Keep the legacy
+consumer authoritative until the final delta copy during the approved
+maintenance window.
