@@ -16,10 +16,9 @@ spec:
       metadata:
         connectionFromEnv: WELCOME_KEDA_DATABASE_URL
         query: >-
-          SELECT CEIL(COUNT(*)::numeric / 25)
-          FROM inbox_event
-          WHERE (status IN ('pending', 'retry') AND available_at <= NOW())
-             OR (status = 'processing' AND lease_expires_at <= NOW())
+          SELECT COALESCE(CEIL(SUM(pending_count)::numeric / 25), 0)
+          FROM inbox_source
+          WHERE pending_count > 0 AND next_available_at <= NOW()
         targetQueryValue: "1"
         activationTargetQueryValue: "0"
 ---

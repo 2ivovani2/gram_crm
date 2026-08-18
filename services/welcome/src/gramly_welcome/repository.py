@@ -73,6 +73,7 @@ async def insert_inbox_event(
     payload: dict[str, Any],
     bot_id: int | None,
 ) -> bool:
+    available_at = datetime.now(UTC)
     await session.execute(
         insert(InboxSource)
         .values(source_key=source_key, bot_id=bot_id)
@@ -80,26 +81,40 @@ async def insert_inbox_event(
     )
     statement = (
         insert(InboxEvent)
-        .values(source_key=source_key, update_id=update_id, payload=payload, bot_id=bot_id)
+        .values(
+            source_key=source_key,
+            update_id=update_id,
+            payload=payload,
+            bot_id=bot_id,
+            available_at=available_at,
+        )
         .on_conflict_do_nothing(constraint="uq_inbox_source_update")
         .returning(InboxEvent.id)
     )
-    return (await session.scalar(statement)) is not None
+    inserted = (await session.scalar(statement)) is not None
+    if inserted:
+        await session.execute(
+            update(InboxSource)
+            .where(InboxSource.source_key == source_key)
+            .values(
+                pending_count=InboxSource.pending_count + 1,
+                next_available_at=func.least(
+                    func.coalesce(InboxSource.next_available_at, available_at),
+                    available_at,
+                ),
+            )
+        )
+    return inserted
 
 
 def _inbox_source_claim_query(now: datetime) -> Select[tuple[InboxSource]]:
-    eligible_event = (
-        select(InboxEvent.id)
-        .where(
-            InboxEvent.source_key == InboxSource.source_key,
-            InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
-            InboxEvent.available_at <= now,
-        )
-        .limit(1)
-    )
     return (
         select(InboxSource)
-        .where(eligible_event.exists())
+        .where(
+            InboxSource.pending_count > 0,
+            InboxSource.next_available_at.is_not(None),
+            InboxSource.next_available_at <= now,
+        )
         .order_by(InboxSource.last_claimed_at, InboxSource.source_key)
         .with_for_update(of=InboxSource, skip_locked=True)
     )
@@ -115,6 +130,13 @@ def _inbox_claim_query(now: datetime, source_key: str) -> Select[tuple[InboxEven
         )
         .order_by(InboxEvent.available_at, InboxEvent.id)
         .with_for_update(of=InboxEvent, skip_locked=True)
+    )
+
+
+def _inbox_next_available_query(source_key: str) -> Select[tuple[datetime]]:
+    return select(func.min(InboxEvent.available_at)).where(
+        InboxEvent.source_key == source_key,
+        InboxEvent.status.in_((QueueStatus.PENDING.value, QueueStatus.RETRY.value)),
     )
 
 
@@ -148,13 +170,24 @@ async def claim_inbox_batch(
             # fairness without scanning or joining the growing inbox.
             source = await session.scalar(_inbox_source_claim_query(now).limit(1))
             if source is not None:
-                events.extend(
+                source_events = list(
                     (
                         await session.scalars(
                             _inbox_claim_query(now, source.source_key).limit(remaining)
                         )
                     ).all()
                 )
+                events.extend(source_events)
+                source.pending_count = max(0, source.pending_count - len(source_events))
+                if source.pending_count == 0:
+                    source.pending_count = 0
+                    source.next_available_at = None
+                elif len(source_events) < remaining:
+                    source.next_available_at = await session.scalar(
+                        _inbox_next_available_query(source.source_key)
+                    )
+                    if source.next_available_at is None:
+                        source.pending_count = 0
                 source.last_claimed_at = now
         lease_until = now + timedelta(seconds=lease_seconds)
         for event in events:
@@ -202,17 +235,30 @@ async def retry_inbox_event(
     dead = event.attempts >= max_attempts
     base_delay = min(300, 2 ** min(event.attempts, 8))
     delay = base_delay + secrets.randbelow(max(1, base_delay // 2 + 1))
-    await session.execute(
+    available_at = datetime.now(UTC) + timedelta(seconds=delay)
+    result = await session.execute(
         update(InboxEvent)
         .where(InboxEvent.id == event.id, InboxEvent.lease_owner == worker_id)
         .values(
             status=QueueStatus.DEAD.value if dead else QueueStatus.RETRY.value,
-            available_at=datetime.now(UTC) + timedelta(seconds=delay),
+            available_at=available_at,
             lease_owner=None,
             lease_expires_at=None,
             last_error=error[:500],
         )
     )
+    if not dead and cast(CursorResult[tuple[int]], result).rowcount:
+        await session.execute(
+            update(InboxSource)
+            .where(InboxSource.source_key == event.source_key)
+            .values(
+                pending_count=InboxSource.pending_count + 1,
+                next_available_at=func.least(
+                    func.coalesce(InboxSource.next_available_at, available_at),
+                    available_at,
+                ),
+            )
+        )
     await session.commit()
 
 
@@ -450,10 +496,42 @@ async def finish_join_request(
 
 async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, float]]:
     now = datetime.now(UTC)
+    pending_count, pending_oldest = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(InboxSource.pending_count), 0),
+                func.min(InboxSource.next_available_at),
+            )
+        )
+    ).one()
+    processing_count, processing_oldest = (
+        await session.execute(
+            select(func.count(InboxEvent.id), func.min(InboxEvent.available_at)).where(
+                InboxEvent.status == QueueStatus.PROCESSING.value
+            )
+        )
+    ).one()
+    event_oldest = min(
+        (value for value in (pending_oldest, processing_oldest) if value is not None),
+        default=None,
+    )
+    event_dead = int(
+        await session.scalar(
+            select(func.count(InboxEvent.id)).where(
+                InboxEvent.status == QueueStatus.DEAD.value
+            )
+        )
+        or 0
+    )
+    event_age = (
+        max(0.0, (now - event_oldest).total_seconds())
+        if event_oldest is not None
+        else 0.0
+    )
+    result: dict[str, tuple[int, int, float]] = {
+        "events": (int(pending_count) + int(processing_count), event_dead, event_age)
+    }
     queries: dict[str, Select[Any]] = {
-        "events": select(func.count(InboxEvent.id), func.min(InboxEvent.available_at)).where(
-            InboxEvent.status.in_(("pending", "retry", "processing"))
-        ),
         "deliveries": select(
             func.count(GreetingDelivery.id), func.min(GreetingDelivery.due_at)
         ).where(GreetingDelivery.status.in_(("scheduled", "retry", "processing"))),
@@ -461,17 +539,8 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
             JoinRequest.status.in_(("scheduled", "processing"))
         ),
     }
-    result: dict[str, tuple[int, int, float]] = {}
     for queue, query in queries.items():
         count, oldest = (await session.execute(query)).one()
         age = max(0.0, (now - oldest).total_seconds()) if oldest is not None else 0.0
-        dead = 0
-        if queue == "events":
-            dead = int(
-                await session.scalar(
-                    select(func.count(InboxEvent.id)).where(InboxEvent.status == "dead")
-                )
-                or 0
-            )
-        result[queue] = (int(count), dead, age)
+        result[queue] = (int(count), 0, age)
     return result
