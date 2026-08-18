@@ -1,4 +1,4 @@
-region                    = "lhr"
+region                    = "ewr"
 vpc_id                    = "replace-with-vke-vpc-id"
 valkey_plan                = "replace-with-ha-valkey-plan"
 valkey_version             = "8"

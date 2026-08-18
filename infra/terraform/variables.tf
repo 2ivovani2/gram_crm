@@ -7,7 +7,7 @@ variable "vultr_api_key" {
 variable "region" {
   description = "Vultr region shared with the VKE cluster."
   type        = string
-  default     = "lhr"
+  default     = "ewr"
 }
 
 variable "vpc_id" {
