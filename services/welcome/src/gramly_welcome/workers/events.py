@@ -13,10 +13,42 @@ from prometheus_client import start_http_server
 from ..config import get_settings
 from ..db import session_factory
 from ..metrics import OLDEST_PENDING_AGE, QUEUE_DEPTH, WORKER_ACTIVE, WORKER_EVENTS
+from ..models import InboxEvent
 from ..processor import process_event
 from ..repository import claim_inbox_batch, finish_inbox_event, queue_snapshot, retry_inbox_event
 
 logger = logging.getLogger(__name__)
+
+
+async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts: int) -> None:
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                await process_event(session, event)
+        async with session_factory() as session:
+            await finish_inbox_event(session, event.id, worker_id)
+        WORKER_EVENTS.labels("completed").inc()
+    except Exception as exc:
+        logger.exception(
+            "event processing failed id=%s attempt=%s", event.id, event.attempts
+        )
+        async with session_factory() as session:
+            await retry_inbox_event(
+                session, event, worker_id, type(exc).__name__, max_attempts
+            )
+        WORKER_EVENTS.labels("retry").inc()
+
+
+async def process_claimed_batch(
+    events: list[InboxEvent], worker_id: str, max_attempts: int, concurrency: int
+) -> None:
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def guarded(event: InboxEvent) -> None:
+        async with semaphore:
+            await process_claimed_event(event, worker_id, max_attempts)
+
+    await asyncio.gather(*(guarded(event) for event in events))
 
 
 async def serve() -> None:
@@ -51,23 +83,12 @@ async def serve() -> None:
                 except TimeoutError:
                     pass
                 continue
-            for event in events:
-                if stopping.is_set():
-                    break
-                try:
-                    async with session_factory() as session:
-                        async with session.begin():
-                            await process_event(session, event)
-                    async with session_factory() as session:
-                        await finish_inbox_event(session, event.id, worker_id)
-                    WORKER_EVENTS.labels("completed").inc()
-                except Exception as exc:
-                    logger.exception("event processing failed id=%s attempt=%s", event.id, event.attempts)
-                    async with session_factory() as session:
-                        await retry_inbox_event(
-                            session, event, worker_id, type(exc).__name__, settings.max_attempts
-                        )
-                    WORKER_EVENTS.labels("retry").inc()
+            await process_claimed_batch(
+                list(events),
+                worker_id,
+                settings.max_attempts,
+                settings.worker_concurrency,
+            )
     finally:
         WORKER_ACTIVE.labels("events").dec()
 
