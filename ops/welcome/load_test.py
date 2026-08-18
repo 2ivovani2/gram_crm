@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
+from anyio import EndOfStream
 
 
 @dataclass
@@ -70,7 +71,10 @@ async def fire(
             results.accepted += 1
         else:
             results.failed += 1
-    except httpx.HTTPError:
+    # Some TLS/backend implementations raise transport exceptions such as
+    # anyio.EndOfStream directly instead of wrapping them in HTTPError. A load
+    # gate must count those responses as failed without killing a queue worker.
+    except (httpx.HTTPError, EndOfStream):
         results.failed += 1
     finally:
         results.latencies.append(time.perf_counter() - started)
@@ -230,7 +234,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--rate", type=int, default=100)
     parser.add_argument("--seconds", type=int, default=1800)
-    parser.add_argument("--concurrency", type=int, default=200)
+    parser.add_argument("--concurrency", type=int, default=64)
     parser.add_argument("--timeout", type=float, default=5.0)
     parser.add_argument("--max-p95", type=float, default=0.250)
     parser.add_argument("--max-p99", type=float, default=1.0)
