@@ -26,7 +26,13 @@ from .rotation import (
     sync_rotation_channel,
 )
 
-ACTIONABLE_UPDATE_KEYS = ("my_chat_member", "message", "chat_join_request", "chat_member")
+ACTIONABLE_UPDATE_KEYS = (
+    "my_chat_member",
+    "message",
+    "chat_join_request",
+    "chat_member",
+    "pre_checkout_query",
+)
 
 
 def membership_transition_flags(

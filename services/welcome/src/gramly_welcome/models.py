@@ -161,6 +161,176 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ReferralCode(Base):
+    __tablename__ = "referral_code"
+    __table_args__ = (
+        UniqueConstraint("owner_id", name="referral_code_owner_id_key"),
+        UniqueConstraint("code", name="referral_code_code_key"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    code: Mapped[str] = mapped_column(String(48), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReferralAttribution(Base):
+    __tablename__ = "referral_attribution"
+    __table_args__ = (
+        UniqueConstraint("referred_owner_id", name="referral_attribution_referred_owner_id_key"),
+        CheckConstraint("referrer_owner_id <> referred_owner_id", name="ck_referral_not_self"),
+        CheckConstraint("status IN ('candidate','active','inactive')", name="ck_referral_status"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    referrer_owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    referred_owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    code_snapshot: Mapped[str] = mapped_column(String(48))
+    status: Mapped[str] = mapped_column(String(16), default="candidate", index=True)
+    attributed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    first_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    commission_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Payment(Base):
+    __tablename__ = "payment"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_invoice_id", name="uq_payment_provider_invoice"),
+        UniqueConstraint("checkout_token", name="payment_checkout_token_key"),
+        CheckConstraint(
+            "provider IN ('crypto_pay','telegram_stars','manual')", name="ck_payment_provider"
+        ),
+        CheckConstraint(
+            "status IN ('created','paid','expired','refunded','failed')", name="ck_payment_status"
+        ),
+        CheckConstraint("amount_rub > 0", name="ck_payment_amount_rub"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    checkout_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plan.id", ondelete="RESTRICT"), index=True)
+    provider: Mapped[str] = mapped_column(String(24), index=True)
+    provider_invoice_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="created", index=True)
+    amount_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    original_amount: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    original_currency: Mapped[str] = mapped_column(String(16), default="RUB")
+    paid_asset: Mapped[str | None] = mapped_column(String(16))
+    exchange_rate_rub: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    provider_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    invoice_url: Mapped[str] = mapped_column(String(1024), default="")
+    period_days: Mapped[int] = mapped_column(Integer, default=30)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PaymentEvent(Base):
+    __tablename__ = "payment_event"
+    __table_args__ = (
+        UniqueConstraint("provider", "event_key", name="uq_payment_event_provider_key"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(24), index=True)
+    event_key: Mapped[str] = mapped_column(String(128))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="received")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SubscriptionReminder(Base):
+    __tablename__ = "subscription_reminder"
+    __table_args__ = (
+        UniqueConstraint(
+            "subscription_id", "days_before", name="uq_subscription_reminder_day"
+        ),
+        CheckConstraint("days_before IN (7,3,1)", name="ck_subscription_reminder_day"),
+        CheckConstraint(
+            "status IN ('pending','processing','retry','sent','failed')",
+            name="ck_subscription_reminder_status",
+        ),
+        Index("ix_subscription_reminder_claim", "status", "due_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(
+        ForeignKey("subscription.id", ondelete="CASCADE"), index=True
+    )
+    days_before: Mapped[int] = mapped_column(Integer)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(String(500), default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Withdrawal(Base):
+    __tablename__ = "withdrawal"
+    __table_args__ = (
+        UniqueConstraint("public_id", name="withdrawal_public_id_key"),
+        UniqueConstraint("spend_id", name="withdrawal_spend_id_key"),
+        CheckConstraint("requested_rub >= 1000", name="ck_withdrawal_minimum"),
+        CheckConstraint(
+            "status IN ('requested','processing','retry','paid','rejected','failed')",
+            name="ck_withdrawal_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    requested_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    payout_asset: Mapped[str] = mapped_column(String(16), default="USDT")
+    payout_amount: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    exchange_rate_rub: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    recipient_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    spend_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="requested", index=True)
+    provider_transfer_id: Mapped[str] = mapped_column(String(128), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_error: Mapped[str] = mapped_column(String(500), default="")
+    rejection_reason: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FinancialLedgerEntry(Base):
+    __tablename__ = "financial_ledger_entry"
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('commission','reserve','payout','reserve_release','refund','adjustment')",
+            name="ck_ledger_entry_type",
+        ),
+        CheckConstraint("amount_rub <> 0", name="ck_ledger_nonzero"),
+        UniqueConstraint(
+            "owner_id", "payment_id", "entry_type", name="uq_ledger_owner_payment_type"
+        ),
+        UniqueConstraint("withdrawal_id", "entry_type", name="uq_ledger_withdrawal_type"),
+        Index("ix_ledger_owner_created", "owner_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="RESTRICT"), index=True)
+    payment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("payment.id", ondelete="RESTRICT"), index=True
+    )
+    withdrawal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("withdrawal.id", ondelete="RESTRICT"), index=True
+    )
+    entry_type: Mapped[str] = mapped_column(String(24), index=True)
+    amount_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    rate_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    reason: Mapped[str] = mapped_column(String(500), default="")
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ContentFlow(Base):
     __tablename__ = "content_flow"
     __table_args__ = (
