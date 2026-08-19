@@ -15,7 +15,14 @@ from .crypto import TokenKeyring
 from .models import (
     Channel,
     Contact,
+    ContentAttachment,
+    ContentFlow,
+    ContentFlowVersion,
+    ContentStep,
+    DeliveryOperation,
     EventLog,
+    FlowDelivery,
+    GreetingDelivery,
     JoinRequest,
     ManagedBot,
     Owner,
@@ -52,9 +59,7 @@ async def owner_from_telegram(session: AsyncSession, user: User) -> Owner:
 
 async def mark_guide_complete(session: AsyncSession, owner_id: int, steps: int) -> None:
     await session.execute(
-        update(Owner)
-        .where(Owner.id == owner_id)
-        .values(guide_completed=True, guide_step=steps)
+        update(Owner).where(Owner.id == owner_id).values(guide_completed=True, guide_step=steps)
     )
     await session.commit()
 
@@ -126,9 +131,7 @@ async def create_managed_bot(
     return bot
 
 
-async def set_webhook_configured(
-    session: AsyncSession, bot_id: int, configured: bool
-) -> None:
+async def set_webhook_configured(session: AsyncSession, bot_id: int, configured: bool) -> None:
     await session.execute(
         update(ManagedBot)
         .where(ManagedBot.id == bot_id)
@@ -144,7 +147,7 @@ async def bot_channels(session: AsyncSession, bot_id: int) -> list[Channel]:
                 select(Channel)
                 .where(Channel.bot_id == bot_id, Channel.is_active.is_(True))
                 .order_by(Channel.connected_at, Channel.id)
-                .limit(10)
+                .limit(200)
             )
         ).all()
     )
@@ -158,12 +161,48 @@ async def bot_statistics(session: AsyncSession, bot_id: int) -> dict[str, Any]:
                 func.count(Contact.id).filter(Contact.delivery_status == "live"),
                 func.count(Contact.id).filter(Contact.delivery_status == "dead"),
                 func.count(Contact.id).filter(Contact.delivery_status == "unknown"),
-                func.count(Contact.id).filter(Contact.gender == "male"),
-                func.count(Contact.id).filter(Contact.gender == "female"),
-                func.count(Contact.id).filter(Contact.gender == "unknown"),
             ).where(Contact.bot_id == bot_id)
         )
     ).one()
+    channels = int(
+        await session.scalar(
+            select(func.count(Channel.id)).where(Channel.bot_id == bot_id, Channel.is_active.is_(True))
+        )
+        or 0
+    )
+    join_requests = int(
+        await session.scalar(select(func.count(JoinRequest.id)).where(JoinRequest.bot_id == bot_id)) or 0
+    )
+    flow_row = (
+        await session.execute(
+            select(
+                func.count(FlowDelivery.id),
+                func.count(FlowDelivery.id).filter(FlowDelivery.status == "completed"),
+                func.count(FlowDelivery.id).filter(FlowDelivery.status == "partial"),
+                func.count(FlowDelivery.id).filter(FlowDelivery.status == "failed"),
+            ).where(FlowDelivery.bot_id == bot_id)
+        )
+    ).one()
+    legacy_row = (
+        await session.execute(
+            select(
+                func.count(GreetingDelivery.id),
+                func.count(GreetingDelivery.id).filter(GreetingDelivery.status == "sent"),
+                func.count(GreetingDelivery.id).filter(GreetingDelivery.status == "failed"),
+            ).where(GreetingDelivery.bot_id == bot_id)
+        )
+    ).one()
+    operation_errors = int(
+        await session.scalar(
+            select(func.count(DeliveryOperation.id))
+            .join(FlowDelivery, FlowDelivery.id == DeliveryOperation.flow_delivery_id)
+            .where(
+                FlowDelivery.bot_id == bot_id,
+                DeliveryOperation.status == "failed",
+            )
+        )
+        or 0
+    )
     languages = (
         await session.execute(
             select(Contact.language_code, func.count(Contact.id).label("total"))
@@ -178,13 +217,14 @@ async def bot_statistics(session: AsyncSession, bot_id: int) -> dict[str, Any]:
         "live": int(row[1] or 0),
         "dead": int(row[2] or 0),
         "unknown": int(row[3] or 0),
-        "male": int(row[4] or 0),
-        "female": int(row[5] or 0),
-        "transformer": int(row[6] or 0),
-        "languages": [
-            {"language_code": item.language_code, "total": int(item.total)}
-            for item in languages
-        ],
+        "channels": channels,
+        "join_requests": join_requests,
+        "deliveries": int(flow_row[0] or 0) + int(legacy_row[0] or 0),
+        "delivered": int(flow_row[1] or 0) + int(legacy_row[1] or 0),
+        "partial": int(flow_row[2] or 0),
+        "failed": int(flow_row[3] or 0) + int(legacy_row[2] or 0),
+        "operation_errors": operation_errors,
+        "languages": [{"language_code": item.language_code, "total": int(item.total)} for item in languages],
     }
 
 
@@ -200,9 +240,7 @@ async def pending_requests(session: AsyncSession, bot_id: int) -> int:
     )
 
 
-async def update_delay(
-    session: AsyncSession, bot_id: int, field: str, value: int
-) -> None:
+async def update_delay(session: AsyncSession, bot_id: int, field: str, value: int) -> None:
     if field not in {"welcome_delay_seconds", "approval_delay_seconds"}:
         raise ValueError("Unsupported delay field")
     await session.execute(
@@ -223,9 +261,7 @@ async def toggle_auto_approve(session: AsyncSession, bot: ManagedBot) -> tuple[b
     if enabled:
         request_ids = list(
             await session.scalars(
-                select(JoinRequest.id).where(
-                    JoinRequest.bot_id == bot.id, JoinRequest.status == "pending"
-                )
+                select(JoinRequest.id).where(JoinRequest.bot_id == bot.id, JoinRequest.status == "pending")
             )
         )
         await session.execute(
@@ -236,15 +272,11 @@ async def toggle_auto_approve(session: AsyncSession, bot: ManagedBot) -> tuple[b
     else:
         request_ids = list(
             await session.scalars(
-                select(JoinRequest.id).where(
-                    JoinRequest.bot_id == bot.id, JoinRequest.status == "scheduled"
-                )
+                select(JoinRequest.id).where(JoinRequest.bot_id == bot.id, JoinRequest.status == "scheduled")
             )
         )
         await session.execute(
-            update(JoinRequest)
-            .where(JoinRequest.id.in_(request_ids))
-            .values(status="pending", due_at=None)
+            update(JoinRequest).where(JoinRequest.id.in_(request_ids)).values(status="pending", due_at=None)
         )
     await session.commit()
     bot.auto_approve = enabled
@@ -259,21 +291,18 @@ async def save_welcome_message(
     payload: dict[str, Any],
     media: dict[str, Any] | None,
 ) -> WelcomeMessageVersion:
-    await session.execute(
-        select(ManagedBot.id).where(ManagedBot.id == bot_id).with_for_update()
-    )
-    version_number = int(
-        await session.scalar(
-            select(func.max(WelcomeMessageVersion.version)).where(
-                WelcomeMessageVersion.bot_id == bot_id
+    await session.execute(select(ManagedBot.id).where(ManagedBot.id == bot_id).with_for_update())
+    version_number = (
+        int(
+            await session.scalar(
+                select(func.max(WelcomeMessageVersion.version)).where(WelcomeMessageVersion.bot_id == bot_id)
             )
+            or 0
         )
-        or 0
-    ) + 1
+        + 1
+    )
     await session.execute(
-        update(WelcomeMessageVersion)
-        .where(WelcomeMessageVersion.bot_id == bot_id)
-        .values(is_active=False)
+        update(WelcomeMessageVersion).where(WelcomeMessageVersion.bot_id == bot_id).values(is_active=False)
     )
     version = WelcomeMessageVersion(
         bot_id=bot_id,
@@ -347,9 +376,7 @@ async def append_album_item(
     await session.commit()
 
 
-async def finalize_due_albums(
-    session: AsyncSession, limit: int = 20
-) -> list[tuple[int, int, int, int]]:
+async def finalize_due_albums(session: AsyncSession, limit: int = 20) -> list[tuple[int, int, int, int]]:
     now = datetime.now(UTC)
     drafts = list(
         (
@@ -365,21 +392,23 @@ async def finalize_due_albums(
     completed: list[tuple[int, int, int, int]] = []
     for draft in drafts:
         owner_telegram_id = int(
-            await session.scalar(select(Owner.telegram_id).where(Owner.id == draft.owner_id))
-            or 0
+            await session.scalar(select(Owner.telegram_id).where(Owner.id == draft.owner_id)) or 0
         )
         if draft.finalized_version_id is None:
             await session.execute(
                 select(ManagedBot.id).where(ManagedBot.id == draft.bot_id).with_for_update()
             )
-            number = int(
-                await session.scalar(
-                    select(func.max(WelcomeMessageVersion.version)).where(
-                        WelcomeMessageVersion.bot_id == draft.bot_id
+            number = (
+                int(
+                    await session.scalar(
+                        select(func.max(WelcomeMessageVersion.version)).where(
+                            WelcomeMessageVersion.bot_id == draft.bot_id
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) + 1
+                + 1
+            )
             await session.execute(
                 update(WelcomeMessageVersion)
                 .where(WelcomeMessageVersion.bot_id == draft.bot_id)
@@ -431,9 +460,7 @@ async def finalize_due_albums(
             )
             draft.finalized_version_id = version.id
         else:
-            existing_version = await session.get(
-                WelcomeMessageVersion, draft.finalized_version_id
-            )
+            existing_version = await session.get(WelcomeMessageVersion, draft.finalized_version_id)
             if existing_version is None:
                 draft.finalized_version_id = None
                 continue
@@ -453,16 +480,23 @@ async def complete_album_notification(session: AsyncSession, draft_id: int) -> N
 
 
 async def bot_media_keys(session: AsyncSession, bot_id: int) -> list[str]:
-    return list(
-        await session.scalars(
-            select(WelcomeMedia.storage_key)
-            .join(
-                WelcomeMessageVersion,
-                WelcomeMessageVersion.id == WelcomeMedia.version_id,
-            )
-            .where(WelcomeMessageVersion.bot_id == bot_id)
+    legacy = (
+        select(WelcomeMedia.storage_key.label("storage_key"))
+        .join(
+            WelcomeMessageVersion,
+            WelcomeMessageVersion.id == WelcomeMedia.version_id,
         )
+        .where(WelcomeMessageVersion.bot_id == bot_id)
     )
+    content = (
+        select(ContentAttachment.storage_key.label("storage_key"))
+        .join(ContentStep, ContentStep.id == ContentAttachment.step_id)
+        .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+        .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+        .where(ContentFlow.bot_id == bot_id)
+    )
+    keys = legacy.union(content).subquery()
+    return list(await session.scalars(select(keys.c.storage_key).distinct()))
 
 
 async def delete_bot(session: AsyncSession, bot_id: int) -> None:

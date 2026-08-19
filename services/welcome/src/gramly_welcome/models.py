@@ -166,6 +166,229 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ContentFlow(Base):
+    __tablename__ = "content_flow"
+    __table_args__ = (
+        UniqueConstraint("bot_id", "kind", "name", name="uq_content_flow_bot_kind_name"),
+        CheckConstraint("kind IN ('welcome','farewell')", name="ck_content_flow_kind"),
+        CheckConstraint(
+            "assignment_mode IN ('all','selected')",
+            name="ck_content_flow_assignment_mode",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    assignment_mode: Mapped[str] = mapped_column(String(16), default="all")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ContentFlowVersion(Base):
+    __tablename__ = "content_flow_version"
+    __table_args__ = (
+        UniqueConstraint("flow_id", "version", name="uq_content_flow_version"),
+        CheckConstraint(
+            "status IN ('draft','published','archived')",
+            name="ck_content_flow_version_status",
+        ),
+        CheckConstraint(
+            "first_delay_seconds BETWEEN 0 AND 86400",
+            name="ck_content_flow_first_delay",
+        ),
+        Index(
+            "uq_content_flow_published",
+            "flow_id",
+            unique=True,
+            postgresql_where=text("status = 'published'"),
+        ),
+        Index(
+            "uq_content_flow_draft",
+            "flow_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("content_flow.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    author_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    first_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    legacy_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("welcome_message_version.id", ondelete="SET NULL"), unique=True
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContentStep(Base):
+    __tablename__ = "content_step"
+    __table_args__ = (
+        UniqueConstraint("version_id", "position", name="uq_content_step_position"),
+        CheckConstraint("position >= 0", name="ck_content_step_position"),
+        CheckConstraint(
+            "delay_after_seconds BETWEEN 0 AND 86400",
+            name="ck_content_step_delay",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("content_flow_version.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    delay_after_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContentAttachment(Base):
+    __tablename__ = "content_attachment"
+    __table_args__ = (
+        UniqueConstraint("step_id", "position", name="uq_content_attachment_position"),
+        CheckConstraint("position >= 0", name="ck_content_attachment_position"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    step_id: Mapped[int] = mapped_column(
+        ForeignKey("content_step.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    media_type: Mapped[str] = mapped_column(String(32))
+    storage_key: Mapped[str] = mapped_column(String(500))
+    original_name: Mapped[str] = mapped_column(String(255), default="")
+    mime_type: Mapped[str] = mapped_column(String(128), default="")
+    size: Mapped[int] = mapped_column(BigInteger, default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class ContentKeyboard(Base):
+    __tablename__ = "content_keyboard"
+    __table_args__ = (
+        UniqueConstraint("step_id", name="content_keyboard_step_id_key"),
+        CheckConstraint("kind IN ('inline','reply')", name="ck_content_keyboard_kind"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    step_id: Mapped[int] = mapped_column(
+        ForeignKey("content_step.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class ContentKeyboardButton(Base):
+    __tablename__ = "content_keyboard_button"
+    __table_args__ = (
+        UniqueConstraint(
+            "keyboard_id", "row", "position", name="uq_content_keyboard_button_position"
+        ),
+        CheckConstraint("row >= 0 AND position >= 0", name="ck_content_keyboard_button_position"),
+        CheckConstraint(
+            "action_type IN ('url','callback','text')",
+            name="ck_content_keyboard_button_action",
+        ),
+        CheckConstraint(
+            "style IN ('default','primary','success','danger')",
+            name="ck_content_keyboard_button_style",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    keyboard_id: Mapped[int] = mapped_column(
+        ForeignKey("content_keyboard.id", ondelete="CASCADE"), index=True
+    )
+    row: Mapped[int] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(String(128))
+    action_type: Mapped[str] = mapped_column(String(16))
+    value: Mapped[str] = mapped_column(String(1024))
+    style: Mapped[str] = mapped_column(String(16), default="default")
+
+
+class FlowChannelAssignment(Base):
+    __tablename__ = "flow_channel_assignment"
+    __table_args__ = (
+        UniqueConstraint("flow_id", "channel_id", name="uq_flow_channel_assignment"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    flow_id: Mapped[int] = mapped_column(
+        ForeignKey("content_flow.id", ondelete="CASCADE"), index=True
+    )
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FlowDelivery(Base):
+    __tablename__ = "flow_delivery"
+    __table_args__ = (
+        UniqueConstraint("bot_id", "event_key", name="uq_flow_delivery_bot_event"),
+        CheckConstraint(
+            "status IN ('scheduled','processing','completed','partial','failed','cancelled')",
+            name="ck_flow_delivery_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
+    )
+    channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id", ondelete="CASCADE"), index=True
+    )
+    contact_id: Mapped[int] = mapped_column(
+        ForeignKey("contact.id", ondelete="CASCADE"), index=True
+    )
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("content_flow_version.id", ondelete="RESTRICT"), index=True
+    )
+    event_key: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DeliveryOperation(Base):
+    __tablename__ = "delivery_operation"
+    __table_args__ = (
+        UniqueConstraint("flow_delivery_id", "position", name="uq_delivery_operation_position"),
+        Index("ix_delivery_operation_claim", "status", "due_at", "lease_expires_at"),
+        CheckConstraint("position >= 0", name="ck_delivery_operation_position"),
+        CheckConstraint(
+            "status IN ('scheduled','processing','retry','sent','failed','cancelled')",
+            name="ck_delivery_operation_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    flow_delivery_id: Mapped[int] = mapped_column(
+        ForeignKey("flow_delivery.id", ondelete="CASCADE"), index=True
+    )
+    step_id: Mapped[int] = mapped_column(
+        ForeignKey("content_step.id", ondelete="RESTRICT"), index=True
+    )
+    depends_on_operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("delivery_operation.id", ondelete="RESTRICT"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    operation_type: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    media: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ManagedBot(Base):
     __tablename__ = "managed_bot"
     __table_args__ = (

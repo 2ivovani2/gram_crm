@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .models import (
     Channel,
     Contact,
+    DeliveryOperation,
     GreetingDelivery,
     InboxEvent,
     InboxSource,
@@ -538,9 +539,24 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
         "approvals": select(func.count(JoinRequest.id), func.min(JoinRequest.due_at)).where(
             JoinRequest.status.in_(("scheduled", "processing"))
         ),
+        "content_operations": select(
+            func.count(DeliveryOperation.id), func.min(DeliveryOperation.due_at)
+        ).where(DeliveryOperation.status.in_(("scheduled", "retry", "processing"))),
     }
     for queue, query in queries.items():
         count, oldest = (await session.execute(query)).one()
         age = max(0.0, (now - oldest).total_seconds()) if oldest is not None else 0.0
-        result[queue] = (int(count), 0, age)
+        dead = (
+            int(
+                await session.scalar(
+                    select(func.count(DeliveryOperation.id)).where(
+                        DeliveryOperation.status == "failed"
+                    )
+                )
+                or 0
+            )
+            if queue == "content_operations"
+            else 0
+        )
+        result[queue] = (int(count), dead, age)
     return result

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import uuid
@@ -27,15 +28,31 @@ from aiogram.types import (
     Update,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .commercial import start_trial
 from .config import Settings, get_settings
+from .content_service import (
+    ContentValidationError,
+    add_draft_step,
+    copy_step,
+    delete_step,
+    draft_snapshot,
+    ensure_default_welcome_flow,
+    move_step,
+    open_draft,
+    publish_draft,
+    replace_step_keyboard,
+    set_first_delay,
+    set_flow_assignments,
+    set_step_delay,
+)
 from .crypto import TokenKeyring
 from .db import session_factory
-from .models import ManagedBot, Owner
+from .flow_delivery import compile_preview_operations
+from .models import ContentFlow, FlowChannelAssignment, ManagedBot, Owner
 from .owner_repository import (
-    append_album_item,
     bot_channels,
     bot_media_keys,
     bot_statistics,
@@ -46,12 +63,12 @@ from .owner_repository import (
     owned_bot,
     owner_from_telegram,
     pending_requests,
-    save_welcome_message,
     set_webhook_configured,
     toggle_auto_approve,
     update_delay,
 )
 from .storage import MediaTooLargeError, ObjectStorage
+from .telegram_delivery import send_compiled_operation
 
 logger = logging.getLogger(__name__)
 router = Router(name="gramly-welcome-owner")
@@ -123,6 +140,10 @@ class WelcomeMessageState(StatesGroup):
     waiting_for_message = State()
 
 
+class WelcomeButtonState(StatesGroup):
+    waiting_for_buttons = State()
+
+
 class OwnerMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -150,9 +171,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
 
 
 def _one_button(text: str, callback: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]]
-    )
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]])
 
 
 def _add_to_channel_url(bot: ManagedBot) -> str:
@@ -174,11 +193,7 @@ def _connection_keyboard(bot: ManagedBot) -> InlineKeyboardMarkup:
                     callback_data=f"connect-check:{bot.id}",
                 )
             ],
-            [
-                InlineKeyboardButton(
-                    text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}"
-                )
-            ],
+            [InlineKeyboardButton(text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}")],
         ]
     )
 
@@ -257,13 +272,8 @@ async def download_message_media(
     }
 
 
-async def configure_customer_webhook(
-    managed: ManagedBot, token: str, settings: Settings
-) -> None:
-    url = (
-        f"{settings.public_webhook_base_url.rstrip('/')}/"
-        f"{managed.public_id}/{managed.path_secret}/"
-    )
+async def configure_customer_webhook(managed: ManagedBot, token: str, settings: Settings) -> None:
+    url = f"{settings.public_webhook_base_url.rstrip('/')}/{managed.public_id}/{managed.path_secret}/"
     async with Bot(token=token) as bot:
         await bot.set_webhook(
             url,
@@ -275,9 +285,7 @@ async def configure_customer_webhook(
 
 
 async def remove_customer_webhook(managed: ManagedBot, settings: Settings) -> None:
-    token = TokenKeyring.parse(settings.token_encryption_keys).decrypt(
-        managed.token_ciphertext
-    )
+    token = TokenKeyring.parse(settings.token_encryption_keys).decrypt(managed.token_ciphertext)
     async with Bot(token=token) as bot:
         await bot.delete_webhook(drop_pending_updates=True)
 
@@ -304,17 +312,13 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
     if step >= len(GUIDE):
         async with session_factory() as session:
             await mark_guide_complete(session, owner.id, len(GUIDE))
-        await message.answer(
-            "Готово — всё управление уже под рукой ✨", reply_markup=main_keyboard()
-        )
+        await message.answer("Готово — всё управление уже под рукой ✨", reply_markup=main_keyboard())
         await show_bots(message, owner, 0)
         await callback.answer()
         return
     title, body = GUIDE[step]
     final = step == len(GUIDE) - 1
-    markup = _one_button(
-        "🚀 Начать работу" if final else "➡️ Далее", f"guide:{step + 1}"
-    )
+    markup = _one_button("🚀 Начать работу" if final else "➡️ Далее", f"guide:{step + 1}")
     content = f"{title}\n\n{body}\n\n<i>Шаг {step + 1} из {len(GUIDE)}</i>"
     if message.photo:
         # Keep pre-cutover onboarding messages usable after the owner webhook
@@ -326,9 +330,7 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
 
 
 async def show_main_menu(message: Message) -> None:
-    await message.answer(
-        "🏠 <b>Главное меню</b>\n\nВыберите раздел:", reply_markup=main_keyboard()
-    )
+    await message.answer("🏠 <b>Главное меню</b>\n\nВыберите раздел:", reply_markup=main_keyboard())
 
 
 @router.message(F.text == "🤖 Мои Боты")
@@ -339,26 +341,18 @@ async def bots_menu(message: Message, owner: Owner, state: FSMContext) -> None:
 
 async def show_bots(target: Message, owner: Owner, page: int) -> None:
     async with session_factory() as session:
-        bots, total = await list_owned_bots(
-            session, owner.id, page * BOTS_PER_PAGE, BOTS_PER_PAGE
-        )
+        bots, total = await list_owned_bots(session, owner.id, page * BOTS_PER_PAGE, BOTS_PER_PAGE)
     page_count = max(1, (total + BOTS_PER_PAGE - 1) // BOTS_PER_PAGE)
     page = max(0, min(page, page_count - 1))
     keyboard = InlineKeyboardBuilder()
     for item in bots:
-        keyboard.button(
-            text=f"🤖 @{item.username or item.display_name}", callback_data=f"bot:{item.id}"
-        )
+        keyboard.button(text=f"🤖 @{item.username or item.display_name}", callback_data=f"bot:{item.id}")
     keyboard.adjust(1)
     navigation = []
     if page:
-        navigation.append(
-            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"bots:{page - 1}")
-        )
+        navigation.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"bots:{page - 1}"))
     if page + 1 < page_count:
-        navigation.append(
-            InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"bots:{page + 1}")
-        )
+        navigation.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"bots:{page + 1}"))
     if navigation:
         keyboard.row(*navigation)
     keyboard.row(InlineKeyboardButton(text="➕ Создать Бота", callback_data="bot:add"))
@@ -388,11 +382,7 @@ async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
         "и отправьте его сюда.\n\n🔒 Сообщение с токеном удалится сразу после получения.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot"
-                    )
-                ],
+                [InlineKeyboardButton(text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot")],
                 [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
             ]
         ),
@@ -439,7 +429,8 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
                 await remove_customer_webhook(managed, settings)
             except Exception:
                 logger.warning(
-                    "Could not roll back customer webhook bot_id=%s", managed.id,
+                    "Could not roll back customer webhook bot_id=%s",
+                    managed.id,
                     exc_info=True,
                 )
             async with session_factory() as session:
@@ -558,11 +549,78 @@ async def set_message(callback: CallbackQuery, owner: Owner, state: FSMContext) 
     if bot is None:
         await callback.answer("Нет доступа.", show_alert=True)
         return
+    async with session_factory() as session:
+        flow = await ensure_default_welcome_flow(session, bot.id, owner.id)
+        draft = await open_draft(session, owner.id, flow.id, owner.telegram_id)
+    await state.clear()
+    await send_chain_editor(message, owner, draft.id)
+    await callback.answer()
+
+
+async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> None:
+    async with session_factory() as session:
+        snapshot = await draft_snapshot(session, owner.id, version_id)
+    lines = [
+        "💬 <b>Редактор приветственной цепочки</b>",
+        f"\nЧерновик версии <b>{snapshot.version.version}</b>",
+        f"Первое сообщение: <b>{_format_delay(snapshot.version.first_delay_seconds)}</b>",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    if snapshot.steps:
+        lines.append("")
+        for index, step in enumerate(snapshot.steps, start=1):
+            kind = str(step.payload.get("type") or "message")
+            after = _format_delay(step.delay_after_seconds) if index < len(snapshot.steps) else "финал"
+            lines.append(f"{index}. <b>{kind}</b> · после: {after}")
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text=f"{index} · {kind}",
+                        callback_data=f"chain:step:{version_id}:{step.id}",
+                    )
+                ]
+            )
+    else:
+        lines.append("\nПока нет шагов. Добавьте первое сообщение.")
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(text="➕ Добавить шаг", callback_data=f"chain:add:{version_id}"),
+                InlineKeyboardButton(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="− 5 сек до старта", callback_data=f"chain:first:{version_id}:-5"),
+                InlineKeyboardButton(text="+ 5 сек до старта", callback_data=f"chain:first:{version_id}:5"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📣 Назначить каналам",
+                    callback_data=f"chain:assign:{version_id}",
+                )
+            ],
+            [InlineKeyboardButton(text="🚀 Опубликовать", callback_data=f"chain:publish:{version_id}")],
+            [InlineKeyboardButton(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
+        ]
+    )
+    await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@router.callback_query(F.data.startswith("chain:add:"))
+async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    message = _callback_message(callback)
+    version_id = int((callback.data or "").split(":")[2])
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
     await state.set_state(WelcomeMessageState.waiting_for_message)
-    await state.update_data(bot_id=bot.id)
+    await state.update_data(bot_id=snapshot.flow.bot_id, version_id=version_id)
     await message.answer(
-        "💬 <b>Новое приветствие</b>\n\nОтправьте текст или поддерживаемое Telegram-вложение.",
-        reply_markup=_one_button("❌ Отмена", f"bot:{bot.id}"),
+        "➕ <b>Новый шаг</b>\n\nОтправьте текст или Telegram-вложение. "
+        "Форматирование и Premium Emoji будут сохранены без преобразования.",
+        reply_markup=_one_button("❌ Отмена", f"msg:{snapshot.flow.bot_id}"),
     )
     await callback.answer()
 
@@ -574,7 +632,8 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
         return
     data = await state.get_data()
     bot = await _get_owned(owner, str(data.get("bot_id", "")))
-    if bot is None:
+    version_id = int(data.get("version_id") or 0)
+    if bot is None or not version_id:
         await state.clear()
         await message.answer("Сессия настройки устарела. Откройте бота ещё раз.")
         return
@@ -586,25 +645,41 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
             cast(Bot, message.bot), message, storage, f"welcome-bots/{bot.public_id}/messages"
         )
         payload = serialize_message(message)
-        async with session_factory() as session:
-            if message.media_group_id:
-                if message.content_type not in {"photo", "video", "audio", "document"} or not media:
-                    raise ValueError("Этот тип вложения нельзя сохранить внутри Telegram-альбома.")
-                await append_album_item(
-                    session,
-                    bot.id,
-                    owner.id,
-                    message.media_group_id,
-                    message.message_id,
-                    payload,
-                    media,
-                )
-                await message.answer("📎 Часть альбома принята, сохраняю композицию…")
-                return
-            version = await save_welcome_message(
-                session, bot.id, owner.id, owner.telegram_id, payload, media
+        attachments = [media] if media else []
+        if message.media_group_id:
+            if message.content_type not in {"photo", "video", "audio", "document"} or not media:
+                raise ValueError("Этот тип вложения нельзя сохранить внутри Telegram-альбома.")
+            current = await state.get_data()
+            current_group = str(current.get("album_group") or "")
+            if current_group and current_group != message.media_group_id:
+                raise ValueError("Дождитесь сохранения предыдущего альбома.")
+            album_items = list(current.get("album_items") or [])
+            album_items.append({"payload": payload, "media": media})
+            await state.update_data(
+                album_group=message.media_group_id,
+                album_items=album_items,
+                album_last_message_id=message.message_id,
             )
-    except (ValueError, MediaTooLargeError) as exc:
+            await asyncio.sleep(2)
+            latest = await state.get_data()
+            if int(latest.get("album_last_message_id") or 0) != message.message_id:
+                return
+            collected = list(latest.get("album_items") or [])
+            payload = {
+                "type": "media_group",
+                "items": [item["payload"] for item in collected],
+            }
+            attachments = [item["media"] for item in collected]
+        async with session_factory() as session:
+            await add_draft_step(
+                session,
+                owner.id,
+                version_id,
+                payload,
+                attachments,
+                delay_after_seconds=1,
+            )
+    except (ValueError, MediaTooLargeError, ContentValidationError) as exc:
         await message.answer(f"⚠️ {exc}")
         return
     except Exception:
@@ -614,8 +689,351 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
         await message.answer("Не удалось сохранить сообщение целиком. Попробуйте ещё раз.")
         return
     await state.clear()
-    await message.answer(f"✅ Приветствие сохранено · версия {version.version}")
-    await send_delay_screen(message, bot, "welcome")
+    await message.answer("✅ Шаг добавлен в черновик. В production пока ничего не изменилось.")
+    await send_chain_editor(message, owner, version_id)
+
+
+@router.callback_query(F.data.startswith("chain:step:"))
+async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    _, _, raw_version, raw_step = (callback.data or "").split(":")
+    version_id, step_id = int(raw_version), int(raw_step)
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    step = next((item for item in snapshot.steps if item.id == step_id), None)
+    if step is None:
+        await callback.answer("Шаг не найден.", show_alert=True)
+        return
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="↑", callback_data=f"chain:move:{version_id}:{step_id}:-1"),
+                InlineKeyboardButton(text="↓", callback_data=f"chain:move:{version_id}:{step_id}:1"),
+                InlineKeyboardButton(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="− 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:-5"),
+                InlineKeyboardButton(text="+ 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:5"),
+                InlineKeyboardButton(text="+ 1 мин", callback_data=f"chain:delay:{version_id}:{step_id}:60"),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔘 Клавиатура", callback_data=f"chain:buttons:{version_id}:{step_id}"
+                )
+            ],
+            [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"chain:delete:{version_id}:{step_id}")],
+            [InlineKeyboardButton(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
+        ]
+    )
+    await message.answer(
+        f"<b>Шаг {step.position + 1}</b> · {step.payload.get('type', 'message')}\n"
+        f"Задержка до следующего: <b>{_format_delay(step.delay_after_seconds)}</b>",
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("chain:editor:"))
+async def chain_editor_callback(callback: CallbackQuery, owner: Owner) -> None:
+    await send_chain_editor(_callback_message(callback), owner, int((callback.data or "").split(":")[2]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^chain:(move|copy|delete|delay|first):"))
+async def mutate_chain(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    parts = (callback.data or "").split(":")
+    action, version_id = parts[1], int(parts[2])
+    orphaned_keys: list[str] = []
+    try:
+        async with session_factory() as session:
+            if action == "move":
+                await move_step(session, owner.id, int(parts[3]), int(parts[4]))
+            elif action == "copy":
+                await copy_step(session, owner.id, int(parts[3]))
+            elif action == "delete":
+                orphaned_keys = await delete_step(session, owner.id, int(parts[3]))
+            elif action == "delay":
+                snapshot = await draft_snapshot(session, owner.id, version_id)
+                step_id, delta = int(parts[3]), int(parts[4])
+                step = next((item for item in snapshot.steps if item.id == step_id), None)
+                if step is None:
+                    raise ContentValidationError("Editable step was not found")
+                await set_step_delay(
+                    session, owner.id, step_id, max(0, min(86_400, step.delay_after_seconds + delta))
+                )
+            elif action == "first":
+                snapshot = await draft_snapshot(session, owner.id, version_id)
+                await set_first_delay(
+                    session,
+                    owner.id,
+                    version_id,
+                    max(0, min(86_400, snapshot.version.first_delay_seconds + int(parts[3]))),
+                )
+    except ContentValidationError:
+        await callback.answer("Не удалось изменить черновик.", show_alert=True)
+        return
+    if action == "delete" and orphaned_keys:
+        try:
+            await ObjectStorage(get_settings()).delete_many(orphaned_keys)
+        except Exception:
+            logger.exception("Could not delete orphaned draft media step_id=%s", parts[3])
+    await send_chain_editor(message, owner, version_id)
+    await callback.answer("Сохранено")
+
+
+@router.callback_query(F.data.startswith("chain:publish:"))
+async def publish_chain(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    message = _callback_message(callback)
+    version_id = int((callback.data or "").split(":")[2])
+    try:
+        async with session_factory() as session:
+            version = await publish_draft(session, owner.id, version_id)
+            snapshot_flow_id = version.flow_id
+            flow = await session.get(ContentFlow, snapshot_flow_id)
+    except ContentValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await state.clear()
+    await message.answer(
+        f"🚀 <b>Цепочка опубликована</b> · версия {version.version}\n\n"
+        "Новые вступления уже используют эту версию. Текущие доставки сохраняют свой snapshot.",
+        reply_markup=_one_button("← К боту", f"bot:{flow.bot_id}" if flow else "bots:0"),
+    )
+    await callback.answer("Опубликовано")
+
+
+@router.callback_query(F.data.startswith("chain:preview:"))
+async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    version_id = int((callback.data or "").split(":")[2])
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+            operations = await compile_preview_operations(session, snapshot.steps)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    await message.answer(
+        "👁 <b>Предпросмотр цепочки</b>\n\n"
+        "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены."
+    )
+    storage = ObjectStorage(get_settings())
+    try:
+        for operation in operations:
+            await send_compiled_operation(
+                cast(Bot, message.bot),
+                message.chat.id,
+                operation.operation_type,
+                operation.payload,
+                operation.media,
+                storage,
+            )
+    except (TelegramAPIError, OSError, ValueError):
+        logger.exception("Could not preview draft version_id=%s", version_id)
+        await message.answer(
+            "⚠️ Telegram не смог воспроизвести один из элементов. "
+            "Проверьте тип медиа, Premium Emoji и клавиатуру."
+        )
+    await callback.answer()
+
+
+async def send_assignment_screen(message: Message, owner: Owner, version_id: int, page: int = 0) -> None:
+    async with session_factory() as session:
+        snapshot = await draft_snapshot(session, owner.id, version_id)
+        channels = await bot_channels(session, snapshot.flow.bot_id)
+        selected = set(
+            await session.scalars(
+                select(FlowChannelAssignment.channel_id).where(
+                    FlowChannelAssignment.flow_id == snapshot.flow.id
+                )
+            )
+        )
+    page_size = 15
+    pages = max(1, (len(channels) + page_size - 1) // page_size)
+    page = max(0, min(page, pages - 1))
+    visible_channels = channels[page * page_size : (page + 1) * page_size]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=("✅ Все каналы" if snapshot.flow.assignment_mode == "all" else "Все каналы"),
+                callback_data=f"chain:assign-all:{version_id}:{page}",
+            )
+        ]
+    ]
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    text=f"{'✅ ' if channel.id in selected else ''}{channel.title}",
+                    callback_data=f"chain:assign-toggle:{version_id}:{channel.id}:{page}",
+                )
+            ]
+            for channel in visible_channels
+        ]
+    )
+    if pages > 1:
+        rows.append(
+            [
+                InlineKeyboardButton(text="←", callback_data=f"chain:assign:{version_id}:{max(0, page - 1)}"),
+                InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop"),
+                InlineKeyboardButton(
+                    text="→",
+                    callback_data=f"chain:assign:{version_id}:{min(pages - 1, page + 1)}",
+                ),
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="← К цепочке", callback_data=f"chain:editor:{version_id}")])
+    await message.answer(
+        "📣 <b>Назначение цепочки</b>\n\n"
+        "Выберите все каналы либо конкретный набор. Новые подключённые каналы "
+        "автоматически получают цепочку только в режиме «Все каналы».",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+@router.callback_query(F.data.startswith("chain:assign:"))
+async def chain_assign(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    await send_assignment_screen(
+        _callback_message(callback),
+        owner,
+        int(parts[2]),
+        int(parts[3]) if len(parts) > 3 else 0,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def noop(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("chain:assign-all:"))
+async def chain_assign_all(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    version_id = int(parts[2])
+    page = int(parts[3]) if len(parts) > 3 else 0
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+            await set_flow_assignments(session, owner.id, snapshot.flow.id, None)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    await send_assignment_screen(_callback_message(callback), owner, version_id, page)
+    await callback.answer("Назначено всем каналам")
+
+
+@router.callback_query(F.data.startswith("chain:assign-toggle:"))
+async def chain_assign_toggle(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    _, _, raw_version, raw_channel = parts[:4]
+    version_id, channel_id = int(raw_version), int(raw_channel)
+    page = int(parts[4]) if len(parts) > 4 else 0
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+            selected = set(
+                await session.scalars(
+                    select(FlowChannelAssignment.channel_id).where(
+                        FlowChannelAssignment.flow_id == snapshot.flow.id
+                    )
+                )
+            )
+            if snapshot.flow.assignment_mode == "all":
+                selected = {channel_id}
+            elif channel_id in selected:
+                selected.remove(channel_id)
+            else:
+                selected.add(channel_id)
+            await set_flow_assignments(session, owner.id, snapshot.flow.id, sorted(selected))
+    except ContentValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await send_assignment_screen(_callback_message(callback), owner, version_id, page)
+    await callback.answer("Назначение обновлено")
+
+
+@router.callback_query(F.data.startswith("chain:buttons:"))
+async def configure_chain_buttons(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    message = _callback_message(callback)
+    _, _, raw_version, raw_step = (callback.data or "").split(":")
+    version_id, step_id = int(raw_version), int(raw_step)
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    if not any(item.id == step_id for item in snapshot.steps):
+        await callback.answer("Шаг не найден.", show_alert=True)
+        return
+    await state.set_state(WelcomeButtonState.waiting_for_buttons)
+    await state.update_data(version_id=version_id, step_id=step_id)
+    await message.answer(
+        "🔘 <b>Клавиатура шага</b>\n\n"
+        "Отправьте кнопки строками:\n"
+        "<code>url | Сайт | https://gramly.tech | primary</code>\n"
+        "<code>callback | Дальше | next | success</code>\n\n"
+        "Для reply-клавиатуры: <code>reply | Продолжить</code>. "
+        "Допустимые стили: default, primary, success, danger.\n\n"
+        "Отправьте <code>удалить</code>, чтобы убрать клавиатуру.",
+        reply_markup=_one_button("❌ Отмена", f"chain:editor:{version_id}"),
+    )
+    await callback.answer()
+
+
+def _parse_keyboard_definition(raw: str) -> dict[str, Any] | None:
+    if raw.strip().lower() == "удалить":
+        return None
+    rows: list[list[dict[str, str]]] = []
+    kind: str | None = None
+    for raw_line in raw.splitlines():
+        if not raw_line.strip():
+            continue
+        row = []
+        for definition in raw_line.split(";;"):
+            parts = [part.strip() for part in definition.split("|")]
+            action = parts[0].lower() if parts else ""
+            if action == "reply" and len(parts) == 2:
+                button_kind, value, style = "reply", parts[1], "default"
+                button = {"text": value, "action_type": "text", "value": value, "style": style}
+            elif action in {"url", "callback"} and len(parts) in {3, 4}:
+                button_kind = "inline"
+                style = parts[3].lower() if len(parts) == 4 else "default"
+                button = {"text": parts[1], "action_type": action, "value": parts[2], "style": style}
+            else:
+                raise ContentValidationError("Неверный формат кнопки")
+            if kind is not None and kind != button_kind:
+                raise ContentValidationError("Inline и reply-кнопки нельзя смешивать")
+            kind = button_kind
+            row.append(button)
+        if row:
+            rows.append(row)
+    if not rows or kind is None:
+        raise ContentValidationError("Добавьте хотя бы одну кнопку")
+    return {"kind": kind, "settings": {"resize_keyboard": True}, "rows": rows}
+
+
+@router.message(WelcomeButtonState.waiting_for_buttons)
+async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    version_id, step_id = int(data.get("version_id") or 0), int(data.get("step_id") or 0)
+    try:
+        keyboard = _parse_keyboard_definition(message.text or "")
+        async with session_factory() as session:
+            await replace_step_keyboard(session, owner.id, step_id, keyboard)
+    except ContentValidationError as exc:
+        await message.answer(f"⚠️ {exc}")
+        return
+    await state.clear()
+    await message.answer("✅ Клавиатура шага сохранена.")
+    await send_chain_editor(message, owner, version_id)
 
 
 async def send_delay_screen(message: Message, bot: ManagedBot, kind: str) -> None:
@@ -729,9 +1147,7 @@ async def toggle_approval(callback: CallbackQuery, owner: Owner) -> None:
         else f"Автопринятие отключено. {changed} отложенных заявок сохранено."
     )
     await callback.answer(text, show_alert=True)
-    await message.answer(
-        text, reply_markup=_one_button("📥 Открыть заявки", f"requests:{bot.id}")
-    )
+    await message.answer(text, reply_markup=_one_button("📥 Открыть заявки", f"requests:{bot.id}"))
 
 
 LANGUAGE_NAMES = {
@@ -752,16 +1168,24 @@ async def stats_screen(callback: CallbackQuery, owner: Owner) -> None:
         return
     async with session_factory() as session:
         data = await bot_statistics(session, bot.id)
-    languages = "\n".join(
-        f"{LANGUAGE_NAMES.get(row['language_code'], '🌐 ' + row['language_code'])}: <b>{row['total']}</b>"
-        for row in data["languages"]
-    ) or "—"
+    languages = (
+        "\n".join(
+            f"{LANGUAGE_NAMES.get(row['language_code'], '🌐 ' + row['language_code'])}: <b>{row['total']}</b>"
+            for row in data["languages"]
+        )
+        or "—"
+    )
     await message.answer(
         f"📊 <b>Статистика · @{bot.username}</b>\n\n"
-        f"Всего: <b>{data['total']}</b>\n🟢 Живые: <b>{data['live']}</b>\n"
+        f"Каналы: <b>{data['channels']}</b>\nЗаявки: <b>{data['join_requests']}</b>\n"
+        f"Вступления / контакты: <b>{data['total']}</b>\n\n"
+        f"Доставки: <b>{data['deliveries']}</b>\n✅ Успешно: <b>{data['delivered']}</b>\n"
+        f"⚠️ Частично: <b>{data['partial']}</b>\n❌ Ошибки цепочек: <b>{data['failed']}</b>\n"
+        f"Ошибки отдельных операций: <b>{data['operation_errors']}</b>\n\n"
+        f"🟢 Доступные контакты: <b>{data['live']}</b>\n"
         f"🔴 Мёртвые: <b>{data['dead']}</b>\n⚪️ Не проверены: <b>{data['unknown']}</b>\n\n"
-        f"<b>Пол</b>\n👨 Мужчины: <b>{data['male']}</b>\n👩 Женщины: <b>{data['female']}</b>\n"
-        f"🤖 Трансформеры: <b>{data['transformer']}</b>\n\n<b>Языки</b>\n{languages}",
+        f"<b>Языки Telegram</b>\n{languages}\n\n"
+        "ℹ️ Telegram не передаёт пол и страну пользователя, поэтому эти разрезы не вычисляются.",
         reply_markup=_one_button("⬅️ К боту", f"bot:{bot.id}"),
     )
     await callback.answer()
@@ -811,9 +1235,7 @@ async def delete_confirm(callback: CallbackQuery, owner: Owner, state: FSMContex
     async with session_factory() as session:
         await delete_bot(session, bot.id)
     await state.clear()
-    await message.answer(
-        "✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены."
-    )
+    await message.answer("✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены.")
     await callback.answer()
 
 
@@ -887,6 +1309,4 @@ async def process_interface_update(payload: dict[str, Any]) -> None:
             # Business mutations are committed before response messages. A
             # transient Telegram response failure must not replay a completed
             # mutation such as a delay increment or approval toggle.
-            logger.warning(
-                "Owner bot response failed update_id=%s", update.update_id, exc_info=True
-            )
+            logger.warning("Owner bot response failed update_id=%s", update.update_id, exc_info=True)
