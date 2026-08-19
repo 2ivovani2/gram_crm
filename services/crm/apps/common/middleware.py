@@ -14,8 +14,6 @@ PUBLIC_PREFIXES = (
     "/static/",
     "/health/",
     "/bot/webhook/",
-    "/welcome/webhook/",
-    "/welcome/client/",
 )
 
 

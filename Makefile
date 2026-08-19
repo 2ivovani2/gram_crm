@@ -29,7 +29,7 @@ lint-welcome:
 typecheck: typecheck-crm typecheck-welcome
 
 typecheck-crm:
-	cd services/crm && python -m mypy apps/welcome_bots/crypto.py apps/crm/calculator.py
+	cd services/crm && python -m mypy apps/crm/calculator.py
 
 typecheck-welcome:
 	cd services/welcome && ../../$(WELCOME_PY) -m mypy src tests

@@ -115,7 +115,7 @@ services:
 
   crm-worker:
     <<: *crm
-    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts,welcome_bots
+    command: celery -A config.celery worker -l info -c 2 -Q celery,default,broadcasts
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
     volumes: [./services/crm:/app]
