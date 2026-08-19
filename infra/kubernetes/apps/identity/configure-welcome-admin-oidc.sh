@@ -77,6 +77,7 @@ trap 'rm -f "${config_file}"; unset client_id client_secret cookie_secret' EXIT
 cat >"${config_file}" <<EOF
 provider = "oidc"
 provider_display_name = "Gramly SSO"
+http_address = "0.0.0.0:4180"
 oidc_issuer_url = "https://auth.gramly.tech/application/o/welcome-admin/"
 redirect_url = "https://hello-admin.gramly.tech/oauth2/callback"
 upstreams = ["http://gramly-welcome-web.gramly-welcome.svc.cluster.local:8080/"]
@@ -91,6 +92,7 @@ pass_authorization_header = false
 pass_user_headers = true
 set_xauthrequest = true
 reverse_proxy = true
+trusted_proxy_ips = ["10.244.0.0/16"]
 cookie_secure = true
 cookie_name = "_gramly_welcome_admin"
 cookie_samesite = "strict"
