@@ -29,6 +29,7 @@ application_groups = {
     'vikunja': group_names,
     'outline': group_names,
     'observability': ('gramly-devops', 'gramly-owners'),
+    'welcome-admin': ('gramly-owners',),
 }
 
 with transaction.atomic():
