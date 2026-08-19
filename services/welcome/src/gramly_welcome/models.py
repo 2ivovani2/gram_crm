@@ -136,6 +136,149 @@ class FeatureFlag(Base):
     )
 
 
+class Manual(Base):
+    __tablename__ = "manual"
+    __table_args__ = (UniqueConstraint("slug", name="manual_slug_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    telegraph_url: Mapped[str] = mapped_column(String(2048))
+    description: Mapped[str] = mapped_column(Text, default="")
+    is_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ManualSection(Base):
+    __tablename__ = "manual_section"
+    __table_args__ = (
+        UniqueConstraint("manual_id", "slug", name="uq_manual_section_slug"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    manual_id: Mapped[int] = mapped_column(ForeignKey("manual.id", ondelete="CASCADE"), index=True)
+    slug: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(160))
+    section_url: Mapped[str] = mapped_column(String(2048))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+
+class ContextualHelp(Base):
+    __tablename__ = "contextual_help"
+    __table_args__ = (UniqueConstraint("feature_key", name="contextual_help_feature_key_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    feature_key: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, default="")
+    manual_id: Mapped[int | None] = mapped_column(
+        ForeignKey("manual.id", ondelete="SET NULL"), index=True
+    )
+    section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("manual_section.id", ondelete="SET NULL"), index=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Announcement(Base):
+    __tablename__ = "announcement"
+    __table_args__ = (
+        CheckConstraint("audience IN ('all','free','business')", name="ck_announcement_audience"),
+        CheckConstraint("ends_at IS NULL OR ends_at > starts_at", name="ck_announcement_period"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    entities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    audience: Mapped[str] = mapped_column(String(16), default="all", index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    button_text: Mapped[str] = mapped_column(String(64), default="")
+    button_url: Mapped[str] = mapped_column(String(2048), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OwnerNotification(Base):
+    __tablename__ = "owner_notification"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "dedupe_key", name="uq_owner_notification_dedupe"),
+        CheckConstraint("kind IN ('onboarding','announcement')", name="ck_owner_notification_kind"),
+        CheckConstraint(
+            "status IN ('pending','processing','retry','sent','failed')",
+            name="ck_owner_notification_status",
+        ),
+        Index("ix_owner_notification_claim", "status", "due_at", "lease_expires_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    announcement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("announcement.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    dedupe_key: Mapped[str] = mapped_column(String(128))
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str] = mapped_column(String(500), default="")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Tip(Base):
+    __tablename__ = "tip"
+    __table_args__ = (UniqueConstraint("feature_key", "sort_order", name="uq_tip_feature_order"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    feature_key: Mapped[str] = mapped_column(String(64), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    entities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TipViewState(Base):
+    __tablename__ = "tip_view_state"
+    __table_args__ = (UniqueConstraint("owner_id", "feature_key", name="uq_tip_view_owner_feature"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    feature_key: Mapped[str] = mapped_column(String(64))
+    last_tip_id: Mapped[int | None] = mapped_column(ForeignKey("tip.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TipSession(Base):
+    __tablename__ = "tip_session"
+    __table_args__ = (UniqueConstraint("public_id", name="tip_session_public_id_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    feature_key: Mapped[str] = mapped_column(String(64), index=True)
+    tip_ids: Mapped[list[int]] = mapped_column(JSONB, default=list)
+    current_index: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class WebSession(Base):
     __tablename__ = "web_session"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)

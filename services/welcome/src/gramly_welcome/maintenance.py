@@ -7,6 +7,7 @@ from sqlalchemy import delete, select, text
 
 from .config import get_settings
 from .db import session_factory
+from .learning import purge_expired_tip_sessions
 from .models import (
     EventLog,
     IdempotencyRecord,
@@ -64,6 +65,8 @@ async def maintain() -> None:
             )
             await session.execute(delete(WebSession).where(WebSession.expires_at < now))
             await session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < now))
+    async with session_factory() as session:
+        await purge_expired_tip_sessions(session, now=now)
 
 
 def run() -> None:

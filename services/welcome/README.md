@@ -71,6 +71,26 @@ Required runtime secrets are `WELCOME_CRYPTO_PAY_API_TOKEN` and a random
 the full payment smoke is complete; never commit provider tokens or invoice
 payloads. The worker entry point is `welcome-worker-billing`.
 
+## Learning, announcements and tips
+
+Telegraph manuals and sections are stored as links in PostgreSQL and can be
+mapped to stable feature keys such as `bots`, `flows`, `rotation` and
+`auto_approve`. Contextual tips are randomized once when a help session opens,
+do not repeat the previous session's first item when alternatives exist, and
+then keep a stable previous/next order for six hours.
+
+The owner bot answers the user's action first and only then writes onboarding
+and currently relevant announcements to `owner_notification`. The dedicated
+`welcome-worker-notifications` consumer preserves per-owner ordering, retries
+Telegram failures with an expiring lease, and records the terminal delivery
+receipt. A learning subsystem failure is logged but cannot roll back or block
+the setting the owner just changed.
+
+New navigation uses inline keyboards only. The `bot_inline_ui` feature flag
+contains configurable Premium Emoji IDs and enables Bot API button styles for
+important actions. If Telegram rejects an enhanced button, the sender retries
+once with the same callback or URL in a plain inline keyboard.
+
 ## Mini App API foundation
 
 - `POST /api/v1/session/telegram` verifies Telegram `initData`, creates a
