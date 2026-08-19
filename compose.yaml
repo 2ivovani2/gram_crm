@@ -142,6 +142,15 @@ services:
     ports: ["8080:8080"]
     volumes: [./services/welcome:/app]
 
+  welcome-web:
+    build:
+      context: .
+      dockerfile: services/welcome-web/Dockerfile
+    depends_on:
+      welcome-api:
+        condition: service_started
+    ports: ["8081:8080"]
+
   welcome-worker-events:
     <<: *welcome
     command: welcome-worker-events

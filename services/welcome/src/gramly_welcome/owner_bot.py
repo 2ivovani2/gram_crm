@@ -27,6 +27,7 @@ from aiogram.types import (
     PreCheckoutQuery,
     TelegramObject,
     Update,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
@@ -204,8 +205,18 @@ class OwnerMiddleware(BaseMiddleware):
 async def main_keyboard() -> InlineKeyboardMarkup:
     async with session_factory() as session:
         theme = await load_bot_ui_theme(session)
+    settings = get_settings()
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                inline_button(
+                    "Открыть кабинет",
+                    web_app=WebAppInfo(url=settings.mini_app_url),
+                    style="primary",
+                    emoji_key="important",
+                    theme=theme,
+                )
+            ],
             [
                 inline_button(
                     "Мои боты",

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import FeatureFlag
@@ -34,6 +34,7 @@ def inline_button(
     *,
     callback_data: str | None = None,
     url: str | None = None,
+    web_app: WebAppInfo | None = None,
     style: str | None = None,
     emoji_key: str | None = None,
     theme: BotUiTheme | None = None,
@@ -43,6 +44,8 @@ def inline_button(
         values["callback_data"] = callback_data
     if url is not None:
         values["url"] = url
+    if web_app is not None:
+        values["web_app"] = web_app
     fields = InlineKeyboardButton.model_fields
     if theme is not None and theme.enhanced:
         if style in {"primary", "success", "danger"} and "style" in fields:

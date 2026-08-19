@@ -13,6 +13,7 @@ build:
 	npm run build
 	$(COMPOSE) build crm-web
 	$(COMPOSE) build welcome-api
+	$(COMPOSE) build welcome-web
 
 check:
 	cd services/crm && python manage.py check
@@ -65,7 +66,7 @@ down:
 	$(COMPOSE) --profile tunnel down
 
 logs:
-	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-worker-events welcome-worker-delivery welcome-worker-billing welcome-worker-notifications
+	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-web welcome-worker-events welcome-worker-delivery welcome-worker-billing welcome-worker-notifications
 
 shell:
 	$(COMPOSE) exec crm-web bash

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, WebAppInfo
 
 from gramly_welcome.bot_ui import BotUiTheme, inline_button, plain_markup
 from gramly_welcome.learning import order_tip_ids
@@ -60,3 +60,13 @@ def test_colored_premium_button_has_plain_fallback() -> None:
     assert fallback is not None
     assert fallback.inline_keyboard[0][0].style is None
     assert fallback.inline_keyboard[0][0].icon_custom_emoji_id is None
+
+
+def test_inline_button_supports_telegram_mini_app() -> None:
+    button = inline_button(
+        "Открыть кабинет",
+        web_app=WebAppInfo(url="https://hello.gramly.tech/app/"),
+    )
+
+    assert button.web_app is not None
+    assert button.web_app.url == "https://hello.gramly.tech/app/"
