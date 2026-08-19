@@ -5,12 +5,15 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
+from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import LabeledPrice
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .billing import create_crypto_checkout
+from .billing import create_crypto_checkout, create_stars_checkout
 from .commercial import access_for_owner, list_sellable_plans
 from .config import Settings, get_settings
 from .content_service import (
@@ -47,6 +50,8 @@ from .models import (
     FlowChannelAssignment,
     FlowDelivery,
     ManagedBot,
+    Payment,
+    Plan,
     ReferralAttribution,
     RotationChannel,
     RotationConversion,
@@ -868,6 +873,62 @@ async def crypto_checkout(
     except IdempotencyConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except (FinanceError, CryptoPayError) as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+
+async def _create_stars_invoice_link(settings: Settings, payment: Payment, plan: Plan) -> str:
+    if not settings.interface_bot_token or plan.price_xtr is None:
+        raise FinanceError("Telegram Stars checkout is not configured")
+    bot = Bot(settings.interface_bot_token)
+    try:
+        return await bot.create_invoice_link(
+            title="GramlyHello Business",
+            description="Business на 30 дней: без рекламы и с ротацией каналов.",
+            payload=str(payment.checkout_token),
+            currency="XTR",
+            prices=[LabeledPrice(label="Business · 30 дней", amount=plan.price_xtr)],
+            provider_token="",
+            subscription_period=2_592_000,
+        )
+    finally:
+        await bot.session.close()
+
+
+@router.post("/payments/stars")
+async def stars_checkout(
+    user: CsrfUserDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, object]:
+    payload = {"plan": "business", "provider": "telegram_stars", "surface": "mini_app"}
+    try:
+        stored = await claim_request(
+            session, owner_id=user.auth.owner.id, key=idempotency_key, payload=payload
+        )
+        if stored is not None:
+            return stored.body
+        payment = await create_stars_checkout(session, user.auth.owner.id)
+        plan = await session.get(Plan, payment.plan_id)
+        if plan is None:
+            raise FinanceError("Business plan is unavailable")
+        invoice_url = await _create_stars_invoice_link(settings, payment, plan)
+        body: dict[str, object] = {
+            "payment_id": payment.id,
+            "invoice_url": invoice_url,
+            "status": payment.status,
+        }
+        await store_response(
+            session,
+            owner_id=user.auth.owner.id,
+            key=idempotency_key,
+            status=200,
+            body=body,
+        )
+        return body
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except (FinanceError, TelegramAPIError) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
 
