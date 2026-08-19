@@ -65,7 +65,7 @@ down:
 	$(COMPOSE) --profile tunnel down
 
 logs:
-	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-worker-events welcome-worker-delivery
+	$(COMPOSE) logs -f crm-web crm-worker crm-beat welcome-api welcome-worker-events welcome-worker-delivery welcome-worker-billing
 
 shell:
 	$(COMPOSE) exec crm-web bash

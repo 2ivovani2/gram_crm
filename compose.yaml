@@ -167,6 +167,19 @@ services:
         condition: service_completed_successfully
     volumes: [./services/welcome:/app]
 
+  welcome-worker-billing:
+    <<: *welcome
+    command: welcome-worker-billing
+    profiles: [welcome-cutover]
+    depends_on:
+      welcome-postgres:
+        condition: service_healthy
+      welcome-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes: [./services/welcome:/app]
+
   ngrok:
     image: ngrok/ngrok:latest
     profiles: [tunnel]

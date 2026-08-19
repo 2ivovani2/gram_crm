@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     mini_app_cookie_name: str = "gramly_welcome_session"
     mini_app_cookie_secure: bool = True
     public_service_base_url: str = "https://gramly.tech/welcome"
+    crypto_pay_api_token: str = ""
+    crypto_pay_api_base_url: str = "https://pay.crypt.bot"
+    crypto_pay_webhook_secret: str = ""
+    crypto_pay_webhook_max_age_seconds: int = Field(default=300, ge=30, le=3600)
 
 
 @lru_cache

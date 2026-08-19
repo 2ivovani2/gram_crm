@@ -45,12 +45,41 @@ A conversion requires the exact invite link and a prior impression for the same
 Telegram user and destination channel. Organic joins, the channel owner and
 re-joins are not counted. Free owners never enter or receive rotation.
 
+## Billing and referrals
+
+Business can be paid for 30 days with Telegram Stars or a verified Crypto Pay
+RUB invoice. Both checkout methods are disabled until their plan price and the
+corresponding feature flag are configured. Crypto Pay is additionally split by
+surface (`crypto_pay_bot_checkout` and `crypto_pay_mini_app_checkout`) so it can
+be disabled inside Telegram without a release. The webhook endpoint is
+`/welcome/payments/crypto/<WELCOME_CRYPTO_PAY_WEBHOOK_SECRET>/`; its HMAC is
+checked over the raw body and the paid invoice is fetched from Crypto Pay again
+before any financial mutation.
+
+The first valid `ref_<opaque-code>` source is immutable. A candidate activates
+only after connecting a customer bot and making the first confirmed Business
+payment. Commission rates are snapshotted at 15%, 25% or 35% and stop exactly
+one calendar year after that first payment. The RUB ledger is append-only at
+both service and database level. Withdrawals reserve at least 1,000 RUB before
+review; the billing worker uses the stable withdrawal `spend_id` for an
+idempotent USDT transfer. A permanent failure or rejection restores the reserve
+with a compensating entry. Renewal reminders are durable and retried at 7, 3
+and 1 day before expiry.
+
+Required runtime secrets are `WELCOME_CRYPTO_PAY_API_TOKEN` and a random
+`WELCOME_CRYPTO_PAY_WEBHOOK_SECRET`. Use `https://testnet-pay.crypt.bot` until
+the full payment smoke is complete; never commit provider tokens or invoice
+payloads. The worker entry point is `welcome-worker-billing`.
+
 ## Mini App API foundation
 
 - `POST /api/v1/session/telegram` verifies Telegram `initData`, creates a
   short-lived HttpOnly session and returns a separate CSRF token;
 - `GET /api/v1/me` returns the current owner and entitlement snapshot;
 - `GET /api/v1/plans` exposes only fully configured prices;
+- `POST /api/v1/payments/crypto` creates an idempotent Mini App checkout;
+- `GET /api/v1/referrals` and `GET /api/v1/withdrawals` expose partner data;
+- `POST /api/v1/withdrawals` atomically reserves referral balance;
 - `POST /api/v1/session/logout` requires the session and `X-CSRF-Token`.
 
 Only session-token and CSRF hashes are stored. Direct browser input and

@@ -33,7 +33,9 @@ dev = [
 welcome-api = "gramly_welcome.main:run"
 welcome-worker-events = "gramly_welcome.workers.events:run"
 welcome-worker-delivery = "gramly_welcome.workers.delivery:run"
+welcome-worker-billing = "gramly_welcome.workers.billing:run"
 welcome-maintenance = "gramly_welcome.maintenance:run"
+welcome-reconcile-interface-webhook = "gramly_welcome.webhook_admin:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

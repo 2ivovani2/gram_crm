@@ -22,7 +22,9 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    LabeledPrice,
     Message,
+    PreCheckoutQuery,
     ReplyKeyboardMarkup,
     TelegramObject,
     Update,
@@ -31,7 +33,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from .commercial import access_for_owner, ensure_free_access
+from .billing import create_crypto_checkout, create_stars_checkout, settle_stars_payment
+from .commercial import (
+    access_for_owner,
+    ensure_free_access,
+    feature_flag_enabled,
+    payment_method_ready,
+)
 from .config import Settings, get_settings
 from .content_service import (
     ContentValidationError,
@@ -50,9 +58,16 @@ from .content_service import (
     set_step_delay,
 )
 from .crypto import TokenKeyring
+from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_factory
+from .finance import (
+    FinanceError,
+    available_balance,
+    ensure_referral_code,
+    record_first_touch,
+)
 from .flow_delivery import compile_preview_operations
-from .models import ContentFlow, FlowChannelAssignment, ManagedBot, Owner
+from .models import ContentFlow, FlowChannelAssignment, ManagedBot, Owner, Payment, Plan
 from .owner_repository import (
     bot_channels,
     bot_media_keys,
@@ -157,7 +172,7 @@ class OwnerMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        user = event.from_user if isinstance(event, (Message, CallbackQuery)) else None
+        user = getattr(event, "from_user", None)
         if user is None:
             return None
         async with session_factory() as session:
@@ -170,6 +185,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🤖 Мои Боты")],
             [KeyboardButton(text="💎 ПОДПИСКА"), KeyboardButton(text="📈 Аналитика")],
+            [KeyboardButton(text="🤝 Партнёрская программа")],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -299,6 +315,10 @@ async def remove_customer_webhook(managed: ManagedBot, settings: Settings) -> No
 @router.message(CommandStart())
 async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     await state.clear()
+    command = (message.text or "").split(maxsplit=1)
+    if len(command) == 2 and command[1].startswith("ref_"):
+        async with session_factory() as session:
+            await record_first_touch(session, owner.id, command[1][4:])
     if owner.guide_completed:
         await show_main_menu(message)
         return
@@ -1349,9 +1369,136 @@ async def cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(F.text.in_({"💎 ПОДПИСКА", "📈 Аналитика"}))
-async def coming_soon(message: Message) -> None:
-    await message.answer("В разработке...")
+@router.message(F.text == "💎 ПОДПИСКА")
+async def subscription_menu(message: Message, owner: Owner) -> None:
+    async with session_factory() as session:
+        access = await access_for_owner(session, owner.id)
+        plan = await session.scalar(select(Plan).where(Plan.slug == "business"))
+        stars_enabled = await feature_flag_enabled(session, "telegram_stars_checkout")
+        crypto_enabled = await feature_flag_enabled(session, "crypto_pay_bot_checkout")
+    keyboard = InlineKeyboardBuilder()
+    if plan is not None and stars_enabled and payment_method_ready(plan, "telegram_stars"):
+        keyboard.button(text=f"⭐ Оплатить {plan.price_xtr} Stars", callback_data="pay:stars")
+    if plan is not None and crypto_enabled and payment_method_ready(plan, "crypto_pay"):
+        keyboard.button(text=f"💎 Оплатить {plan.price_rub} ₽", callback_data="pay:crypto")
+    keyboard.adjust(1)
+    status_text = (
+        f"Business активен до {access.ends_at:%d.%m.%Y}"
+        if access.plan_slug == "business" and access.ends_at is not None
+        else "Сейчас у вас Free: в приветствия добавляется реклама, ротация недоступна."
+    )
+    await message.answer(
+        "💎 <b>Подписка GramlyHello</b>\n\n"
+        f"{status_text}\n\nBusiness убирает рекламу и включает ротацию каналов.",
+        reply_markup=keyboard.as_markup() if keyboard.buttons else None,
+    )
+
+
+@router.callback_query(F.data == "pay:crypto")
+async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    settings = get_settings()
+    try:
+        async with session_factory() as session:
+            payment = await create_crypto_checkout(
+                session,
+                owner.id,
+                CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url),
+                surface="bot",
+            )
+    except (FinanceError, CryptoPayError) as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await message.answer(
+        "Счёт создан на 1 месяц Business. После оплаты подписка включится автоматически.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Оплатить в Crypto Bot", url=payment.invoice_url)]]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pay:stars")
+async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    try:
+        async with session_factory() as session:
+            payment = await create_stars_checkout(session, owner.id)
+            plan = await session.get(Plan, payment.plan_id)
+    except FinanceError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    if plan is None or plan.price_xtr is None:
+        await callback.answer("Цена Stars не настроена.", show_alert=True)
+        return
+    await message.answer_invoice(
+        title="GramlyHello Business",
+        description="Business на 30 дней: без рекламы и с ротацией каналов.",
+        payload=str(payment.checkout_token),
+        currency="XTR",
+        prices=[LabeledPrice(label="Business · 30 дней", amount=plan.price_xtr)],
+        provider_token="",
+        subscription_period=2_592_000,
+    )
+    await callback.answer()
+
+
+@router.pre_checkout_query()
+async def approve_stars_checkout(query: PreCheckoutQuery) -> None:
+    try:
+        async with session_factory() as session:
+            payment = await session.scalar(
+                select(Payment).where(
+                    Payment.checkout_token == uuid.UUID(query.invoice_payload),
+                    Payment.provider == "telegram_stars",
+                    Payment.status == "created",
+                )
+            )
+        valid = payment is not None and payment.original_amount == query.total_amount
+    except (ValueError, FinanceError):
+        valid = False
+    await query.answer(ok=valid, error_message=None if valid else "Счёт больше не действителен")
+
+
+@router.message(F.successful_payment)
+async def stars_paid(message: Message, owner: Owner) -> None:
+    payment = message.successful_payment
+    if payment is None:
+        return
+    try:
+        async with session_factory() as session:
+            await settle_stars_payment(
+                session,
+                payload=payment.invoice_payload,
+                telegram_payment_charge_id=payment.telegram_payment_charge_id,
+                stars=payment.total_amount,
+            )
+    except FinanceError:
+        logger.exception("Stars payment reconciliation failed owner_id=%s", owner.id)
+        await message.answer("Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.")
+        return
+    await message.answer("✅ Business активирован на 30 дней.", reply_markup=main_keyboard())
+
+
+@router.message(F.text == "🤝 Партнёрская программа")
+async def referral_dashboard(message: Message, owner: Owner) -> None:
+    settings = get_settings()
+    async with session_factory() as session:
+        code = await ensure_referral_code(session, owner.id)
+        balance = await available_balance(session, owner.id)
+    await message.answer(
+        "🤝 <b>Партнёрская программа</b>\n\n"
+        "Ставка зависит от числа активных платных клиентов: 15% / 25% / 35%. "
+        "Начисления идут 12 месяцев с первой оплаты реферала.\n\n"
+        f"Баланс: <b>{balance} ₽</b>\n"
+        f"Ваша ссылка:\nhttps://t.me/{settings.interface_bot_username}?start=ref_{code.code}\n\n"
+        "Минимальная сумма вывода — 1 000 ₽. Управление заявками появится в Mini App.",
+    )
+
+
+@router.message(F.text == "📈 Аналитика")
+async def analytics_placeholder(message: Message) -> None:
+    await message.answer("Подробная аналитика доступна в Mini App.")
 
 
 _bot: Bot | None = None
@@ -1382,6 +1529,7 @@ def interface_dispatcher() -> Dispatcher:
         middleware = OwnerMiddleware()
         dispatcher.message.outer_middleware(middleware)
         dispatcher.callback_query.outer_middleware(middleware)
+        dispatcher.pre_checkout_query.outer_middleware(middleware)
         dispatcher.include_router(router)
         _dispatcher = dispatcher
     return _dispatcher
@@ -1394,7 +1542,7 @@ async def process_interface_update(payload: dict[str, Any]) -> None:
     if not isinstance(storage, RedisStorage):
         raise RuntimeError("Owner bot requires Redis FSM storage")
     user_id = 0
-    for key in ("message", "callback_query"):
+    for key in ("message", "callback_query", "pre_checkout_query"):
         event = payload.get(key)
         sender = event.get("from") if isinstance(event, dict) else None
         if isinstance(sender, dict):

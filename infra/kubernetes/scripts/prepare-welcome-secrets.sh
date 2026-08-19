@@ -64,12 +64,20 @@ if kubectl -n "${target_namespace}" get secret gramly-welcome-runtime >/dev/null
     -o jsonpath='{.data.WELCOME_TOKEN_ENCRYPTION_KEYS}' | base64 --decode)"
   interface_secret="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
     -o jsonpath='{.data.WELCOME_INTERFACE_WEBHOOK_SECRET}' | base64 --decode)"
+  crypto_webhook_secret="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
+    -o jsonpath='{.data.WELCOME_CRYPTO_PAY_WEBHOOK_SECRET}' | base64 --decode)"
+  existing_crypto_token="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
+    -o jsonpath='{.data.WELCOME_CRYPTO_PAY_API_TOKEN}' | base64 --decode)"
 else
   fernet_key="$(openssl rand -base64 32 | tr '/+' '_-')"
   token_keys="{\"1\":\"${fernet_key}\"}"
   interface_secret="$(openssl rand -hex 32)"
+  crypto_webhook_secret="$(openssl rand -hex 32)"
+  existing_crypto_token=""
   unset fernet_key
 fi
+[[ -n "${crypto_webhook_secret}" ]] || crypto_webhook_secret="$(openssl rand -hex 32)"
+crypto_pay_token="${WELCOME_CRYPTO_PAY_API_TOKEN:-${existing_crypto_token}}"
 
 database_host=gramly-crm-postgres-rw.gramly-crm.svc.cluster.local
 runtime_args=(
@@ -78,6 +86,9 @@ runtime_args=(
   "--from-literal=WELCOME_INTERFACE_BOT_TOKEN=${WELCOME_INTERFACE_BOT_TOKEN:-}"
   "--from-literal=WELCOME_INTERFACE_BOT_USERNAME=${WELCOME_INTERFACE_BOT_USERNAME:-}"
   "--from-literal=WELCOME_INTERFACE_WEBHOOK_SECRET=${interface_secret}"
+  "--from-literal=WELCOME_CRYPTO_PAY_API_TOKEN=${crypto_pay_token}"
+  "--from-literal=WELCOME_CRYPTO_PAY_API_BASE_URL=${WELCOME_CRYPTO_PAY_API_BASE_URL:-https://testnet-pay.crypt.bot}"
+  "--from-literal=WELCOME_CRYPTO_PAY_WEBHOOK_SECRET=${crypto_webhook_secret}"
   "--from-literal=WELCOME_PUBLIC_WEBHOOK_BASE_URL=${WELCOME_PUBLIC_WEBHOOK_BASE_URL:-https://gramly.tech/welcome/client}"
   "--from-literal=WELCOME_TOKEN_ENCRYPTION_KEYS=${token_keys}"
   "--from-literal=WELCOME_VALKEY_URL=${WELCOME_VALKEY_URL}"
@@ -98,5 +109,6 @@ kubectl -n gramly-crm get secret gramly-crm-registry -o json \
        del(.metadata.creationTimestamp, .metadata.resourceVersion, .metadata.uid, .metadata.managedFields)' \
   | kubectl apply -f - >/dev/null
 
-unset database_password token_keys interface_secret WELCOME_S3_SECRET_ACCESS_KEY
+unset database_password token_keys interface_secret crypto_webhook_secret crypto_pay_token \
+  existing_crypto_token WELCOME_S3_SECRET_ACCESS_KEY
 echo "Welcome ${environment} database role, runtime, and registry secrets are ready."
