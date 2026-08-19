@@ -201,6 +201,12 @@ def _callback_message(callback: CallbackQuery) -> Message:
     return cast(Message, callback.message)
 
 
+def _owner_display_name(owner: Owner) -> str:
+    """Return a safe, human name for personalised owner-bot copy."""
+
+    return html.escape(owner.first_name.strip() or "друг")
+
+
 class AddBotState(StatesGroup):
     waiting_for_token = State()
 
@@ -422,7 +428,7 @@ async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     if len(command) == 2 and command[1].startswith("ref_"):
         async with session_factory() as session:
             await record_first_touch(session, owner.id, command[1][4:])
-    await show_main_menu(message)
+    await show_main_menu(message, owner)
 
 
 @router.callback_query(F.data.startswith("guide:"))
@@ -451,11 +457,14 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
-async def show_main_menu(message: Message) -> None:
+async def show_main_menu(message: Message, owner: Owner) -> None:
     markup = await main_keyboard()
     await answer_with_ui_fallback(
         message,
-        "🏠 <b>GramlyHello</b>\n\nУправление продуктом — в одном inline-меню:",
+        f"🏠 <b>{_owner_display_name(owner)}, добро пожаловать в GramlyHello</b>\n\n"
+        "Здесь вы управляете всей механикой приветствий: подключаете ботов и каналы, "
+        "собираете цепочки сообщений, следите за доставками и развиваете аудиторию.\n\n"
+        "Выберите раздел ниже — я подскажу следующий шаг и сохраню все изменения:",
         reply_markup=markup,
     )
 
@@ -498,9 +507,14 @@ async def show_bots(target: Message, owner: Owner, page: int) -> None:
         rows.append(navigation)
     rows.append([owner_button(text="Создать бота", callback_data="bot:add", emoji_key="add")])
     text = (
-        "У Вас пока нет подключенных ботов."
+        f"🤖 <b>{_owner_display_name(owner)}, подключим первого бота?</b>\n\n"
+        "После подключения вы сможете добавить каналы, собрать персональную цепочку "
+        "приветствий и включить автоматическую обработку заявок. Начните с кнопки ниже — "
+        "весь процесс займёт несколько минут."
         if not total
-        else f"<b>Ваши боты</b> · {total}\n\nВыберите бота для управления:"
+        else f"🤖 <b>{_owner_display_name(owner)}, ваши боты · {total}</b>\n\n"
+        "Выберите нужного бота, чтобы изменить его каналы, приветствия, автоматизацию "
+        "или посмотреть актуальную статистику:"
     )
     await answer_with_ui_fallback(
         target,
@@ -1547,14 +1561,19 @@ async def subscription_menu(message: Message, owner: Owner) -> None:
             ]
         )
     status_text = (
-        f"Business активен до {access.ends_at:%d.%m.%Y}"
+        f"Ваш Business активен до <b>{access.ends_at:%d.%m.%Y}</b>. "
+        "Приветствия отправляются без рекламы, а ротация каналов доступна без ограничений тарифа."
         if access.plan_slug == "business" and access.ends_at is not None
-        else "Сейчас у вас Free: в приветствия добавляется реклама, ротация недоступна."
+        else "Сейчас у вас <b>Free</b>: все основные инструменты работают, но в конце "
+        "приветствий показывается реклама GramlyHello, а ротация каналов недоступна."
     )
     await answer_with_ui_fallback(
         message,
-        "💎 <b>Подписка GramlyHello</b>\n\n"
-        f"{status_text}\n\nBusiness убирает рекламу и включает ротацию каналов.",
+        f"💎 <b>{_owner_display_name(owner)}, ваш тариф GramlyHello</b>\n\n"
+        f"{status_text}\n\n"
+        "Business оформляется на 30 дней. Выберите удобный способ оплаты: Telegram Stars "
+        "откроются прямо в Telegram, а Crypto Pay позволит оплатить счёт через Crypto Bot. "
+        "После подтверждения платежа доступ обновится автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
     )
 
@@ -1569,6 +1588,7 @@ async def subscription_menu_callback(callback: CallbackQuery, owner: Owner) -> N
 async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
     message = _callback_message(callback)
     settings = get_settings()
+    await callback.answer("Готовлю счёт в Crypto Pay…")
     try:
         async with session_factory() as session:
             payment = await create_crypto_checkout(
@@ -1578,32 +1598,33 @@ async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
                 surface="bot",
             )
     except (FinanceError, CryptoPayError) as exc:
-        await callback.answer(str(exc), show_alert=True)
+        await owner_answer(
+            message,
+            "⚠️ <b>Сейчас не получилось создать счёт Crypto Pay</b>\n\n"
+            f"{html.escape(str(exc))}\n\nПопробуйте ещё раз чуть позже — тариф и ваши настройки не изменились.",
+        )
         return
     await owner_answer(
         message,
-        "Счёт создан на 1 месяц Business. После оплаты подписка включится автоматически.",
+        f"💎 <b>{_owner_display_name(owner)}, счёт Crypto Pay готов</b>\n\n"
+        "Он оформлен на 30 дней Business. После подтверждения оплаты мы автоматически "
+        "уберём рекламу из приветствий и включим ротацию каналов — дополнительно сообщать "
+        "об оплате не нужно.",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[owner_button(text="Оплатить в Crypto Bot", url=payment.invoice_url)]]
+            inline_keyboard=[
+                [owner_button(text="💎 Оплатить в Crypto Bot", url=payment.invoice_url)],
+                [owner_button(text="↩️ К способам оплаты", callback_data="menu:subscription")],
+            ]
         ),
     )
-    await callback.answer()
 
 
-@router.callback_query(F.data == "pay:stars")
-async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
-    message = _callback_message(callback)
-    try:
-        async with session_factory() as session:
-            payment = await create_stars_checkout(session, owner.id)
-            plan = await session.get(Plan, payment.plan_id)
-    except FinanceError as exc:
-        await callback.answer(str(exc), show_alert=True)
-        return
-    if plan is None or plan.price_xtr is None:
-        await callback.answer("Цена Stars не настроена.", show_alert=True)
-        return
-    await message.answer_invoice(
+async def _create_owner_stars_invoice_link(payment: Payment, plan: Plan) -> str:
+    """Export recurring Stars invoices; Telegram forbids sending them directly."""
+
+    if plan.price_xtr is None:
+        raise FinanceError("Цена Stars не настроена")
+    return await interface_bot().create_invoice_link(
         title="GramlyHello Business",
         description="Business на 30 дней: без рекламы и с ротацией каналов.",
         payload=str(payment.checkout_token),
@@ -1612,7 +1633,67 @@ async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
         provider_token="",
         subscription_period=2_592_000,
     )
-    await callback.answer()
+
+
+async def _fail_created_payment(payment_id: int) -> None:
+    async with session_factory() as session:
+        payment = await session.get(Payment, payment_id)
+        if payment is not None and payment.status == "created":
+            payment.status = "failed"
+            await session.commit()
+
+
+@router.callback_query(F.data == "pay:stars")
+async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
+    message = _callback_message(callback)
+    await callback.answer("Открываю оплату в Telegram Stars…")
+    payment_id: int | None = None
+    try:
+        async with session_factory() as session:
+            payment = await create_stars_checkout(session, owner.id)
+            payment_id = payment.id
+            plan = await session.get(Plan, payment.plan_id)
+            if plan is None:
+                raise FinanceError("Тариф Business временно недоступен")
+            invoice_url = await _create_owner_stars_invoice_link(payment, plan)
+            payment.invoice_url = invoice_url
+            payment.provider_payload = {"subscription_period": 2_592_000, "surface": "bot"}
+            await session.commit()
+    except (FinanceError, TelegramAPIError):
+        if payment_id is not None:
+            await _fail_created_payment(payment_id)
+        logger.warning(
+            "Stars invoice link creation failed owner_id=%s payment_id=%s",
+            owner.id,
+            payment_id,
+            exc_info=True,
+        )
+        await owner_answer(
+            message,
+            "⚠️ <b>Telegram Stars пока не открыл счёт</b>\n\n"
+            "Платёж не списан, а подписка и настройки остались без изменений. "
+            "Попробуйте ещё раз через минуту или выберите Crypto Pay.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [owner_button(text="⭐ Попробовать ещё раз", callback_data="pay:stars")],
+                    [owner_button(text="↩️ К способам оплаты", callback_data="menu:subscription")],
+                ]
+            ),
+        )
+        return
+    await owner_answer(
+        message,
+        f"⭐ <b>{_owner_display_name(owner)}, счёт в Telegram Stars готов</b>\n\n"
+        f"Стоимость — <b>{plan.price_xtr} XTR</b> за 30 дней Business. Telegram покажет "
+        "итоговую сумму до подтверждения. После оплаты подписка активируется автоматически, "
+        "реклама исчезнет из приветствий, а ротация каналов станет доступна сразу.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [owner_button(text=f"⭐ Оплатить {plan.price_xtr} XTR", url=invoice_url)],
+                [owner_button(text="↩️ К способам оплаты", callback_data="menu:subscription")],
+            ]
+        ),
+    )
 
 
 @router.pre_checkout_query()
@@ -1649,7 +1730,14 @@ async def stars_paid(message: Message, owner: Owner) -> None:
         logger.exception("Stars payment reconciliation failed owner_id=%s", owner.id)
         await owner_answer(message, "Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.")
         return
-    await owner_answer(message, "✅ Business активирован на 30 дней.", reply_markup=await main_keyboard())
+    await owner_answer(
+        message,
+        f"✅ <b>{_owner_display_name(owner)}, Business активирован</b>\n\n"
+        "Оплата подтверждена, подписка действует 30 дней. Реклама уже убрана из новых "
+        "приветствий, а ротация каналов доступна в настройках. Спасибо, что развиваете "
+        "свой Telegram-проект вместе с GramlyHello.",
+        reply_markup=await main_keyboard(),
+    )
 
 
 @router.message(F.text == "🤝 Партнёрская программа")
@@ -1731,8 +1819,8 @@ def _help_text(snapshot: HelpSnapshot) -> str:
 
 
 @router.callback_query(F.data == "menu:home")
-async def main_menu_callback(callback: CallbackQuery) -> None:
-    await show_main_menu(_callback_message(callback))
+async def main_menu_callback(callback: CallbackQuery, owner: Owner) -> None:
+    await show_main_menu(_callback_message(callback), owner)
     await callback.answer()
 
 
