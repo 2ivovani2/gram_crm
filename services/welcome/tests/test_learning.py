@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from aiogram.types import InlineKeyboardMarkup, WebAppInfo
 
-from gramly_welcome.bot_ui import BotUiTheme, inline_button, plain_markup
+from gramly_welcome.bot_ui import (
+    DEFAULT_PREMIUM_EMOJI,
+    BotUiTheme,
+    inline_button,
+    plain_markup,
+    premium_text,
+)
 from gramly_welcome.learning import order_tip_ids
 from gramly_welcome.workers.notifications import notification_text_and_entities
 
@@ -70,3 +76,20 @@ def test_inline_button_supports_telegram_mini_app() -> None:
 
     assert button.web_app is not None
     assert button.web_app.url == "https://hello.gramly.tech/app/"
+
+
+def test_default_owner_button_uses_semantic_premium_icon_without_unicode_prefix() -> None:
+    button = inline_button("📊 Аналитика", callback_data="menu:analytics")
+
+    assert button.text == "Аналитика"
+    assert button.icon_custom_emoji_id == DEFAULT_PREMIUM_EMOJI["analytics"]
+    assert button.style is None
+
+
+def test_owner_message_replaces_decorative_unicode_with_one_custom_emoji() -> None:
+    text = premium_text("✅ <b>Готово</b>\n\n⚠️ Проверьте канал.", "success")
+
+    assert text.startswith(f'<tg-emoji emoji-id="{DEFAULT_PREMIUM_EMOJI["success"]}">✅</tg-emoji>')
+    assert text.count("<tg-emoji") == 1
+    assert "⚠️" not in text
+    assert "Проверьте канал" in text

@@ -20,7 +20,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import (
     CallbackQuery,
-    InlineKeyboardButton,
     InlineKeyboardMarkup,
     LabeledPrice,
     Message,
@@ -29,13 +28,16 @@ from aiogram.types import (
     Update,
     WebAppInfo,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import (
+    InlineKeyboardButton as TelegramInlineKeyboardButton,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .billing import create_crypto_checkout, create_stars_checkout, settle_stars_payment
 from .bot_ui import (
     answer_with_ui_fallback,
+    edit_caption_with_ui_fallback,
     edit_with_ui_fallback,
     inline_button,
     load_bot_ui_theme,
@@ -161,6 +163,40 @@ GUIDE = [
 ]
 
 
+def owner_button(
+    *,
+    text: str,
+    callback_data: str | None = None,
+    url: str | None = None,
+    web_app: WebAppInfo | None = None,
+    style: str | None = None,
+    emoji_key: str | None = None,
+    theme: Any = None,
+) -> TelegramInlineKeyboardButton:
+    """Build every owner-bot button through the shared Premium Emoji theme."""
+
+    return inline_button(
+        text,
+        callback_data=callback_data,
+        url=url,
+        web_app=web_app,
+        style=style,
+        emoji_key=emoji_key,
+        theme=theme,
+    )
+
+
+async def owner_answer(
+    message: Message,
+    text: str,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Send owner UI copy with one semantic Premium Emoji and safe fallback."""
+
+    await answer_with_ui_fallback(message, text, reply_markup=reply_markup)
+
+
 def _callback_message(callback: CallbackQuery) -> Message:
     return cast(Message, callback.message)
 
@@ -221,21 +257,36 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                 inline_button(
                     "Мои боты",
                     callback_data="menu:bots",
-                    style="primary",
-                    emoji_key="important",
+                    emoji_key="bot",
                     theme=theme,
                 )
             ],
             [
-                inline_button("Подписка", callback_data="menu:subscription", theme=theme),
-                inline_button("Аналитика", callback_data="menu:analytics", theme=theme),
+                inline_button(
+                    "Подписка",
+                    callback_data="menu:subscription",
+                    emoji_key="subscription",
+                    theme=theme,
+                ),
+                inline_button(
+                    "Аналитика",
+                    callback_data="menu:analytics",
+                    emoji_key="analytics",
+                    theme=theme,
+                ),
             ],
-            [inline_button("Партнёрская программа", callback_data="menu:referrals", theme=theme)],
+            [
+                inline_button(
+                    "Партнёрская программа",
+                    callback_data="menu:referrals",
+                    emoji_key="referral",
+                    theme=theme,
+                )
+            ],
             [
                 inline_button(
                     "Помощь и советы",
                     callback_data="help:home",
-                    style="success",
                     emoji_key="help",
                     theme=theme,
                 )
@@ -245,7 +296,7 @@ async def main_keyboard() -> InlineKeyboardMarkup:
 
 
 def _one_button(text: str, callback: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]])
+    return InlineKeyboardMarkup(inline_keyboard=[[owner_button(text=text, callback_data=callback)]])
 
 
 def _add_to_channel_url(bot: ManagedBot) -> str:
@@ -256,18 +307,18 @@ def _connection_keyboard(bot: ManagedBot) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
+                owner_button(
                     text=f"➕ Добавить @{bot.username} в канал",
                     url=_add_to_channel_url(bot),
                 )
             ],
             [
-                InlineKeyboardButton(
+                owner_button(
                     text="🔄 Проверить подключение",
                     callback_data=f"connect-check:{bot.id}",
                 )
             ],
-            [InlineKeyboardButton(text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}")],
+            [owner_button(text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}")],
         ]
     )
 
@@ -381,7 +432,9 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
     if step >= len(GUIDE):
         async with session_factory() as session:
             await mark_guide_complete(session, owner.id, len(GUIDE))
-        await message.answer("Готово — всё управление уже под рукой ✨", reply_markup=await main_keyboard())
+        await owner_answer(
+            message, "Готово — всё управление уже под рукой ✨", reply_markup=await main_keyboard()
+        )
         await show_bots(message, owner, 0)
         await callback.answer()
         return
@@ -392,9 +445,9 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
     if message.photo:
         # Keep pre-cutover onboarding messages usable after the owner webhook
         # moves away from Django.
-        await message.edit_caption(caption=content, reply_markup=markup)
+        await edit_caption_with_ui_fallback(message, content, reply_markup=markup)
     else:
-        await message.edit_text(content, reply_markup=markup)
+        await edit_with_ui_fallback(message, content, reply_markup=markup)
     await callback.answer()
 
 
@@ -425,24 +478,35 @@ async def show_bots(target: Message, owner: Owner, page: int) -> None:
         bots, total = await list_owned_bots(session, owner.id, page * BOTS_PER_PAGE, BOTS_PER_PAGE)
     page_count = max(1, (total + BOTS_PER_PAGE - 1) // BOTS_PER_PAGE)
     page = max(0, min(page, page_count - 1))
-    keyboard = InlineKeyboardBuilder()
+    rows: list[list[TelegramInlineKeyboardButton]] = []
     for item in bots:
-        keyboard.button(text=f"🤖 @{item.username or item.display_name}", callback_data=f"bot:{item.id}")
-    keyboard.adjust(1)
-    navigation = []
+        rows.append(
+            [
+                owner_button(
+                    text=f"@{item.username or item.display_name}",
+                    callback_data=f"bot:{item.id}",
+                    emoji_key="bot",
+                )
+            ]
+        )
+    navigation: list[TelegramInlineKeyboardButton] = []
     if page:
-        navigation.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"bots:{page - 1}"))
+        navigation.append(owner_button(text="⬅️ Назад", callback_data=f"bots:{page - 1}"))
     if page + 1 < page_count:
-        navigation.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"bots:{page + 1}"))
+        navigation.append(owner_button(text="Вперёд ➡️", callback_data=f"bots:{page + 1}"))
     if navigation:
-        keyboard.row(*navigation)
-    keyboard.row(InlineKeyboardButton(text="➕ Создать Бота", callback_data="bot:add"))
+        rows.append(navigation)
+    rows.append([owner_button(text="Создать бота", callback_data="bot:add", emoji_key="add")])
     text = (
         "У Вас пока нет подключенных ботов."
         if not total
         else f"<b>Ваши боты</b> · {total}\n\nВыберите бота для управления:"
     )
-    await target.answer(text, reply_markup=keyboard.as_markup())
+    await answer_with_ui_fallback(
+        target,
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 @router.callback_query(F.data.startswith("bots:"))
@@ -457,14 +521,15 @@ async def paginate_bots(callback: CallbackQuery, owner: Owner) -> None:
 async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
     message = _callback_message(callback)
     await state.set_state(AddBotState.waiting_for_token)
-    await message.answer(
+    await owner_answer(
+        message,
         "🤖 <b>Подключение бота · шаг 1 из 3</b>\n\n"
         "Создайте бота в @BotFather командой <code>/newbot</code>, скопируйте токен "
         "и отправьте его сюда.\n\n🔒 Сообщение с токеном удалится сразу после получения.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot")],
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+                [owner_button(text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot")],
+                [owner_button(text="❌ Отмена", callback_data="cancel")],
             ]
         ),
     )
@@ -479,7 +544,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
     except TelegramAPIError:
         pass
     if not token or ":" not in token or len(token) > 200:
-        await message.answer("Токен выглядит некорректно. Проверьте его и отправьте ещё раз.")
+        await owner_answer(message, "Токен выглядит некорректно. Проверьте его и отправьте ещё раз.")
         return
     managed: ManagedBot | None = None
     settings = get_settings()
@@ -493,14 +558,14 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
             await set_webhook_configured(session, managed.id, True)
             await ensure_free_access(session, owner.id)
     except IntegrityError:
-        await message.answer("Этот бот уже подключён к системе другим владельцем.")
+        await owner_answer(message, "Этот бот уже подключён к системе другим владельцем.")
         return
     except TelegramAPIError:
         if managed:
             async with session_factory() as session:
                 await delete_bot(session, managed.id)
-        await message.answer(
-            "Не удалось проверить токен или настроить webhook. Проверьте токен и попробуйте ещё раз."
+        await owner_answer(
+            message, "Не удалось проверить токен или настроить webhook. Проверьте токен и попробуйте ещё раз."
         )
         return
     except Exception:
@@ -516,10 +581,11 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
                 )
             async with session_factory() as session:
                 await delete_bot(session, managed.id)
-        await message.answer("Telegram временно недоступен. Попробуйте чуть позже.")
+        await owner_answer(message, "Telegram временно недоступен. Попробуйте чуть позже.")
         return
     await state.clear()
-    await message.answer(
+    await owner_answer(
+        message,
         f"✅ <b>Токен принят · шаг 2 из 3</b>\n\n"
         f"Бот <b>@{managed.username}</b> зарегистрирован. Добавьте его администратором "
         "канала с правом «Добавление подписчиков».",
@@ -543,7 +609,8 @@ async def connection_help(callback: CallbackQuery, owner: Owner) -> None:
     if bot is None:
         await callback.answer("Нет доступа.", show_alert=True)
         return
-    await message.answer(
+    await owner_answer(
+        message,
         f"🔗 <b>Подключение @{bot.username} к каналу</b>\n\n"
         "Добавьте бота администратором и не отключайте право «Добавление подписчиков».",
         reply_markup=_connection_keyboard(bot),
@@ -567,12 +634,13 @@ async def connection_check(callback: CallbackQuery, owner: Owner) -> None:
         )
         return
     names = "\n".join(f"• {channel.title}" for channel in channels)
-    await message.answer(
+    await owner_answer(
+        message,
         f"🎉 <b>Подключение завершено · шаг 3 из 3</b>\n\n@{bot.username} обслуживает:\n{names}",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="💬 Настроить приветствие", callback_data=f"msg:{bot.id}")],
-                [InlineKeyboardButton(text="⚙️ Открыть карточку", callback_data=f"bot:{bot.id}")],
+                [owner_button(text="💬 Настроить приветствие", callback_data=f"msg:{bot.id}")],
+                [owner_button(text="⚙️ Открыть карточку", callback_data=f"bot:{bot.id}")],
             ]
         ),
     )
@@ -604,23 +672,24 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
+            [owner_button(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
             [
-                InlineKeyboardButton(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
-                InlineKeyboardButton(text="📥 Заявки", callback_data=f"requests:{bot.id}"),
+                owner_button(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
+                owner_button(text="📥 Заявки", callback_data=f"requests:{bot.id}"),
             ],
             [
-                InlineKeyboardButton(text="👋 Прощание", callback_data=f"farewell:{bot.id}"),
-                InlineKeyboardButton(text="🔄 Ротация", callback_data=f"rotation:{bot.id}"),
+                owner_button(text="👋 Прощание", callback_data=f"farewell:{bot.id}"),
+                owner_button(text="🔄 Ротация", callback_data=f"rotation:{bot.id}"),
             ],
             [
-                InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats:{bot.id}"),
-                InlineKeyboardButton(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}"),
+                owner_button(text="📊 Статистика", callback_data=f"stats:{bot.id}"),
+                owner_button(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}"),
             ],
-            [InlineKeyboardButton(text="Помощь по управлению", callback_data="help:bots")],
+            [owner_button(text="Помощь по управлению", callback_data="help:bots")],
         ]
     )
-    await message.answer(
+    await owner_answer(
+        message,
         f"🤖 <b>@{bot.username or bot.display_name}</b>\n<code>{bot.telegram_id}</code>\n\n"
         f"🟢 Живые: <b>{data['live']}</b>\n🔴 Мёртвые: <b>{data['dead']}</b>\n"
         f"📣 Каналы: <b>{len(channels)}</b>\n{channel_text}",
@@ -671,7 +740,7 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
     ]
     if is_farewell:
         lines.append("Лимит: до 5 сообщений и до 5 файлов.")
-    rows: list[list[InlineKeyboardButton]] = []
+    rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
         for index, step in enumerate(snapshot.steps, start=1):
@@ -680,7 +749,7 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
             lines.append(f"{index}. <b>{kind}</b> · после: {after}")
             rows.append(
                 [
-                    InlineKeyboardButton(
+                    owner_button(
                         text=f"{index} · {kind}",
                         callback_data=f"chain:step:{version_id}:{step.id}",
                     )
@@ -691,25 +760,31 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
     rows.extend(
         [
             [
-                InlineKeyboardButton(text="➕ Добавить шаг", callback_data=f"chain:add:{version_id}"),
-                InlineKeyboardButton(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
+                owner_button(text="➕ Добавить шаг", callback_data=f"chain:add:{version_id}"),
+                owner_button(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
             ],
             [
-                InlineKeyboardButton(text="− 5 сек до старта", callback_data=f"chain:first:{version_id}:-5"),
-                InlineKeyboardButton(text="+ 5 сек до старта", callback_data=f"chain:first:{version_id}:5"),
+                owner_button(text="− 5 сек до старта", callback_data=f"chain:first:{version_id}:-5"),
+                owner_button(text="+ 5 сек до старта", callback_data=f"chain:first:{version_id}:5"),
             ],
             [
-                InlineKeyboardButton(
+                owner_button(
                     text="📣 Назначить каналам",
                     callback_data=f"chain:assign:{version_id}",
                 )
             ],
-            [InlineKeyboardButton(text="🚀 Опубликовать", callback_data=f"chain:publish:{version_id}")],
-            [InlineKeyboardButton(text="Помощь по цепочкам", callback_data="help:flows")],
-            [InlineKeyboardButton(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
+            [
+                owner_button(
+                    text="🚀 Опубликовать",
+                    callback_data=f"chain:publish:{version_id}",
+                    style="primary",
+                )
+            ],
+            [owner_button(text="Помощь по цепочкам", callback_data="help:flows")],
+            [owner_button(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
         ]
     )
-    await message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await owner_answer(message, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @router.callback_query(F.data.startswith("chain:add:"))
@@ -724,7 +799,8 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
         return
     await state.set_state(WelcomeMessageState.waiting_for_message)
     await state.update_data(bot_id=snapshot.flow.bot_id, version_id=version_id)
-    await message.answer(
+    await owner_answer(
+        message,
         "➕ <b>Новый шаг</b>\n\nОтправьте текст или Telegram-вложение. "
         "Форматирование и Premium Emoji будут сохранены без преобразования.",
         reply_markup=_one_button(
@@ -740,14 +816,14 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
 @router.message(WelcomeMessageState.waiting_for_message)
 async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> None:
     if message.content_type not in SUPPORTED_CONTENT:
-        await message.answer("Этот тип сообщения нельзя безопасно воспроизвести.")
+        await owner_answer(message, "Этот тип сообщения нельзя безопасно воспроизвести.")
         return
     data = await state.get_data()
     bot = await _get_owned(owner, str(data.get("bot_id", "")))
     version_id = int(data.get("version_id") or 0)
     if bot is None or not version_id:
         await state.clear()
-        await message.answer("Сессия настройки устарела. Откройте бота ещё раз.")
+        await owner_answer(message, "Сессия настройки устарела. Откройте бота ещё раз.")
         return
     settings = get_settings()
     storage = ObjectStorage(settings)
@@ -792,16 +868,16 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
                 delay_after_seconds=1,
             )
     except (ValueError, MediaTooLargeError, ContentValidationError) as exc:
-        await message.answer(f"⚠️ {exc}")
+        await owner_answer(message, f"⚠️ {exc}")
         return
     except Exception:
         if media:
             await storage.delete_many([str(media["storage_key"])])
         logger.exception("Could not save welcome message bot_id=%s", bot.id)
-        await message.answer("Не удалось сохранить сообщение целиком. Попробуйте ещё раз.")
+        await owner_answer(message, "Не удалось сохранить сообщение целиком. Попробуйте ещё раз.")
         return
     await state.clear()
-    await message.answer("✅ Шаг добавлен в черновик. В production пока ничего не изменилось.")
+    await owner_answer(message, "✅ Шаг добавлен в черновик. В production пока ничего не изменилось.")
     await send_chain_editor(message, owner, version_id)
 
 
@@ -823,25 +899,22 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="↑", callback_data=f"chain:move:{version_id}:{step_id}:-1"),
-                InlineKeyboardButton(text="↓", callback_data=f"chain:move:{version_id}:{step_id}:1"),
-                InlineKeyboardButton(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
+                owner_button(text="↑", callback_data=f"chain:move:{version_id}:{step_id}:-1"),
+                owner_button(text="↓", callback_data=f"chain:move:{version_id}:{step_id}:1"),
+                owner_button(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
             ],
             [
-                InlineKeyboardButton(text="− 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:-5"),
-                InlineKeyboardButton(text="+ 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:5"),
-                InlineKeyboardButton(text="+ 1 мин", callback_data=f"chain:delay:{version_id}:{step_id}:60"),
+                owner_button(text="− 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:-5"),
+                owner_button(text="+ 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:5"),
+                owner_button(text="+ 1 мин", callback_data=f"chain:delay:{version_id}:{step_id}:60"),
             ],
-            [
-                InlineKeyboardButton(
-                    text="🔘 Клавиатура", callback_data=f"chain:buttons:{version_id}:{step_id}"
-                )
-            ],
-            [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"chain:delete:{version_id}:{step_id}")],
-            [InlineKeyboardButton(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
+            [owner_button(text="🔘 Клавиатура", callback_data=f"chain:buttons:{version_id}:{step_id}")],
+            [owner_button(text="🗑 Удалить", callback_data=f"chain:delete:{version_id}:{step_id}")],
+            [owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
         ]
     )
-    await message.answer(
+    await owner_answer(
+        message,
         f"<b>Шаг {step.position + 1}</b> · {step.payload.get('type', 'message')}\n"
         f"Задержка до следующего: <b>{_format_delay(step.delay_after_seconds)}</b>",
         reply_markup=keyboard,
@@ -911,7 +984,8 @@ async def publish_chain(callback: CallbackQuery, owner: Owner, state: FSMContext
         await callback.answer(str(exc), show_alert=True)
         return
     await state.clear()
-    await message.answer(
+    await owner_answer(
+        message,
         f"🚀 <b>Цепочка опубликована</b> · версия {version.version}\n\n"
         f"Новые {'уходы' if flow and flow.kind == 'farewell' else 'вступления'} уже используют эту версию. "
         "Текущие доставки сохраняют свой snapshot.",
@@ -926,7 +1000,8 @@ async def send_rotation_screen(message: Message, owner: Owner, bot_id: int) -> N
         channels = await owner_rotation_channels(session, owner.id)
         statistics = await rotation_statistics(session, owner.id)
     if not access.entitlements.get("rotation", False):
-        await message.answer(
+        await owner_answer(
+            message,
             "🔄 <b>Ротация каналов</b>\n\nДоступна на тарифе Business. "
             "На Free приветствия работают с рекламой GramlyHello.",
             reply_markup=_one_button("← К боту", f"bot:{bot_id}"),
@@ -934,16 +1009,17 @@ async def send_rotation_screen(message: Message, owner: Owner, bot_id: int) -> N
         return
     rows = [
         [
-            InlineKeyboardButton(
+            owner_button(
                 text=("★ " if rotation.is_priority else "☆ ") + channel.title[:40],
                 callback_data=f"rot-priority:{channel.id}:{bot_id}",
             )
         ]
         for rotation, channel in channels
     ]
-    rows.append([InlineKeyboardButton(text="← К боту", callback_data=f"bot:{bot_id}")])
-    rows.insert(-1, [InlineKeyboardButton(text="Помощь по ротации", callback_data="help:rotation")])
-    await message.answer(
+    rows.append([owner_button(text="← К боту", callback_data=f"bot:{bot_id}")])
+    rows.insert(-1, [owner_button(text="Помощь по ротации", callback_data="help:rotation")])
+    await owner_answer(
+        message,
         "🔄 <b>Ротация каналов</b>\n\n"
         "Все подключённые каналы участвуют в общем Business-пуле. "
         "Звездой можно отметить до 7 своих приоритетных каналов.\n\n"
@@ -997,9 +1073,10 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
     except ContentValidationError:
         await callback.answer("Черновик уже недоступен.", show_alert=True)
         return
-    await message.answer(
+    await owner_answer(
+        message,
         "👁 <b>Предпросмотр цепочки</b>\n\n"
-        "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены."
+        "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены.",
     )
     storage = ObjectStorage(get_settings())
     try:
@@ -1014,9 +1091,10 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
             )
     except (TelegramAPIError, OSError, ValueError):
         logger.exception("Could not preview draft version_id=%s", version_id)
-        await message.answer(
+        await owner_answer(
+            message,
             "⚠️ Telegram не смог воспроизвести один из элементов. "
-            "Проверьте тип медиа, Premium Emoji и клавиатуру."
+            "Проверьте тип медиа, Premium Emoji и клавиатуру.",
         )
     await callback.answer()
 
@@ -1038,7 +1116,7 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
     visible_channels = channels[page * page_size : (page + 1) * page_size]
     rows = [
         [
-            InlineKeyboardButton(
+            owner_button(
                 text=("✅ Все каналы" if snapshot.flow.assignment_mode == "all" else "Все каналы"),
                 callback_data=f"chain:assign-all:{version_id}:{page}",
             )
@@ -1047,7 +1125,7 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
     rows.extend(
         [
             [
-                InlineKeyboardButton(
+                owner_button(
                     text=f"{'✅ ' if channel.id in selected else ''}{channel.title}",
                     callback_data=f"chain:assign-toggle:{version_id}:{channel.id}:{page}",
                 )
@@ -1058,16 +1136,17 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
     if pages > 1:
         rows.append(
             [
-                InlineKeyboardButton(text="←", callback_data=f"chain:assign:{version_id}:{max(0, page - 1)}"),
-                InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop"),
-                InlineKeyboardButton(
+                owner_button(text="←", callback_data=f"chain:assign:{version_id}:{max(0, page - 1)}"),
+                owner_button(text=f"{page + 1}/{pages}", callback_data="noop"),
+                owner_button(
                     text="→",
                     callback_data=f"chain:assign:{version_id}:{min(pages - 1, page + 1)}",
                 ),
             ]
         )
-    rows.append([InlineKeyboardButton(text="← К цепочке", callback_data=f"chain:editor:{version_id}")])
-    await message.answer(
+    rows.append([owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")])
+    await owner_answer(
+        message,
         "📣 <b>Назначение цепочки</b>\n\n"
         "Выберите все каналы либо конкретный набор. Новые подключённые каналы "
         "автоматически получают цепочку только в режиме «Все каналы».",
@@ -1154,7 +1233,8 @@ async def configure_chain_buttons(callback: CallbackQuery, owner: Owner, state: 
         return
     await state.set_state(WelcomeButtonState.waiting_for_buttons)
     await state.update_data(version_id=version_id, step_id=step_id)
-    await message.answer(
+    await owner_answer(
+        message,
         "🔘 <b>Клавиатура шага</b>\n\n"
         "Отправьте кнопки строками:\n"
         "<code>url | Сайт | https://gramly.tech | primary</code>\n"
@@ -1208,10 +1288,10 @@ async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContex
         async with session_factory() as session:
             await replace_step_keyboard(session, owner.id, step_id, keyboard)
     except ContentValidationError as exc:
-        await message.answer(f"⚠️ {exc}")
+        await owner_answer(message, f"⚠️ {exc}")
         return
     await state.clear()
-    await message.answer("✅ Клавиатура шага сохранена.")
+    await owner_answer(message, "✅ Клавиатура шага сохранена.")
     await send_chain_editor(message, owner, version_id)
 
 
@@ -1222,18 +1302,19 @@ async def send_delay_screen(message: Message, bot: ManagedBot, kind: str) -> Non
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="− 5 мин", callback_data=f"{prefix}:{bot.id}:-300"),
-                InlineKeyboardButton(text="+ 5 мин", callback_data=f"{prefix}:{bot.id}:300"),
+                owner_button(text="− 5 мин", callback_data=f"{prefix}:{bot.id}:-300"),
+                owner_button(text="+ 5 мин", callback_data=f"{prefix}:{bot.id}:300"),
             ],
             [
-                InlineKeyboardButton(text="− 1 час", callback_data=f"{prefix}:{bot.id}:-3600"),
-                InlineKeyboardButton(text="+ 1 час", callback_data=f"{prefix}:{bot.id}:3600"),
+                owner_button(text="− 1 час", callback_data=f"{prefix}:{bot.id}:-3600"),
+                owner_button(text="+ 1 час", callback_data=f"{prefix}:{bot.id}:3600"),
             ],
-            [InlineKeyboardButton(text="Обнулить", callback_data=f"{prefix}:{bot.id}:zero")],
-            [InlineKeyboardButton(text="✅ Готово", callback_data=f"bot:{bot.id}")],
+            [owner_button(text="Обнулить", callback_data=f"{prefix}:{bot.id}:zero")],
+            [owner_button(text="✅ Готово", callback_data=f"bot:{bot.id}")],
         ]
     )
-    await message.answer(
+    await owner_answer(
+        message,
         f"⏱ <b>{title}</b>\n\nТекущее значение: <b>{_format_delay(value)}</b>",
         reply_markup=keyboard,
     )
@@ -1280,18 +1361,19 @@ async def requests_screen(callback: CallbackQuery, owner: Owner) -> None:
         pending = await pending_requests(session, bot.id)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⏱ Задержка принятия", callback_data=f"approval-delay:{bot.id}")],
+            [owner_button(text="⏱ Задержка принятия", callback_data=f"approval-delay:{bot.id}")],
             [
-                InlineKeyboardButton(
+                owner_button(
                     text="⏸ Отключить" if bot.auto_approve else "✅ Принимать заявки",
                     callback_data=f"toggle-approval:{bot.id}",
                 )
             ],
-            [InlineKeyboardButton(text="⬅️ К боту", callback_data=f"bot:{bot.id}")],
-            [InlineKeyboardButton(text="Помощь по заявкам", callback_data="help:auto_approve")],
+            [owner_button(text="⬅️ К боту", callback_data=f"bot:{bot.id}")],
+            [owner_button(text="Помощь по заявкам", callback_data="help:auto_approve")],
         ]
     )
-    await message.answer(
+    await owner_answer(
+        message,
         f"📥 <b>Заявки · @{bot.username}</b>\n\n"
         f"Автопринятие: <b>{'включено' if bot.auto_approve else 'выключено'}</b>\n"
         f"Задержка: <b>{_format_delay(bot.approval_delay_seconds)}</b>\n"
@@ -1327,7 +1409,7 @@ async def toggle_approval(callback: CallbackQuery, owner: Owner) -> None:
         else f"Автопринятие отключено. {changed} отложенных заявок сохранено."
     )
     await callback.answer(text, show_alert=True)
-    await message.answer(text, reply_markup=_one_button("📥 Открыть заявки", f"requests:{bot.id}"))
+    await owner_answer(message, text, reply_markup=_one_button("📥 Открыть заявки", f"requests:{bot.id}"))
 
 
 LANGUAGE_NAMES = {
@@ -1355,7 +1437,8 @@ async def stats_screen(callback: CallbackQuery, owner: Owner) -> None:
         )
         or "—"
     )
-    await message.answer(
+    await owner_answer(
+        message,
         f"📊 <b>Статистика · @{bot.username}</b>\n\n"
         f"Каналы: <b>{data['channels']}</b>\nЗаявки: <b>{data['join_requests']}</b>\n"
         f"Вступления / контакты: <b>{data['total']}</b>\n\n"
@@ -1379,13 +1462,18 @@ async def delete_prompt(callback: CallbackQuery, owner: Owner) -> None:
     if bot is None:
         await callback.answer("Нет доступа.", show_alert=True)
         return
-    await message.answer(
+    await owner_answer(
+        message,
         f"🗑 Удалить @{bot.username}?\n\nНастройки и статистика будут удалены без восстановления.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="✅ Да", callback_data=f"delete-confirm:{bot.id}"),
-                    InlineKeyboardButton(text="❌ Нет", callback_data=f"bot:{bot.id}"),
+                    owner_button(
+                        text="✅ Да, удалить",
+                        callback_data=f"delete-confirm:{bot.id}",
+                        style="danger",
+                    ),
+                    owner_button(text="❌ Нет", callback_data=f"bot:{bot.id}"),
                 ]
             ]
         ),
@@ -1416,7 +1504,9 @@ async def delete_confirm(callback: CallbackQuery, owner: Owner, state: FSMContex
     async with session_factory() as session:
         await delete_bot(session, bot.id)
     await state.clear()
-    await message.answer("✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены.")
+    await owner_answer(
+        message, "✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены."
+    )
     await callback.answer()
 
 
@@ -1424,7 +1514,7 @@ async def delete_confirm(callback: CallbackQuery, owner: Owner, state: FSMContex
 async def cancel(callback: CallbackQuery, state: FSMContext) -> None:
     message = _callback_message(callback)
     await state.clear()
-    await message.answer("Действие отменено.", reply_markup=await main_keyboard())
+    await owner_answer(message, "Действие отменено.", reply_markup=await main_keyboard())
     await callback.answer()
 
 
@@ -1435,21 +1525,37 @@ async def subscription_menu(message: Message, owner: Owner) -> None:
         plan = await session.scalar(select(Plan).where(Plan.slug == "business"))
         stars_enabled = await feature_flag_enabled(session, "telegram_stars_checkout")
         crypto_enabled = await feature_flag_enabled(session, "crypto_pay_bot_checkout")
-    keyboard = InlineKeyboardBuilder()
+    rows: list[list[TelegramInlineKeyboardButton]] = []
     if plan is not None and stars_enabled and payment_method_ready(plan, "telegram_stars"):
-        keyboard.button(text=f"⭐ Оплатить {plan.price_xtr} Stars", callback_data="pay:stars")
+        rows.append(
+            [
+                owner_button(
+                    text=f"Оплатить {plan.price_xtr} Stars",
+                    callback_data="pay:stars",
+                    emoji_key="subscription",
+                )
+            ]
+        )
     if plan is not None and crypto_enabled and payment_method_ready(plan, "crypto_pay"):
-        keyboard.button(text=f"💎 Оплатить {plan.price_rub} ₽", callback_data="pay:crypto")
-    keyboard.adjust(1)
+        rows.append(
+            [
+                owner_button(
+                    text=f"Оплатить {plan.price_rub} ₽",
+                    callback_data="pay:crypto",
+                    emoji_key="subscription",
+                )
+            ]
+        )
     status_text = (
         f"Business активен до {access.ends_at:%d.%m.%Y}"
         if access.plan_slug == "business" and access.ends_at is not None
         else "Сейчас у вас Free: в приветствия добавляется реклама, ротация недоступна."
     )
-    await message.answer(
+    await answer_with_ui_fallback(
+        message,
         "💎 <b>Подписка GramlyHello</b>\n\n"
         f"{status_text}\n\nBusiness убирает рекламу и включает ротацию каналов.",
-        reply_markup=keyboard.as_markup() if keyboard.buttons else None,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
     )
 
 
@@ -1474,10 +1580,11 @@ async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
     except (FinanceError, CryptoPayError) as exc:
         await callback.answer(str(exc), show_alert=True)
         return
-    await message.answer(
+    await owner_answer(
+        message,
         "Счёт создан на 1 месяц Business. После оплаты подписка включится автоматически.",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Оплатить в Crypto Bot", url=payment.invoice_url)]]
+            inline_keyboard=[[owner_button(text="Оплатить в Crypto Bot", url=payment.invoice_url)]]
         ),
     )
     await callback.answer()
@@ -1540,9 +1647,9 @@ async def stars_paid(message: Message, owner: Owner) -> None:
             )
     except FinanceError:
         logger.exception("Stars payment reconciliation failed owner_id=%s", owner.id)
-        await message.answer("Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.")
+        await owner_answer(message, "Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.")
         return
-    await message.answer("✅ Business активирован на 30 дней.", reply_markup=await main_keyboard())
+    await owner_answer(message, "✅ Business активирован на 30 дней.", reply_markup=await main_keyboard())
 
 
 @router.message(F.text == "🤝 Партнёрская программа")
@@ -1551,7 +1658,8 @@ async def referral_dashboard(message: Message, owner: Owner) -> None:
     async with session_factory() as session:
         code = await ensure_referral_code(session, owner.id)
         balance = await available_balance(session, owner.id)
-    await message.answer(
+    await owner_answer(
+        message,
         "🤝 <b>Партнёрская программа</b>\n\n"
         "Ставка зависит от числа активных платных клиентов: 15% / 25% / 35%. "
         "Начисления идут 12 месяцев с первой оплаты реферала.\n\n"
@@ -1569,7 +1677,7 @@ async def referral_dashboard_callback(callback: CallbackQuery, owner: Owner) -> 
 
 @router.message(F.text == "📈 Аналитика")
 async def analytics_placeholder(message: Message) -> None:
-    await message.answer("Подробная аналитика доступна в Mini App.")
+    await owner_answer(message, "Подробная аналитика доступна в Mini App.")
 
 
 @router.callback_query(F.data == "menu:analytics")
@@ -1579,7 +1687,7 @@ async def analytics_placeholder_callback(callback: CallbackQuery) -> None:
 
 
 def _help_markup(snapshot: HelpSnapshot, theme: Any) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
+    rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.manual_url:
         rows.append(
             [
