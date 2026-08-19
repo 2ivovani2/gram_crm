@@ -14,6 +14,13 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+MEDIA_KEYS_QUERY = """
+    SELECT storage_key FROM welcome_bots_welcomemedia
+    UNION
+    SELECT storage_key FROM welcome_bots_welcomedraftmedia
+    ORDER BY storage_key
+"""
+
 
 @dataclass(frozen=True)
 class S3Settings:
@@ -80,9 +87,7 @@ def copy_one(source, destination, source_bucket: str, destination_bucket: str, k
 async def run(args: argparse.Namespace) -> None:
     connection = await asyncpg.connect(args.database_url)
     try:
-        rows = await connection.fetch(
-            "SELECT DISTINCT storage_key FROM welcome_bots_welcomemedia ORDER BY storage_key"
-        )
+        rows = await connection.fetch(MEDIA_KEYS_QUERY)
     finally:
         await connection.close()
     keys = [str(row[0]) for row in rows]
