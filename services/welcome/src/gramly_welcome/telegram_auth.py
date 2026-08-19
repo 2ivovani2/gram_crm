@@ -55,9 +55,7 @@ def verify_init_data(
     if len(supplied_hash) != 64:
         raise TelegramInitDataError("Telegram initData hash is missing")
     data_check_string = "\n".join(f"{key}={values[key]}" for key in sorted(values))
-    expected_hash = hmac.new(
-        _secret_key(bot_token), data_check_string.encode(), hashlib.sha256
-    ).hexdigest()
+    expected_hash = hmac.new(_secret_key(bot_token), data_check_string.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(supplied_hash, expected_hash):
         raise TelegramInitDataError("Telegram initData signature is invalid")
 

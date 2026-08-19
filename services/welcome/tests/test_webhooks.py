@@ -36,7 +36,9 @@ def client() -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
-def test_interface_webhook_accepts_and_reports_duplicate(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interface_webhook_accepts_and_reports_duplicate(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls = 0
 
     async def fake_insert(*_args: object, **_kwargs: object) -> bool:
@@ -116,7 +118,9 @@ def test_database_outage_returns_503(client: TestClient, monkeypatch: pytest.Mon
     assert response.status_code == 503
 
 
-def test_cutover_pause_returns_503_before_processing(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cutover_pause_returns_503_before_processing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def must_not_lookup(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("paused ingestion must not query webhook state")
 

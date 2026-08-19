@@ -63,9 +63,7 @@ async def maintain() -> None:
                 )
             )
             await session.execute(delete(WebSession).where(WebSession.expires_at < now))
-            await session.execute(
-                delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < now)
-            )
+            await session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < now))
 
 
 def run() -> None:

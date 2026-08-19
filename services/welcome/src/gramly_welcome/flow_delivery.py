@@ -9,6 +9,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from .advertising import choose_free_ad, mark_ad_operation
+from .config import get_settings
 from .content_compiler import AttachmentSpec, CompiledOperation, compile_step
 from .models import (
     Channel,
@@ -231,6 +233,31 @@ async def schedule_content_flow(
             .where(FlowDelivery.id == delivery_id)
             .values(status="failed", completed_at=datetime.now(UTC))
         )
+    elif kind == "welcome":
+        scheduled_ad = await choose_free_ad(
+            session,
+            owner_id=bot.owner_id,
+            bot_id=bot.id,
+            channel_id=channel_id,
+            contact_id=contact_id,
+            flow_delivery_id=delivery_id,
+            public_service_base_url=get_settings().public_service_base_url,
+        )
+        if scheduled_ad is not None:
+            operation = DeliveryOperation(
+                flow_delivery_id=delivery_id,
+                step_id=steps[-1].id,
+                depends_on_operation_id=previous_operation_id,
+                position=operation_position,
+                operation_type="text",
+                payload=scheduled_ad.payload,
+                media=[],
+                status="scheduled",
+                due_at=due_at,
+            )
+            session.add(operation)
+            await session.flush()
+            scheduled_ad.impression.operation_id = operation.id
     return True
 
 
@@ -363,6 +390,12 @@ async def finish_operation(
     operation.lease_owner = None
     operation.lease_expires_at = None
     operation.error = error[:500]
+    await mark_ad_operation(
+        session,
+        operation.id,
+        status="sent" if success else "failed",
+        error=error,
+    )
     await session.flush()
     if not success:
         await session.execute(
@@ -373,6 +406,18 @@ async def finish_operation(
             )
             .values(status="cancelled", error="dependency_failed")
         )
+        cancelled_ad_operations = select(DeliveryOperation.id).where(
+            DeliveryOperation.flow_delivery_id == operation.flow_delivery_id,
+            DeliveryOperation.status == "cancelled",
+        )
+        cancelled_ids = list(await session.scalars(cancelled_ad_operations))
+        for cancelled_id in cancelled_ids:
+            await mark_ad_operation(
+                session,
+                cancelled_id,
+                status="cancelled",
+                error="dependency_failed",
+            )
     count_rows = (
         await session.execute(
             select(DeliveryOperation.status, func.count(DeliveryOperation.id))

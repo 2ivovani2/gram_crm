@@ -22,10 +22,12 @@ not used by this service.
 - event, delivery and approval queues expose depth, age, retries and worker
   liveness to Prometheus.
 
-Commercial capabilities are protected by database feature flags. The
-foundation migration creates Trial, Pro and Business plans with empty prices;
-checkout and entitlement enforcement remain disabled until the staged release
-explicitly enables them.
+GramlyHello has two plans with the same product and infrastructure quotas:
+Free and Business. Free appends one centrally managed advertising operation to
+the end of each welcome chain and does not include channel rotation. Business
+removes advertising and enables rotation. There is no time-limited trial. The
+advertising creative is selected once per delivery, survives retries unchanged,
+and records only confirmed Telegram impressions and tracked CTA clicks.
 
 ## Mini App API foundation
 
@@ -36,8 +38,9 @@ explicitly enables them.
 - `POST /api/v1/session/logout` requires the session and `X-CSRF-Token`.
 
 Only session-token and CSRF hashes are stored. Direct browser input and
-`initDataUnsafe` are never trusted. The 14-day Business trial starts once, only
-after the first customer bot webhook has been configured successfully.
+`initDataUnsafe` are never trusted. A Free subscription is assigned after the
+first customer bot webhook is configured; a paid Business period temporarily
+replaces it and automatically falls back to Free after expiry.
 
 ## Local verification
 

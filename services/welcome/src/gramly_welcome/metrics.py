@@ -21,3 +21,12 @@ QUEUE_DEPTH = Gauge("welcome_queue_depth", "Durable queue rows by state", ("queu
 OLDEST_PENDING_AGE = Gauge(
     "welcome_oldest_pending_age_seconds", "Age of the oldest actionable queue row", ("queue",)
 )
+AD_DELIVERIES = Counter(
+    "welcome_free_ad_deliveries_total",
+    "Free plan advertising operations by terminal result",
+    ("result",),
+)
+AD_CLICKS = Counter(
+    "welcome_free_ad_clicks_total",
+    "Tracked clicks on Free plan advertising calls to action",
+)

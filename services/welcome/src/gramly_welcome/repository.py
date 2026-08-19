@@ -160,9 +160,7 @@ async def claim_inbox_batch(
     async with session.begin():
         # Recover expired leases separately so the hot pending path can use a
         # narrow partial index without an expensive OR across queue states.
-        events = list(
-            (await session.scalars(_expired_inbox_claim_query(now).limit(limit))).all()
-        )
+        events = list((await session.scalars(_expired_inbox_claim_query(now).limit(limit))).all())
         remaining = limit - len(events)
         if remaining:
             # Lock one tiny source row, rotate it to the back of the scheduler,
@@ -172,11 +170,7 @@ async def claim_inbox_batch(
             source = await session.scalar(_inbox_source_claim_query(now).limit(1))
             if source is not None:
                 source_events = list(
-                    (
-                        await session.scalars(
-                            _inbox_claim_query(now, source.source_key).limit(remaining)
-                        )
-                    ).all()
+                    (await session.scalars(_inbox_claim_query(now, source.source_key).limit(remaining))).all()
                 )
                 events.extend(source_events)
                 source.pending_count = max(0, source.pending_count - len(source_events))
@@ -203,9 +197,7 @@ async def finish_inbox_event(session: AsyncSession, event_id: int, worker_id: st
     return bool(await finish_inbox_events(session, [event_id], worker_id))
 
 
-async def finish_inbox_events(
-    session: AsyncSession, event_ids: list[int], worker_id: str
-) -> int:
+async def finish_inbox_events(session: AsyncSession, event_ids: list[int], worker_id: str) -> int:
     if not event_ids:
         return 0
     result = await session.execute(
@@ -437,9 +429,7 @@ async def claim_join_request_batch(
     return requests
 
 
-async def load_join_request_context(
-    session: AsyncSession, request_id: int
-) -> JoinRequestContext | None:
+async def load_join_request_context(session: AsyncSession, request_id: int) -> JoinRequestContext | None:
     request = await session.get(JoinRequest, request_id)
     if request is None:
         return None
@@ -518,24 +508,18 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
     )
     event_dead = int(
         await session.scalar(
-            select(func.count(InboxEvent.id)).where(
-                InboxEvent.status == QueueStatus.DEAD.value
-            )
+            select(func.count(InboxEvent.id)).where(InboxEvent.status == QueueStatus.DEAD.value)
         )
         or 0
     )
-    event_age = (
-        max(0.0, (now - event_oldest).total_seconds())
-        if event_oldest is not None
-        else 0.0
-    )
+    event_age = max(0.0, (now - event_oldest).total_seconds()) if event_oldest is not None else 0.0
     result: dict[str, tuple[int, int, float]] = {
         "events": (int(pending_count) + int(processing_count), event_dead, event_age)
     }
     queries: dict[str, Select[Any]] = {
-        "deliveries": select(
-            func.count(GreetingDelivery.id), func.min(GreetingDelivery.due_at)
-        ).where(GreetingDelivery.status.in_(("scheduled", "retry", "processing"))),
+        "deliveries": select(func.count(GreetingDelivery.id), func.min(GreetingDelivery.due_at)).where(
+            GreetingDelivery.status.in_(("scheduled", "retry", "processing"))
+        ),
         "approvals": select(func.count(JoinRequest.id), func.min(JoinRequest.due_at)).where(
             JoinRequest.status.in_(("scheduled", "processing"))
         ),
@@ -549,9 +533,7 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
         dead = (
             int(
                 await session.scalar(
-                    select(func.count(DeliveryOperation.id)).where(
-                        DeliveryOperation.status == "failed"
-                    )
+                    select(func.count(DeliveryOperation.id)).where(DeliveryOperation.status == "failed")
                 )
                 or 0
             )

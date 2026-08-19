@@ -109,14 +109,10 @@ async def authenticate_web_session(
     return AuthenticatedWebSession(web_session.id, owner, web_session.expires_at)
 
 
-async def csrf_token_valid(
-    session: AsyncSession, session_id: uuid.UUID, csrf_token: str
-) -> bool:
+async def csrf_token_valid(session: AsyncSession, session_id: uuid.UUID, csrf_token: str) -> bool:
     if not csrf_token:
         return False
-    expected = await session.scalar(
-        select(WebSession.csrf_hash).where(WebSession.id == session_id)
-    )
+    expected = await session.scalar(select(WebSession.csrf_hash).where(WebSession.id == session_id))
     return bool(expected and secrets.compare_digest(expected, _digest(csrf_token)))
 
 

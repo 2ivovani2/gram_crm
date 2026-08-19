@@ -44,13 +44,9 @@ async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts:
                     await finish_inbox_event(session, event.id, worker_id)
         WORKER_EVENTS.labels("completed").inc()
     except Exception as exc:
-        logger.exception(
-            "event processing failed id=%s attempt=%s", event.id, event.attempts
-        )
+        logger.exception("event processing failed id=%s attempt=%s", event.id, event.attempts)
         async with session_factory() as session:
-            await retry_inbox_event(
-                session, event, worker_id, type(exc).__name__, max_attempts
-            )
+            await retry_inbox_event(session, event, worker_id, type(exc).__name__, max_attempts)
         WORKER_EVENTS.labels("retry").inc()
 
 
@@ -62,18 +58,14 @@ async def process_claimed_batch(
     # transaction per event. Interface events are deliberately excluded until
     # their control-plane consumer is enabled during cutover.
     discardable = [
-        event
-        for event in events
-        if event.bot_id is not None and not is_actionable_payload(event.payload)
+        event for event in events if event.bot_id is not None and not is_actionable_payload(event.payload)
     ]
     discardable_ids = {event.id for event in discardable}
     actionable = [event for event in events if event.id not in discardable_ids]
     if discardable:
         async with session_factory() as session:
             async with session.begin():
-                completed = await finish_inbox_events(
-                    session, [event.id for event in discardable], worker_id
-                )
+                completed = await finish_inbox_events(session, [event.id for event in discardable], worker_id)
         WORKER_EVENTS.labels("completed").inc(completed)
 
     semaphore = asyncio.Semaphore(concurrency)

@@ -7,11 +7,13 @@ from time import monotonic
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .advertising import record_ad_click
 from .config import Settings, get_settings
 from .db import session_dependency
 from .metrics import WEBHOOK_LATENCY, WEBHOOK_REQUESTS
@@ -21,6 +23,14 @@ from .schemas import AcceptedResponse, TelegramUpdate
 router = APIRouter()
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+
+
+@router.get("/welcome/ad/{public_token}", include_in_schema=False)
+async def advertising_click(public_token: uuid.UUID, session: SessionDep) -> Response:
+    destination = await record_ad_click(session, public_token)
+    if destination is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Advertising link is unavailable")
+    return RedirectResponse(destination, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 async def _bounded_json(request: Request, limit: int) -> dict[str, object]:

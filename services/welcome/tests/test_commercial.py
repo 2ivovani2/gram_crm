@@ -11,13 +11,13 @@ from gramly_welcome.models import Plan
 
 def plan(**overrides: object) -> Plan:
     values: dict[str, object] = {
-        "slug": "pro",
-        "display_name": "Pro",
-        "entitlements": {"welcome_chains": True},
-        "max_bots": 3,
-        "max_channels": 25,
-        "monthly_delivery_operations": 50_000,
-        "media_storage_bytes": 5_368_709_120,
+        "slug": "business",
+        "display_name": "Business",
+        "entitlements": {"welcome_chains": True, "rotation": True, "ad_free": True},
+        "max_bots": 15,
+        "max_channels": 150,
+        "monthly_delivery_operations": 250_000,
+        "media_storage_bytes": 26_843_545_600,
         "price_rub": None,
         "price_xtr": None,
         "referral_base_rub": None,
@@ -52,15 +52,40 @@ def test_complete_prices_are_exposed() -> None:
     assert public_plan_payload(item)["prices"] == {"rub": "1990.00", "xtr": 999}
 
 
+def test_free_and_business_share_product_limits_and_features() -> None:
+    business = plan()
+    free = plan(
+        slug="free",
+        display_name="Free",
+        entitlements={"welcome_chains": True, "rotation": False, "ad_free": False},
+        is_sellable=True,
+    )
+
+    assert free.max_bots == business.max_bots
+    assert free.max_channels == business.max_channels
+    assert free.monthly_delivery_operations == business.monthly_delivery_operations
+    assert free.media_storage_bytes == business.media_storage_bytes
+    assert free.entitlements.keys() == business.entitlements.keys()
+    assert {
+        key: value for key, value in free.entitlements.items() if key not in {"rotation", "ad_free"}
+    } == {
+        key: value
+        for key, value in business.entitlements.items()
+        if key not in {"rotation", "ad_free"}
+    }
+    assert free.entitlements["rotation"] is False
+    assert free.entitlements["ad_free"] is False
+    assert business.entitlements["rotation"] is True
+    assert business.entitlements["ad_free"] is True
+
+
 def test_unknown_payment_method_is_rejected() -> None:
     with pytest.raises(ValueError, match="Unknown"):
         payment_method_ready(plan(), "cash")
 
 
 def test_idempotency_digest_is_canonical() -> None:
-    assert request_digest({"a": 1, "b": [2, 3]}) == request_digest(
-        {"b": [2, 3], "a": 1}
-    )
+    assert request_digest({"a": 1, "b": [2, 3]}) == request_digest({"b": [2, 3], "a": 1})
     assert request_digest({"a": 1}) != request_digest({"a": 2})
 
 

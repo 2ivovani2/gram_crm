@@ -44,9 +44,7 @@ async def current_web_user(
     session: SessionDep,
     settings: SettingsDep,
 ) -> CurrentWebUser:
-    auth = await authenticate_web_session(
-        session, request.cookies.get(settings.mini_app_cookie_name, "")
-    )
+    auth = await authenticate_web_session(session, request.cookies.get(settings.mini_app_cookie_name, ""))
     if auth is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Telegram session is required")
     return CurrentWebUser(auth)
