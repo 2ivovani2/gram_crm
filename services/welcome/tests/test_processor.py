@@ -8,7 +8,16 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gramly_welcome.models import InboxEvent
-from gramly_welcome.processor import process_event
+from gramly_welcome.processor import membership_transition_flags, process_event
+
+
+def test_membership_transition_deduplicates_repeated_leave_state() -> None:
+    assert membership_transition_flags(None, old_active=True, new_active=False) == (False, True)
+    assert membership_transition_flags("left", old_active=True, new_active=False) == (False, False)
+
+
+def test_membership_transition_allows_real_rejoin() -> None:
+    assert membership_transition_flags("left", old_active=False, new_active=True) == (True, False)
 
 
 @pytest.mark.asyncio

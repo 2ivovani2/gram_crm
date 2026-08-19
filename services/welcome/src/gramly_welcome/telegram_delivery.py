@@ -22,7 +22,41 @@ from aiogram.types import (
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
 from .repository import DeliveryContext, JoinRequestContext
+from .rotation import RotationContext, RotationDestination
 from .storage import ObjectStorage
+
+
+async def create_rotation_invite_link(
+    destination: RotationDestination, keyring: TokenKeyring
+) -> str:
+    token = keyring.decrypt(destination.bot.token_ciphertext)
+    async with Bot(token=token) as bot:
+        result = await bot.create_chat_invite_link(
+            destination.channel.telegram_id,
+            name=destination.rotation.invite_link_name,
+            creates_join_request=False,
+        )
+    return result.invite_link
+
+
+async def send_rotation_recommendation(
+    context: RotationContext,
+    destinations: list[RotationDestination],
+    keyring: TokenKeyring,
+) -> None:
+    token = keyring.decrypt(context.source_bot.token_ciphertext)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=destination.channel.title[:64], url=destination.rotation.invite_link)]
+            for destination in destinations
+        ]
+    )
+    async with Bot(token=token) as bot:
+        await bot.send_message(
+            context.contact.telegram_id,
+            "Возможно, Вам будут интересны эти каналы:",
+            reply_markup=keyboard,
+        )
 
 
 def _entities(raw: list[dict[str, Any]] | None) -> list[MessageEntity] | None:

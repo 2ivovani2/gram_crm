@@ -112,7 +112,7 @@ async def schedule_content_flow(
     contact_id: int,
     event_key: str,
     kind: str = "welcome",
-) -> bool:
+) -> int | None:
     assignment_exists = exists(
         select(FlowChannelAssignment.id).where(
             FlowChannelAssignment.flow_id == ContentFlow.id,
@@ -143,21 +143,26 @@ async def schedule_content_flow(
         )
     ).one_or_none()
     if row is None:
-        return False
+        return None
     _flow, version = row
-    recent = await session.scalar(
-        select(FlowDelivery.id)
-        .where(
-            FlowDelivery.bot_id == bot.id,
-            FlowDelivery.channel_id == channel_id,
-            FlowDelivery.contact_id == contact_id,
-            FlowDelivery.created_at >= datetime.now(UTC) - timedelta(minutes=5),
-            FlowDelivery.status != "cancelled",
+    recent = None
+    if kind == "welcome":
+        recent = await session.scalar(
+            select(FlowDelivery.id)
+            .join(ContentFlowVersion, ContentFlowVersion.id == FlowDelivery.version_id)
+            .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+            .where(
+                FlowDelivery.bot_id == bot.id,
+                FlowDelivery.channel_id == channel_id,
+                FlowDelivery.contact_id == contact_id,
+                FlowDelivery.created_at >= datetime.now(UTC) - timedelta(minutes=5),
+                FlowDelivery.status != "cancelled",
+                ContentFlow.kind == kind,
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
     if recent is not None:
-        return True
+        return int(recent)
     delivery_id = await session.scalar(
         insert(FlowDelivery)
         .values(
@@ -172,7 +177,22 @@ async def schedule_content_flow(
         .returning(FlowDelivery.id)
     )
     if delivery_id is None:
-        return True
+        existing = await session.scalar(
+            select(FlowDelivery.id).where(
+                FlowDelivery.bot_id == bot.id,
+                FlowDelivery.event_key == event_key,
+            )
+        )
+        return int(existing) if existing is not None else None
+    if kind == "farewell":
+        contact = await session.get(Contact, contact_id)
+        if contact is None or not contact.bot_started:
+            await session.execute(
+                update(FlowDelivery)
+                .where(FlowDelivery.id == delivery_id)
+                .values(status="unreachable", completed_at=datetime.now(UTC))
+            )
+            return int(delivery_id)
     steps = list(
         (
             await session.scalars(
@@ -258,7 +278,7 @@ async def schedule_content_flow(
             session.add(operation)
             await session.flush()
             scheduled_ad.impression.operation_id = operation.id
-    return True
+    return int(delivery_id)
 
 
 async def claim_operation_batch(

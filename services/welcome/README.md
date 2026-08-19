@@ -29,6 +29,22 @@ removes advertising and enables rotation. There is no time-limited trial. The
 advertising creative is selected once per delivery, survives retries unchanged,
 and records only confirmed Telegram impressions and tracked CTA clicks.
 
+## Farewell and rotation
+
+`chat_member` transitions from an active state to `left`/`kicked` create one
+durable departure record. A published farewell flow uses the same per-operation
+outbox as welcome content. If the person has never opened the customer bot, the
+flow is closed as `unreachable`: Telegram does not allow the bot to initiate
+that dialog.
+
+Business channels with `can_invite_users` participate in the rotation pool. An
+owner can mark up to seven own channels as priority; remaining positions are
+randomly selected from the eligible paid pool. Gramly creates named Telegram
+invite links and records an impression only after the recommendation is sent.
+A conversion requires the exact invite link and a prior impression for the same
+Telegram user and destination channel. Organic joins, the channel owner and
+re-joins are not counted. Free owners never enter or receive rotation.
+
 ## Mini App API foundation
 
 - `POST /api/v1/session/telegram` verifies Telegram `initData`, creates a
