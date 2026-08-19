@@ -11,7 +11,13 @@ from gramly_welcome.main import app
 
 
 class FakeSession:
-    pass
+    async def scalars(self, _statement: object) -> FakeScalarResult:
+        return FakeScalarResult()
+
+
+class FakeScalarResult:
+    def all(self) -> list[object]:
+        return []
 
 
 @pytest.fixture
@@ -21,7 +27,11 @@ def client() -> Iterator[TestClient]:
 
     app.dependency_overrides[session_dependency] = session_override
     app.dependency_overrides[get_settings] = lambda: Settings(
-        interface_bot_username="GramlyHelloBot"
+        interface_bot_username="GramlyHelloBot",
+        interface_bot_token="telegram-secret",
+        crypto_pay_api_token="crypto-secret",
+        crypto_pay_webhook_secret="path-secret",
+        crypto_pay_api_base_url="https://pay.crypt.bot",
     )
     with TestClient(app) as test_client:
         yield test_client
@@ -68,3 +78,26 @@ def test_admin_mutation_requires_explicit_same_origin_confirmation(client: TestC
     )
 
     assert response.status_code == 403
+
+
+def test_payment_readiness_exposes_status_but_not_secret_values(client: TestClient) -> None:
+    response = client.get(
+        "/api/admin/v1/payments/readiness",
+        headers={
+            "X-authentik-username": "owner",
+            "X-authentik-groups": "gramly-owners",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["crypto_pay"] == {
+        "api_token_configured": True,
+        "webhook_secret_configured": True,
+        "production_api": True,
+    }
+    assert payload["telegram_stars"] == {"interface_bot_configured": True}
+    serialized = response.text
+    assert "crypto-secret" not in serialized
+    assert "path-secret" not in serialized
+    assert "telegram-secret" not in serialized
