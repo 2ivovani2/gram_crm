@@ -4,7 +4,7 @@ from django.urls import reverse
 
 @override_settings(
     TELEGRAM_BOT_USERNAME="@gramly_crm_bot",
-    WELCOME_BOT_USERNAME="@gramly_welcome_bot",
+    GRAMLY_HELLO_BOT_USERNAME="@gramly_welcome_bot",
 )
 def test_landing_promotes_welcome_bot(client):
     response = client.get(reverse("landing"))

@@ -9,6 +9,10 @@ set -a
 source "${prod_env_file}"
 set +a
 
+# One-way compatibility for existing operator env files. Only the public bot
+# username is copied into CRM; Welcome credentials stay in its own Secret.
+GRAMLY_HELLO_BOT_USERNAME="${GRAMLY_HELLO_BOT_USERNAME:-${WELCOME_BOT_USERNAME:-}}"
+
 if ! kubectl -n gramly-crm get secret gramly-crm-postgres-app >/dev/null 2>&1; then
   db_password="$(openssl rand -hex 32)"
   kubectl -n gramly-crm create secret generic gramly-crm-postgres-app \
@@ -37,9 +41,7 @@ runtime_keys=(
   TELEGRAM_WEBHOOK_SECRET TELEGRAM_WEBHOOK_URL SUBSCRIPTION_CHANNEL_ID
   SUBSCRIPTION_CHANNEL_URL AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
   AWS_STORAGE_BUCKET_NAME AWS_S3_REGION_NAME MEDIA_QUERYSTRING_EXPIRE
-  WELCOME_BOT_TOKEN WELCOME_BOT_USERNAME
-  WELCOME_WEBHOOK_SECRET WELCOME_WEBHOOK_URL WELCOME_CLIENT_WEBHOOK_BASE_URL
-  WELCOME_MEDIA_MAX_BYTES
+  GRAMLY_HELLO_BOT_USERNAME
 )
 runtime_args=()
 for key in "${runtime_keys[@]}"; do

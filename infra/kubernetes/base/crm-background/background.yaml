@@ -13,7 +13,7 @@ spec:
       containers:
         - name: worker
           image: CRM_IMAGE_PLACEHOLDER
-          args: [celery, -A, config.celery, worker, -l, info, -c, "2", -Q, "celery,default,broadcasts,welcome_bots"]
+          args: [celery, -A, config.celery, worker, -l, info, -c, "2", -Q, "celery,default,broadcasts"]
           envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           resources:
