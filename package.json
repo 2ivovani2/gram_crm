@@ -6,6 +6,7 @@
     "dev": "vite build --watch --mode development",
     "dev:welcome": "vite --config vite.welcome.config.js",
     "build": "vite build && vite build --config vite.welcome.config.js",
+    "build:crm": "vite build",
     "build:welcome": "vite build --config vite.welcome.config.js",
     "test:e2e": "playwright test --grep-invert @visual",
     "test:visual": "playwright test --grep @visual"
