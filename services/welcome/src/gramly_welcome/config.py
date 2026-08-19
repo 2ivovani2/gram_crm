@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = ""
     s3_addressing_style: str = "path"
     media_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1, le=20 * 1024 * 1024)
+    mini_app_auth_max_age_seconds: int = Field(default=300, ge=30, le=3600)
+    mini_app_session_seconds: int = Field(default=43_200, ge=300, le=604_800)
+    mini_app_cookie_name: str = "gramly_welcome_session"
+    mini_app_cookie_secure: bool = True
+    trial_days: int = Field(default=14, ge=1, le=90)
 
 
 @lru_cache

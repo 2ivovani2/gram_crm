@@ -1,8 +1,8 @@
 # Gramly Welcome
 
-Async Telegram event plane. This service is introduced in parallel with the
-legacy Django consumer; production routing remains on Django until the staged
-data migration and explicit cutover.
+Independent async Telegram event plane for GramlyHello. It owns customer bots,
+channels, contacts and delivery state; Django CRM is a separate product and is
+not used by this service.
 
 ## Guarantees in this stage
 
@@ -22,10 +22,22 @@ data migration and explicit cutover.
 - event, delivery and approval queues expose depth, age, retries and worker
   liveness to Prometheus.
 
-The delivery consumer is available only through Compose's `welcome-cutover`
-profile and the isolated staging overlay. Production routing remains on Django
-until data/media migration and the explicit cutover gate pass. Do not route
-production `/welcome/*` to this service before that gate.
+Commercial capabilities are protected by database feature flags. The
+foundation migration creates Trial, Pro and Business plans with empty prices;
+checkout and entitlement enforcement remain disabled until the staged release
+explicitly enables them.
+
+## Mini App API foundation
+
+- `POST /api/v1/session/telegram` verifies Telegram `initData`, creates a
+  short-lived HttpOnly session and returns a separate CSRF token;
+- `GET /api/v1/me` returns the current owner and entitlement snapshot;
+- `GET /api/v1/plans` exposes only fully configured prices;
+- `POST /api/v1/session/logout` requires the session and `X-CSRF-Token`.
+
+Only session-token and CSRF hashes are stored. Direct browser input and
+`initDataUnsafe` are never trusted. The 14-day Business trial starts once, only
+after the first customer bot webhook has been configured successfully.
 
 ## Local verification
 
@@ -63,6 +75,6 @@ Secrets are passed through environment variables and must never be placed on
 the command line, committed, or printed. The load gate sends neutral Telegram
 poll updates, verifies both persistence and worker completion, and `--cleanup`
 deletes only the generated update-ID range. Set `WELCOME_LOAD_TEST_SECRET` and
-`WELCOME_LOAD_TEST_DATABASE_URL` in the execution environment. Keep the legacy
-consumer authoritative until the final delta copy during the approved
-maintenance window.
+`WELCOME_LOAD_TEST_DATABASE_URL` in the execution environment. The old Welcome
+runtime has already been retired; this tooling remains for reproducible
+validation and disaster recovery.

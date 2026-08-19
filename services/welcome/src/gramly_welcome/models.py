@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
@@ -13,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -45,8 +47,123 @@ class Owner(Base):
     last_name: Mapped[str] = mapped_column(String(128), default="")
     guide_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     guide_step: Mapped[int] = mapped_column(Integer, default=0)
+    trial_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Plan(Base):
+    __tablename__ = "plan"
+    __table_args__ = (
+        UniqueConstraint("slug", name="plan_slug_key"),
+        CheckConstraint(
+            "max_bots > 0 AND max_channels > 0 "
+            "AND monthly_delivery_operations > 0 AND media_storage_bytes > 0",
+            name="ck_plan_positive_quotas",
+        ),
+        CheckConstraint(
+            "NOT crypto_pay_enabled OR price_rub > 0",
+            name="ck_plan_crypto_price",
+        ),
+        CheckConstraint(
+            "NOT stars_enabled OR (price_xtr > 0 AND referral_base_rub > 0)",
+            name="ck_plan_stars_price",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(32), index=True)
+    display_name: Mapped[str] = mapped_column(String(64))
+    entitlements: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    max_bots: Mapped[int] = mapped_column(Integer)
+    max_channels: Mapped[int] = mapped_column(Integer)
+    monthly_delivery_operations: Mapped[int] = mapped_column(Integer)
+    media_storage_bytes: Mapped[int] = mapped_column(BigInteger)
+    price_rub: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    price_xtr: Mapped[int | None] = mapped_column(Integer)
+    referral_base_rub: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    crypto_pay_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    stars_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_sellable: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Subscription(Base):
+    __tablename__ = "subscription"
+    __table_args__ = (
+        UniqueConstraint("owner_id", name="subscription_owner_id_key"),
+        Index("ix_subscription_access", "status", "ends_at"),
+        CheckConstraint("ends_at > starts_at", name="ck_subscription_period"),
+        CheckConstraint(
+            "status IN ('trialing','active','past_due','expired','canceled')",
+            name="ck_subscription_status",
+        ),
+        CheckConstraint(
+            "source IN ('trial','crypto_pay','telegram_stars','manual')",
+            name="ck_subscription_source",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plan.id", ondelete="RESTRICT"), index=True)
+    source: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=False)
+    external_reference: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FeatureFlag(Base):
+    __tablename__ = "feature_flag"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    description: Mapped[str] = mapped_column(String(255), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WebSession(Base):
+    __tablename__ = "web_session"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64))
+    telegram_auth_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_record"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "key", name="uq_idempotency_owner_key"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    key: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    response_status: Mapped[int | None] = mapped_column(Integer)
+    response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ManagedBot(Base):
@@ -127,9 +244,9 @@ class WelcomeDraft(Base):
     )
     media_group_id: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    finalize_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finalize_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finalized_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey("welcome_message_version.id", ondelete="SET NULL")
+        ForeignKey("welcome_message_version.id", ondelete="SET NULL"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
