@@ -43,7 +43,9 @@ def _telegram_user(payload: dict[str, Any]) -> dict[str, Any] | None:
     return user if isinstance(user, dict) else None
 
 
-async def _upsert_contact(session: AsyncSession, bot_id: int, user: dict[str, Any], bot_started: bool = False) -> int:
+async def _upsert_contact(
+    session: AsyncSession, bot_id: int, user: dict[str, Any], bot_started: bool = False
+) -> int:
     statement = (
         insert(Contact)
         .values(
@@ -147,9 +149,7 @@ async def _schedule_greeting(
     )
 
 
-async def _process_bot_membership(
-    session: AsyncSession, bot: ManagedBot, event: dict[str, Any]
-) -> bool:
+async def _process_bot_membership(session: AsyncSession, bot: ManagedBot, event: dict[str, Any]) -> bool:
     chat = event.get("chat")
     member = event.get("new_chat_member")
     if not isinstance(chat, dict) or not isinstance(member, dict):
@@ -232,7 +232,9 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     if isinstance(join, dict) and isinstance(join.get("chat"), dict):
         contact_id = await _upsert_contact(session, bot.id, user)
         channel_id = await _upsert_channel(session, bot.id, join["chat"])
-        due_at = datetime.now(UTC) + timedelta(seconds=bot.approval_delay_seconds) if bot.auto_approve else None
+        due_at = (
+            datetime.now(UTC) + timedelta(seconds=bot.approval_delay_seconds) if bot.auto_approve else None
+        )
         await session.execute(
             insert(JoinRequest)
             .values(

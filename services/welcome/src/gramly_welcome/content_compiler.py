@@ -77,9 +77,7 @@ def _split_media(media: list[dict[str, Any]]) -> list[CompiledOperation]:
         family = _group_family(str(media[cursor]["media_type"]))
         end = cursor + 1
         while (
-            family is not None
-            and end < len(media)
-            and _group_family(str(media[end]["media_type"])) == family
+            family is not None and end < len(media) and _group_family(str(media[end]["media_type"])) == family
         ):
             end += 1
         run = media[cursor:end]
@@ -91,9 +89,7 @@ def _split_media(media: list[dict[str, Any]]) -> list[CompiledOperation]:
                 if len(chunk) == 1:
                     operations.append(_single_operation(chunk[0]))
                 else:
-                    operations.append(
-                        CompiledOperation("media_group", {"family": family}, chunk)
-                    )
+                    operations.append(CompiledOperation("media_group", {"family": family}, chunk))
         cursor = end
     return operations
 
@@ -132,9 +128,6 @@ def compile_step(
         operations = [CompiledOperation(operation_type, dict(step_payload), [])]
     else:
         item_payloads = _payloads_for_attachments(step_payload, attachments)
-        media = [
-            attachment.as_media(item_payloads[index])
-            for index, attachment in enumerate(attachments)
-        ]
+        media = [attachment.as_media(item_payloads[index]) for index, attachment in enumerate(attachments)]
         operations = _split_media(media)
     return _attach_keyboard(operations, keyboard) if keyboard else operations

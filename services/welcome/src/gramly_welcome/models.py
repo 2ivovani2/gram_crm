@@ -97,25 +97,26 @@ class Subscription(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", name="subscription_owner_id_key"),
         Index("ix_subscription_access", "status", "ends_at"),
-        CheckConstraint("ends_at > starts_at", name="ck_subscription_period"),
         CheckConstraint(
-            "status IN ('trialing','active','past_due','expired','canceled')",
+            "(source = 'free' AND ends_at IS NULL) OR (source <> 'free' AND ends_at > starts_at)",
+            name="ck_subscription_period",
+        ),
+        CheckConstraint(
+            "status IN ('active','past_due','expired','canceled')",
             name="ck_subscription_status",
         ),
         CheckConstraint(
-            "source IN ('trial','crypto_pay','telegram_stars','manual')",
+            "source IN ('free','crypto_pay','telegram_stars','manual')",
             name="ck_subscription_source",
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("owner.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
     plan_id: Mapped[int] = mapped_column(ForeignKey("plan.id", ondelete="RESTRICT"), index=True)
     source: Mapped[str] = mapped_column(String(24))
     status: Mapped[str] = mapped_column(String(24), index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     auto_renew: Mapped[bool] = mapped_column(Boolean, default=False)
     external_reference: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -138,9 +139,7 @@ class FeatureFlag(Base):
 class WebSession(Base):
     __tablename__ = "web_session"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("owner.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     csrf_hash: Mapped[str] = mapped_column(String(64))
     telegram_auth_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -151,13 +150,9 @@ class WebSession(Base):
 
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_record"
-    __table_args__ = (
-        UniqueConstraint("owner_id", "key", name="uq_idempotency_owner_key"),
-    )
+    __table_args__ = (UniqueConstraint("owner_id", "key", name="uq_idempotency_owner_key"),)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("owner.id", ondelete="CASCADE"), index=True
-    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
     key: Mapped[str] = mapped_column(String(128))
     request_hash: Mapped[str] = mapped_column(String(64))
     response_status: Mapped[int | None] = mapped_column(Integer)
@@ -177,9 +172,7 @@ class ContentFlow(Base):
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    bot_id: Mapped[int] = mapped_column(
-        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
-    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     kind: Mapped[str] = mapped_column(String(16), index=True)
     assignment_mode: Mapped[str] = mapped_column(String(16), default="all")
@@ -216,9 +209,7 @@ class ContentFlowVersion(Base):
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    flow_id: Mapped[int] = mapped_column(
-        ForeignKey("content_flow.id", ondelete="CASCADE"), index=True
-    )
+    flow_id: Mapped[int] = mapped_column(ForeignKey("content_flow.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), index=True)
     author_telegram_id: Mapped[int] = mapped_column(BigInteger)
@@ -257,9 +248,7 @@ class ContentAttachment(Base):
         CheckConstraint("position >= 0", name="ck_content_attachment_position"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    step_id: Mapped[int] = mapped_column(
-        ForeignKey("content_step.id", ondelete="CASCADE"), index=True
-    )
+    step_id: Mapped[int] = mapped_column(ForeignKey("content_step.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     media_type: Mapped[str] = mapped_column(String(32))
     storage_key: Mapped[str] = mapped_column(String(500))
@@ -276,9 +265,7 @@ class ContentKeyboard(Base):
         CheckConstraint("kind IN ('inline','reply')", name="ck_content_keyboard_kind"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    step_id: Mapped[int] = mapped_column(
-        ForeignKey("content_step.id", ondelete="CASCADE"), index=True
-    )
+    step_id: Mapped[int] = mapped_column(ForeignKey("content_step.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(16))
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
@@ -286,9 +273,7 @@ class ContentKeyboard(Base):
 class ContentKeyboardButton(Base):
     __tablename__ = "content_keyboard_button"
     __table_args__ = (
-        UniqueConstraint(
-            "keyboard_id", "row", "position", name="uq_content_keyboard_button_position"
-        ),
+        UniqueConstraint("keyboard_id", "row", "position", name="uq_content_keyboard_button_position"),
         CheckConstraint("row >= 0 AND position >= 0", name="ck_content_keyboard_button_position"),
         CheckConstraint(
             "action_type IN ('url','callback','text')",
@@ -313,16 +298,10 @@ class ContentKeyboardButton(Base):
 
 class FlowChannelAssignment(Base):
     __tablename__ = "flow_channel_assignment"
-    __table_args__ = (
-        UniqueConstraint("flow_id", "channel_id", name="uq_flow_channel_assignment"),
-    )
+    __table_args__ = (UniqueConstraint("flow_id", "channel_id", name="uq_flow_channel_assignment"),)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    flow_id: Mapped[int] = mapped_column(
-        ForeignKey("content_flow.id", ondelete="CASCADE"), index=True
-    )
-    channel_id: Mapped[int] = mapped_column(
-        ForeignKey("channel.id", ondelete="CASCADE"), index=True
-    )
+    flow_id: Mapped[int] = mapped_column(ForeignKey("content_flow.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -336,15 +315,9 @@ class FlowDelivery(Base):
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    bot_id: Mapped[int] = mapped_column(
-        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
-    )
-    channel_id: Mapped[int] = mapped_column(
-        ForeignKey("channel.id", ondelete="CASCADE"), index=True
-    )
-    contact_id: Mapped[int] = mapped_column(
-        ForeignKey("contact.id", ondelete="CASCADE"), index=True
-    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
     version_id: Mapped[int] = mapped_column(
         ForeignKey("content_flow_version.id", ondelete="RESTRICT"), index=True
     )
@@ -369,9 +342,7 @@ class DeliveryOperation(Base):
     flow_delivery_id: Mapped[int] = mapped_column(
         ForeignKey("flow_delivery.id", ondelete="CASCADE"), index=True
     )
-    step_id: Mapped[int] = mapped_column(
-        ForeignKey("content_step.id", ondelete="RESTRICT"), index=True
-    )
+    step_id: Mapped[int] = mapped_column(ForeignKey("content_step.id", ondelete="RESTRICT"), index=True)
     depends_on_operation_id: Mapped[int | None] = mapped_column(
         ForeignKey("delivery_operation.id", ondelete="RESTRICT"), index=True
     )
@@ -387,6 +358,64 @@ class DeliveryOperation(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AdCreative(Base):
+    __tablename__ = "ad_creative"
+    __table_args__ = (
+        CheckConstraint("weight BETWEEN 1 AND 1000", name="ck_ad_creative_weight"),
+        CheckConstraint(
+            "(cta_text = '' AND cta_url = '') OR (cta_text <> '' AND cta_url <> '')",
+            name="ck_ad_creative_cta_pair",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    text: Mapped[str] = mapped_column(Text)
+    entities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    cta_text: Mapped[str] = mapped_column(String(64), default="")
+    cta_url: Mapped[str] = mapped_column(String(2048), default="")
+    weight: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AdImpression(Base):
+    __tablename__ = "ad_impression"
+    __table_args__ = (
+        UniqueConstraint("flow_delivery_id", name="ad_impression_flow_delivery_id_key"),
+        UniqueConstraint("operation_id", name="ad_impression_operation_id_key"),
+        CheckConstraint(
+            "status IN ('scheduled','sent','failed','cancelled')",
+            name="ck_ad_impression_status",
+        ),
+        CheckConstraint("click_count >= 0", name="ck_ad_impression_click_count"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True, index=True)
+    creative_id: Mapped[int] = mapped_column(ForeignKey("ad_creative.id", ondelete="RESTRICT"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    flow_delivery_id: Mapped[int] = mapped_column(
+        ForeignKey("flow_delivery.id", ondelete="CASCADE"), index=True
+    )
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("delivery_operation.id", ondelete="SET NULL"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    destination_url: Mapped[str] = mapped_column(String(2048), default="")
+    click_count: Mapped[int] = mapped_column(Integer, default=0)
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    shown_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    first_clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(500), default="")
 
 
 class ManagedBot(Base):
@@ -411,7 +440,9 @@ class ManagedBot(Base):
     approval_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     auto_approve: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Channel(Base):
@@ -443,7 +474,9 @@ class WelcomeMessageVersion(Base):
 class WelcomeMedia(Base):
     __tablename__ = "welcome_media"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    version_id: Mapped[int] = mapped_column(ForeignKey("welcome_message_version.id", ondelete="CASCADE"), index=True)
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("welcome_message_version.id", ondelete="CASCADE"), index=True
+    )
     position: Mapped[int] = mapped_column(Integer, default=0)
     media_type: Mapped[str] = mapped_column(String(32))
     storage_key: Mapped[str] = mapped_column(String(500))
@@ -459,21 +492,15 @@ class WelcomeDraft(Base):
         Index("ix_welcome_draft_finalize", "finalize_at"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    bot_id: Mapped[int] = mapped_column(
-        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
-    )
-    owner_id: Mapped[int] = mapped_column(
-        ForeignKey("owner.id", ondelete="CASCADE"), index=True
-    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
     media_group_id: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     finalize_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finalized_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("welcome_message_version.id", ondelete="SET NULL"), index=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -481,22 +508,16 @@ class WelcomeDraft(Base):
 
 class WelcomeDraftMedia(Base):
     __tablename__ = "welcome_draft_media"
-    __table_args__ = (
-        UniqueConstraint("draft_id", "telegram_message_id", name="uq_welcome_draft_message"),
-    )
+    __table_args__ = (UniqueConstraint("draft_id", "telegram_message_id", name="uq_welcome_draft_message"),)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    draft_id: Mapped[int] = mapped_column(
-        ForeignKey("welcome_draft.id", ondelete="CASCADE"), index=True
-    )
+    draft_id: Mapped[int] = mapped_column(ForeignKey("welcome_draft.id", ondelete="CASCADE"), index=True)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger)
     media_type: Mapped[str] = mapped_column(String(32))
     storage_key: Mapped[str] = mapped_column(String(500))
     original_name: Mapped[str] = mapped_column(String(255), default="")
     mime_type: Mapped[str] = mapped_column(String(128), default="")
     size: Mapped[int] = mapped_column(BigInteger, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Contact(Base):
@@ -513,29 +534,25 @@ class Contact(Base):
     delivery_status: Mapped[str] = mapped_column(String(16), default="unknown", index=True)
     bot_started: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     last_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(500), default="")
 
 
 class InboxSource(Base):
     __tablename__ = "inbox_source"
-    __table_args__ = (
-        CheckConstraint("pending_count >= 0", name="ck_inbox_source_pending_count"),
-    )
+    __table_args__ = (CheckConstraint("pending_count >= 0", name="ck_inbox_source_pending_count"),)
     source_key: Mapped[str] = mapped_column(String(96), primary_key=True)
-    bot_id: Mapped[int | None] = mapped_column(
-        ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True
-    )
+    bot_id: Mapped[int | None] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     last_claimed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("'1970-01-01 00:00:00+00'::timestamptz"),
     )
     pending_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     next_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class InboxEvent(Base):
@@ -573,7 +590,9 @@ class InboxEvent(Base):
     lease_owner: Mapped[str | None] = mapped_column(String(64))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(500), default="")
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -587,7 +606,9 @@ class GreetingDelivery(Base):
     bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
     contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"))
-    version_id: Mapped[int | None] = mapped_column(ForeignKey("welcome_message_version.id", ondelete="SET NULL"))
+    version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("welcome_message_version.id", ondelete="SET NULL")
+    )
     event_key: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
     delay_snapshot_seconds: Mapped[int] = mapped_column(Integer, default=0)
@@ -637,4 +658,6 @@ class EventLog(Base):
     level: Mapped[str] = mapped_column(String(16), default="info")
     message: Mapped[str] = mapped_column(String(500))
     context: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

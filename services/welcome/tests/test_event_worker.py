@@ -137,9 +137,7 @@ async def test_claimed_batch_bulk_completes_unsupported_client_updates(
         cast(InboxEvent, SimpleNamespace(bot_id=7, payload={"poll": {}}, id=1)),
         cast(InboxEvent, SimpleNamespace(bot_id=7, payload={"edited_channel_post": {}}, id=2)),
     ]
-    actionable = cast(
-        InboxEvent, SimpleNamespace(bot_id=7, payload={"message": {}}, id=3)
-    )
+    actionable = cast(InboxEvent, SimpleNamespace(bot_id=7, payload={"message": {}}, id=3))
 
     await event_worker.process_claimed_batch(
         [*ignored, actionable],

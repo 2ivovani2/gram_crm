@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     mini_app_session_seconds: int = Field(default=43_200, ge=300, le=604_800)
     mini_app_cookie_name: str = "gramly_welcome_session"
     mini_app_cookie_secure: bool = True
-    trial_days: int = Field(default=14, ge=1, le=90)
+    public_service_base_url: str = "https://gramly.tech/welcome"
 
 
 @lru_cache

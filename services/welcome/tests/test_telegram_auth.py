@@ -42,9 +42,7 @@ def signed_init_data(
 
 def test_verifies_telegram_init_data() -> None:
     now = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
-    verified = verify_init_data(
-        signed_init_data(now=now), BOT_TOKEN, max_age_seconds=300, now=now
-    )
+    verified = verify_init_data(signed_init_data(now=now), BOT_TOKEN, max_age_seconds=300, now=now)
 
     assert verified.user.id == 42
     assert verified.user.username == "alex_test"

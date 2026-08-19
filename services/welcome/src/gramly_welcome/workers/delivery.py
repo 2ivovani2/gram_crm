@@ -229,9 +229,7 @@ async def _process_delivery(
         delay, reason = 1, "rate_limited"
     if not allowed:
         async with session_factory() as session:
-            await defer_delivery(
-                session, delivery_id, worker_id, delay_seconds=delay, error=reason
-            )
+            await defer_delivery(session, delivery_id, worker_id, delay_seconds=delay, error=reason)
         DELIVERY_ATTEMPTS.labels("deferred").inc()
         return
     try:
@@ -248,9 +246,7 @@ async def _process_delivery(
         DELIVERY_ATTEMPTS.labels("telegram_429").inc()
     except (TelegramForbiddenError, TelegramBadRequest, MediaTooLargeError, TokenDecryptionError) as exc:
         async with session_factory() as session:
-            await finish_delivery(
-                session, delivery_id, worker_id, success=False, error=type(exc).__name__
-            )
+            await finish_delivery(session, delivery_id, worker_id, success=False, error=type(exc).__name__)
         DELIVERY_ATTEMPTS.labels("failed").inc()
     except ObjectStorageError:
         DEPENDENCY_ERRORS.labels("object_storage").inc()
@@ -343,9 +339,7 @@ async def _process_join_request(
         delay, reason = 1, "rate_limited"
     if not allowed:
         async with session_factory() as session:
-            await defer_join_request(
-                session, request_id, worker_id, delay_seconds=delay, error=reason
-            )
+            await defer_join_request(session, request_id, worker_id, delay_seconds=delay, error=reason)
         DELIVERY_ATTEMPTS.labels("approval_deferred").inc()
         return
     try:
@@ -362,9 +356,7 @@ async def _process_join_request(
         DELIVERY_ATTEMPTS.labels("telegram_429").inc()
     except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError) as exc:
         async with session_factory() as session:
-            await finish_join_request(
-                session, request_id, worker_id, success=False, error=type(exc).__name__
-            )
+            await finish_join_request(session, request_id, worker_id, success=False, error=type(exc).__name__)
         DELIVERY_ATTEMPTS.labels("approval_failed").inc()
     except (TelegramAPIError, OSError) as exc:
         if context.request.attempts >= settings.max_attempts:
@@ -384,9 +376,7 @@ async def _process_join_request(
                 )
             DELIVERY_ATTEMPTS.labels("approval_retry").inc()
     except Exception as exc:
-        logger.exception(
-            "unexpected join approval failure id=%s type=%s", request_id, type(exc).__name__
-        )
+        logger.exception("unexpected join approval failure id=%s type=%s", request_id, type(exc).__name__)
         if context.request.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_join_request(
@@ -440,9 +430,7 @@ async def serve() -> None:
                     await interface_bot().send_message(
                         owner_telegram_id,
                         f"✅ Альбом сохранён · версия {version}",
-                        reply_markup=_one_button(
-                            "⏱ Настроить задержку", f"show-wdelay:{bot_id}"
-                        ),
+                        reply_markup=_one_button("⏱ Настроить задержку", f"show-wdelay:{bot_id}"),
                     )
                 except Exception:
                     logger.exception("owner album notification failed draft_id=%s", draft_id)
@@ -479,15 +467,11 @@ async def serve() -> None:
             for operation in operations:
                 if stopping.is_set():
                     break
-                await _process_operation(
-                    operation.id, worker_id, settings, limiter, storage, keyring
-                )
+                await _process_operation(operation.id, worker_id, settings, limiter, storage, keyring)
             for delivery in deliveries:
                 if stopping.is_set():
                     break
-                await _process_delivery(
-                    delivery.id, worker_id, settings, limiter, storage, keyring
-                )
+                await _process_delivery(delivery.id, worker_id, settings, limiter, storage, keyring)
             for request in join_requests:
                 if stopping.is_set():
                     break

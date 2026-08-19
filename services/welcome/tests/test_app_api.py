@@ -76,9 +76,7 @@ def test_telegram_session_sets_configured_httponly_cookie(
 
 
 def test_logout_requires_an_authenticated_session(app_client: TestClient) -> None:
-    response = app_client.post(
-        "/api/v1/session/logout", headers={"X-CSRF-Token": "missing-session"}
-    )
+    response = app_client.post("/api/v1/session/logout", headers={"X-CSRF-Token": "missing-session"})
     assert response.status_code == 401
 
 

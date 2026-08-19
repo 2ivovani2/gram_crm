@@ -31,7 +31,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from .commercial import start_trial
+from .commercial import ensure_free_access
 from .config import Settings, get_settings
 from .content_service import (
     ContentValidationError,
@@ -410,7 +410,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
         await configure_customer_webhook(managed, token, settings)
         async with session_factory() as session:
             await set_webhook_configured(session, managed.id, True)
-            await start_trial(session, owner.id, trial_days=settings.trial_days)
+            await ensure_free_access(session, owner.id)
     except IntegrityError:
         await message.answer("Этот бот уже подключён к системе другим владельцем.")
         return

@@ -23,9 +23,7 @@ def test_keyboard_parser_preserves_rows_actions_and_styles() -> None:
 
 def test_keyboard_parser_rejects_mixed_inline_and_reply() -> None:
     with pytest.raises(ContentValidationError, match="нельзя смешивать"):
-        _parse_keyboard_definition(
-            "url | Сайт | https://gramly.tech\nreply | Продолжить"
-        )
+        _parse_keyboard_definition("url | Сайт | https://gramly.tech\nreply | Продолжить")
 
 
 def test_keyboard_parser_supports_removal() -> None:
