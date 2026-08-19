@@ -1530,7 +1530,7 @@ async def subscription_menu(message: Message, owner: Owner) -> None:
         rows.append(
             [
                 owner_button(
-                    text=f"Оплатить {plan.price_xtr} Stars",
+                    text=f"⭐ Telegram Stars · {plan.price_xtr} XTR",
                     callback_data="pay:stars",
                     emoji_key="subscription",
                 )
@@ -1540,7 +1540,7 @@ async def subscription_menu(message: Message, owner: Owner) -> None:
         rows.append(
             [
                 owner_button(
-                    text=f"Оплатить {plan.price_rub} ₽",
+                    text=f"💎 Crypto Pay · {plan.price_rub} ₽",
                     callback_data="pay:crypto",
                     emoji_key="subscription",
                 )
