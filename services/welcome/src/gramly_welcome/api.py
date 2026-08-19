@@ -20,7 +20,7 @@ from .config import Settings, get_settings
 from .crypto_pay import CryptoPayClient, CryptoPayError, webhook_signature_valid
 from .db import session_dependency
 from .finance import FinanceError
-from .metrics import WEBHOOK_LATENCY, WEBHOOK_REQUESTS
+from .metrics import PAYMENT_EVENTS, WEBHOOK_LATENCY, WEBHOOK_REQUESTS
 from .repository import find_active_bot, insert_inbox_event
 from .schemas import AcceptedResponse, TelegramUpdate
 
@@ -74,6 +74,7 @@ async def crypto_pay_webhook(
     if not settings.crypto_pay_webhook_secret or not hmac.compare_digest(
         path_secret, settings.crypto_pay_webhook_secret
     ):
+        PAYMENT_EVENTS.labels("crypto_pay", "rejected").inc()
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     body = await _bounded_body(request, settings.max_webhook_body_bytes)
     if not webhook_signature_valid(
@@ -81,6 +82,7 @@ async def crypto_pay_webhook(
         body,
         request.headers.get("crypto-pay-api-signature", ""),
     ):
+        PAYMENT_EVENTS.labels("crypto_pay", "rejected").inc()
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid Crypto Pay signature")
     try:
         payload = json.loads(body)
@@ -97,6 +99,7 @@ async def crypto_pay_webhook(
         if abs((datetime.now(UTC) - request_date).total_seconds()) > settings.crypto_pay_webhook_max_age_seconds:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Stale Crypto Pay webhook")
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        PAYMENT_EVENTS.labels("crypto_pay", "rejected").inc()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Crypto Pay webhook") from exc
     await register_payment_event(
         session, provider="crypto_pay", event_key=event_key, raw_body=body
@@ -106,7 +109,9 @@ async def crypto_pay_webhook(
         await verify_and_settle_crypto_invoice(session, client, invoice_id)
         await complete_payment_event(session, provider="crypto_pay", event_key=event_key)
     except (CryptoPayError, FinanceError) as exc:
+        PAYMENT_EVENTS.labels("crypto_pay", "failed").inc()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Payment verification failed") from exc
+    PAYMENT_EVENTS.labels("crypto_pay", "settled").inc()
     return {"ok": True}
 
 

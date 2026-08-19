@@ -118,3 +118,5 @@ jobs:
           docker build --file services/crm/Dockerfile --tag gramly-crm:ci .
           docker build --file services/welcome/Dockerfile --tag gramly-welcome:ci .
           docker build --file services/welcome-web/Dockerfile --tag gramly-welcome-web:ci .
+          docker run --rm --add-host gramly-welcome-api:127.0.0.1 \
+            gramly-welcome-web:ci nginx -t

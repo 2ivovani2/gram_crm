@@ -21,6 +21,7 @@ providers:
       - devtools
       - argocd
       - observability
+      - gramly-welcome
   kubernetesGateway:
     enabled: true
     labelSelector: gramly.tech/controller=private
@@ -31,6 +32,7 @@ providers:
       - devtools
       - argocd
       - observability
+      - gramly-welcome
 
 gateway:
   enabled: false

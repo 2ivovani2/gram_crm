@@ -20,6 +20,8 @@ render_targets=(
   "infra/kubernetes/overlays/production/welcome-migrations"
   "infra/kubernetes/overlays/production/welcome-pause"
   "infra/kubernetes/overlays/production/welcome-cutover"
+  "infra/kubernetes/platform/gateway"
+  "infra/kubernetes/apps/observability"
 )
 
 for target in "${render_targets[@]}"; do
@@ -36,3 +38,10 @@ for target in "${render_targets[@]}"; do
   rm -f "${output}"
   echo "rendered ${target}"
 done
+
+bash -n \
+  "${repo_root}/infra/kubernetes/apps/identity/configure-welcome-admin-oidc.sh" \
+  "${repo_root}/infra/kubernetes/apps/vpn/ensure-private-app-records.sh" \
+  "${repo_root}/infra/kubernetes/scripts/deploy-private-admin-gateway.sh" \
+  "${repo_root}/ops/welcome/production_smoke.sh" \
+  "${repo_root}/ops/welcome/release_production.sh"

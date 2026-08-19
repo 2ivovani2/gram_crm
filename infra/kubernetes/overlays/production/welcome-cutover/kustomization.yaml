@@ -34,6 +34,24 @@ patches:
         path: /spec/replicas
         value: 2
   - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-worker-billing
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-worker-notifications
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
       group: keda.sh
       version: v1alpha1
       kind: ScaledObject

@@ -79,3 +79,31 @@ spec:
           annotations:
             summary: "Welcome delivery workers are missing"
             description: "Prometheus has not observed an active delivery worker for five minutes."
+        - alert: GramlyWelcomeBillingWorkersMissing
+          expr: absent(welcome_worker_active{kind="billing"}) == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome billing workers are missing"
+            description: "Renewal reminders and approved partner payouts are not being processed."
+        - alert: GramlyWelcomeNotificationWorkersMissing
+          expr: absent(welcome_worker_active{kind="notifications"}) == 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome notification workers are missing"
+            description: "Owner onboarding and announcements are not being delivered."
+        - alert: GramlyWelcomePaymentVerificationFailures
+          expr: sum(increase(welcome_payment_events_total{result="failed"}[5m])) > 0
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome payment verification failed"
+            description: "At least one signed payment webhook could not be reconciled with the provider."
+        - alert: GramlyWelcomeBillingRetries
+          expr: sum(increase(welcome_billing_operations_total{result="retry"}[15m])) > 3
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome billing operations are repeatedly retrying"
+            description: "Renewal reminders or partner payouts have retried more than three times."

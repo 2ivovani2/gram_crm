@@ -13,4 +13,6 @@ spec:
     - matches:
         - path: {type: PathPrefix, value: /welcome/client/}
         - path: {type: PathPrefix, value: /welcome/webhook/}
+        - path: {type: PathPrefix, value: /welcome/payments/}
+        - path: {type: PathPrefix, value: /welcome/ad/}
       backendRefs: [{name: gramly-welcome-api, port: 8080}]

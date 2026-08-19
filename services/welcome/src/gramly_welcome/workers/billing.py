@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 from decimal import ROUND_DOWN, Decimal
 
 from aiogram.exceptions import TelegramAPIError
+from prometheus_client import start_http_server
 
 from ..billing import claim_due_reminder, finish_reminder
 from ..config import get_settings
 from ..crypto_pay import CryptoPayClient, CryptoPayError
 from ..db import session_factory
 from ..finance import claim_withdrawal, complete_withdrawal, retry_withdrawal
+from ..metrics import BILLING_OPERATIONS, WORKER_ACTIVE
 from ..owner_bot import interface_bot
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,7 @@ async def process_one() -> bool:
                 exchange_rate_rub=rate,
                 provider_transfer_id=str(transfer.get("transfer_id", "")),
             )
+        BILLING_OPERATIONS.labels("withdrawal", "completed").inc()
     except (CryptoPayError, ArithmeticError, ValueError) as exc:
         logger.warning("Withdrawal retry id=%s", withdrawal.id, exc_info=True)
         try:
@@ -59,9 +63,11 @@ async def process_one() -> bool:
                     exchange_rate_rub=rate,
                     provider_transfer_id=str(reconciled_transfer.get("transfer_id", "")),
                 )
+            BILLING_OPERATIONS.labels("withdrawal", "reconciled").inc()
         else:
             async with session_factory() as session:
                 await retry_withdrawal(session, withdrawal.id, str(exc))
+            BILLING_OPERATIONS.labels("withdrawal", "retry").inc()
     return True
 
 
@@ -82,18 +88,32 @@ async def process_one_reminder() -> bool:
         error = str(exc)
     async with session_factory() as session:
         await finish_reminder(session, reminder.id, error=error)
+    BILLING_OPERATIONS.labels("renewal_reminder", "retry" if error else "sent").inc()
     return True
 
 
 async def worker_loop() -> None:
     logging.basicConfig(level=logging.INFO)
     logger.info("Starting Gramly Welcome billing worker")
-    while True:
-        handled = await process_one()
-        reminded = await process_one_reminder()
-        if not handled and not reminded:
-            await asyncio.sleep(1)
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for event_signal in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(event_signal, stopping.set)
+    WORKER_ACTIVE.labels("billing").inc()
+    try:
+        while not stopping.is_set():
+            handled = await process_one()
+            reminded = await process_one_reminder()
+            if handled or reminded:
+                continue
+            try:
+                await asyncio.wait_for(stopping.wait(), timeout=1)
+            except TimeoutError:
+                pass
+    finally:
+        WORKER_ACTIVE.labels("billing").dec()
 
 
 def run() -> None:
+    start_http_server(9090)
     asyncio.run(worker_loop())

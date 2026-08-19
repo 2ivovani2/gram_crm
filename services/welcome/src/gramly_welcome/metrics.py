@@ -44,3 +44,13 @@ OWNER_NOTIFICATIONS = Counter(
     "Owner onboarding and announcement delivery attempts",
     ("kind", "result"),
 )
+PAYMENT_EVENTS = Counter(
+    "welcome_payment_events_total",
+    "Verified payment webhook events by provider and result",
+    ("provider", "result"),
+)
+BILLING_OPERATIONS = Counter(
+    "welcome_billing_operations_total",
+    "Subscription reminders and partner payouts by operation and result",
+    ("operation", "result"),
+)

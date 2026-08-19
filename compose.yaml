@@ -141,6 +141,9 @@ services:
         condition: service_completed_successfully
     ports: ["8080:8080"]
     volumes: [./services/welcome:/app]
+    networks:
+      default:
+        aliases: [gramly-welcome-api]
 
   welcome-web:
     build:

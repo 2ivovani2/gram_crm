@@ -62,5 +62,7 @@ belong in Git.
 
 Forgejo Actions runs backend, frontend, manifest, security and production-image
 build gates for every pull request. A green image build does not publish or
-deploy anything; immutable publishing and staging promotion are introduced in
-the dedicated release phase.
+deploy anything. GramlyHello production promotion uses reviewed immutable API
+and web image digests through `ops/welcome/release_production.sh`; the script
+backs up PostgreSQL, migrates before rollout, reconciles SSO/webhooks, and runs
+the production smoke gate.

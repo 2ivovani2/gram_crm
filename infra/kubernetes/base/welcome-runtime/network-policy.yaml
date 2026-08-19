@@ -25,6 +25,10 @@ spec:
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: observability}
       ports: [{protocol: TCP, port: 8080}]
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: gramly-welcome-web}
+      ports: [{protocol: TCP, port: 8080}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -36,7 +40,11 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/name
         operator: In
-        values: [gramly-welcome-worker-events, gramly-welcome-worker-delivery]
+        values:
+          - gramly-welcome-worker-events
+          - gramly-welcome-worker-delivery
+          - gramly-welcome-worker-billing
+          - gramly-welcome-worker-notifications
   policyTypes: [Ingress]
   ingress:
     - from:
