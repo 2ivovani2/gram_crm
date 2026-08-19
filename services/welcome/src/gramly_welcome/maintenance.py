@@ -7,7 +7,14 @@ from sqlalchemy import delete, select, text
 
 from .config import get_settings
 from .db import session_factory
-from .models import EventLog, InboxEvent, InboxSource, QueueStatus
+from .models import (
+    EventLog,
+    IdempotencyRecord,
+    InboxEvent,
+    InboxSource,
+    QueueStatus,
+    WebSession,
+)
 
 
 async def maintain() -> None:
@@ -54,6 +61,10 @@ async def maintain() -> None:
                 delete(EventLog).where(
                     EventLog.created_at < now - timedelta(days=settings.technical_retention_days)
                 )
+            )
+            await session.execute(delete(WebSession).where(WebSession.expires_at < now))
+            await session.execute(
+                delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < now)
             )
 
 

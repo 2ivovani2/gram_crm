@@ -29,6 +29,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.exc import IntegrityError
 
+from .commercial import start_trial
 from .config import Settings, get_settings
 from .crypto import TokenKeyring
 from .db import session_factory
@@ -419,6 +420,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
         await configure_customer_webhook(managed, token, settings)
         async with session_factory() as session:
             await set_webhook_configured(session, managed.id, True)
+            await start_trial(session, owner.id, trial_days=settings.trial_days)
     except IntegrityError:
         await message.answer("Этот бот уже подключён к системе другим владельцем.")
         return
