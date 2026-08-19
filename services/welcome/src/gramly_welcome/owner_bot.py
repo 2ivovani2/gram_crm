@@ -1661,7 +1661,7 @@ async def referral_dashboard(message: Message, owner: Owner) -> None:
     await owner_answer(
         message,
         "🤝 <b>Партнёрская программа</b>\n\n"
-        "Ставка зависит от числа активных платных клиентов: 15% / 25% / 35%. "
+        "Ставка зависит от числа активных платных клиентов: 10% / 15% / 20%. "
         "Начисления идут 12 месяцев с первой оплаты реферала.\n\n"
         f"Баланс: <b>{balance} ₽</b>\n"
         f"Ваша ссылка:\nhttps://t.me/{settings.interface_bot_username}?start=ref_{code.code}\n\n"

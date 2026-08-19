@@ -41,11 +41,11 @@ class SettlementResult:
 
 def commission_rate(active_referrals: int) -> Decimal:
     if active_referrals >= 21:
-        return Decimal("35")
+        return Decimal("20")
     if active_referrals >= 6:
-        return Decimal("25")
-    if active_referrals >= 1:
         return Decimal("15")
+    if active_referrals >= 1:
+        return Decimal("10")
     return Decimal("0")
 
 

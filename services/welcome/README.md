@@ -58,7 +58,7 @@ before any financial mutation.
 
 The first valid `ref_<opaque-code>` source is immutable. A candidate activates
 only after connecting a customer bot and making the first confirmed Business
-payment. Commission rates are snapshotted at 15%, 25% or 35% and stop exactly
+payment. Commission rates are snapshotted at 10%, 15% or 20% and stop exactly
 one calendar year after that first payment. The RUB ledger is append-only at
 both service and database level. Withdrawals reserve at least 1,000 RUB before
 review; the billing worker uses the stable withdrawal `spend_id` for an

@@ -12,11 +12,11 @@ from gramly_welcome.finance import FinanceError, add_calendar_year, commission_r
 
 def test_commission_tiers_are_deterministic() -> None:
     assert commission_rate(0) == Decimal("0")
-    assert commission_rate(1) == Decimal("15")
-    assert commission_rate(5) == Decimal("15")
-    assert commission_rate(6) == Decimal("25")
-    assert commission_rate(20) == Decimal("25")
-    assert commission_rate(21) == Decimal("35")
+    assert commission_rate(1) == Decimal("10")
+    assert commission_rate(5) == Decimal("10")
+    assert commission_rate(6) == Decimal("15")
+    assert commission_rate(20) == Decimal("15")
+    assert commission_rate(21) == Decimal("20")
 
 
 def test_commission_term_handles_leap_day() -> None:
