@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gramly-welcome-admin-auth
+  namespace: gramly-welcome
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
+          args:
+            - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+          ports: [{name: http, containerPort: 4180}]
+          volumeMounts:
+            - {name: config, mountPath: /etc/oauth2-proxy, readOnly: true}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          readinessProbe: &probe {httpGet: {path: /ping, port: http}, periodSeconds: 5}
+          livenessProbe: *probe
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 300m, memory: 192Mi}
+      volumes:
+        - name: config
+          secret:
+            secretName: gramly-welcome-admin-oidc
+            items: [{key: oauth2-proxy.cfg, path: oauth2-proxy.cfg}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-welcome-admin-auth, namespace: gramly-welcome}
+spec:
+  selector: {app.kubernetes.io/name: gramly-welcome-admin-auth}
+  ports: [{name: http, port: 4180, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: gramly-welcome-admin-auth, namespace: gramly-welcome}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}

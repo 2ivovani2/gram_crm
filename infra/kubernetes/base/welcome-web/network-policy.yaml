@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-welcome-web-ingress, namespace: gramly-welcome}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-web}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik-public}}
+        - podSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-welcome-admin-auth-ingress, namespace: gramly-welcome}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-admin-auth}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik-private}}
+      ports: [{protocol: TCP, port: 4180}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-welcome-web-internal-egress, namespace: gramly-welcome}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [gramly-welcome-web, gramly-welcome-admin-auth]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-api}}
+      ports: [{protocol: TCP, port: 8080}]
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-web}}
+      ports: [{protocol: TCP, port: 8080}]

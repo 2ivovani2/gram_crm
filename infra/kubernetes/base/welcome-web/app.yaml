@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gramly-welcome-web
+  namespace: gramly-welcome
+spec:
+  replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-web}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-welcome-web}}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-web}}
+      securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: web
+          image: WELCOME_WEB_IMAGE_PLACEHOLDER
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            readOnlyRootFilesystem: true
+          startupProbe: &probe {httpGet: {path: /health, port: http}, failureThreshold: 30, periodSeconds: 5}
+          readinessProbe: *probe
+          livenessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 30}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - {name: nginx-cache, mountPath: /var/cache/nginx}
+            - {name: nginx-run, mountPath: /var/run}
+            - {name: nginx-tmp, mountPath: /tmp}
+      volumes:
+        - {name: nginx-cache, emptyDir: {sizeLimit: 64Mi}}
+        - {name: nginx-run, emptyDir: {sizeLimit: 8Mi}}
+        - {name: nginx-tmp, emptyDir: {sizeLimit: 16Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: gramly-welcome-web, namespace: gramly-welcome}
+spec:
+  selector: {app.kubernetes.io/name: gramly-welcome-web}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: gramly-welcome-web, namespace: gramly-welcome}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-web}}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from aiogram import Bot
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from .config import get_settings
 
@@ -23,6 +24,12 @@ async def reconcile() -> None:
             ],
             drop_pending_updates=False,
             max_connections=40,
+        )
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Кабинет",
+                web_app=WebAppInfo(url=settings.mini_app_url),
+            )
         )
 
 

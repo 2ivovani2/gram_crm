@@ -150,3 +150,19 @@ spec:
           selector:
             matchLabels:
               gramly.tech/contour: private
+    - name: hello-admin-https
+      hostname: hello-admin.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: hello-admin-gramly-tech-tls
+            namespace: traefik-public
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gramly.tech/admin-plane: owner

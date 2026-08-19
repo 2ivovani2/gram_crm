@@ -77,6 +77,38 @@ data:
           "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
           "targets": [{"expr": "sum by (kind) (welcome_worker_active)", "legendFormat": "{{kind}}", "refId": "A"}],
           "title": "Active workers", "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "none"}}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21}, "id": 9,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"expr": "sum by (provider, result) (rate(welcome_payment_events_total[5m]))", "legendFormat": "{{provider}} / {{result}}", "refId": "A"}],
+          "title": "Verified payment events", "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "none"}}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21}, "id": 10,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"expr": "sum by (operation, result) (rate(welcome_billing_operations_total[5m]))", "legendFormat": "{{operation}} / {{result}}", "refId": "A"}],
+          "title": "Billing operations", "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "none"}}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29}, "id": 11,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"expr": "sum by (result) (rate(welcome_free_ad_deliveries_total[5m]))", "legendFormat": "ads / {{result}}", "refId": "A"}, {"expr": "sum(rate(welcome_free_ad_clicks_total[5m]))", "legendFormat": "ad clicks", "refId": "B"}],
+          "title": "Free advertising", "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "none"}}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29}, "id": 12,
+          "options": {"legend": {"displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"expr": "sum by (result) (rate(welcome_rotation_recommendations_total[5m]))", "legendFormat": "rotation / {{result}}", "refId": "A"}, {"expr": "sum by (kind, result) (rate(welcome_owner_notifications_total[5m]))", "legendFormat": "{{kind}} / {{result}}", "refId": "B"}],
+          "title": "Rotation and owner notifications", "type": "timeseries"
         }
       ],
       "refresh": "10s",
@@ -87,5 +119,5 @@ data:
       "timezone": "browser",
       "title": "Gramly / Welcome",
       "uid": "gramly-welcome",
-      "version": 1
+      "version": 2
     }

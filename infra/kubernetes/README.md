@@ -351,12 +351,30 @@ started. Non-Gramly workloads from the retired edge/VPS are intentionally not
 part of this repository or platform.
 
 The standalone Welcome product uses two separate production overlays. Apply
-`overlays/production/welcome` first: it creates the API with both worker pools
-paused at zero and intentionally exposes no public route. After migrations and
-the final data/media copy, `overlays/production/welcome-cutover` starts the
-workers and gives FastAPI both `/welcome/client/` and `/welcome/webhook/`.
+`overlays/production/welcome` first: it creates the API, Mini App and protected
+owner console with all four worker pools paused at zero. After migrations,
+`overlays/production/welcome-cutover` starts event, delivery, billing and
+notification workers and routes webhooks, payment callbacks and tracked ads to
+FastAPI.
 GramlyHello and customer bot updates are processed natively by Welcome; Django
 CRM is not in the runtime or control path.
+
+The reviewed production release is performed with immutable image digests. It
+creates and verifies a CNPG backup, provisions the owner-only Authentik client,
+runs additive Alembic migrations before workloads, reconciles the Telegram
+webhook/menu button, updates observability, and runs end-to-end smoke checks:
+
+```bash
+export KUBECONFIG=/absolute/path/to/vke.yaml
+export WELCOME_IMAGE=pipka2219/gramly-welcome@sha256:<digest>
+export WELCOME_WEB_IMAGE=pipka2219/gramly-welcome-web@sha256:<digest>
+ops/welcome/release_production.sh
+```
+
+Both variables reject mutable tags. `hello-admin.gramly.tech` must already
+resolve publicly to the Moscow edge so Let's Encrypt can issue its certificate;
+NetBird split DNS then maps it to the DevOps gateway. The console is reachable
+only through VPN and a `gramly-owners`/Authentik Admins SSO session.
 
 During authoritative DNS propagation, `gramly-cutover-bridge` on the old VPS
 forwards TCP 80/443 to the VKE public Load Balancer. Keep it until recursive DNS
@@ -403,8 +421,10 @@ Publicly served records:
 - `media.gramly.tech`
 - `auth.gramly.tech`
 - `vpn.gramly.tech`
+- `hello-admin.gramly.tech` (publicly only the VPN gate; the application is private)
 
-Private application names (`crm`, `git`, `tasks`, `docs`, `grafana`, `cluster`)
+Private application names (`crm`, `git`, `tasks`, `docs`, `grafana`, `cluster`,
+`hello-admin`)
 also have public A
 records pointing at the Load Balancer for DNS ownership and certificate flows,
 but the public Gateway has no application routes for them. NetBird split DNS
