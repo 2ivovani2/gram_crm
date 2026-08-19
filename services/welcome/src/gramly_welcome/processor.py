@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .flow_delivery import schedule_content_flow
 from .models import (
     Channel,
     Contact,
@@ -99,6 +100,16 @@ async def _schedule_greeting(
     # Serialise the short coalescing check for this contact. A join approval and
     # Telegram's following chat_member update may arrive on different API pods.
     await session.execute(select(Contact.id).where(Contact.id == contact_id).with_for_update())
+    if await schedule_content_flow(
+        session,
+        bot=bot,
+        channel_id=channel_id,
+        contact_id=contact_id,
+        event_key=event_key,
+    ):
+        return
+    # Compatibility fallback for a database that has not yet migrated its
+    # legacy one-message greeting into the content engine.
     version_id = await session.scalar(
         select(WelcomeMessageVersion.id).where(
             WelcomeMessageVersion.bot_id == bot.id,
