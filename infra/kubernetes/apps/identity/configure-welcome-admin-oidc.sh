@@ -53,9 +53,28 @@ with transaction.atomic():
         RedirectURIType('authorization'),
     )]
     provider.save(update_fields=['_redirect_uris'])
-    provider.property_mappings.set(ScopeMapping.objects.filter(
-        scope_name__in=['openid', 'profile', 'email', 'entitlements'],
+    # Authentik 2025.10+ deliberately marks its default email scope as
+    # unverified. This internal application is already restricted below to
+    # owner/admin groups, and those accounts are provisioned by Gramly, so use
+    # a provider-scoped mapping rather than weakening oauth2-proxy globally.
+    verified_email, _ = ScopeMapping.objects.update_or_create(
+        name='GramlyHello Control verified internal email',
+        defaults={
+            'scope_name': 'email',
+            'description': 'Verified email claim for provisioned Gramly owner accounts only.',
+            'expression': '''if not request.user.email:
+    return {}
+allowed = {'gramly-owners', 'authentik Admins'}
+if not allowed.intersection(set(request.user.groups.values_list('name', flat=True))):
+    return {}
+return {'email': request.user.email, 'email_verified': True}''',
+        },
+    )
+    mappings = list(ScopeMapping.objects.filter(
+        scope_name__in=['openid', 'profile', 'entitlements'],
     ))
+    mappings.append(verified_email)
+    provider.property_mappings.set(mappings)
     application, _ = Application.objects.update_or_create(
         slug='welcome-admin',
         defaults={
