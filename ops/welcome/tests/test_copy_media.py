@@ -5,7 +5,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from ops.welcome.copy_media import copy_one
+from ops.welcome.copy_media import MEDIA_KEYS_QUERY, copy_one
 
 
 class Source:
@@ -79,3 +79,8 @@ def test_copy_replaces_stale_destination_metadata() -> None:
 
     assert copy_one(source, destination, "old", "new", "welcome/file") == "copied"
     assert destination.uploads == 1
+
+
+def test_media_copy_includes_active_album_drafts() -> None:
+    assert "welcome_bots_welcomemedia" in MEDIA_KEYS_QUERY
+    assert "welcome_bots_welcomedraftmedia" in MEDIA_KEYS_QUERY

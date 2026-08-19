@@ -15,6 +15,8 @@ TARGET_TABLES = (
     "greeting_delivery",
     "inbox_event",
     "contact",
+    "welcome_draft_media",
+    "welcome_draft",
     "welcome_media",
     "welcome_message_version",
     "channel",
@@ -122,6 +124,48 @@ async def migrate(args: argparse.Namespace) -> None:
                 bot_values,
             )
             counts["managed_bot"] = len(bot_values)
+            counts["welcome_draft"] = await copy_query(
+                source,
+                target,
+                source_query=(
+                    "SELECT id, bot_id, owner_id, media_group_id, payload, "
+                    "updated_at + INTERVAL '2 seconds', NULL, created_at, updated_at "
+                    "FROM welcome_bots_welcomedraft ORDER BY id"
+                ),
+                target_table="welcome_draft",
+                target_columns=(
+                    "id",
+                    "bot_id",
+                    "owner_id",
+                    "media_group_id",
+                    "payload",
+                    "finalize_at",
+                    "finalized_version_id",
+                    "created_at",
+                    "updated_at",
+                ),
+            )
+            counts["welcome_draft_media"] = await copy_query(
+                source,
+                target,
+                source_query=(
+                    "SELECT id, draft_id, telegram_message_id, media_type, storage_key, "
+                    "original_name, mime_type, size, created_at "
+                    "FROM welcome_bots_welcomedraftmedia ORDER BY id"
+                ),
+                target_table="welcome_draft_media",
+                target_columns=(
+                    "id",
+                    "draft_id",
+                    "telegram_message_id",
+                    "media_type",
+                    "storage_key",
+                    "original_name",
+                    "mime_type",
+                    "size",
+                    "created_at",
+                ),
+            )
             counts["channel"] = await copy_query(
                 source,
                 target,
@@ -299,6 +343,8 @@ async def migrate(args: argparse.Namespace) -> None:
                     "channel",
                     "welcome_message_version",
                     "welcome_media",
+                    "welcome_draft",
+                    "welcome_draft_media",
                     "contact",
                     "join_request",
                     "greeting_delivery",
