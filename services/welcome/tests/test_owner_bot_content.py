@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import uuid
+from decimal import Decimal
+
 import pytest
 from aiogram.types import InlineKeyboardMarkup
 
+from gramly_welcome import owner_bot
 from gramly_welcome.content_service import ContentValidationError
+from gramly_welcome.models import Payment, Plan
 from gramly_welcome.owner_bot import _parse_keyboard_definition
 from gramly_welcome.telegram_delivery import _reply_markup
 
@@ -49,3 +54,34 @@ def test_reply_markup_keeps_functionality_when_button_styles_are_unsupported() -
 
     assert isinstance(markup, InlineKeyboardMarkup)
     assert markup.inline_keyboard[0][0].url == "https://gramly.tech"
+
+
+@pytest.mark.asyncio
+async def test_owner_stars_checkout_exports_recurring_invoice_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeBot:
+        async def create_invoice_link(self, **kwargs: object) -> str:
+            calls.update(kwargs)
+            return "https://t.me/$invoice"
+
+    monkeypatch.setattr(owner_bot, "interface_bot", lambda: FakeBot())
+    checkout_token = uuid.uuid4()
+    payment = Payment(
+        checkout_token=checkout_token,
+        owner_id=7,
+        plan_id=2,
+        provider="telegram_stars",
+        amount_rub=Decimal("419"),
+        original_amount=Decimal("400"),
+    )
+    plan = Plan(price_xtr=400)
+
+    url = await owner_bot._create_owner_stars_invoice_link(payment, plan)
+
+    assert url == "https://t.me/$invoice"
+    assert calls["subscription_period"] == 2_592_000
+    assert calls["currency"] == "XTR"
+    assert calls["payload"] == str(checkout_token)
