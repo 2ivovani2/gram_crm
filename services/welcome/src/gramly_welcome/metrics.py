@@ -39,3 +39,8 @@ ROTATION_CONVERSIONS = Counter(
     "welcome_rotation_conversions_total",
     "Attributed subscriptions from Gramly rotation",
 )
+OWNER_NOTIFICATIONS = Counter(
+    "welcome_owner_notifications_total",
+    "Owner onboarding and announcement delivery attempts",
+    ("kind", "result"),
+)

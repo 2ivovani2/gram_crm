@@ -20,6 +20,7 @@ from .models import (
     InboxSource,
     JoinRequest,
     ManagedBot,
+    OwnerNotification,
     QueueStatus,
     RotationRecommendation,
     WelcomeMedia,
@@ -530,6 +531,9 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
         "rotation": select(
             func.count(RotationRecommendation.id), func.min(RotationRecommendation.due_at)
         ).where(RotationRecommendation.status.in_(("scheduled", "retry", "processing"))),
+        "owner_notifications": select(
+            func.count(OwnerNotification.id), func.min(OwnerNotification.due_at)
+        ).where(OwnerNotification.status.in_(("pending", "retry", "processing"))),
     }
     for queue, query in queries.items():
         count, oldest = (await session.execute(query)).one()
@@ -549,6 +553,15 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
                 await session.scalar(
                     select(func.count(RotationRecommendation.id)).where(
                         RotationRecommendation.status == "failed"
+                    )
+                )
+                or 0
+            )
+        if queue == "owner_notifications":
+            dead = int(
+                await session.scalar(
+                    select(func.count(OwnerNotification.id)).where(
+                        OwnerNotification.status == "failed"
                     )
                 )
                 or 0

@@ -180,6 +180,19 @@ services:
         condition: service_healthy
     volumes: [./services/welcome:/app]
 
+  welcome-worker-notifications:
+    <<: *welcome
+    command: welcome-worker-notifications
+    profiles: [welcome-cutover]
+    depends_on:
+      welcome-postgres:
+        condition: service_healthy
+      welcome-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes: [./services/welcome:/app]
+
   ngrok:
     image: ngrok/ngrok:latest
     profiles: [tunnel]
