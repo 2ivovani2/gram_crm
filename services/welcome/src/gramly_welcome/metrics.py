@@ -30,3 +30,12 @@ AD_CLICKS = Counter(
     "welcome_free_ad_clicks_total",
     "Tracked clicks on Free plan advertising calls to action",
 )
+ROTATION_RECOMMENDATIONS = Counter(
+    "welcome_rotation_recommendations_total",
+    "Rotation recommendations by terminal result",
+    ("result",),
+)
+ROTATION_CONVERSIONS = Counter(
+    "welcome_rotation_conversions_total",
+    "Attributed subscriptions from Gramly rotation",
+)

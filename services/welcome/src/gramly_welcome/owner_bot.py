@@ -31,7 +31,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from .commercial import ensure_free_access
+from .commercial import access_for_owner, ensure_free_access
 from .config import Settings, get_settings
 from .content_service import (
     ContentValidationError,
@@ -39,6 +39,7 @@ from .content_service import (
     copy_step,
     delete_step,
     draft_snapshot,
+    ensure_default_farewell_flow,
     ensure_default_welcome_flow,
     move_step,
     open_draft,
@@ -66,6 +67,11 @@ from .owner_repository import (
     set_webhook_configured,
     toggle_auto_approve,
     update_delay,
+)
+from .rotation import (
+    owner_rotation_channels,
+    rotation_statistics,
+    set_priority_channel,
 )
 from .storage import MediaTooLargeError, ObjectStorage
 from .telegram_delivery import send_compiled_operation
@@ -529,6 +535,10 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
                 InlineKeyboardButton(text="📥 Заявки", callback_data=f"requests:{bot.id}"),
             ],
             [
+                InlineKeyboardButton(text="👋 Прощание", callback_data=f"farewell:{bot.id}"),
+                InlineKeyboardButton(text="🔄 Ротация", callback_data=f"rotation:{bot.id}"),
+            ],
+            [
                 InlineKeyboardButton(text="📊 Статистика", callback_data=f"stats:{bot.id}"),
                 InlineKeyboardButton(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}"),
             ],
@@ -557,14 +567,34 @@ async def set_message(callback: CallbackQuery, owner: Owner, state: FSMContext) 
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("farewell:"))
+async def set_farewell(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    message = _callback_message(callback)
+    bot = await _get_owned(owner, (callback.data or "").split(":")[1])
+    if bot is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    async with session_factory() as session:
+        flow = await ensure_default_farewell_flow(session, bot.id, owner.id)
+        draft = await open_draft(session, owner.id, flow.id, owner.telegram_id)
+    await state.clear()
+    await send_chain_editor(message, owner, draft.id)
+    await callback.answer()
+
+
 async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> None:
     async with session_factory() as session:
         snapshot = await draft_snapshot(session, owner.id, version_id)
+    is_farewell = snapshot.flow.kind == "farewell"
     lines = [
-        "💬 <b>Редактор приветственной цепочки</b>",
+        "👋 <b>Редактор прощальной цепочки</b>"
+        if is_farewell
+        else "💬 <b>Редактор приветственной цепочки</b>",
         f"\nЧерновик версии <b>{snapshot.version.version}</b>",
         f"Первое сообщение: <b>{_format_delay(snapshot.version.first_delay_seconds)}</b>",
     ]
+    if is_farewell:
+        lines.append("Лимит: до 5 сообщений и до 5 файлов.")
     rows: list[list[InlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
@@ -620,7 +650,12 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
     await message.answer(
         "➕ <b>Новый шаг</b>\n\nОтправьте текст или Telegram-вложение. "
         "Форматирование и Premium Emoji будут сохранены без преобразования.",
-        reply_markup=_one_button("❌ Отмена", f"msg:{snapshot.flow.bot_id}"),
+        reply_markup=_one_button(
+            "❌ Отмена",
+            f"farewell:{snapshot.flow.bot_id}"
+            if snapshot.flow.kind == "farewell"
+            else f"msg:{snapshot.flow.bot_id}",
+        ),
     )
     await callback.answer()
 
@@ -801,10 +836,76 @@ async def publish_chain(callback: CallbackQuery, owner: Owner, state: FSMContext
     await state.clear()
     await message.answer(
         f"🚀 <b>Цепочка опубликована</b> · версия {version.version}\n\n"
-        "Новые вступления уже используют эту версию. Текущие доставки сохраняют свой snapshot.",
+        f"Новые {'уходы' if flow and flow.kind == 'farewell' else 'вступления'} уже используют эту версию. "
+        "Текущие доставки сохраняют свой snapshot.",
         reply_markup=_one_button("← К боту", f"bot:{flow.bot_id}" if flow else "bots:0"),
     )
     await callback.answer("Опубликовано")
+
+
+async def send_rotation_screen(message: Message, owner: Owner, bot_id: int) -> None:
+    async with session_factory() as session:
+        access = await access_for_owner(session, owner.id)
+        channels = await owner_rotation_channels(session, owner.id)
+        statistics = await rotation_statistics(session, owner.id)
+    if not access.entitlements.get("rotation", False):
+        await message.answer(
+            "🔄 <b>Ротация каналов</b>\n\nДоступна на тарифе Business. "
+            "На Free приветствия работают с рекламой GramlyHello.",
+            reply_markup=_one_button("← К боту", f"bot:{bot_id}"),
+        )
+        return
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=("★ " if rotation.is_priority else "☆ ") + channel.title[:40],
+                callback_data=f"rot-priority:{channel.id}:{bot_id}",
+            )
+        ]
+        for rotation, channel in channels
+    ]
+    rows.append([InlineKeyboardButton(text="← К боту", callback_data=f"bot:{bot_id}")])
+    await message.answer(
+        "🔄 <b>Ротация каналов</b>\n\n"
+        "Все подключённые каналы участвуют в общем Business-пуле. "
+        "Звездой можно отметить до 7 своих приоритетных каналов.\n\n"
+        f"Показы: <b>{statistics['impressions']}</b>\n"
+        f"Подтверждённые подписки: <b>{statistics['conversions']}</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+@router.callback_query(F.data.startswith("rotation:"))
+async def rotation_screen(callback: CallbackQuery, owner: Owner) -> None:
+    bot = await _get_owned(owner, (callback.data or "").split(":")[1])
+    if bot is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await send_rotation_screen(_callback_message(callback), owner, bot.id)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("rot-priority:"))
+async def toggle_rotation_priority(callback: CallbackQuery, owner: Owner) -> None:
+    _, raw_channel_id, raw_bot_id = (callback.data or "").split(":")
+    channel_id, bot_id = int(raw_channel_id), int(raw_bot_id)
+    try:
+        async with session_factory() as session:
+            channels = await owner_rotation_channels(session, owner.id)
+            target = next((item for item in channels if item[1].id == channel_id), None)
+            if target is None:
+                raise ValueError("Channel not found")
+            await set_priority_channel(
+                session,
+                owner_id=owner.id,
+                channel_id=channel_id,
+                priority=not target[0].is_priority,
+            )
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await send_rotation_screen(_callback_message(callback), owner, bot_id)
+    await callback.answer("Сохранено")
 
 
 @router.callback_query(F.data.startswith("chain:preview:"))
@@ -1181,6 +1282,7 @@ async def stats_screen(callback: CallbackQuery, owner: Owner) -> None:
         f"Вступления / контакты: <b>{data['total']}</b>\n\n"
         f"Доставки: <b>{data['deliveries']}</b>\n✅ Успешно: <b>{data['delivered']}</b>\n"
         f"⚠️ Частично: <b>{data['partial']}</b>\n❌ Ошибки цепочек: <b>{data['failed']}</b>\n"
+        f"🚫 Нельзя написать первым: <b>{data['unreachable']}</b>\n"
         f"Ошибки отдельных операций: <b>{data['operation_errors']}</b>\n\n"
         f"🟢 Доступные контакты: <b>{data['live']}</b>\n"
         f"🔴 Мёртвые: <b>{data['dead']}</b>\n⚪️ Не проверены: <b>{data['unknown']}</b>\n\n"

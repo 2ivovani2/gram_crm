@@ -310,7 +310,7 @@ class FlowDelivery(Base):
     __table_args__ = (
         UniqueConstraint("bot_id", "event_key", name="uq_flow_delivery_bot_event"),
         CheckConstraint(
-            "status IN ('scheduled','processing','completed','partial','failed','cancelled')",
+            "status IN ('scheduled','processing','completed','partial','failed','cancelled','unreachable')",
             name="ck_flow_delivery_status",
         ),
     )
@@ -539,6 +539,134 @@ class Contact(Base):
     )
     last_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(500), default="")
+
+
+class ChannelMembership(Base):
+    __tablename__ = "channel_membership"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "contact_id", name="uq_channel_membership_contact"),
+        CheckConstraint("status IN ('active','left')", name="ck_channel_membership_status"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    last_update_id: Mapped[int] = mapped_column(BigInteger)
+    joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DepartureEvent(Base):
+    __tablename__ = "departure_event"
+    __table_args__ = (
+        UniqueConstraint("bot_id", "telegram_update_id", name="uq_departure_bot_update"),
+        CheckConstraint("reason IN ('left','kicked')", name="ck_departure_reason"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    telegram_update_id: Mapped[int] = mapped_column(BigInteger)
+    reason: Mapped[str] = mapped_column(String(16))
+    farewell_delivery_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flow_delivery.id", ondelete="SET NULL"), unique=True
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RotationChannel(Base):
+    __tablename__ = "rotation_channel"
+    __table_args__ = (
+        UniqueConstraint("channel_id", name="rotation_channel_channel_id_key"),
+        Index(
+            "uq_rotation_channel_invite_link",
+            "invite_link",
+            unique=True,
+            postgresql_where=text("invite_link <> ''"),
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"), index=True)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_priority: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    invite_link: Mapped[str] = mapped_column(String(512), default="")
+    invite_link_name: Mapped[str] = mapped_column(String(64), default="Gramly rotation")
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class RotationRecommendation(Base):
+    __tablename__ = "rotation_recommendation"
+    __table_args__ = (
+        UniqueConstraint("departure_id", name="rotation_recommendation_departure_id_key"),
+        Index("ix_rotation_recommendation_claim", "status", "due_at", "lease_expires_at"),
+        CheckConstraint(
+            "status IN ('scheduled','processing','retry','sent','failed','unreachable','ineligible')",
+            name="ck_rotation_recommendation_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    departure_id: Mapped[int] = mapped_column(
+        ForeignKey("departure_event.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RotationImpression(Base):
+    __tablename__ = "rotation_impression"
+    __table_args__ = (
+        UniqueConstraint(
+            "recommendation_id", "destination_channel_id", name="uq_rotation_impression_destination"
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    recommendation_id: Mapped[int] = mapped_column(
+        ForeignKey("rotation_recommendation.id", ondelete="CASCADE"), index=True
+    )
+    source_owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    destination_owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    destination_channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id", ondelete="CASCADE"), index=True
+    )
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    invite_link_snapshot: Mapped[str] = mapped_column(String(512))
+    shown_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RotationConversion(Base):
+    __tablename__ = "rotation_conversion"
+    __table_args__ = (
+        UniqueConstraint(
+            "telegram_user_id", "destination_channel_id", name="uq_rotation_conversion_user_channel"
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    impression_id: Mapped[int] = mapped_column(
+        ForeignKey("rotation_impression.id", ondelete="CASCADE"), unique=True
+    )
+    destination_channel_id: Mapped[int] = mapped_column(
+        ForeignKey("channel.id", ondelete="CASCADE"), index=True
+    )
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    telegram_update_id: Mapped[int] = mapped_column(BigInteger)
+    converted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class InboxSource(Base):

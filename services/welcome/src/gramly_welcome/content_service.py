@@ -54,7 +54,11 @@ async def _owned_flow(
     return flow
 
 
-async def ensure_default_welcome_flow(session: AsyncSession, bot_id: int, owner_id: int) -> ContentFlow:
+async def ensure_default_content_flow(
+    session: AsyncSession, bot_id: int, owner_id: int, *, kind: str
+) -> ContentFlow:
+    if kind not in {"welcome", "farewell"}:
+        raise ContentValidationError("Unsupported content flow kind")
     owned = await session.scalar(
         select(ManagedBot.id).where(
             ManagedBot.id == bot_id,
@@ -64,12 +68,13 @@ async def ensure_default_welcome_flow(session: AsyncSession, bot_id: int, owner_
     )
     if owned is None:
         raise ContentValidationError("Bot was not found")
+    name = "Приветствие" if kind == "welcome" else "Прощание"
     flow_id = await session.scalar(
         insert(ContentFlow)
         .values(
             bot_id=bot_id,
-            name="Приветствие",
-            kind="welcome",
+            name=name,
+            kind=kind,
             assignment_mode="all",
             is_active=True,
         )
@@ -80,8 +85,8 @@ async def ensure_default_welcome_flow(session: AsyncSession, bot_id: int, owner_
         flow_id = await session.scalar(
             select(ContentFlow.id).where(
                 ContentFlow.bot_id == bot_id,
-                ContentFlow.kind == "welcome",
-                ContentFlow.name == "Приветствие",
+                ContentFlow.kind == kind,
+                ContentFlow.name == name,
             )
         )
     flow = await session.get(ContentFlow, flow_id)
@@ -89,6 +94,14 @@ async def ensure_default_welcome_flow(session: AsyncSession, bot_id: int, owner_
         raise RuntimeError("Content flow upsert failed")
     await session.commit()
     return flow
+
+
+async def ensure_default_welcome_flow(session: AsyncSession, bot_id: int, owner_id: int) -> ContentFlow:
+    return await ensure_default_content_flow(session, bot_id, owner_id, kind="welcome")
+
+
+async def ensure_default_farewell_flow(session: AsyncSession, bot_id: int, owner_id: int) -> ContentFlow:
+    return await ensure_default_content_flow(session, bot_id, owner_id, kind="farewell")
 
 
 async def _clone_step(
@@ -553,6 +566,22 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
     )
     if not steps:
         raise ContentValidationError("Add at least one step before publishing")
+    flow = await session.get(ContentFlow, version.flow_id)
+    if flow is None:
+        raise RuntimeError("Content flow disappeared")
+    if flow.kind == "farewell":
+        attachment_count = int(
+            await session.scalar(
+                select(func.count(ContentAttachment.id)).where(
+                    ContentAttachment.step_id.in_([step.id for step in steps])
+                )
+            )
+            or 0
+        )
+        if len(steps) > 5:
+            raise ContentValidationError("Farewell chain supports up to 5 messages")
+        if attachment_count > 5:
+            raise ContentValidationError("Farewell chain supports up to 5 files")
     for step in steps[:-1]:
         if not 1 <= step.delay_after_seconds <= 86_400:
             raise ContentValidationError("Every non-final step needs a 1s–24h delay")
@@ -567,15 +596,12 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
     )
     version.status = "published"
     version.published_at = datetime.now(UTC)
-    flow = await session.get(ContentFlow, version.flow_id)
-    if flow is None:
-        raise RuntimeError("Content flow disappeared")
     session.add(
         EventLog(
             bot_id=flow.bot_id,
             owner_id=owner_id,
             event_type="content_flow_published",
-            message="Welcome content flow published",
+            message=f"{flow.kind.capitalize()} content flow published",
             context={"flow_id": flow.id, "version": version.version, "steps": len(steps)},
         )
     )

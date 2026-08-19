@@ -16,6 +16,7 @@ from aiogram.exceptions import (
 from prometheus_client import start_http_server
 from redis.asyncio import Redis
 
+from ..commercial import access_for_owner
 from ..config import Settings, get_settings
 from ..crypto import TokenDecryptionError, TokenKeyring
 from ..db import session_factory
@@ -25,7 +26,12 @@ from ..flow_delivery import (
     finish_operation,
     load_operation_context,
 )
-from ..metrics import DELIVERY_ATTEMPTS, DEPENDENCY_ERRORS, WORKER_ACTIVE
+from ..metrics import (
+    DELIVERY_ATTEMPTS,
+    DEPENDENCY_ERRORS,
+    ROTATION_RECOMMENDATIONS,
+    WORKER_ACTIVE,
+)
 from ..owner_bot import _one_button, interface_bot, interface_dispatcher
 from ..owner_repository import complete_album_notification, finalize_due_albums
 from ..rate_limit import RateLimitUnavailable, TelegramRateLimiter
@@ -39,8 +45,23 @@ from ..repository import (
     load_delivery_context,
     load_join_request_context,
 )
+from ..rotation import (
+    claim_rotation_batch,
+    defer_rotation,
+    eligible_rotation_destinations,
+    finish_rotation,
+    load_rotation_context,
+    mark_rotation_channel_error,
+    store_rotation_invite_link,
+)
 from ..storage import MediaTooLargeError, ObjectStorage, ObjectStorageError
-from ..telegram_delivery import approve_join_request, send_delivery_operation, send_greeting
+from ..telegram_delivery import (
+    approve_join_request,
+    create_rotation_invite_link,
+    send_delivery_operation,
+    send_greeting,
+    send_rotation_recommendation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +420,123 @@ async def _process_join_request(
         DELIVERY_ATTEMPTS.labels("approved").inc()
 
 
+async def _process_rotation(
+    recommendation_id: int,
+    worker_id: str,
+    settings: Settings,
+    limiter: TelegramRateLimiter,
+    keyring: TokenKeyring,
+) -> None:
+    async with session_factory() as session:
+        context = await load_rotation_context(session, recommendation_id)
+        access = (
+            await access_for_owner(session, context.departure.owner_id) if context is not None else None
+        )
+        destinations = (
+            await eligible_rotation_destinations(session, context)
+            if context is not None and access is not None and access.entitlements.get("rotation", False)
+            else []
+        )
+    if context is None:
+        ROTATION_RECOMMENDATIONS.labels("context_missing").inc()
+        return
+    if not context.source_bot.is_active or not context.contact.bot_started:
+        async with session_factory() as session:
+            await finish_rotation(
+                session, context, worker_id, status="unreachable", error="contact_not_reachable"
+            )
+        ROTATION_RECOMMENDATIONS.labels("unreachable").inc()
+        return
+    if access is None or not access.entitlements.get("rotation", False):
+        async with session_factory() as session:
+            await finish_rotation(
+                session, context, worker_id, status="ineligible", error="business_required"
+            )
+        ROTATION_RECOMMENDATIONS.labels("ineligible").inc()
+        return
+    try:
+        allowed = await limiter.acquire(context.source_bot.id, context.contact.telegram_id)
+    except RateLimitUnavailable:
+        DEPENDENCY_ERRORS.labels("valkey").inc()
+        allowed, delay, reason = False, 5, "valkey_unavailable"
+    else:
+        delay, reason = 1, "rate_limited"
+    if not allowed:
+        async with session_factory() as session:
+            await defer_rotation(
+                session,
+                recommendation_id,
+                worker_id,
+                delay_seconds=delay,
+                error=reason,
+            )
+        ROTATION_RECOMMENDATIONS.labels("deferred").inc()
+        return
+    usable = []
+    try:
+        for destination in destinations:
+            if not destination.rotation.invite_link:
+                try:
+                    invite_link = await create_rotation_invite_link(destination, keyring)
+                except (TelegramForbiddenError, TelegramBadRequest) as exc:
+                    async with session_factory() as session:
+                        await mark_rotation_channel_error(
+                            session, destination.rotation.id, type(exc).__name__
+                        )
+                    continue
+                destination.rotation.invite_link = invite_link
+                async with session_factory() as session:
+                    await store_rotation_invite_link(session, destination.rotation.id, invite_link)
+            usable.append(destination)
+        if not usable:
+            async with session_factory() as session:
+                await finish_rotation(
+                    session, context, worker_id, status="ineligible", error="no_eligible_channels"
+                )
+            ROTATION_RECOMMENDATIONS.labels("empty").inc()
+            return
+        await send_rotation_recommendation(context, usable, keyring)
+    except TelegramRetryAfter as exc:
+        async with session_factory() as session:
+            await defer_rotation(
+                session,
+                recommendation_id,
+                worker_id,
+                delay_seconds=max(1, int(exc.retry_after)),
+                error="telegram_429",
+            )
+        ROTATION_RECOMMENDATIONS.labels("telegram_429").inc()
+    except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError) as exc:
+        async with session_factory() as session:
+            await finish_rotation(
+                session, context, worker_id, status="failed", error=type(exc).__name__
+            )
+        ROTATION_RECOMMENDATIONS.labels("failed").inc()
+    except (TelegramAPIError, OSError) as exc:
+        if context.recommendation.attempts >= settings.max_attempts:
+            async with session_factory() as session:
+                await finish_rotation(
+                    session, context, worker_id, status="failed", error=type(exc).__name__
+                )
+            ROTATION_RECOMMENDATIONS.labels("failed").inc()
+        else:
+            async with session_factory() as session:
+                await defer_rotation(
+                    session,
+                    recommendation_id,
+                    worker_id,
+                    delay_seconds=_retry_delay(context.recommendation.attempts),
+                    error=type(exc).__name__,
+                )
+            ROTATION_RECOMMENDATIONS.labels("retry").inc()
+    else:
+        async with session_factory() as session:
+            await finish_rotation(
+                session, context, worker_id, status="sent", destinations=usable
+            )
+        ROTATION_RECOMMENDATIONS.labels("sent").inc()
+
+
 async def serve() -> None:
     settings = get_settings()
     worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
@@ -458,7 +596,14 @@ async def serve() -> None:
                     limit=settings.worker_batch_size,
                     lease_seconds=settings.lease_seconds,
                 )
-            if not operations and not deliveries and not join_requests:
+            async with session_factory() as session:
+                rotations = await claim_rotation_batch(
+                    session,
+                    worker_id=worker_id,
+                    limit=settings.worker_batch_size,
+                    lease_seconds=settings.lease_seconds,
+                )
+            if not operations and not deliveries and not join_requests and not rotations:
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=settings.worker_poll_seconds)
                 except TimeoutError:
@@ -476,6 +621,12 @@ async def serve() -> None:
                 if stopping.is_set():
                     break
                 await _process_join_request(request.id, worker_id, settings, limiter, keyring)
+            for recommendation in rotations:
+                if stopping.is_set():
+                    break
+                await _process_rotation(
+                    recommendation.id, worker_id, settings, limiter, keyring
+                )
     finally:
         WORKER_ACTIVE.labels("delivery").dec()
         await redis.aclose()

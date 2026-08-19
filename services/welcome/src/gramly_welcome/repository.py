@@ -21,6 +21,7 @@ from .models import (
     JoinRequest,
     ManagedBot,
     QueueStatus,
+    RotationRecommendation,
     WelcomeMedia,
     WelcomeMessageVersion,
 )
@@ -526,6 +527,9 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
         "content_operations": select(
             func.count(DeliveryOperation.id), func.min(DeliveryOperation.due_at)
         ).where(DeliveryOperation.status.in_(("scheduled", "retry", "processing"))),
+        "rotation": select(
+            func.count(RotationRecommendation.id), func.min(RotationRecommendation.due_at)
+        ).where(RotationRecommendation.status.in_(("scheduled", "retry", "processing"))),
     }
     for queue, query in queries.items():
         count, oldest = (await session.execute(query)).one()
@@ -540,5 +544,14 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
             if queue == "content_operations"
             else 0
         )
+        if queue == "rotation":
+            dead = int(
+                await session.scalar(
+                    select(func.count(RotationRecommendation.id)).where(
+                        RotationRecommendation.status == "failed"
+                    )
+                )
+                or 0
+            )
         result[queue] = (int(count), dead, age)
     return result

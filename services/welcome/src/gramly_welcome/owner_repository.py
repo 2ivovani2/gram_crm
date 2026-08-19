@@ -180,6 +180,7 @@ async def bot_statistics(session: AsyncSession, bot_id: int) -> dict[str, Any]:
                 func.count(FlowDelivery.id).filter(FlowDelivery.status == "completed"),
                 func.count(FlowDelivery.id).filter(FlowDelivery.status == "partial"),
                 func.count(FlowDelivery.id).filter(FlowDelivery.status == "failed"),
+                func.count(FlowDelivery.id).filter(FlowDelivery.status == "unreachable"),
             ).where(FlowDelivery.bot_id == bot_id)
         )
     ).one()
@@ -223,6 +224,7 @@ async def bot_statistics(session: AsyncSession, bot_id: int) -> dict[str, Any]:
         "delivered": int(flow_row[1] or 0) + int(legacy_row[1] or 0),
         "partial": int(flow_row[2] or 0),
         "failed": int(flow_row[3] or 0) + int(legacy_row[2] or 0),
+        "unreachable": int(flow_row[4] or 0),
         "operation_errors": operation_errors,
         "languages": [{"language_code": item.language_code, "total": int(item.total)} for item in languages],
     }

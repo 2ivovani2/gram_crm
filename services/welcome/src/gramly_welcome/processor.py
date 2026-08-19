@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .flow_delivery import schedule_content_flow
 from .models import (
     Channel,
+    ChannelMembership,
     Contact,
+    DepartureEvent,
     EventLog,
     GreetingDelivery,
     InboxEvent,
@@ -18,8 +20,20 @@ from .models import (
     ManagedBot,
     WelcomeMessageVersion,
 )
+from .rotation import (
+    record_rotation_conversion,
+    schedule_rotation_recommendation,
+    sync_rotation_channel,
+)
 
 ACTIONABLE_UPDATE_KEYS = ("my_chat_member", "message", "chat_join_request", "chat_member")
+
+
+def membership_transition_flags(
+    stored_status: str | None, *, old_active: bool, new_active: bool
+) -> tuple[bool, bool]:
+    was_active = stored_status == "active" if stored_status is not None else old_active
+    return not was_active and new_active, was_active and not new_active
 
 
 def is_actionable_payload(payload: dict[str, Any]) -> bool:
@@ -181,6 +195,7 @@ async def _process_bot_membership(session: AsyncSession, bot: ManagedBot, event:
             can_invite_users=bool(member.get("can_invite_users", False)),
         )
     )
+    await sync_rotation_channel(session, bot=bot, channel_id=channel_id, active=active)
     await session.execute(
         insert(EventLog).values(
             bot_id=bot.id,
@@ -192,6 +207,94 @@ async def _process_bot_membership(session: AsyncSession, bot: ManagedBot, event:
         )
     )
     return True
+
+
+async def _membership_transition(
+    session: AsyncSession,
+    *,
+    channel_id: int,
+    contact_id: int,
+    update_id: int,
+    old_active: bool,
+    new_active: bool,
+) -> tuple[bool, bool]:
+    membership = await session.scalar(
+        select(ChannelMembership)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.contact_id == contact_id,
+        )
+        .with_for_update()
+    )
+    if membership is not None and update_id <= membership.last_update_id:
+        return False, False
+    joined, left = membership_transition_flags(
+        membership.status if membership is not None else None,
+        old_active=old_active,
+        new_active=new_active,
+    )
+    now = datetime.now(UTC)
+    if membership is None:
+        membership = ChannelMembership(
+            channel_id=channel_id,
+            contact_id=contact_id,
+            status="active" if new_active else "left",
+            last_update_id=update_id,
+            joined_at=now if new_active else None,
+            left_at=now if not new_active else None,
+            updated_at=now,
+        )
+        session.add(membership)
+    else:
+        membership.status = "active" if new_active else "left"
+        membership.last_update_id = update_id
+        membership.updated_at = now
+        if new_active:
+            membership.joined_at = now
+        else:
+            membership.left_at = now
+    return joined, left
+
+
+async def _schedule_departure(
+    session: AsyncSession,
+    *,
+    event: InboxEvent,
+    bot: ManagedBot,
+    channel_id: int,
+    contact_id: int,
+    reason: str,
+) -> None:
+    departure_id = await session.scalar(
+        insert(DepartureEvent)
+        .values(
+            bot_id=bot.id,
+            owner_id=bot.owner_id,
+            channel_id=channel_id,
+            contact_id=contact_id,
+            telegram_update_id=event.update_id,
+            reason=reason,
+        )
+        .on_conflict_do_nothing(constraint="uq_departure_bot_update")
+        .returning(DepartureEvent.id)
+    )
+    if departure_id is None:
+        return
+    delivery_id = await schedule_content_flow(
+        session,
+        bot=bot,
+        channel_id=channel_id,
+        contact_id=contact_id,
+        event_key=f"farewell:{event.update_id}",
+        kind="farewell",
+    )
+    if delivery_id is not None:
+        await session.execute(
+            update(DepartureEvent)
+            .where(DepartureEvent.id == departure_id)
+            .values(farewell_delivery_id=delivery_id)
+        )
+    await schedule_rotation_recommendation(session, departure_id=int(departure_id))
 
 
 async def process_event(session: AsyncSession, event: InboxEvent) -> None:
@@ -261,6 +364,33 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
         active = {"member", "administrator", "creator", "restricted"}
         contact_id = await _upsert_contact(session, bot.id, user)
         channel_id = await _upsert_channel(session, bot.id, member["chat"])
-        if old_status not in active and new_status in active:
+        joined, left = await _membership_transition(
+            session,
+            channel_id=channel_id,
+            contact_id=contact_id,
+            update_id=event.update_id,
+            old_active=old_status in active,
+            new_active=new_status in active,
+        )
+        if joined:
+            raw_invite = member.get("invite_link")
+            invite_link = str(raw_invite.get("invite_link") or "") if isinstance(raw_invite, dict) else ""
+            if invite_link:
+                await record_rotation_conversion(
+                    session,
+                    destination_channel_id=channel_id,
+                    telegram_user_id=int(user["id"]),
+                    telegram_update_id=event.update_id,
+                    invite_link=invite_link,
+                )
             await _schedule_greeting(session, bot, channel_id, contact_id, f"chat-member:{event.update_id}")
+        elif left:
+            await _schedule_departure(
+                session,
+                event=event,
+                bot=bot,
+                channel_id=channel_id,
+                contact_id=contact_id,
+                reason="kicked" if new_status == "kicked" else "left",
+            )
         return
