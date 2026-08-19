@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import Settings, get_settings
 from .db import session_dependency
 from .models import (
     AdCreative,
@@ -17,6 +18,7 @@ from .models import (
     Announcement,
     ContextualHelp,
     EventLog,
+    FeatureFlag,
     Manual,
     Owner,
     OwnerNotification,
@@ -26,6 +28,7 @@ from .models import (
 
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 OWNER_GROUPS = {"gramly-owners", "authentik Admins"}
 
 
@@ -306,6 +309,33 @@ async def admin_plans(_admin: AdminDep, session: SessionDep) -> dict[str, object
             }
             for row in rows
         ]
+    }
+
+
+@router.get("/payments/readiness")
+async def payment_readiness(
+    _admin: AdminDep, session: SessionDep, settings: SettingsDep
+) -> dict[str, object]:
+    """Expose configuration health without ever returning secret material."""
+    keys = {
+        "crypto_pay_bot_checkout",
+        "crypto_pay_mini_app_checkout",
+        "telegram_stars_checkout",
+    }
+    flags = list(
+        (await session.scalars(select(FeatureFlag).where(FeatureFlag.key.in_(keys)))).all()
+    )
+    return {
+        "crypto_pay": {
+            "api_token_configured": bool(settings.crypto_pay_api_token),
+            "webhook_secret_configured": bool(settings.crypto_pay_webhook_secret),
+            "production_api": settings.crypto_pay_api_base_url.rstrip("/")
+            == "https://pay.crypt.bot",
+        },
+        "telegram_stars": {
+            "interface_bot_configured": bool(settings.interface_bot_token),
+        },
+        "feature_flags": {flag.key: flag.enabled for flag in flags},
     }
 
 

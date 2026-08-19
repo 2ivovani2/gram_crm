@@ -12,12 +12,14 @@ case "${environment}" in
     database_name=gramly_welcome_staging
     database_user=gramly_welcome_staging
     role_secret=gramly-welcome-staging-postgres-role
+    crypto_pay_default_base_url=https://testnet-pay.crypt.bot
     ;;
   production)
     target_namespace=gramly-welcome
     database_name=gramly_welcome
     database_user=gramly_welcome
     role_secret=gramly-welcome-postgres-role
+    crypto_pay_default_base_url=https://pay.crypt.bot
     ;;
   *) echo "Environment must be staging or production." >&2; exit 1 ;;
 esac
@@ -88,7 +90,7 @@ runtime_args=(
   "--from-literal=WELCOME_INTERFACE_WEBHOOK_SECRET=${interface_secret}"
   "--from-literal=WELCOME_MINI_APP_URL=${WELCOME_MINI_APP_URL:-https://hello.gramly.tech/app/}"
   "--from-literal=WELCOME_CRYPTO_PAY_API_TOKEN=${crypto_pay_token}"
-  "--from-literal=WELCOME_CRYPTO_PAY_API_BASE_URL=${WELCOME_CRYPTO_PAY_API_BASE_URL:-https://testnet-pay.crypt.bot}"
+  "--from-literal=WELCOME_CRYPTO_PAY_API_BASE_URL=${WELCOME_CRYPTO_PAY_API_BASE_URL:-${crypto_pay_default_base_url}}"
   "--from-literal=WELCOME_CRYPTO_PAY_WEBHOOK_SECRET=${crypto_webhook_secret}"
   "--from-literal=WELCOME_PUBLIC_WEBHOOK_BASE_URL=${WELCOME_PUBLIC_WEBHOOK_BASE_URL:-https://gramly.tech/welcome/client}"
   "--from-literal=WELCOME_TOKEN_ENCRYPTION_KEYS=${token_keys}"

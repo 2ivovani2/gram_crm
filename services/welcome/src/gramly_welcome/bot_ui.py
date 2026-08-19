@@ -10,36 +10,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import FeatureFlag
 
-# A restrained, static icon system for the owner bot. Product icons come from
-# AppleIcons26; destructive/system icons come from WindowsIcons. Both packs
-# were verified through getStickerSet: every selected sticker is static.
+# A restrained, static icon system from the Telegram-native IconsInTg set.
+# The selected stickers were verified through getStickerSet. Keeping one set
+# gives the owner bot a consistent product UI without Apple-style artwork.
 DEFAULT_PREMIUM_EMOJI: dict[str, str] = {
-    "home": "5222048081469540579",
-    "bot": "5222034552322555814",
-    "channel": "5222223195876135675",
-    "message": "5222151809224705882",
-    "subscription": "5221994849644870178",
-    "analytics": "5222129067372874693",
-    "referral": "5827865545126448742",
-    "help": "5222179494583894918",
-    "guide": "5221944735966460787",
-    "settings": "5224533196791645119",
-    "add": "5222166223134948810",
-    "edit": "5224638956066340457",
-    "preview": "5222464169311241162",
-    "publish": "5221929261199296089",
-    "media": "5222289441451705159",
-    "timer": "5222059742305747580",
-    "success": "5224380798467080414",
-    "warning": "5938188982784363983",
-    "error": "5936119293878996291",
-    "delete": "5936274861889424782",
-    "back": "5935952739342224399",
-    "next": "5936069167315684574",
-    "copy": "5938090945860865210",
-    "rotation": "5222301445885298017",
-    "requests": "5224187211406151308",
-    "important": "5221929261199296089",
+    "home": "5974453749601537448",
+    "bot": "5971808079811972376",
+    "channel": "5783105032350076195",
+    "message": "5974490089319828950",
+    "subscription": "5976377521287990495",
+    "analytics": "5974047364090957805",
+    "referral": "5974492756494519709",
+    "help": "6001517450930163276",
+    "guide": "5974290527959386992",
+    "settings": "5974104203688152439",
+    "add": "5971860323794160759",
+    "edit": "6010548023396928773",
+    "preview": "5974350313904147369",
+    "publish": "5974192980662160632",
+    "media": "5974563790958627920",
+    "timer": "5974585609392492550",
+    "success": "6008275560495582704",
+    "warning": "5976801477509778431",
+    "error": "5972201876773408053",
+    "delete": "5974518878485615140",
+    "back": "5854967531793550989",
+    "next": "5974249837439224721",
+    "copy": "5974434516737985904",
+    "rotation": "6010590938710152619",
+    "requests": "5775973900580031963",
+    "important": "5972187557352443077",
 }
 
 FALLBACK_EMOJI: dict[str, str] = {
