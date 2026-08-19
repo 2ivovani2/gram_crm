@@ -117,3 +117,4 @@ jobs:
         run: |
           docker build --file services/crm/Dockerfile --tag gramly-crm:ci .
           docker build --file services/welcome/Dockerfile --tag gramly-welcome:ci .
+          docker build --file services/welcome-web/Dockerfile --tag gramly-welcome-web:ci .

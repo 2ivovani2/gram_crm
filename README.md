@@ -9,7 +9,10 @@ automation services.
 - `services/welcome` — standalone FastAPI webhook ingress, durable PostgreSQL
   inbox, async workers and Alembic migrations. It remains parallel-only until
   the staged migration and explicit cutover.
-- `frontend` — Vite sources for the landing and CRM interface.
+- `frontend` — Vite sources for the landing, CRM and GramlyHello Mini App.
+- `services/welcome-web` — isolated static image for `/app` and the protected
+  GramlyHello owner console; it proxies only the API surface allowed on each
+  hostname.
 - `infra` — reproducible cloud and Kubernetes configuration.
 - `ops` — operational migration, smoke-test and release utilities.
 
@@ -21,9 +24,16 @@ make dev
 ```
 
 The CRM is available at `http://localhost:8000`, Welcome API at
-`http://localhost:8080`, CRM PostgreSQL at `localhost:5432`, Welcome PostgreSQL
+`http://localhost:8080`, and the Mini App at `http://localhost:8081/app/`.
+Use `Host: welcome-admin.localhost` to inspect the owner-console shell locally;
+its API still requires Authentik forward-auth headers. CRM PostgreSQL is at
+`localhost:5432`, Welcome PostgreSQL
 at `localhost:5433`, Valkey at `localhost:6379`, and MinIO at `localhost:9001`.
 Use `make dev-tunnel` only when Telegram must reach a local webhook.
+
+For frontend-only work, run `npm run dev:welcome`. Production bundles are built
+with `npm run build:welcome`; the complete repository build remains
+`npm run build`.
 
 ## Checks
 

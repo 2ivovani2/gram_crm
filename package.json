@@ -4,16 +4,25 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "vite build",
+    "dev:welcome": "vite --config vite.welcome.config.js",
+    "build": "vite build && vite build --config vite.welcome.config.js",
+    "build:crm": "vite build",
+    "build:welcome": "vite build --config vite.welcome.config.js",
     "test:e2e": "playwright test --grep-invert @visual",
     "test:visual": "playwright test --grep @visual"
   },
   "dependencies": {
     "gsap": "^3.13.0",
-    "lenis": "^1.3.8"
+    "lenis": "^1.3.8",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "^5.9.3",
     "vite": "^7.1.2"
   }
 }

@@ -86,6 +86,7 @@ runtime_args=(
   "--from-literal=WELCOME_INTERFACE_BOT_TOKEN=${WELCOME_INTERFACE_BOT_TOKEN:-}"
   "--from-literal=WELCOME_INTERFACE_BOT_USERNAME=${WELCOME_INTERFACE_BOT_USERNAME:-}"
   "--from-literal=WELCOME_INTERFACE_WEBHOOK_SECRET=${interface_secret}"
+  "--from-literal=WELCOME_MINI_APP_URL=${WELCOME_MINI_APP_URL:-https://hello.gramly.tech/app/}"
   "--from-literal=WELCOME_CRYPTO_PAY_API_TOKEN=${crypto_pay_token}"
   "--from-literal=WELCOME_CRYPTO_PAY_API_BASE_URL=${WELCOME_CRYPTO_PAY_API_BASE_URL:-https://testnet-pay.crypt.bot}"
   "--from-literal=WELCOME_CRYPTO_PAY_WEBHOOK_SECRET=${crypto_webhook_secret}"

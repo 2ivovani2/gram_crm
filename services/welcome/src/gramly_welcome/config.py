@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     mini_app_session_seconds: int = Field(default=43_200, ge=300, le=604_800)
     mini_app_cookie_name: str = "gramly_welcome_session"
     mini_app_cookie_secure: bool = True
+    mini_app_url: str = "https://hello.gramly.tech/app/"
     public_service_base_url: str = "https://gramly.tech/welcome"
     crypto_pay_api_token: str = ""
     crypto_pay_api_base_url: str = "https://pay.crypt.bot"

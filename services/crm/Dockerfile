@@ -14,7 +14,7 @@ WORKDIR /frontend
 COPY package.json package-lock.json vite.config.js ./
 RUN npm ci
 COPY frontend ./frontend
-RUN npm run build
+RUN npm run build:crm
 
 FROM base AS builder
 
