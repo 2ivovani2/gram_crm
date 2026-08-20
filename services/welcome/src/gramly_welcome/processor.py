@@ -8,18 +8,21 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .flow_delivery import schedule_content_flow
+from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS, message_window
 from .models import (
     Channel,
     ChannelMembership,
     Contact,
     DepartureEvent,
     EventLog,
+    FeatureFlag,
     GreetingDelivery,
     InboxEvent,
     JoinRequest,
     ManagedBot,
     WelcomeMessageVersion,
 )
+from .repository import close_open_join_request
 from .rotation import (
     record_rotation_conversion,
     schedule_rotation_recommendation,
@@ -33,6 +36,15 @@ ACTIONABLE_UPDATE_KEYS = (
     "chat_member",
     "pre_checkout_query",
 )
+
+async def _join_request_greetings_enabled(session: AsyncSession, bot_id: int) -> bool:
+    flag = await session.get(FeatureFlag, "join_request_greetings")
+    if flag is None or not flag.enabled:
+        return False
+    configured = flag.config.get("bot_ids", []) if isinstance(flag.config, dict) else []
+    if not isinstance(configured, list) or not configured:
+        return True
+    return bot_id in {int(value) for value in configured if str(value).isdigit()}
 
 
 def membership_transition_flags(
@@ -341,16 +353,24 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     if isinstance(join, dict) and isinstance(join.get("chat"), dict):
         contact_id = await _upsert_contact(session, bot.id, user)
         channel_id = await _upsert_channel(session, bot.id, join["chat"])
-        due_at = (
-            datetime.now(UTC) + timedelta(seconds=bot.approval_delay_seconds) if bot.auto_approve else None
+        now = datetime.now(UTC)
+        message_window_expires_at, approval_deadline = message_window(
+            join.get("date"),
+            now=now,
         )
-        await session.execute(
+        due_at = min(
+            now + timedelta(seconds=bot.approval_delay_seconds),
+            approval_deadline,
+        ) if bot.auto_approve else None
+        request_id = await session.scalar(
             insert(JoinRequest)
             .values(
                 bot_id=bot.id,
                 channel_id=channel_id,
                 contact_id=contact_id,
                 telegram_update_id=event.update_id,
+                user_chat_id=int(join["user_chat_id"]) if join.get("user_chat_id") is not None else None,
+                message_window_expires_at=message_window_expires_at,
                 status="scheduled" if bot.auto_approve else "pending",
                 delay_snapshot_seconds=bot.approval_delay_seconds,
                 due_at=due_at,
@@ -358,7 +378,41 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             # Either a Telegram retry or another still-open request for this
             # person is harmless. Avoid turning the race into a worker retry.
             .on_conflict_do_nothing()
+            .returning(JoinRequest.id)
         )
+        if request_id is None:
+            return
+        if (
+            join.get("user_chat_id") is not None
+            and await _join_request_greetings_enabled(session, bot.id)
+        ):
+            delivery_id = await schedule_content_flow(
+                session,
+                bot=bot,
+                channel_id=channel_id,
+                contact_id=contact_id,
+                event_key=f"join-request:{event.update_id}",
+                target_chat_id=int(join["user_chat_id"]),
+                target_expires_at=approval_deadline,
+                max_timeline_seconds=JOIN_REQUEST_MAX_TIMELINE_SECONDS,
+            )
+            if delivery_id is not None:
+                await session.execute(
+                    update(JoinRequest)
+                    .where(JoinRequest.id == request_id)
+                    .values(welcome_delivery_id=delivery_id)
+                )
+            else:
+                session.add(
+                    EventLog(
+                        bot_id=bot.id,
+                        owner_id=bot.owner_id,
+                        event_type="join_request_greeting_skipped",
+                        level="warning",
+                        message="No compatible published welcome flow was scheduled",
+                        context={"join_request_id": int(request_id)},
+                    )
+                )
         return
 
     member = payload.get("chat_member")
@@ -379,6 +433,11 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             new_active=new_status in active,
         )
         if joined:
+            await close_open_join_request(
+                session,
+                channel_id=channel_id,
+                contact_id=contact_id,
+            )
             raw_invite = member.get("invite_link")
             invite_link = str(raw_invite.get("invite_link") or "") if isinstance(raw_invite, dict) else ""
             if invite_link:

@@ -88,7 +88,7 @@ function EmptyState({ title, text, action, onAction }: { title: string; text: st
 }
 
 function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
-  const [data, setData] = useState<{version:{id:number;first_delay_seconds:number};steps:Step[]} | null>(null);
+  const [data, setData] = useState<{version:{id:number;first_delay_seconds:number;timeline_seconds:number;join_request_compatible:boolean};steps:Step[]} | null>(null);
   const [error, setError] = useState("");
   const [dragged, setDragged] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
@@ -135,7 +135,8 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
   return <section className="editor">
     <header><div><span className="eyebrow">{flow.kind === "farewell" ? "FAREWELL" : "WELCOME"}</span><h2>{flow.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Закрыть">×</button></header>
     {error && <ErrorBox message={error}/>} {!data ? <div className="skeleton">Загружаем черновик…</div> : <>
-      <div className="editor-meta"><span>Версия {data.version.id}</span><span>Старт через {data.version.first_delay_seconds} сек.</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
+      <div className="editor-meta"><span>Версия {data.version.id}</span><span>Старт через {data.version.first_delay_seconds} сек.</span><span>Заявка: {data.version.timeline_seconds} / 240 сек.</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
+      {!data.version.join_request_compatible&&<div className="error" role="alert"><strong>Цепочка длиннее четырёх минут</strong><span>Сократите задержку до первого сообщения или паузы между шагами, чтобы Telegram не закрыл временный чат заявки.</span></div>}
       {!data.steps.length&&<EmptyState title="В цепочке пока нет шагов" text="Добавьте первое сообщение ниже — оно станет началом приветственного сценария."/>}<div className="steps">{data.steps.map((step,index)=><article key={step.id} draggable={editing!==step.id} onDragStart={()=>setDragged(step.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged && dragged!==step.id){const ids=data.steps.map(i=>i.id);const from=ids.indexOf(dragged);ids.splice(from,1);ids.splice(index,0,dragged);void reorder(ids)}}}>
         <div className="step-index">{String(index+1).padStart(2,"0")}</div>
         {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={String(step.payload.text||step.payload.caption||"")} required/><label>Пауза, сек.<input name="delay" type="number" min="0" max="86400" defaultValue={step.delay_after_seconds}/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{String(step.payload.text || step.payload.caption || "Медиа-сообщение")}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {step.delay_after_seconds} сек.</span></div>}

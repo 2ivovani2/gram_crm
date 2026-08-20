@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardMarkup
 from gramly_welcome import owner_bot
 from gramly_welcome.content_service import ContentValidationError
 from gramly_welcome.models import Payment, Plan
-from gramly_welcome.owner_bot import _parse_keyboard_definition
+from gramly_welcome.owner_bot import _parse_keyboard_definition, _toggle_channel_assignment
 from gramly_welcome.telegram_delivery import _reply_markup
 
 
@@ -54,6 +54,20 @@ def test_reply_markup_keeps_functionality_when_button_styles_are_unsupported() -
 
     assert isinstance(markup, InlineKeyboardMarkup)
     assert markup.inline_keyboard[0][0].url == "https://gramly.tech"
+
+
+def test_assignment_toggle_reports_concrete_result_and_preserves_selection() -> None:
+    selected, message = _toggle_channel_assignment("selected", {10, 20}, 20)
+    assert selected == {10}
+    assert message == "Назначение снято"
+
+    selected, message = _toggle_channel_assignment("selected", selected, 30)
+    assert selected == {10, 30}
+    assert message == "Канал назначен"
+
+    selected, message = _toggle_channel_assignment("all", {10, 30}, 40)
+    assert selected == {40}
+    assert message == "Канал назначен"
 
 
 @pytest.mark.asyncio

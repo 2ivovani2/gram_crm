@@ -215,12 +215,18 @@ async def edit_with_ui_fallback(
         text = premium_text(text, infer_emoji_key(text))
     try:
         await message.edit_text(text, reply_markup=reply_markup)
-    except TelegramBadRequest:
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return
         fallback_text = plain_text(text)
         fallback_markup = plain_markup(reply_markup)
         if fallback_text == text and fallback_markup == reply_markup:
             raise
-        await message.edit_text(fallback_text, reply_markup=fallback_markup)
+        try:
+            await message.edit_text(fallback_text, reply_markup=fallback_markup)
+        except TelegramBadRequest as fallback_exc:
+            if "message is not modified" not in str(fallback_exc).lower():
+                raise
 
 
 async def edit_caption_with_ui_fallback(

@@ -121,7 +121,7 @@ async def send_delivery_operation(
     async with Bot(token=token) as bot:
         await send_compiled_operation(
             bot,
-            context.contact.telegram_id,
+            context.target_chat_id,
             context.operation.operation_type,
             context.operation.payload,
             context.operation.media,

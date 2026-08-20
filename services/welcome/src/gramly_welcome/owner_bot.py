@@ -57,6 +57,7 @@ from .content_service import (
     draft_snapshot,
     ensure_default_farewell_flow,
     ensure_default_welcome_flow,
+    flow_timeline_seconds,
     move_step,
     open_draft,
     publish_draft,
@@ -75,6 +76,7 @@ from .finance import (
     record_first_touch,
 )
 from .flow_delivery import compile_preview_operations
+from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
 from .learning import (
     HelpSnapshot,
     navigate_tip_session,
@@ -820,7 +822,13 @@ async def set_farewell(callback: CallbackQuery, owner: Owner, state: FSMContext)
     await callback.answer()
 
 
-async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> None:
+async def send_chain_editor(
+    message: Message,
+    owner: Owner,
+    version_id: int,
+    *,
+    edit: bool = False,
+) -> None:
     async with session_factory() as session:
         snapshot = await draft_snapshot(session, owner.id, version_id)
     is_farewell = snapshot.flow.kind == "farewell"
@@ -834,11 +842,20 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
     if is_farewell:
         lines.append("Лимит: до 5 сообщений и до 5 файлов.")
     else:
+        timeline = flow_timeline_seconds(snapshot.version, snapshot.steps)
+        timing_marker = "✅" if timeline <= JOIN_REQUEST_MAX_TIMELINE_SECONDS else "⚠️"
         lines.append(
-            "\nℹ️ При обычном вступлении Telegram разрешает боту написать человеку в личные "
-            "сообщения только после того, как он сам открыл этого бота и нажал /start. "
-            "Иначе доставка будет честно отмечена как «недоступна»."
+            f"{timing_marker} Время цепочки для заявки: "
+            f"<b>{_format_delay(timeline)} / 4 мин</b>."
         )
+        lines.append(
+            "\nℹ️ При заявке Gramly пишет по временному адресу Telegram до её обработки. "
+            "При обычном вступлении без заявки человек по-прежнему должен заранее нажать /start."
+        )
+        if timeline > JOIN_REQUEST_MAX_TIMELINE_SECONDS:
+            lines.append(
+                "\n⚠️ Сократите задержки: новую версию длиннее четырёх минут опубликовать нельзя."
+            )
     rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
@@ -884,7 +901,8 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
             _home_row(),
         ]
     )
-    await owner_answer(message, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    sender = edit_with_ui_fallback if edit else owner_answer
+    await sender(message, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @router.callback_query(F.data.startswith("chain:add:"))
@@ -1024,7 +1042,12 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
 
 @router.callback_query(F.data.startswith("chain:editor:"))
 async def chain_editor_callback(callback: CallbackQuery, owner: Owner) -> None:
-    await send_chain_editor(_callback_message(callback), owner, int((callback.data or "").split(":")[2]))
+    await send_chain_editor(
+        _callback_message(callback),
+        owner,
+        int((callback.data or "").split(":")[2]),
+        edit=True,
+    )
     await callback.answer()
 
 
@@ -1211,6 +1234,21 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
+def _toggle_channel_assignment(
+    assignment_mode: str,
+    selected: set[int],
+    channel_id: int,
+) -> tuple[set[int], str]:
+    if assignment_mode == "all":
+        return {channel_id}, "Канал назначен"
+    updated = set(selected)
+    if channel_id in updated:
+        updated.remove(channel_id)
+        return updated, "Назначение снято"
+    updated.add(channel_id)
+    return updated, "Канал назначен"
+
+
 async def send_assignment_screen(message: Message, owner: Owner, version_id: int, page: int = 0) -> None:
     async with session_factory() as session:
         snapshot = await draft_snapshot(session, owner.id, version_id)
@@ -1256,8 +1294,16 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
                 ),
             ]
         )
-    rows.append([owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")])
-    await owner_answer(
+    rows.append(
+        [
+            owner_button(
+                text="✅ Готово · к цепочке",
+                callback_data=f"chain:editor:{version_id}",
+                style="success",
+            )
+        ]
+    )
+    await edit_with_ui_fallback(
         message,
         "📣 <b>Назначение цепочки</b>\n\n"
         "Выберите все каналы либо конкретный набор. Новые подключённые каналы "
@@ -1315,18 +1361,17 @@ async def chain_assign_toggle(callback: CallbackQuery, owner: Owner) -> None:
                     )
                 )
             )
-            if snapshot.flow.assignment_mode == "all":
-                selected = {channel_id}
-            elif channel_id in selected:
-                selected.remove(channel_id)
-            else:
-                selected.add(channel_id)
+            selected, result_message = _toggle_channel_assignment(
+                snapshot.flow.assignment_mode,
+                selected,
+                channel_id,
+            )
             await set_flow_assignments(session, owner.id, snapshot.flow.id, sorted(selected))
     except ContentValidationError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
     await send_assignment_screen(_callback_message(callback), owner, version_id, page)
-    await callback.answer("Назначение обновлено")
+    await callback.answer(result_message)
 
 
 @router.callback_query(F.data.startswith("chain:buttons:"))

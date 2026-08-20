@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
 from .models import (
     Channel,
     ContentAttachment,
@@ -21,6 +22,13 @@ from .models import (
     FlowChannelAssignment,
     ManagedBot,
 )
+
+
+def flow_timeline_seconds(version: ContentFlowVersion, steps: list[ContentStep]) -> int:
+    """Return the time at which the final flow step becomes runnable."""
+    return int(version.first_delay_seconds) + sum(
+        int(step.delay_after_seconds) for step in steps[:-1]
+    )
 
 
 class ContentValidationError(ValueError):
@@ -582,6 +590,11 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
             raise ContentValidationError("Farewell chain supports up to 5 messages")
         if attachment_count > 5:
             raise ContentValidationError("Farewell chain supports up to 5 files")
+    elif flow_timeline_seconds(version, steps) > JOIN_REQUEST_MAX_TIMELINE_SECONDS:
+        raise ContentValidationError(
+            "Приветственная цепочка длится больше 4 минут. Сократите задержку до первого "
+            "сообщения или паузы между шагами — иначе Telegram закроет окно заявки."
+        )
     for step in steps[:-1]:
         if not 1 <= step.delay_after_seconds <= 86_400:
             raise ContentValidationError("Every non-final step needs a 1s–24h delay")
