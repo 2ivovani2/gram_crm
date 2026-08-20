@@ -102,7 +102,7 @@ from .rotation import (
     rotation_statistics,
     set_priority_channel,
 )
-from .storage import MediaTooLargeError, ObjectStorage
+from .storage import MediaTooLargeError, ObjectStorage, ObjectStorageError
 from .telegram_delivery import send_compiled_operation
 
 logger = logging.getLogger(__name__)
@@ -386,8 +386,28 @@ def _downloadable(message: Message) -> tuple[str, Any, str, str] | None:
     obj = getattr(message, kind, None) if kind in DOWNLOADABLE_TYPES else None
     if obj is None:
         return None
-    name = PurePath(getattr(obj, "file_name", "") or f"{kind}.bin").name
-    mime = getattr(obj, "mime_type", "") or "application/octet-stream"
+    fallback = {
+        "animation": ("animation.mp4", "video/mp4"),
+        "audio": ("audio.mp3", "audio/mpeg"),
+        "document": ("document.bin", "application/octet-stream"),
+        "sticker": (
+            "sticker.tgs"
+            if getattr(obj, "is_animated", False)
+            else "sticker.webm"
+            if getattr(obj, "is_video", False)
+            else "sticker.webp",
+            "application/x-tgsticker"
+            if getattr(obj, "is_animated", False)
+            else "video/webm"
+            if getattr(obj, "is_video", False)
+            else "image/webp",
+        ),
+        "video": ("video.mp4", "video/mp4"),
+        "video_note": ("video-note.mp4", "video/mp4"),
+        "voice": ("voice.ogg", "audio/ogg"),
+    }[kind]
+    name = PurePath(getattr(obj, "file_name", "") or fallback[0]).name
+    mime = getattr(obj, "mime_type", "") or fallback[1]
     return kind, obj, name, mime
 
 
@@ -813,6 +833,12 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
     ]
     if is_farewell:
         lines.append("Лимит: до 5 сообщений и до 5 файлов.")
+    else:
+        lines.append(
+            "\nℹ️ При обычном вступлении Telegram разрешает боту написать человеку в личные "
+            "сообщения только после того, как он сам открыл этого бота и нажал /start. "
+            "Иначе доставка будет честно отмечена как «недоступна»."
+        )
     rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
@@ -1163,13 +1189,25 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
                 operation.media,
                 storage,
             )
-    except (TelegramAPIError, OSError, ValueError):
+    except (ObjectStorageError, OSError):
+        logger.exception("Could not materialize preview media version_id=%s", version_id)
+        await owner_answer(
+            message,
+            "🛠 <b>Медиа временно недоступно для предпросмотра.</b>\n\n"
+            "Шаг сохранён, но сервис не смог подготовить файл к отправке. "
+            "Повторите предпросмотр через минуту.",
+        )
+    except TelegramAPIError:
         logger.exception("Could not preview draft version_id=%s", version_id)
         await owner_answer(
             message,
-            "⚠️ Telegram не смог воспроизвести один из элементов. "
-            "Проверьте тип медиа, Premium Emoji и клавиатуру.",
+            "⚠️ <b>Telegram отклонил один из элементов.</b>\n\n"
+            "Проверьте файл и клавиатуру. Для Premium Emoji владелец отправляющего "
+            "бота должен иметь Telegram Premium; сам emoji сохраняется без преобразования.",
         )
+    except ValueError as exc:
+        logger.warning("Invalid preview operation version_id=%s error=%s", version_id, exc)
+        await owner_answer(message, f"⚠️ Не удалось собрать Telegram-вызов: {exc}")
     await callback.answer()
 
 

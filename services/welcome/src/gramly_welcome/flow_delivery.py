@@ -184,7 +184,7 @@ async def schedule_content_flow(
             )
         )
         return int(existing) if existing is not None else None
-    if kind == "farewell":
+    if kind in {"welcome", "farewell"}:
         contact = await session.get(Contact, contact_id)
         if contact is None or not contact.bot_started:
             await session.execute(

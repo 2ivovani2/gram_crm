@@ -28,9 +28,11 @@ spec:
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: metrics, containerPort: 9090}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          volumeMounts: [{name: temporary-media, mountPath: /tmp}]
           resources:
             requests: {cpu: 200m, memory: 256Mi}
             limits: {cpu: "2", memory: 1Gi}
+      volumes: [{name: temporary-media, emptyDir: {sizeLimit: 256Mi}}]
 ---
 apiVersion: apps/v1
 kind: Deployment
