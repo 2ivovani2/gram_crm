@@ -187,6 +187,25 @@ membership at SSO login.
 Application permission changes take effect in Authentik without duplicating
 the same role map in NetBird.
 
+The same reconciliation pins device SSO reauthentication to seven days
+(`604800` seconds). Do not treat the NetBird UI label `Connected` as sufficient
+proof of access: a healthy device must also have `login_expired=false`, belong
+to `All`, and resolve private application names through the system resolver.
+On macOS, use `dscacheutil -q host -a name crm.gramly.tech`; a direct `dig`
+query can bypass NetBird split DNS and is not an acceptance test.
+
+Run the read-only end-to-end identity audit with:
+
+```bash
+KUBECONFIG=/absolute/path/to/kubeconfig \
+  infra/kubernetes/apps/vpn/audit-user-access.sh <authentik-username>
+```
+
+The command correlates the Authentik identity with its NetBird identity and
+peers, reports login expiration and group membership, and verifies the account
+expiration setting, private DNS zone, transport policies, and private resource
+groups. It does not approve, delete, or modify users, peers, or policies.
+
 Create or reconcile the split-DNS zone used by private application resources:
 
 ```bash

@@ -23,6 +23,40 @@ def test_public_access_gate_intercepts_private_hostname(client):
     assert response.status_code == 403
     assert "Сначала включите" in response.content.decode()
     assert "Gramly CRM" in response.content.decode()
+    assert "crm.gramly.tech/vpn-probe/" in response.content.decode()
+    assert "Туннель или SSO-сессия неактивны" in response.content.decode()
+    assert "Приватный маршрут не отвечает" in response.content.decode()
+    assert "Проверить ещё раз" in response.content.decode()
+
+
+@override_settings(PUBLIC_ACCESS_GATE=True, ALLOWED_HOSTS=["crm.gramly.tech"])
+def test_public_vpn_probe_bypasses_gate_and_reports_public_runtime(client):
+    response = client.get(reverse("vpn-probe"), HTTP_HOST="crm.gramly.tech")
+
+    assert response.status_code == 200
+    assert response.json() == {"private": False}
+    assert response["Access-Control-Allow-Origin"] == "*"
+    assert response["Cache-Control"] == "no-store"
+
+
+@override_settings(PUBLIC_ACCESS_GATE=False, ALLOWED_HOSTS=["crm.gramly.tech"])
+def test_private_vpn_probe_reports_private_runtime(client):
+    response = client.get(reverse("vpn-probe"), HTTP_HOST="crm.gramly.tech")
+
+    assert response.status_code == 200
+    assert response.json() == {"private": True}
+    assert response["Access-Control-Allow-Origin"] == "*"
+    assert response["Cache-Control"] == "no-store"
+
+
+@override_settings(PUBLIC_ACCESS_GATE=True, ALLOWED_HOSTS=["crm.gramly.tech"])
+def test_vpn_probe_preflight_is_public_and_not_cached(client):
+    response = client.options(reverse("vpn-probe"), HTTP_HOST="crm.gramly.tech")
+
+    assert response.status_code == 204
+    assert response["Access-Control-Allow-Origin"] == "*"
+    assert response["Access-Control-Allow-Methods"] == "GET, OPTIONS"
+    assert response["Cache-Control"] == "no-store"
 
 
 @override_settings(PUBLIC_ACCESS_GATE=False, ALLOWED_HOSTS=["crm.gramly.tech"])

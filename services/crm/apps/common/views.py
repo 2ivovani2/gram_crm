@@ -28,3 +28,23 @@ class HealthCheckView(View):
 
         status = 200 if db_ok else 503
         return JsonResponse({"status": "ok" if db_ok else "degraded", "db": db_ok}, status=status)
+
+
+class VpnProbeView(View):
+    """Tell the VPN gate whether this request reached the private CRM runtime."""
+
+    def get(self, request, *args, **kwargs):
+        from django.conf import settings
+
+        response = JsonResponse({"private": not settings.PUBLIC_ACCESS_GATE})
+        response["Access-Control-Allow-Origin"] = "*"
+        response["Cache-Control"] = "no-store"
+        return response
+
+    def options(self, request, *args, **kwargs):
+        response = JsonResponse({}, status=204)
+        response["Access-Control-Allow-Origin"] = "*"
+        response["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response["Access-Control-Max-Age"] = "600"
+        response["Cache-Control"] = "no-store"
+        return response

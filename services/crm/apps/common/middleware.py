@@ -15,6 +15,7 @@ PUBLIC_PREFIXES = (
     "/health/",
     "/bot/webhook/",
 )
+VPN_PROBE_PATH = "/vpn-probe/"
 
 
 class PrivateAccessGateMiddleware:
@@ -24,6 +25,12 @@ class PrivateAccessGateMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # This exact endpoint must reach either the public or private runtime so
+        # the VPN gate can distinguish an expired tunnel from an application
+        # authorization failure.
+        if request.path == VPN_PROBE_PATH:
+            return self.get_response(request)
+
         if settings.PUBLIC_ACCESS_GATE:
             # Use the raw WSGI/ASGI value so this guard runs before any code
             # calls request.get_host(). Only exact, static hostnames are used.
