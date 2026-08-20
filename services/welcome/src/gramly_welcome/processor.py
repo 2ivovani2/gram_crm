@@ -54,6 +54,66 @@ def membership_transition_flags(
     return not was_active and new_active, was_active and not new_active
 
 
+def _join_request_upsert(
+    *,
+    bot: ManagedBot,
+    channel_id: int,
+    contact_id: int,
+    update_id: int,
+    user_chat_id: int | None,
+    message_window_expires_at: datetime,
+    due_at: datetime | None,
+    now: datetime,
+) -> Any:
+    """Insert a request or refresh an older still-open application.
+
+    Telegram issues a new short-lived ``user_chat_id`` when somebody applies
+    again. Keeping the old open row would discard that new messaging window,
+    so the partial unique conflict is deliberately treated as a refresh. Inbox
+    idempotency still prevents the same Telegram update from being processed
+    twice.
+    """
+
+    status = "scheduled" if bot.auto_approve else "pending"
+    statement = insert(JoinRequest).values(
+        bot_id=bot.id,
+        channel_id=channel_id,
+        contact_id=contact_id,
+        telegram_update_id=update_id,
+        user_chat_id=user_chat_id,
+        message_window_expires_at=message_window_expires_at,
+        welcome_delivery_id=None,
+        status=status,
+        delay_snapshot_seconds=bot.approval_delay_seconds,
+        due_at=due_at,
+        attempts=0,
+        lease_owner=None,
+        lease_expires_at=None,
+        error="",
+        created_at=now,
+        processed_at=None,
+    )
+    return statement.on_conflict_do_update(
+        index_elements=[JoinRequest.channel_id, JoinRequest.contact_id],
+        index_where=JoinRequest.status.in_(("pending", "scheduled", "processing")),
+        set_={
+            "telegram_update_id": statement.excluded.telegram_update_id,
+            "user_chat_id": statement.excluded.user_chat_id,
+            "message_window_expires_at": statement.excluded.message_window_expires_at,
+            "welcome_delivery_id": None,
+            "status": statement.excluded.status,
+            "delay_snapshot_seconds": statement.excluded.delay_snapshot_seconds,
+            "due_at": statement.excluded.due_at,
+            "attempts": 0,
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "error": "",
+            "created_at": statement.excluded.created_at,
+            "processed_at": None,
+        },
+    ).returning(JoinRequest.id)
+
+
 def is_actionable_payload(payload: dict[str, Any]) -> bool:
     return any(isinstance(payload.get(key), dict) for key in ACTIONABLE_UPDATE_KEYS)
 
@@ -363,25 +423,21 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             approval_deadline,
         ) if bot.auto_approve else None
         request_id = await session.scalar(
-            insert(JoinRequest)
-            .values(
-                bot_id=bot.id,
+            _join_request_upsert(
+                bot=bot,
                 channel_id=channel_id,
                 contact_id=contact_id,
-                telegram_update_id=event.update_id,
-                user_chat_id=int(join["user_chat_id"]) if join.get("user_chat_id") is not None else None,
+                update_id=event.update_id,
+                user_chat_id=(
+                    int(join["user_chat_id"])
+                    if join.get("user_chat_id") is not None
+                    else None
+                ),
                 message_window_expires_at=message_window_expires_at,
-                status="scheduled" if bot.auto_approve else "pending",
-                delay_snapshot_seconds=bot.approval_delay_seconds,
                 due_at=due_at,
+                now=now,
             )
-            # Either a Telegram retry or another still-open request for this
-            # person is harmless. Avoid turning the race into a worker retry.
-            .on_conflict_do_nothing()
-            .returning(JoinRequest.id)
         )
-        if request_id is None:
-            return
         if (
             join.get("user_chat_id") is not None
             and await _join_request_greetings_enabled(session, bot.id)
