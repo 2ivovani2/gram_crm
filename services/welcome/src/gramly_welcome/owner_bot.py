@@ -14,7 +14,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.redis import RedisStorage
@@ -305,6 +305,16 @@ def _one_button(text: str, callback: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[owner_button(text=text, callback_data=callback)]])
 
 
+def _home_row() -> list[TelegramInlineKeyboardButton]:
+    return [
+        owner_button(
+            text="🏠 Главное меню",
+            callback_data="menu:home",
+            emoji_key="home",
+        )
+    ]
+
+
 def _add_to_channel_url(bot: ManagedBot) -> str:
     return f"https://t.me/{bot.username}?startchannel&admin=invite_users+manage_chat"
 
@@ -325,6 +335,8 @@ def _connection_keyboard(bot: ManagedBot) -> InlineKeyboardMarkup:
                 )
             ],
             [owner_button(text="⚙️ Открыть карточку бота", callback_data=f"bot:{bot.id}")],
+            [owner_button(text="⬅️ К списку ботов", callback_data="menu:bots")],
+            _home_row(),
         ]
     )
 
@@ -431,6 +443,23 @@ async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     await show_main_menu(message, owner)
 
 
+@router.message(Command("help"))
+async def help_command(message: Message, owner: Owner) -> None:
+    try:
+        async with session_factory() as session:
+            snapshot = await open_help_session(session, owner.id, "home")
+            theme = await load_bot_ui_theme(session)
+    except Exception:
+        logger.exception("Contextual help command failed owner_id=%s", owner.id)
+        await owner_answer(message, "⚠️ Справка временно недоступна. Попробуйте чуть позже.")
+        return
+    await answer_with_ui_fallback(
+        message,
+        _help_text(snapshot),
+        reply_markup=_help_markup(snapshot, theme),
+    )
+
+
 @router.callback_query(F.data.startswith("guide:"))
 async def guide(callback: CallbackQuery, owner: Owner) -> None:
     message = _callback_message(callback)
@@ -506,6 +535,7 @@ async def show_bots(target: Message, owner: Owner, page: int) -> None:
     if navigation:
         rows.append(navigation)
     rows.append([owner_button(text="Создать бота", callback_data="bot:add", emoji_key="add")])
+    rows.append(_home_row())
     text = (
         f"🤖 <b>{_owner_display_name(owner)}, подключим первого бота?</b>\n\n"
         "После подключения вы сможете добавить каналы, собрать персональную цепочку "
@@ -544,6 +574,7 @@ async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
             inline_keyboard=[
                 [owner_button(text="🤖 Открыть @BotFather", url="https://t.me/BotFather?start=bot")],
                 [owner_button(text="❌ Отмена", callback_data="cancel")],
+                _home_row(),
             ]
         ),
     )
@@ -558,7 +589,16 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
     except TelegramAPIError:
         pass
     if not token or ":" not in token or len(token) > 200:
-        await owner_answer(message, "Токен выглядит некорректно. Проверьте его и отправьте ещё раз.")
+        await owner_answer(
+            message,
+            "⚠️ Токен выглядит некорректно. Проверьте его и отправьте ещё раз.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [owner_button(text="❌ Отменить подключение", callback_data="cancel")],
+                    _home_row(),
+                ]
+            ),
+        )
         return
     managed: ManagedBot | None = None
     settings = get_settings()
@@ -572,14 +612,25 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
             await set_webhook_configured(session, managed.id, True)
             await ensure_free_access(session, owner.id)
     except IntegrityError:
-        await owner_answer(message, "Этот бот уже подключён к системе другим владельцем.")
+        await owner_answer(
+            message,
+            "⚠️ Этот бот уже подключён к системе другим владельцем.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
+        )
         return
     except TelegramAPIError:
         if managed:
             async with session_factory() as session:
                 await delete_bot(session, managed.id)
         await owner_answer(
-            message, "Не удалось проверить токен или настроить webhook. Проверьте токен и попробуйте ещё раз."
+            message,
+            "⚠️ Не удалось проверить токен или настроить webhook. Проверьте токен и попробуйте ещё раз.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [owner_button(text="❌ Отменить подключение", callback_data="cancel")],
+                    _home_row(),
+                ]
+            ),
         )
         return
     except Exception:
@@ -595,7 +646,11 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
                 )
             async with session_factory() as session:
                 await delete_bot(session, managed.id)
-        await owner_answer(message, "Telegram временно недоступен. Попробуйте чуть позже.")
+        await owner_answer(
+            message,
+            "⚠️ Telegram временно недоступен. Попробуйте чуть позже.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
+        )
         return
     await state.clear()
     await owner_answer(
@@ -655,6 +710,8 @@ async def connection_check(callback: CallbackQuery, owner: Owner) -> None:
             inline_keyboard=[
                 [owner_button(text="💬 Настроить приветствие", callback_data=f"msg:{bot.id}")],
                 [owner_button(text="⚙️ Открыть карточку", callback_data=f"bot:{bot.id}")],
+                [owner_button(text="⬅️ К списку ботов", callback_data="menu:bots")],
+                _home_row(),
             ]
         ),
     )
@@ -700,6 +757,8 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
                 owner_button(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}"),
             ],
             [owner_button(text="Помощь по управлению", callback_data="help:bots")],
+            [owner_button(text="⬅️ К списку ботов", callback_data="menu:bots")],
+            _home_row(),
         ]
     )
     await owner_answer(
@@ -796,6 +855,7 @@ async def send_chain_editor(message: Message, owner: Owner, version_id: int) -> 
             ],
             [owner_button(text="Помощь по цепочкам", callback_data="help:flows")],
             [owner_button(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
+            _home_row(),
         ]
     )
     await owner_answer(message, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -1519,7 +1579,9 @@ async def delete_confirm(callback: CallbackQuery, owner: Owner, state: FSMContex
         await delete_bot(session, bot.id)
     await state.clear()
     await owner_answer(
-        message, "✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены."
+        message,
+        "✅ Бот удалён из Gramly Welcome. Сам Telegram-бот и права каналов не изменены.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
     )
     await callback.answer()
 
@@ -1574,7 +1636,7 @@ async def subscription_menu(message: Message, owner: Owner) -> None:
         "Business оформляется на 30 дней. Выберите удобный способ оплаты: Telegram Stars "
         "откроются прямо в Telegram, а Crypto Pay позволит оплатить счёт через Crypto Bot. "
         "После подтверждения платежа доступ обновится автоматически.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows) if rows else None,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[*rows, _home_row()]),
     )
 
 
@@ -1602,6 +1664,12 @@ async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
             message,
             "⚠️ <b>Сейчас не получилось создать счёт Crypto Pay</b>\n\n"
             f"{html.escape(str(exc))}\n\nПопробуйте ещё раз чуть позже — тариф и ваши настройки не изменились.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [owner_button(text="↩️ К способам оплаты", callback_data="menu:subscription")],
+                    _home_row(),
+                ]
+            ),
         )
         return
     await owner_answer(
@@ -1728,7 +1796,11 @@ async def stars_paid(message: Message, owner: Owner) -> None:
             )
     except FinanceError:
         logger.exception("Stars payment reconciliation failed owner_id=%s", owner.id)
-        await owner_answer(message, "Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.")
+        await owner_answer(
+            message,
+            "⚠️ Платёж получен, но требует сверки. Мы уже сохранили его идентификатор.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
+        )
         return
     await owner_answer(
         message,
@@ -1754,6 +1826,7 @@ async def referral_dashboard(message: Message, owner: Owner) -> None:
         f"Баланс: <b>{balance} ₽</b>\n"
         f"Ваша ссылка:\nhttps://t.me/{settings.interface_bot_username}?start=ref_{code.code}\n\n"
         "Минимальная сумма вывода — 1 000 ₽. Управление заявками появится в Mini App.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
     )
 
 
@@ -1765,7 +1838,26 @@ async def referral_dashboard_callback(callback: CallbackQuery, owner: Owner) -> 
 
 @router.message(F.text == "📈 Аналитика")
 async def analytics_placeholder(message: Message) -> None:
-    await owner_answer(message, "Подробная аналитика доступна в Mini App.")
+    settings = get_settings()
+    await owner_answer(
+        message,
+        "📈 <b>Аналитика GramlyHello</b>\n\n"
+        "В Mini App собраны реальные вступления, доставки, ошибки и показатели ротации. "
+        "Мы не дополняем статистику выдуманными данными, которых Telegram не передаёт.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    owner_button(
+                        text="📊 Открыть аналитику",
+                        web_app=WebAppInfo(url=settings.mini_app_url),
+                        style="primary",
+                        emoji_key="analytics",
+                    )
+                ],
+                _home_row(),
+            ]
+        ),
+    )
 
 
 @router.callback_query(F.data == "menu:analytics")

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
+from gramly_welcome.admin_api import SubscriptionActionInput, _subscription_is_business
 from gramly_welcome.config import Settings, get_settings
 from gramly_welcome.db import session_dependency
 from gramly_welcome.main import app
+from gramly_welcome.models import Plan, Subscription
 
 
 class FakeSession:
@@ -101,3 +104,38 @@ def test_payment_readiness_exposes_status_but_not_secret_values(client: TestClie
     assert "crypto-secret" not in serialized
     assert "path-secret" not in serialized
     assert "telegram-secret" not in serialized
+
+
+def test_subscription_admin_action_rejects_short_reason_and_unknown_action() -> None:
+    with pytest.raises(ValueError):
+        SubscriptionActionInput(action="grant_business", days=30, reason="gift")
+    with pytest.raises(ValueError):
+        SubscriptionActionInput(action="delete_history", days=30, reason="Requested by owner")
+
+
+def test_business_access_summary_requires_active_unexpired_business() -> None:
+    now = datetime.now(UTC)
+    plan = Plan(
+        id=2,
+        slug="business",
+        display_name="Business",
+        entitlements={},
+        max_bots=15,
+        max_channels=150,
+        monthly_delivery_operations=250_000,
+        media_storage_bytes=25 * 1024**3,
+    )
+    subscription = Subscription(
+        owner_id=1,
+        plan_id=2,
+        source="manual",
+        status="active",
+        starts_at=now,
+        ends_at=now + timedelta(days=30),
+    )
+    assert _subscription_is_business(subscription, plan)
+    subscription.ends_at = now - timedelta(seconds=1)
+    assert not _subscription_is_business(subscription, plan)
+    subscription.ends_at = now + timedelta(days=30)
+    subscription.status = "canceled"
+    assert not _subscription_is_business(subscription, plan)

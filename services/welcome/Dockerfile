@@ -10,6 +10,7 @@ RUN addgroup --system --gid 10001 gramly \
 WORKDIR /app
 COPY services/welcome/pyproject.toml ./
 COPY services/welcome/src ./src
+COPY services/welcome/assets ./assets
 COPY services/welcome/alembic.ini ./
 COPY services/welcome/alembic ./alembic
 RUN python -m pip install --upgrade pip \

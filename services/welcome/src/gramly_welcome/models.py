@@ -213,7 +213,10 @@ class OwnerNotification(Base):
     __tablename__ = "owner_notification"
     __table_args__ = (
         UniqueConstraint("owner_id", "dedupe_key", name="uq_owner_notification_dedupe"),
-        CheckConstraint("kind IN ('onboarding','announcement')", name="ck_owner_notification_kind"),
+        CheckConstraint(
+            "kind IN ('onboarding','announcement','subscription_change')",
+            name="ck_owner_notification_kind",
+        ),
         CheckConstraint(
             "status IN ('pending','processing','retry','sent','failed')",
             name="ck_owner_notification_status",
