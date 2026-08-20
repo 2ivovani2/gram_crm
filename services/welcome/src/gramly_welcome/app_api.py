@@ -22,6 +22,7 @@ from .content_service import (
     copy_step,
     delete_step,
     draft_snapshot,
+    flow_timeline_seconds,
     open_draft,
     publish_draft,
     set_first_delay,
@@ -38,6 +39,7 @@ from .finance import (
     request_withdrawal,
 )
 from .idempotency import IdempotencyConflictError, claim_request, store_response
+from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
 from .models import (
     Channel,
     Contact,
@@ -445,6 +447,10 @@ async def flow_draft(flow_id: int, user: CurrentUserDep, session: SessionDep) ->
             "id": snapshot.version.id,
             "number": snapshot.version.version,
             "first_delay_seconds": snapshot.version.first_delay_seconds,
+            "timeline_seconds": flow_timeline_seconds(snapshot.version, snapshot.steps),
+            "join_request_compatible": flow_timeline_seconds(
+                snapshot.version, snapshot.steps
+            ) <= JOIN_REQUEST_MAX_TIMELINE_SECONDS,
         },
         "steps": [
             {

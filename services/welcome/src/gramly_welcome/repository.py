@@ -460,6 +460,46 @@ async def defer_join_request(
     await session.commit()
 
 
+async def pause_join_request(session: AsyncSession, request_id: int, worker_id: str) -> None:
+    """Return a claimed request to manual pending state when auto-approve is disabled."""
+    await session.execute(
+        update(JoinRequest)
+        .where(JoinRequest.id == request_id, JoinRequest.lease_owner == worker_id)
+        .values(
+            status="pending",
+            due_at=None,
+            lease_owner=None,
+            lease_expires_at=None,
+            error="",
+        )
+    )
+    await session.commit()
+
+
+async def close_open_join_request(
+    session: AsyncSession,
+    *,
+    channel_id: int,
+    contact_id: int,
+) -> None:
+    """Close a pending request after Telegram confirms actual membership."""
+    await session.execute(
+        update(JoinRequest)
+        .where(
+            JoinRequest.channel_id == channel_id,
+            JoinRequest.contact_id == contact_id,
+            JoinRequest.status.in_(("pending", "scheduled", "processing")),
+        )
+        .values(
+            status="joined",
+            processed_at=datetime.now(UTC),
+            lease_owner=None,
+            lease_expires_at=None,
+            error="",
+        )
+    )
+
+
 async def finish_join_request(
     session: AsyncSession,
     request_id: int,

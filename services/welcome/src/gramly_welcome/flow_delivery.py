@@ -12,6 +12,8 @@ from sqlalchemy.orm import aliased
 from .advertising import choose_free_ad, mark_ad_operation
 from .config import get_settings
 from .content_compiler import AttachmentSpec, CompiledOperation, compile_step
+from .content_service import flow_timeline_seconds
+from .metrics import JOIN_REQUEST_GREETINGS
 from .models import (
     Channel,
     Contact,
@@ -35,6 +37,15 @@ class OperationContext:
     bot: ManagedBot
     channel: Channel
     contact: Contact
+
+    @property
+    def target_chat_id(self) -> int:
+        return int(self.delivery.target_chat_id or self.contact.telegram_id)
+
+    @property
+    def target_expired(self) -> bool:
+        expires_at = self.delivery.target_expires_at
+        return expires_at is not None and expires_at <= datetime.now(UTC)
 
 
 async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any] | None:
@@ -112,6 +123,9 @@ async def schedule_content_flow(
     contact_id: int,
     event_key: str,
     kind: str = "welcome",
+    target_chat_id: int | None = None,
+    target_expires_at: datetime | None = None,
+    max_timeline_seconds: int | None = None,
 ) -> int | None:
     assignment_exists = exists(
         select(FlowChannelAssignment.id).where(
@@ -145,6 +159,21 @@ async def schedule_content_flow(
     if row is None:
         return None
     _flow, version = row
+    steps = list(
+        (
+            await session.scalars(
+                select(ContentStep)
+                .where(ContentStep.version_id == version.id)
+                .order_by(ContentStep.position, ContentStep.id)
+            )
+        ).all()
+    )
+    if max_timeline_seconds is not None and flow_timeline_seconds(version, steps) > max_timeline_seconds:
+        return None
+    if target_chat_id is not None and (
+        target_expires_at is None or target_expires_at <= datetime.now(UTC)
+    ):
+        return None
     recent = None
     if kind == "welcome":
         recent = await session.scalar(
@@ -171,6 +200,8 @@ async def schedule_content_flow(
             contact_id=contact_id,
             version_id=version.id,
             event_key=event_key,
+            target_chat_id=target_chat_id,
+            target_expires_at=target_expires_at,
             status="scheduled",
         )
         .on_conflict_do_nothing(constraint="uq_flow_delivery_bot_event")
@@ -184,7 +215,7 @@ async def schedule_content_flow(
             )
         )
         return int(existing) if existing is not None else None
-    if kind in {"welcome", "farewell"}:
+    if kind in {"welcome", "farewell"} and target_chat_id is None:
         contact = await session.get(Contact, contact_id)
         if contact is None or not contact.bot_started:
             await session.execute(
@@ -193,15 +224,6 @@ async def schedule_content_flow(
                 .values(status="unreachable", completed_at=datetime.now(UTC))
             )
             return int(delivery_id)
-    steps = list(
-        (
-            await session.scalars(
-                select(ContentStep)
-                .where(ContentStep.version_id == version.id)
-                .order_by(ContentStep.position, ContentStep.id)
-            )
-        ).all()
-    )
     due_at = datetime.now(UTC) + timedelta(seconds=version.first_delay_seconds)
     previous_operation_id: int | None = None
     operation_position = 0
@@ -394,7 +416,7 @@ async def finish_operation(
     *,
     success: bool,
     error: str = "",
-) -> None:
+) -> str | None:
     operation = await session.scalar(
         select(DeliveryOperation)
         .where(
@@ -404,7 +426,7 @@ async def finish_operation(
         .with_for_update()
     )
     if operation is None:
-        return
+        return None
     operation.status = "sent" if success else "failed"
     operation.sent_at = datetime.now(UTC) if success else None
     operation.lease_owner = None
@@ -447,6 +469,7 @@ async def finish_operation(
     ).all()
     counts: dict[str, int] = {str(status): int(total) for status, total in count_rows}
     pending = sum(counts.get(item, 0) for item in ("scheduled", "retry", "processing"))
+    final_status: str | None = None
     if pending == 0:
         if counts.get("failed", 0):
             final_status = "partial" if counts.get("sent", 0) else "failed"
@@ -457,4 +480,77 @@ async def finish_operation(
             .where(FlowDelivery.id == operation.flow_delivery_id)
             .values(status=final_status, completed_at=datetime.now(UTC))
         )
+        delivery = await session.get(FlowDelivery, operation.flow_delivery_id)
+        if delivery is not None and delivery.target_chat_id is not None:
+            if final_status == "completed":
+                metric_result = "sent"
+            elif final_status == "partial":
+                metric_result = "partial"
+            elif error in {"TelegramForbiddenError", "TelegramBadRequest"}:
+                metric_result = "unreachable"
+            else:
+                metric_result = "failed"
+            JOIN_REQUEST_GREETINGS.labels(metric_result).inc()
     await session.commit()
+    return final_status
+
+
+async def cancel_delivery_operations(
+    session: AsyncSession,
+    delivery_id: int,
+    *,
+    reason: str,
+) -> str | None:
+    """Cancel every unfinished operation and atomically terminalize its flow."""
+    delivery = await session.scalar(
+        select(FlowDelivery).where(FlowDelivery.id == delivery_id).with_for_update()
+    )
+    if delivery is None:
+        return None
+    if delivery.status in {"completed", "partial", "failed", "cancelled", "unreachable"}:
+        return delivery.status
+    cancelled_ids = list(
+        await session.scalars(
+            select(DeliveryOperation.id).where(
+                DeliveryOperation.flow_delivery_id == delivery_id,
+                DeliveryOperation.status.in_(("scheduled", "retry", "processing")),
+            )
+        )
+    )
+    await session.execute(
+        update(DeliveryOperation)
+        .where(
+            DeliveryOperation.flow_delivery_id == delivery_id,
+            DeliveryOperation.status.in_(("scheduled", "retry", "processing")),
+        )
+        .values(
+            status="cancelled",
+            lease_owner=None,
+            lease_expires_at=None,
+            error=reason[:500],
+        )
+    )
+    rows = (
+        await session.execute(
+            select(DeliveryOperation.status, func.count(DeliveryOperation.id))
+            .where(DeliveryOperation.flow_delivery_id == delivery_id)
+            .group_by(DeliveryOperation.status)
+        )
+    ).all()
+    counts = {str(status): int(total) for status, total in rows}
+    if counts.get("cancelled", 0):
+        final_status = "partial" if counts.get("sent", 0) else "cancelled"
+    elif counts.get("failed", 0):
+        final_status = "partial" if counts.get("sent", 0) else "failed"
+    else:
+        final_status = "completed"
+    delivery.status = final_status
+    delivery.completed_at = datetime.now(UTC)
+    for operation_id in cancelled_ids:
+        await mark_ad_operation(session, operation_id, status="cancelled", error=reason)
+    if delivery.target_chat_id is not None:
+        JOIN_REQUEST_GREETINGS.labels(
+            "expired" if reason == "join_request_window_expired" else final_status
+        ).inc()
+    await session.commit()
+    return final_status

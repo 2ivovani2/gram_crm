@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 import uuid
+from datetime import UTC, datetime
 
 from aiogram.exceptions import (
     TelegramAPIError,
@@ -21,17 +22,20 @@ from ..config import Settings, get_settings
 from ..crypto import TokenDecryptionError, TokenKeyring
 from ..db import session_factory
 from ..flow_delivery import (
+    cancel_delivery_operations,
     claim_operation_batch,
     defer_operation,
     finish_operation,
     load_operation_context,
 )
+from ..join_request_policy import approval_action, safe_approval_deadline
 from ..metrics import (
     DELIVERY_ATTEMPTS,
     DEPENDENCY_ERRORS,
     ROTATION_RECOMMENDATIONS,
     WORKER_ACTIVE,
 )
+from ..models import FlowDelivery
 from ..owner_bot import _one_button, interface_bot, interface_dispatcher
 from ..owner_repository import complete_album_notification, finalize_due_albums
 from ..rate_limit import RateLimitUnavailable, TelegramRateLimiter
@@ -44,6 +48,7 @@ from ..repository import (
     finish_join_request,
     load_delivery_context,
     load_join_request_context,
+    pause_join_request,
 )
 from ..rotation import (
     claim_rotation_batch,
@@ -102,8 +107,17 @@ async def _process_operation(
             )
         DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
         return
+    if context.target_expired:
+        async with session_factory() as session:
+            await cancel_delivery_operations(
+                session,
+                context.delivery.id,
+                reason="join_request_window_expired",
+            )
+        DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
+        return
     try:
-        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id)
+        allowed = await limiter.acquire(context.bot.id, context.target_chat_id)
     except RateLimitUnavailable:
         DEPENDENCY_ERRORS.labels("valkey").inc()
         allowed, delay, reason = False, 5, "valkey_unavailable"
@@ -344,13 +358,50 @@ async def _process_join_request(
             )
         DELIVERY_ATTEMPTS.labels("approval_failed").inc()
         return
-    if not context.bot.is_active or not context.bot.auto_approve or not context.channel.is_active:
+    if not context.bot.is_active or not context.channel.is_active:
         async with session_factory() as session:
             await finish_join_request(
-                session, request_id, worker_id, success=False, error="approval_disabled"
+                session, request_id, worker_id, success=False, error="bot_or_channel_inactive"
             )
         DELIVERY_ATTEMPTS.labels("approval_cancelled").inc()
         return
+    if not context.bot.auto_approve:
+        async with session_factory() as session:
+            await pause_join_request(session, request_id, worker_id)
+        DELIVERY_ATTEMPTS.labels("approval_cancelled").inc()
+        return
+    if context.request.welcome_delivery_id is not None:
+        deadline = (
+            safe_approval_deadline(context.request.message_window_expires_at)
+            if context.request.message_window_expires_at is not None
+            else datetime.now(UTC)
+        )
+        async with session_factory() as session:
+            delivery = await session.get(FlowDelivery, context.request.welcome_delivery_id)
+        action = approval_action(
+            auto_approve=context.bot.auto_approve,
+            delivery_status=delivery.status if delivery is not None else None,
+            approval_deadline=deadline,
+            now=datetime.now(UTC),
+        )
+        if action == "wait":
+            async with session_factory() as session:
+                await defer_join_request(
+                    session,
+                    request_id,
+                    worker_id,
+                    delay_seconds=2,
+                    error="waiting_for_welcome_delivery",
+                )
+            DELIVERY_ATTEMPTS.labels("approval_waiting_delivery").inc()
+            return
+        if action == "cancel_then_approve":
+            async with session_factory() as session:
+                await cancel_delivery_operations(
+                    session,
+                    context.request.welcome_delivery_id,
+                    reason="join_request_window_expired",
+                )
     try:
         allowed = await limiter.acquire(context.bot.id, context.channel.telegram_id)
     except RateLimitUnavailable:

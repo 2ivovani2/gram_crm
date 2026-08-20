@@ -638,6 +638,10 @@ class FlowDelivery(Base):
         ForeignKey("content_flow_version.id", ondelete="RESTRICT"), index=True
     )
     event_key: Mapped[str] = mapped_column(String(128))
+    # chat_join_request exposes a short-lived private chat identifier which is
+    # deliberately kept separate from the stable Telegram user identifier.
+    target_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    target_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1082,6 +1086,11 @@ class JoinRequest(Base):
     channel_id: Mapped[int] = mapped_column(ForeignKey("channel.id", ondelete="CASCADE"))
     contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"))
     telegram_update_id: Mapped[int] = mapped_column(BigInteger)
+    user_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    message_window_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    welcome_delivery_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flow_delivery.id", ondelete="SET NULL"), index=True
+    )
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     delay_snapshot_seconds: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

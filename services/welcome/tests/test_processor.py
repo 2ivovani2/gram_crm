@@ -7,8 +7,12 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gramly_welcome.models import InboxEvent
-from gramly_welcome.processor import membership_transition_flags, process_event
+from gramly_welcome.models import FeatureFlag, InboxEvent
+from gramly_welcome.processor import (
+    _join_request_greetings_enabled,
+    membership_transition_flags,
+    process_event,
+)
 
 
 def test_membership_transition_deduplicates_repeated_leave_state() -> None:
@@ -51,3 +55,17 @@ async def test_interface_event_is_not_silently_discarded_before_cutover() -> Non
 
     session.get.assert_not_awaited()
     session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_join_request_flag_supports_staged_bot_rollout() -> None:
+    session = AsyncMock(spec=AsyncSession)
+    session.get.return_value = FeatureFlag(
+        key="join_request_greetings",
+        enabled=True,
+        config={"bot_ids": [7, "9"]},
+    )
+
+    assert await _join_request_greetings_enabled(session, 7)
+    assert await _join_request_greetings_enabled(session, 9)
+    assert not await _join_request_greetings_enabled(session, 8)
