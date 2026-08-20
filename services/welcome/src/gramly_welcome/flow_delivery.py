@@ -48,6 +48,19 @@ class OperationContext:
         return expires_at is not None and expires_at <= datetime.now(UTC)
 
 
+def should_reuse_recent_welcome_delivery(*, kind: str, target_chat_id: int | None) -> bool:
+    """Return whether the five-minute membership dedupe should be applied.
+
+    A join-request delivery targets Telegram's short-lived ``user_chat_id`` and
+    must never reuse a delivery created for an earlier membership event. The
+    unique event key remains responsible for replay protection of the request
+    itself. A subsequent ``chat_member`` update has no temporary target and may
+    reuse the request delivery, preventing a second welcome chain.
+    """
+
+    return kind == "welcome" and target_chat_id is None
+
+
 async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any] | None:
     keyboard = await session.scalar(select(ContentKeyboard).where(ContentKeyboard.step_id == step_id))
     if keyboard is None:
@@ -175,7 +188,7 @@ async def schedule_content_flow(
     ):
         return None
     recent = None
-    if kind == "welcome":
+    if should_reuse_recent_welcome_delivery(kind=kind, target_chat_id=target_chat_id):
         recent = await session.scalar(
             select(FlowDelivery.id)
             .join(ContentFlowVersion, ContentFlowVersion.id == FlowDelivery.version_id)
