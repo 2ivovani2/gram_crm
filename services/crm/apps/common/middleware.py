@@ -7,6 +7,7 @@ PRIVATE_HOSTS = {
     "git.gramly.tech": ("Gramly Git", "репозитории и pull request"),
     "tasks.gramly.tech": ("Gramly Tasks", "задачи и командные проекты"),
     "docs.gramly.tech": ("Gramly Docs", "внутренняя база знаний"),
+    "hello-admin.gramly.tech": ("GramlyHello Control", "управление продуктом"),
 }
 
 PUBLIC_HOSTS = {"gramly.tech", "www.gramly.tech", "hello.gramly.tech"}

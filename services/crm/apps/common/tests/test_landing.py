@@ -29,6 +29,16 @@ def test_public_access_gate_intercepts_private_hostname(client):
     assert "Проверить ещё раз" in response.content.decode()
 
 
+@override_settings(PUBLIC_ACCESS_GATE=True)
+def test_public_access_gate_intercepts_hello_admin_root(client):
+    response = client.get("/", HTTP_HOST="hello-admin.gramly.tech")
+
+    assert response.status_code == 403
+    assert "Сначала включите" in response.content.decode()
+    assert "GramlyHello Control" in response.content.decode()
+    assert "crm.gramly.tech/vpn-probe/" in response.content.decode()
+
+
 @override_settings(PUBLIC_ACCESS_GATE=True, ALLOWED_HOSTS=["crm.gramly.tech"])
 def test_public_vpn_probe_bypasses_gate_and_reports_public_runtime(client):
     response = client.get(reverse("vpn-probe"), HTTP_HOST="crm.gramly.tech")
