@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from gramly_welcome.content_service import flow_timeline_seconds
-from gramly_welcome.flow_delivery import OperationContext
+from gramly_welcome.flow_delivery import (
+    OperationContext,
+    should_reuse_recent_welcome_delivery,
+)
 from gramly_welcome.join_request_policy import (
     JOIN_REQUEST_MAX_TIMELINE_SECONDS,
     approval_action,
@@ -107,3 +110,18 @@ def test_operation_context_prefers_temporary_join_request_chat() -> None:
 
     assert context.target_chat_id == 987_654
     assert context.target_expired is False
+
+
+def test_join_request_never_reuses_recent_membership_delivery() -> None:
+    assert not should_reuse_recent_welcome_delivery(
+        kind="welcome",
+        target_chat_id=987_654,
+    )
+    assert should_reuse_recent_welcome_delivery(
+        kind="welcome",
+        target_chat_id=None,
+    )
+    assert not should_reuse_recent_welcome_delivery(
+        kind="farewell",
+        target_chat_id=None,
+    )
