@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import RedirectView
 from django.conf import settings
-from apps.common.views import HealthCheckView, LandingView
+from apps.common.views import HealthCheckView, LandingView, VpnProbeView
 from apps.telegram_bot.webhook import TelegramWebhookView
 
 urlpatterns = [
@@ -14,6 +14,8 @@ urlpatterns = [
     path("bot/webhook/", TelegramWebhookView.as_view(), name="telegram-webhook"),
     # Health check for Docker / load balancer
     path("health/", HealthCheckView.as_view(), name="health-check"),
+    # Safe cross-origin diagnostic used by the public VPN gate.
+    path("vpn-probe/", VpnProbeView.as_view(), name="vpn-probe"),
     # CRM web service (crm.gramly.tech)
     path("crm/", include("apps.crm.urls", namespace="crm")),
     # Shared Authentik OIDC callback/init/logout endpoints.

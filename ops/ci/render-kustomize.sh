@@ -42,6 +42,10 @@ done
 bash -n \
   "${repo_root}/infra/kubernetes/apps/identity/configure-welcome-admin-oidc.sh" \
   "${repo_root}/infra/kubernetes/apps/vpn/ensure-private-app-records.sh" \
+  "${repo_root}/infra/kubernetes/apps/vpn/enable-authentik-group-sync.sh" \
+  "${repo_root}/infra/kubernetes/apps/vpn/audit-user-access.sh" \
   "${repo_root}/infra/kubernetes/scripts/deploy-private-admin-gateway.sh" \
   "${repo_root}/ops/welcome/production_smoke.sh" \
   "${repo_root}/ops/welcome/release_production.sh"
+
+"${repo_root}/ops/ci/check-vpn-contracts.sh"

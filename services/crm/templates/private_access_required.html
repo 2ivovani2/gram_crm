@@ -1,1 +1,120 @@
-{% load static %}<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080b0c"><title>Включите рабочий VPN · Gramly</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="{% static 'dist/assets/crm.css' %}"></head><body class="system-page"><main class="system-shell"><a class="g-brand system-brand" href="https://gramly.tech/"><span class="g-brand__mark"></span><span>gramly<span class="g-brand__signal">.</span></span></a><div class="system-copy"><div class="system-visual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 4.5 6v5.4c0 4.7 3.2 8.5 7.5 9.6 4.3-1.1 7.5-4.9 7.5-9.6V6L12 3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg></div><div class="system-code">{{ service_name }} · private workspace</div><h1>Сначала включите рабочий VPN.</h1><p>{{ service_description|capfirst }} доступны только внутри защищённой сети Gramly. Подключитесь через NetBird и обновите эту страницу.</p><div class="system-steps"><div class="system-step"><b>01</b><span>Откройте приложение NetBird</span></div><div class="system-step"><b>02</b><span>Убедитесь, что статус Connected</span></div><div class="system-step"><b>03</b><span>Вернитесь и обновите страницу</span></div></div><div class="system-actions"><button class="g-button g-button--primary" onclick="location.reload()">Я подключился · обновить</button><a class="g-button g-button--secondary" href="https://gramly.tech/">На главную</a></div></div></main></body></html>
+{% load static %}<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080b0c">
+  <title>Включите рабочий VPN · Gramly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'dist/assets/crm.css' %}">
+  <style>
+    .vpn-diagnostic { margin: 24px 0; padding: 16px; border: 1px solid currentColor; border-radius: 8px; }
+    .vpn-diagnostic__label { margin: 0 0 6px; font-weight: 700; }
+    .vpn-diagnostic__detail { margin: 0; opacity: .78; }
+    .vpn-diagnostic[data-state="private"] { color: #77d7a5; }
+    .vpn-diagnostic[data-state="public"] { color: #ddf45b; }
+    .vpn-diagnostic[data-state="timeout"] { color: #f0a56c; }
+  </style>
+</head>
+<body class="system-page">
+<main class="system-shell">
+  <a class="g-brand system-brand" href="https://gramly.tech/">
+    <span class="g-brand__mark"></span>
+    <span>gramly<span class="g-brand__signal">.</span></span>
+  </a>
+  <div class="system-copy">
+    <div class="system-visual">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+        <path d="M12 3 4.5 6v5.4c0 4.7 3.2 8.5 7.5 9.6 4.3-1.1 7.5-4.9 7.5-9.6V6L12 3Z"/>
+        <path d="m8.5 12 2.2 2.2 4.8-5"/>
+      </svg>
+    </div>
+    <div class="system-code">{{ service_name }} · private workspace</div>
+    <h1>Сначала включите рабочий VPN.</h1>
+    <p>{{ service_description|capfirst }} доступны только внутри защищённой сети Gramly. Мы автоматически проверим туннель и откроем сервис, когда соединение заработает.</p>
+
+    <div class="vpn-diagnostic" data-vpn-diagnostic data-state="checking" role="status" aria-live="polite">
+      <p class="vpn-diagnostic__label" data-vpn-label>Проверяем защищённое соединение…</p>
+      <p class="vpn-diagnostic__detail" data-vpn-detail>Это займёт несколько секунд.</p>
+    </div>
+
+    <div class="system-steps">
+      <div class="system-step"><b>01</b><span>Откройте NetBird и нажмите Log in, если приложение просит повторный вход</span></div>
+      <div class="system-step"><b>02</b><span>Убедитесь, что устройство имеет статус Connected и SSO-сессия не истекла</span></div>
+      <div class="system-step"><b>03</b><span>Оставьте страницу открытой — она продолжит проверку автоматически</span></div>
+    </div>
+    <div class="system-actions">
+      <button class="g-button g-button--primary" type="button" onclick="location.reload()">Проверить ещё раз</button>
+      <a class="g-button g-button--secondary" href="https://vpn.gramly.tech/">Открыть NetBird</a>
+    </div>
+    <noscript><p>JavaScript отключён. Подключите NetBird, выполните повторный вход при необходимости и нажмите «Проверить ещё раз».</p></noscript>
+  </div>
+</main>
+<script>
+(() => {
+  const probeUrl = "https://crm.gramly.tech/vpn-probe/";
+  const diagnostic = document.querySelector("[data-vpn-diagnostic]");
+  const label = document.querySelector("[data-vpn-label]");
+  const detail = document.querySelector("[data-vpn-detail]");
+  const reloadMarker = `gramly-vpn-reload:${location.hostname}`;
+  let stopped = false;
+
+  const show = (state, title, message) => {
+    diagnostic.dataset.state = state;
+    label.textContent = title;
+    detail.textContent = message;
+  };
+
+  const probe = async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${probeUrl}?t=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "omit",
+        mode: "cors",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("probe failed");
+      const result = await response.json();
+      if (result.private === true) {
+        const previousReload = Number(sessionStorage.getItem(reloadMarker) || 0);
+        if (Date.now() - previousReload < 30000) {
+          stopped = true;
+          show(
+            "timeout",
+            "VPN работает, но этот адрес остался публичным",
+            "Переподключите профиль NetBird, чтобы обновились private DNS и маршрут именно для этого сервиса."
+          );
+          return;
+        }
+        stopped = true;
+        show("private", "VPN подключён", "Защищённый маршрут найден. Открываем сервис…");
+        sessionStorage.setItem(reloadMarker, String(Date.now()));
+        window.setTimeout(() => location.reload(), 500);
+        return;
+      }
+      show(
+        "public",
+        "Туннель или SSO-сессия неактивны",
+        "NetBird всё ещё ведёт на публичный адрес. Откройте приложение, выполните Log in и дождитесь Connected."
+      );
+    } catch (error) {
+      show(
+        "timeout",
+        "Приватный маршрут не отвечает",
+        "Проверьте, что NetBird подключён. Если статус Connected уже есть, переподключите профиль: private DNS или маршрут ещё не применились."
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      if (!stopped) window.setTimeout(probe, 4000);
+    }
+  };
+
+  probe();
+})();
+</script>
+</body>
+</html>
