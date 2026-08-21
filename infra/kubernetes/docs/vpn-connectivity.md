@@ -89,9 +89,11 @@ NetBird transport
         -> Welcome API owner-group check
 ```
 
-Only `gramly-owners` and `authentik Admins` are valid. A user who can reach the
-private IP but does not belong to either group must be denied. Diagnose a user
-without changing permissions:
+`gramly-owners`, `authentik Admins`, `Business`, and `Product` are valid. A user
+who can reach the private IP but does not belong to any of these groups must be
+denied. Authentik application bindings, the provider-scoped verified-email
+claim, oauth2-proxy, and the Welcome admin API must keep this exact allow-list
+in sync. Diagnose a user without changing permissions:
 
 ```bash
 infra/kubernetes/apps/identity/audit-welcome-admin-access.sh <username>

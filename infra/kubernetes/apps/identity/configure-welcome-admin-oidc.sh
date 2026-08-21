@@ -61,10 +61,10 @@ with transaction.atomic():
         name='GramlyHello Control verified internal email',
         defaults={
             'scope_name': 'email',
-            'description': 'Verified email claim for provisioned Gramly owner accounts only.',
+            'description': 'Verified email claim for provisioned GramlyHello Control accounts only.',
             'expression': '''if not request.user.email:
     return {}
-allowed = {'gramly-owners', 'authentik Admins'}
+allowed = {'gramly-owners', 'authentik Admins', 'Business', 'Product'}
 if not allowed.intersection(set(request.user.groups.values_list('name', flat=True))):
     return {}
 return {'email': request.user.email, 'email_verified': True}''',
@@ -85,7 +85,9 @@ return {'email': request.user.email, 'email_verified': True}''',
         },
     )
     PolicyBinding.objects.filter(target=application).delete()
-    for order, group_name in enumerate(('gramly-owners', 'authentik Admins')):
+    for order, group_name in enumerate(
+        ('gramly-owners', 'authentik Admins', 'Business', 'Product')
+    ):
         group, _ = Group.objects.get_or_create(name=group_name, defaults={'is_superuser': False})
         PolicyBinding.objects.create(target=application, group=group, order=order, enabled=True)
 print('GRAMLY_RESULT welcome_admin_oidc_ready=true')" \
@@ -105,7 +107,7 @@ client_secret = "${client_secret}"
 cookie_secret = "${cookie_secret}"
 email_domains = ["*"]
 scope = "openid profile email entitlements"
-allowed_groups = ["gramly-owners", "authentik Admins"]
+allowed_groups = ["gramly-owners", "authentik Admins", "Business", "Product"]
 pass_access_token = false
 pass_authorization_header = false
 pass_user_headers = true

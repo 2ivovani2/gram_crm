@@ -7,8 +7,10 @@ audit="${repo_root}/infra/kubernetes/apps/vpn/audit-user-access.sh"
 dns="${repo_root}/infra/kubernetes/apps/vpn/ensure-private-app-records.sh"
 primary_dns="${repo_root}/infra/kubernetes/apps/vpn/ensure-primary-dns.sh"
 hello_admin_audit="${repo_root}/infra/kubernetes/apps/identity/audit-welcome-admin-access.sh"
+hello_admin_reconcile="${repo_root}/infra/kubernetes/apps/identity/configure-welcome-admin-oidc.sh"
 
 bash -n "${reconcile}" "${audit}" "${dns}" "${primary_dns}" "${hello_admin_audit}" \
+  "${hello_admin_reconcile}" \
   "${repo_root}/infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh"
 
 grep -F 'PEER_LOGIN_EXPIRATION_SECONDS:-604800' "${reconcile}" >/dev/null
@@ -39,5 +41,10 @@ grep -F '{ip: "8.8.4.4", ns_type: "udp", port: 53}' "${primary_dns}" >/dev/null
 grep -F 'primary: true' "${primary_dns}" >/dev/null
 grep -F 'groups: [$group_id]' "${primary_dns}" >/dev/null
 grep -F 'Another enabled primary NetBird DNS group exists' "${primary_dns}" >/dev/null
+
+grep -F "'gramly-owners', 'authentik Admins', 'Business', 'Product'" \
+  "${hello_admin_reconcile}" >/dev/null
+grep -F 'allowed_groups = ["gramly-owners", "authentik Admins", "Business", "Product"]' \
+  "${hello_admin_reconcile}" >/dev/null
 
 echo "VPN reconciliation and read-only audit contracts are valid."
