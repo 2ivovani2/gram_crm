@@ -210,15 +210,22 @@ Create or reconcile the exact split-DNS zones used by private application
 resources:
 
 ```bash
+infra/kubernetes/apps/vpn/ensure-primary-dns.sh
 infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh
 ```
 
-Each closed hostname has its own custom zone, distributed to `All`, and points
-to its access-plane ClusterIP. The former parent `gramly.tech` zone is retained
-disabled for rollback. Exact zones prevent NetBird from taking ownership of
-public Gramly DNS and are more specific than a second VPN's default resolver.
-NetBird therefore supplies transport only; Authentik remains the sole source
-of application permissions.
+The primary nameserver group makes NetBird's local managed resolver active
+immediately on macOS, Windows and Linux. Without it, desktop system resolvers
+can race the exact split-DNS scopes and return the public access-gate address
+until a later network-interface change reconnects NetBird. Public lookups use
+the pinned upstream pair while each closed hostname has its own local custom
+zone, distributed to `All`, pointing to its access-plane ClusterIP. The former
+parent `gramly.tech` zone remains disabled for rollback. NetBird supplies
+transport only; Authentik remains the sole source of application permissions.
+
+The complete request path, OS-specific acceptance commands, browser DoH caveat,
+Hello Admin authorization checks and rollback are documented in
+`docs/vpn-connectivity.md`.
 
 Deploy the operator-managed, three-node private router after the zone exists:
 
