@@ -14,13 +14,17 @@ from django.utils import timezone
 import datetime as _dt
 from zoneinfo import ZoneInfo as _ZoneInfo
 
+from apps.control.deadlines import (
+    CORRECTION_WINDOW as _CORRECTION_WINDOW,
+    LATE_WINDOW as _LATE_WINDOW,
+    calculate_report_deadline,
+)
+
 from apps.users.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
 _MSK = _ZoneInfo("Europe/Moscow")
-_CORRECTION_WINDOW = _dt.timedelta(hours=1)
-_LATE_WINDOW = _dt.timedelta(hours=24)
 
 _RU_MONTHS_GEN = (
     "", "января", "февраля", "марта", "апреля", "мая", "июня",
@@ -54,10 +58,9 @@ def _calc_deadline_at(
     report_date: _dt.date,
 ) -> Optional[_dt.datetime]:
     """Combine report_date + template.deadline_time in MSK → UTC-aware datetime."""
-    if template is None or template.deadline_time is None or report_date is None:
+    if template is None:
         return None
-    naive = _dt.datetime.combine(report_date, template.deadline_time)
-    return naive.replace(tzinfo=_MSK)
+    return calculate_report_deadline(report_date, template.deadline_time)
 
 
 def _resolve_report_date(user: User, template: "ReportTemplate", now: _dt.datetime) -> _dt.date:
@@ -187,6 +190,7 @@ class ReportService:
         file_type: str = "text",
         original_filename: str = "",
         report_id: Optional[int] = None,
+        explicit_report_date: Optional[_dt.date] = None,
     ) -> "EmployeeReport":
         """
         Submit (or resubmit) a report.
@@ -216,7 +220,13 @@ class ReportService:
             template = explicit.template
             report_date = explicit.report_date
         elif template is not None:
-            report_date = _resolve_report_date(user, template, now)
+            if explicit_report_date is not None:
+                today = now.astimezone(_MSK).date()
+                if explicit_report_date not in {today, today - _dt.timedelta(days=1)}:
+                    raise ValueError("Для этой даты подача отчёта недоступна.")
+                report_date = explicit_report_date
+            else:
+                report_date = _resolve_report_date(user, template, now)
             explicit = None
         else:
             report_date = _calc_report_date()
@@ -559,10 +569,26 @@ class ReportDeadlineService:
         if report is not None and penalty.report_id is None:
             penalty.report = report
             penalty.save(update_fields=["report", "updated_at"])
-        if created:
+        reactivated = False
+        if (
+            not created
+            and penalty.status == PenaltyStatus.REJECTED
+            and penalty.comment.startswith("[AUTO-REMEDIATION:PREMATURE]")
+        ):
+            penalty.status = PenaltyStatus.ACCEPTED
+            penalty.amount = template.auto_penalty_amount
+            penalty.reason = reason
+            penalty.comment = "[AUTO-REMEDIATION:REACTIVATED] Основание наступило после исправленного дедлайна."
+            penalty.resolved_by = None
+            penalty.resolved_at = None
+            penalty.save(update_fields=[
+                "status", "amount", "reason", "comment", "resolved_by", "resolved_at", "updated_at",
+            ])
+            reactivated = True
+        if created or reactivated:
             from apps.control.tasks import queue_auto_penalty_notification
             transaction.on_commit(lambda: queue_auto_penalty_notification(penalty.pk))
-        return penalty, created
+        return penalty, created or reactivated
 
     @staticmethod
     def create_initial_penalty(worker, template, report_date, report=None):
@@ -936,6 +962,23 @@ class ControlBalanceService:
         return ControlBalanceService.get_balance_snapshot(user)["available"]
 
     @staticmethod
+    def _set_available_balance_locked(user: User, amount: Decimal) -> Decimal:
+        """Set a target balance on an already row-locked User instance."""
+        amount = Decimal(amount).quantize(Decimal("0.01"))
+        if amount < 0:
+            raise ValueError("Баланс не может быть отрицательным")
+        base_gross = (
+            user.compute_personal_earned()
+            + user.compute_referral_earned()
+            + (user.daily_accrued or Decimal("0"))
+        )
+        withdrawn = user.compute_withdrawn()
+        penalties = PenaltyService.total_accepted_penalty(user)
+        user.manual_balance_adjustment = amount + withdrawn + penalties - base_gross
+        user.save(update_fields=["manual_balance_adjustment", "updated_at"])
+        return amount
+
+    @staticmethod
     @transaction.atomic
     def set_available_balance(user: User, amount: Decimal) -> Decimal:
         """
@@ -950,21 +993,62 @@ class ControlBalanceService:
             raise ValueError("Баланс не может быть отрицательным")
 
         locked_user = User.objects.select_for_update().get(pk=user.pk)
-        base_gross = (
-            locked_user.compute_personal_earned()
-            + locked_user.compute_referral_earned()
-            + (locked_user.daily_accrued or Decimal("0"))
-        )
-        withdrawn = locked_user.compute_withdrawn()
-        penalties = PenaltyService.total_accepted_penalty(locked_user)
-        adjustment = amount + withdrawn + penalties - base_gross
-
-        locked_user.manual_balance_adjustment = adjustment
-        locked_user.save(update_fields=["manual_balance_adjustment", "updated_at"])
+        ControlBalanceService._set_available_balance_locked(locked_user, amount)
 
         # Keep the caller usable in the same request without a refresh.
-        user.manual_balance_adjustment = adjustment
+        user.manual_balance_adjustment = locked_user.manual_balance_adjustment
         return amount
+
+
+class FinancialConditionService:
+    """Atomic admin updates with a durable post-commit notification outbox."""
+
+    @staticmethod
+    @transaction.atomic
+    def update(
+        *,
+        worker_id: int,
+        admin: User,
+        daily_rate: Decimal | None,
+        available_balance: Decimal | None,
+    ):
+        from apps.control.models import FinancialConditionChange
+
+        worker = User.objects.select_for_update().get(pk=worker_id)
+        old_rate = (worker.daily_rate or Decimal("0")).quantize(Decimal("0.01"))
+        old_available = ControlBalanceService.get_available_balance(worker).quantize(Decimal("0.01"))
+        daily_rate = old_rate if daily_rate is None else Decimal(daily_rate)
+        available_balance = old_available if available_balance is None else Decimal(available_balance)
+        if not daily_rate.is_finite() or not available_balance.is_finite():
+            raise ValueError("Введите конечное числовое значение")
+        daily_rate = daily_rate.quantize(Decimal("0.01"))
+        available_balance = available_balance.quantize(Decimal("0.01"))
+        if daily_rate < 0:
+            raise ValueError("Ставка не может быть отрицательной")
+        if available_balance < 0:
+            raise ValueError("Баланс не может быть отрицательным")
+
+        if old_rate == daily_rate and old_available == available_balance:
+            return worker, None
+
+        if old_rate != daily_rate:
+            worker.daily_rate = daily_rate
+            worker.save(update_fields=["daily_rate", "updated_at"])
+        if old_available != available_balance:
+            ControlBalanceService._set_available_balance_locked(worker, available_balance)
+
+        new_available = ControlBalanceService.get_available_balance(worker).quantize(Decimal("0.01"))
+        event = FinancialConditionChange.objects.create(
+            worker=worker,
+            changed_by=admin,
+            previous_daily_rate=old_rate,
+            new_daily_rate=daily_rate,
+            previous_available_balance=old_available,
+            new_available_balance=new_available,
+        )
+        from apps.control.tasks import queue_financial_condition_notification
+        transaction.on_commit(lambda: queue_financial_condition_notification(event.pk))
+        return worker, event
 
 
 # ── Worker list helper ─────────────────────────────────────────────────────────
