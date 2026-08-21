@@ -24,7 +24,9 @@ spec:
           image: CRM_IMAGE_PLACEHOLDER
           args: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000", --workers, "2"]
           envFrom: [{secretRef: {name: gramly-crm-runtime}}, {secretRef: {name: crm-oidc}}]
-          env: [{name: RUN_MIGRATIONS, value: "false"}]
+          env:
+            - {name: DJANGO_SETTINGS_MODULE, value: config.settings.prod}
+            - {name: RUN_MIGRATIONS, value: "false"}
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           ports: [{name: http, containerPort: 8000}]
           startupProbe: &probe

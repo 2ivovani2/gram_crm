@@ -25,6 +25,7 @@ spec:
           args: [uvicorn, config.asgi:application, --host, 0.0.0.0, --port, "8000", --workers, "2"]
           envFrom: [{secretRef: {name: gramly-public-runtime}}]
           env:
+            - {name: DJANGO_SETTINGS_MODULE, value: config.settings.prod}
             - {name: RUN_MIGRATIONS, value: "false"}
             - {name: PUBLIC_ACCESS_GATE, value: "true"}
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
