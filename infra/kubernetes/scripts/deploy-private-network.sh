@@ -14,6 +14,12 @@ fi
 
 kubectl get deployment netbird-operator --namespace vpn >/dev/null
 
+# Desktop clients only install a deterministic managed resolver when NetBird
+# has a primary nameserver group. Reconcile it before private zones/routes so a
+# fresh connection does not depend on a later network-interface change.
+"${infra_dir}/apps/vpn/ensure-primary-dns.sh"
+"${infra_dir}/apps/vpn/ensure-private-dns-zone.sh"
+
 sed "s|NETBIRD_ROUTING_IMAGE_PLACEHOLDER|${NETBIRD_ROUTING_IMAGE}|" \
   "${infra_dir}/apps/vpn/network-router.yaml" | kubectl apply --filename -
 

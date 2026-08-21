@@ -61,7 +61,7 @@ printf 'silent\nshow-error\nfail\nconnect-timeout = 10\nmax-time = 45\nretry = 2
   "${api_token}" >"${curl_config}"
 chmod 600 "${curl_config}"
 
-for endpoint in accounts users peers groups policies dns/zones; do
+for endpoint in accounts users peers groups policies dns/zones dns/nameservers dns/settings; do
   filename="${endpoint//\//-}.json"
   curl --config "${curl_config}" "${api_url}/${endpoint}" >"${task_tmp}/${filename}"
 done
@@ -102,7 +102,9 @@ jq -n \
   --slurpfile accounts "${task_tmp}/accounts.json" \
   --slurpfile groups "${task_tmp}/groups.json" \
   --slurpfile policies "${task_tmp}/policies.json" \
-  --slurpfile zones "${task_tmp}/dns-zones.json" '
+  --slurpfile zones "${task_tmp}/dns-zones.json" \
+  --slurpfile nameservers "${task_tmp}/dns-nameservers.json" \
+  --slurpfile dns_settings "${task_tmp}/dns-settings.json" '
   ($groups[0] // []) as $all_groups |
   {
     authentik: $authentik,
@@ -137,6 +139,10 @@ jq -n \
         .domain == "hello-admin.gramly.tech") | {
         domain, enabled, distribution_groups
       }],
+      primary_dns: [($nameservers[0] // [])[] | select(.primary == true) | {
+        name, enabled, groups, nameservers
+      }],
+      dns_management: ($dns_settings[0] // {disabled_management_groups: []}),
       transport_policies: [$policies[0][] | select(
         .name == "gramly-workforce-business" or
         .name == "gramly-workforce-collaboration" or
@@ -166,6 +172,18 @@ jq -n \
         "hello-admin.gramly.tech"
       ] as $required | all($required[];
         . as $domain | any($zones[0][]; .domain == $domain and .enabled == true))),
+      primary_dns_enabled_for_all: (
+        ([($nameservers[0] // [])[] | select(
+          .name == "Gramly primary DNS" and
+          .enabled == true and
+          .primary == true and
+          (.groups | index(([$all_groups[] | select(.name == "All") | .id][0])) != null)
+        )] | length) == 1
+      ),
+      dns_management_enabled_for_all: (
+        (($dns_settings[0].disabled_management_groups // []) |
+          index(([$all_groups[] | select(.name == "All") | .id][0]))) == null
+      ),
       legacy_parent_zone_disabled: all($zones[0][];
         .domain != "gramly.tech" or .enabled != true)
     }
