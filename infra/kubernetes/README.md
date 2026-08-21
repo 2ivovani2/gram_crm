@@ -206,17 +206,19 @@ peers, reports login expiration and group membership, and verifies the account
 expiration setting, private DNS zone, transport policies, and private resource
 groups. It does not approve, delete, or modify users, peers, or policies.
 
-Create or reconcile the split-DNS zone used by private application resources:
+Create or reconcile the exact split-DNS zones used by private application
+resources:
 
 ```bash
 infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh
 ```
 
-The zone reuses `gramly.tech`, so every public name used by a connected client
-must also have an explicit record in the zone. `ensure-private-app-records.sh`
-pins public hosts (`gramly.tech`, `www`, `auth`, `vpn`, `hello`, and `media`) to
-the public load balancer and private application hosts to their access-plane
-ClusterIPs. This avoids NXDOMAIN responses while split DNS is active.
+Each closed hostname has its own custom zone, distributed to `All`, and points
+to its access-plane ClusterIP. The former parent `gramly.tech` zone is retained
+disabled for rollback. Exact zones prevent NetBird from taking ownership of
+public Gramly DNS and are more specific than a second VPN's default resolver.
+NetBird therefore supplies transport only; Authentik remains the sole source
+of application permissions.
 
 Deploy the operator-managed, three-node private router after the zone exists:
 
@@ -332,8 +334,8 @@ The script refuses a non-empty target, always restarts the source through an
 exit trap, runs Forgejo's default doctor checks plus strict Git object checks
 against the copied data, and leaves the target deployment stopped.
 
-After application and HTTPS smoke tests pass, reconcile friendly NetBird DNS
-records with:
+After application and HTTPS smoke tests pass, reconcile exact NetBird DNS
+zones and their records with:
 
 ```bash
 infra/kubernetes/apps/vpn/ensure-private-app-records.sh

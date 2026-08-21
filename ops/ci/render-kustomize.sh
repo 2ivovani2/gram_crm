@@ -41,6 +41,7 @@ done
 
 bash -n \
   "${repo_root}/infra/kubernetes/apps/identity/configure-welcome-admin-oidc.sh" \
+  "${repo_root}/infra/kubernetes/apps/vpn/ensure-private-dns-zone.sh" \
   "${repo_root}/infra/kubernetes/apps/vpn/ensure-private-app-records.sh" \
   "${repo_root}/infra/kubernetes/apps/vpn/enable-authentik-group-sync.sh" \
   "${repo_root}/infra/kubernetes/apps/vpn/audit-user-access.sh" \

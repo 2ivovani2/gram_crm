@@ -128,7 +128,13 @@ jq -n \
         last_seen,
         groups: [$all_groups[] | select([(.peers // [])[] | if type == "object" then .id else . end] | index($peer.id)) | .name]
       }],
-      private_dns: [$zones[0][] | select(.domain == "gramly.tech") | {
+      private_dns: [$zones[0][] | select(.domain == "crm.gramly.tech" or
+        .domain == "git.gramly.tech" or
+        .domain == "tasks.gramly.tech" or
+        .domain == "docs.gramly.tech" or
+        .domain == "grafana.gramly.tech" or
+        .domain == "cluster.gramly.tech" or
+        .domain == "hello-admin.gramly.tech") | {
         domain, enabled, distribution_groups
       }],
       transport_policies: [$policies[0][] | select(
@@ -150,6 +156,17 @@ jq -n \
       every_peer_in_all: all($peers[]; . as $peer | any($all_groups[]; .name == "All" and ([((.peers // [])[]) | if type == "object" then .id else . end] | index($peer.id)) != null)),
       expiration_is_seven_days: ($accounts[0][0].settings.peer_login_expiration == 604800),
       group_propagation_enabled: ($accounts[0][0].settings.groups_propagation_enabled == true),
-      private_dns_enabled: any($zones[0][]; .domain == "gramly.tech" and .enabled == true)
+      private_dns_enabled: ([
+        "crm.gramly.tech",
+        "git.gramly.tech",
+        "tasks.gramly.tech",
+        "docs.gramly.tech",
+        "grafana.gramly.tech",
+        "cluster.gramly.tech",
+        "hello-admin.gramly.tech"
+      ] as $required | all($required[];
+        . as $domain | any($zones[0][]; .domain == $domain and .enabled == true))),
+      legacy_parent_zone_disabled: all($zones[0][];
+        .domain != "gramly.tech" or .enabled != true)
     }
   }' | jq .
