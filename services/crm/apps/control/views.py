@@ -534,29 +534,43 @@ class EmployeeKPIView(AdminOnlyMixin, View):
 
     def post(self, request, user_id):
         from apps.control.models import KPIDocument
-        from apps.control.services import ControlBalanceService
+        from apps.control.services import FinancialConditionService
         from decimal import Decimal, InvalidOperation
 
         worker = get_object_or_404(User, pk=user_id)
         admin = request.crm_user
         action = request.POST.get("action")
 
-        def _d(key, default="0"):
+        def _d(key):
             try:
-                v = request.POST.get(key, default)
-                return Decimal(v) if v else Decimal(default)
+                value = request.POST.get(key)
+                if value in {None, ""}:
+                    raise ValueError("Заполните оба финансовых поля")
+                return Decimal(value)
             except InvalidOperation:
-                return Decimal(default)
+                raise ValueError("Введите корректное числовое значение")
 
-        if action == "save_kpi":
-            worker.daily_rate = _d("daily_rate")
-            worker.save(update_fields=["daily_rate", "updated_at"])
-
-        elif action == "edit_balance":
-            ControlBalanceService.set_available_balance(
-                worker,
-                _d("available_balance"),
-            )
+        if action in {"update_finances", "save_kpi", "edit_balance"}:
+            # Legacy action names remain accepted for stale browser tabs. A
+            # missing legacy field is resolved from the row after it is locked.
+            try:
+                FinancialConditionService.update(
+                    worker_id=worker.pk,
+                    admin=admin,
+                    daily_rate=(
+                        _d("daily_rate")
+                        if action in {"update_finances", "save_kpi"}
+                        else None
+                    ),
+                    available_balance=(
+                        _d("available_balance")
+                        if action in {"update_finances", "edit_balance"}
+                        else None
+                    ),
+                )
+            except ValueError as exc:
+                messages.error(request, str(exc))
+                return redirect("control:employee_kpi", user_id=worker.pk)
 
         elif action == "upload_doc" and request.FILES.get("doc_file"):
             f = request.FILES["doc_file"]

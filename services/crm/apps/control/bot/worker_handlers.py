@@ -2,6 +2,9 @@
 Worker-facing handlers for the Gramly Control bot.
 Handles: personal cabinet, KPI, withdrawal, report submission, penalties.
 """
+import datetime as dt
+import html
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -14,6 +17,7 @@ from apps.control.bot.keyboards import (
     worker_template_select_keyboard,
     worker_address_select_keyboard, worker_addresses_list_keyboard,
     worker_report_upload_keyboard,
+    worker_deadline_list_keyboard, worker_deadline_detail_keyboard,
 )
 from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState, CryptoAddressState
 
@@ -29,6 +33,111 @@ def _cabinet_text(db_user: User, balance) -> str:
         f"Сотрудник: {username}\n\n"
         f"💰 Баланс: <b>{balance:.2f} ₽</b>"
     )
+
+
+_DEADLINES_PAGE_SIZE = 6
+
+
+def _deadline_detail_text(item) -> str:
+    text = (
+        f"📋 <b>{html.escape(item.title)}</b>\n\n"
+        f"Дата отчёта: <b>{item.report_date:%d.%m.%Y}</b>\n"
+        f"Дедлайн: <b>{item.deadline_at:%d.%m.%Y %H:%M} МСК</b>\n"
+        f"Статус: {item.status_label}\n"
+    )
+    if item.editing_ends_at:
+        text += f"\n🕐 Окно редактирования: до <b>{item.editing_ends_at:%d.%m.%Y %H:%M} МСК</b>\n"
+    else:
+        text += f"\nРедактирование: <b>{'Доступно' if item.can_edit else 'Недоступно'}</b>\n"
+    if item.charged_penalty:
+        text += f"\n⚠️ Уже начислено: <b>{item.charged_penalty:.2f} ₽</b>"
+    if item.potential_penalty:
+        text += f"\n⚠️ Потенциальный дополнительный штраф: <b>+{item.potential_penalty:.2f} ₽</b>"
+    return text
+
+
+async def _show_deadlines(callback: CallbackQuery, db_user: User, selected_filter: str, page: int) -> None:
+    from asgiref.sync import sync_to_async
+    from apps.control.deadlines import DeadlineFilter, ReportDeadlineProvider
+
+    try:
+        selected = DeadlineFilter(selected_filter)
+    except ValueError:
+        selected = DeadlineFilter.ALL
+    items = await sync_to_async(ReportDeadlineProvider.list_for_user)(db_user, selected)
+    total_pages = max(1, (len(items) + _DEADLINES_PAGE_SIZE - 1) // _DEADLINES_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    visible = items[page * _DEADLINES_PAGE_SIZE:(page + 1) * _DEADLINES_PAGE_SIZE]
+    labels = {
+        "today": "Сегодня", "tomorrow": "Завтра", "week": "Ближайшие 7 дней",
+        "overdue": "Просроченные", "all": "Все актуальные",
+    }
+    lines = ["⏰ <b>ДЕДЛАЙНЫ</b>", f"\nФильтр: <b>{labels[selected.value]}</b>"]
+    if visible:
+        lines.append("")
+        from apps.control.deadlines import DeadlineState, MSK
+        from django.utils import timezone
+        today = timezone.now().astimezone(MSK).date()
+        current_group = None
+        for item in visible:
+            deadline_date = item.deadline_at.date()
+            if item.state == DeadlineState.OVERDUE:
+                group = "🔴 ПРОСРОЧЕНО"
+            elif item.state == DeadlineState.MODERATION and deadline_date < today:
+                group = "🟡 НА МОДЕРАЦИИ"
+            elif deadline_date == today:
+                group = "🟠 СЕГОДНЯ"
+            elif deadline_date == today + dt.timedelta(days=1):
+                group = "🟡 ЗАВТРА"
+            else:
+                group = "🟢 БЛИЖАЙШИЕ 7 ДНЕЙ"
+            if group != current_group:
+                lines.append(f"<b>{group}</b>")
+                current_group = group
+            lines.append(
+                f"{item.status_label.split()[0]} <b>{item.deadline_at:%d.%m %H:%M}</b> — "
+                f"{html.escape(item.title)}"
+            )
+    else:
+        lines.append("\nЗдесь пока нет актуальных обязательств.")
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=worker_deadline_list_keyboard(visible, selected.value, page, total_pages),
+    )
+
+
+async def _send_report_snapshot(message: Message, report) -> None:
+    from asgiref.sync import sync_to_async
+    from django.core.files.storage import default_storage
+    from apps.control.models import ReportMediaStatus
+
+    text = report.text_content.strip() or "Текстовая часть отсутствует."
+    if len(text) > 3000:
+        text = f"{text[:3000]}\n\n…текст сокращён для Telegram"
+    await message.answer(
+        f"📋 <b>Отчёт #{report.pk}</b> · версия {report.current_revision}\n\n{html.escape(text)}"
+    )
+    media = await sync_to_async(
+        lambda: list(report.media_files.filter(
+            revision=report.current_revision,
+            status=ReportMediaStatus.READY,
+        ).order_by("position", "id"))
+    )()
+    for item in media:
+        source = item.telegram_file_id
+        if not source and item.storage_key:
+            source = await sync_to_async(default_storage.url)(item.storage_key)
+        if not source:
+            continue
+        sender = {
+            "photo": message.answer_photo,
+            "video": message.answer_video,
+            "animation": message.answer_animation,
+            "sticker": message.answer_sticker,
+            "video_note": message.answer_video_note,
+            "document": message.answer_document,
+        }.get(item.media_type, message.answer_document)
+        await sender(source)
 
 
 # ── Main menu (personal cabinet) ───────────────────────────────────────────────
@@ -392,7 +501,90 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
     """Handle dynamic worker actions: template pick, dispute, address selection."""
     action = callback_data.action
 
-    if action.startswith("pick_tmpl_"):
+    if action == "noop":
+        await callback.answer()
+
+    elif action.startswith("dl."):
+        parts = action.split(".")
+        selected_filter = parts[1] if len(parts) > 1 else "all"
+        try:
+            page = int(parts[2]) if len(parts) > 2 else 0
+        except ValueError:
+            page = 0
+        await callback.answer()
+        await _show_deadlines(callback, db_user, selected_filter, page)
+
+    elif action.startswith("dli."):
+        from asgiref.sync import sync_to_async
+        from apps.control.deadlines import ReportDeadlineProvider
+
+        parts = action.split(".")
+        try:
+            template_id = int(parts[1])
+            report_date = dt.datetime.strptime(parts[2], "%Y%m%d").date()
+            selected_filter = parts[3]
+            page = int(parts[4])
+        except (ValueError, IndexError):
+            await callback.answer("Некорректный дедлайн", show_alert=True)
+            return
+        item = await sync_to_async(ReportDeadlineProvider.get_item)(db_user, template_id, report_date)
+        if item is None:
+            await callback.answer("Дедлайн больше не актуален", show_alert=True)
+            return
+        await callback.answer()
+        await callback.message.edit_text(
+            _deadline_detail_text(item),
+            reply_markup=worker_deadline_detail_keyboard(item, selected_filter, page),
+        )
+
+    elif action.startswith("dle."):
+        from asgiref.sync import sync_to_async
+        from apps.control.deadlines import ReportDeadlineProvider
+        from apps.control.models import ReportTemplate
+
+        parts = action.split(".")
+        try:
+            template_id = int(parts[1])
+            report_date = dt.datetime.strptime(parts[2], "%Y%m%d").date()
+        except (ValueError, IndexError):
+            await callback.answer("Некорректный дедлайн", show_alert=True)
+            return
+        item = await sync_to_async(ReportDeadlineProvider.get_item)(db_user, template_id, report_date)
+        template = await sync_to_async(
+            lambda: ReportTemplate.objects.filter(pk=template_id, assigned_users=db_user).first()
+        )()
+        if item is None or template is None or not item.can_edit:
+            await callback.answer("Редактирование недоступно", show_alert=True)
+            return
+        await callback.answer()
+        await _start_report_input(
+            callback.message,
+            state,
+            template,
+            report_date=report_date,
+        )
+
+    elif action.startswith("dlo."):
+        from asgiref.sync import sync_to_async
+        from apps.control.models import EmployeeReport
+
+        try:
+            report_id = int(action.split(".", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Некорректный отчёт", show_alert=True)
+            return
+        report = await sync_to_async(
+            lambda: EmployeeReport.objects.prefetch_related("media_files").filter(
+                pk=report_id, user=db_user,
+            ).first()
+        )()
+        if report is None:
+            await callback.answer("Отчёт не найден", show_alert=True)
+            return
+        await callback.answer()
+        await _send_report_snapshot(callback.message, report)
+
+    elif action.startswith("pick_tmpl_"):
         try:
             tmpl_id = int(action.split("_", 2)[2])
         except (ValueError, IndexError):
@@ -554,13 +746,20 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
         await callback.answer()
 
 
-async def _start_report_input(message: Message, state: FSMContext, template=None, report=None):
+async def _start_report_input(
+    message: Message,
+    state: FSMContext,
+    template=None,
+    report=None,
+    report_date: dt.date | None = None,
+):
     """Enter the report input state for a given template (or generic if None)."""
     if template:
         await state.update_data(template_id=template.pk)
     else:
         await state.update_data(template_id=None)
     await state.update_data(report_id=report.pk if report else None)
+    await state.update_data(report_date=report_date.isoformat() if report_date else None)
     await state.update_data(active_report_id=None)
 
     await state.set_state(SubmitReportState.waiting_for_report)
@@ -589,6 +788,12 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
     data = await state.get_data()
     template_id = data.get("template_id")
     report_id = data.get("report_id")
+    report_date_raw = data.get("report_date")
+    explicit_report_date = (
+        dt.date.fromisoformat(report_date_raw)
+        if report_date_raw
+        else None
+    )
     active_report_id = data.get("active_report_id")
     template = None
     if template_id:
@@ -659,6 +864,7 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
                 file_type=file_type,
                 original_filename=original_filename,
                 report_id=report_id,
+                explicit_report_date=explicit_report_date,
             )
     except ValueError as e:
         await state.clear()

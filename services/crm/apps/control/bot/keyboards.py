@@ -27,9 +27,10 @@ def worker_main_menu() -> InlineKeyboardMarkup:
     b.button(text="📊 KPI", callback_data=CtrlWorkerCB(action="kpi"))
     b.button(text="💸 Вывод", callback_data=CtrlWorkerCB(action="withdraw"))
     b.button(text="📝 Подать отчёт", callback_data=CtrlWorkerCB(action="submit_report"))
+    b.button(text="⏰ Дедлайны", callback_data=CtrlWorkerCB(action="dl.all.0"))
     b.button(text="⚠️ Мои штрафы", callback_data=CtrlWorkerCB(action="my_penalties"))
     b.button(text="💳 Мои адреса", callback_data=CtrlWorkerCB(action="my_addresses"))
-    b.adjust(2, 1, 1, 1)
+    b.adjust(2, 2, 1, 1)
     return b.as_markup()
 
 
@@ -125,6 +126,47 @@ def worker_report_decision_keyboard(report_id: int, can_edit: bool) -> InlineKey
         )
     b.button(text="Закрыть", callback_data=CtrlWorkerCB(action="close_notice"))
     b.adjust(2 if can_edit else 1)
+    return b.as_markup()
+
+
+def worker_deadline_list_keyboard(items, selected_filter: str, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    filters = [
+        ("Сегодня", "today"), ("Завтра", "tomorrow"), ("7 дней", "week"),
+        ("Просрочено", "overdue"), ("Все", "all"),
+    ]
+    for label, value in filters:
+        marker = "✓ " if selected_filter == value else ""
+        b.button(text=f"{marker}{label}", callback_data=CtrlWorkerCB(action=f"dl.{value}.0"))
+    b.adjust(2, 3)
+    for item in items:
+        b.button(
+            text=f"{item.status_label.split()[0]} {item.deadline_at:%d.%m %H:%M} · {item.title}",
+            callback_data=CtrlWorkerCB(action=f"dli.{item.template_id}.{item.report_date:%Y%m%d}.{selected_filter}.{page}"),
+        )
+    if total_pages > 1:
+        if page > 0:
+            b.button(text="◀️", callback_data=CtrlWorkerCB(action=f"dl.{selected_filter}.{page - 1}"))
+        b.button(text=f"{page + 1}/{total_pages}", callback_data=CtrlWorkerCB(action="noop"))
+        if page + 1 < total_pages:
+            b.button(text="▶️", callback_data=CtrlWorkerCB(action=f"dl.{selected_filter}.{page + 1}"))
+    b.button(text="◀️ Главное меню", callback_data=CtrlWorkerCB(action="main_menu"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def worker_deadline_detail_keyboard(item, selected_filter: str, page: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if item.can_edit:
+        if item.report_id:
+            action = f"edit_report_{item.report_id}"
+        else:
+            action = f"dle.{item.template_id}.{item.report_date:%Y%m%d}"
+        b.button(text="✏️ Редактировать", callback_data=CtrlWorkerCB(action=action))
+    if item.can_open and item.report_id:
+        b.button(text="📋 Открыть отчёт", callback_data=CtrlWorkerCB(action=f"dlo.{item.report_id}"))
+    b.button(text="◀️ К дедлайнам", callback_data=CtrlWorkerCB(action=f"dl.{selected_filter}.{page}"))
+    b.adjust(1)
     return b.as_markup()
 
 

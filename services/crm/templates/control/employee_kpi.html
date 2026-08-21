@@ -70,32 +70,20 @@
   Это то же значение, которое сотрудник видит в Telegram-боте.
 </div>
 
-<!-- Daily Rate -->
+<!-- Financial conditions -->
 <div class="card">
-  <h3>Ставка в день</h3>
+  <h3>Финансовые условия</h3>
   <form method="post">
     {% csrf_token %}
-    <input type="hidden" name="action" value="save_kpi">
+    <input type="hidden" name="action" value="update_finances">
     <div class="form-row">
       <div class="form-field">
         <label>Ставка в день (₽)</label>
-        <input name="daily_rate" type="number" step="0.01" min="0" value="{{ worker.daily_rate|default:'0' }}" />
+        <input name="daily_rate" type="number" step="0.01" min="0" value="{{ worker.daily_rate|default:'0' }}" required />
       </div>
-    </div>
-    <button type="submit" class="btn" style="margin-top:4px">Сохранить</button>
-  </form>
-</div>
-
-<!-- Balance edit -->
-<div class="card">
-  <h3>Выставить доступный баланс</h3>
-  <form method="post">
-    {% csrf_token %}
-    <input type="hidden" name="action" value="edit_balance">
-    <div class="form-row">
       <div class="form-field">
         <label>Доступно сейчас (₽)</label>
-        <input name="available_balance" type="number" step="0.01" min="0"
+        <input name="available_balance" type="number" step="0.01" min="0" required
                value="{{ available_balance|floatformat:2 }}" />
         <div class="hint">
           Именно эту сумму сотрудник увидит в боте. История начислений,
@@ -103,7 +91,10 @@
         </div>
       </div>
     </div>
-    <button type="submit" class="btn" style="margin-top:4px">Сохранить</button>
+    <div class="hint" style="margin-bottom:12px">
+      После фактического изменения сотрудник и администратор получат одинаковое уведомление в Telegram с состоянием до и после.
+    </div>
+    <button type="submit" class="btn" style="margin-top:4px">Сохранить финансовые условия</button>
   </form>
 </div>
 
