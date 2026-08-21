@@ -6,9 +6,21 @@ _env = environ.Env()
 DEBUG = False
 
 # ── Hosts & CSRF ──────────────────────────────────────────────────────────────
-# ALLOWED_HOSTS is read from .env (base.py), but ensure gramly.tech is always trusted.
-# Add gramly.tech to ALLOWED_HOSTS in .env: ALLOWED_HOSTS=gramly.tech,www.gramly.tech
+# ALLOWED_HOSTS is read from the runtime Secret. Keep the canonical Django
+# entrypoints trusted as a fail-safe: operational scripts may extend the list,
+# but must not be able to accidentally disable the Telegram webhook.
 _domain = _env("DOMAIN", default="gramly.tech")
+ALLOWED_HOSTS = list(
+    dict.fromkeys(
+        [
+            *ALLOWED_HOSTS,  # noqa: F405
+            _domain,
+            f"www.{_domain}",
+            f"crm.{_domain}",
+            f"bot.{_domain}",
+        ]
+    )
+)
 
 CSRF_TRUSTED_ORIGINS = [
     f"https://{_domain}",

@@ -17,7 +17,10 @@ for host in hello.gramly.tech media.gramly.tech; do
   fi
 done
 
-allowed_hosts="gramly.tech,www.gramly.tech,hello.gramly.tech,hello-admin.gramly.tech,crm.gramly.tech,grafana.gramly.tech,cluster.gramly.tech"
+# Keep every hostname served by the CRM Django runtime here.  The Telegram
+# webhook is routed directly to that deployment, so omitting bot.gramly.tech
+# makes Django reject otherwise valid Telegram updates with DisallowedHost.
+allowed_hosts="gramly.tech,www.gramly.tech,hello.gramly.tech,hello-admin.gramly.tech,crm.gramly.tech,bot.gramly.tech,grafana.gramly.tech,cluster.gramly.tech"
 kubectl -n gramly-crm patch secret gramly-crm-runtime --type=merge \
   -p "{\"stringData\":{\"ALLOWED_HOSTS\":\"${allowed_hosts}\"}}" >/dev/null
 "${infra_dir}/scripts/prepare-public-web-secrets.sh"
