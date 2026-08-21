@@ -170,6 +170,22 @@ spec:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: docs-gramly-tech-tls}]
       allowedRoutes: *public-routes
+    - name: grafana-https
+      hostname: grafana.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: grafana-gramly-tech-tls}]
+      allowedRoutes: *public-routes
+    - name: cluster-https
+      hostname: cluster.gramly.tech
+      protocol: HTTPS
+      port: 8443
+      tls:
+        mode: Terminate
+        certificateRefs: [{kind: Secret, name: cluster-gramly-tech-tls}]
+      allowedRoutes: *public-routes
     - name: hello-admin-https
       hostname: hello-admin.gramly.tech
       protocol: HTTPS

@@ -39,6 +39,19 @@ def test_public_access_gate_intercepts_hello_admin_root(client):
     assert "crm.gramly.tech/vpn-probe/" in response.content.decode()
 
 
+@override_settings(PUBLIC_ACCESS_GATE=True)
+def test_public_access_gate_intercepts_observability_hosts(client):
+    for host, service_name in (
+        ("grafana.gramly.tech", "Gramly Grafana"),
+        ("cluster.gramly.tech", "Gramly Cluster"),
+    ):
+        response = client.get("/", HTTP_HOST=host)
+
+        assert response.status_code == 403
+        assert "Сначала включите" in response.content.decode()
+        assert service_name in response.content.decode()
+
+
 @override_settings(PUBLIC_ACCESS_GATE=True, ALLOWED_HOSTS=["crm.gramly.tech"])
 def test_public_vpn_probe_bypasses_gate_and_reports_public_runtime(client):
     response = client.get(reverse("vpn-probe"), HTTP_HOST="crm.gramly.tech")

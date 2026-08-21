@@ -91,12 +91,16 @@ spec:
     - {name: gramly-public-access, namespace: traefik-public, sectionName: git-https}
     - {name: gramly-public-access, namespace: traefik-public, sectionName: tasks-https}
     - {name: gramly-public-access, namespace: traefik-public, sectionName: docs-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: grafana-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: cluster-https}
     - {name: gramly-public-access, namespace: traefik-public, sectionName: hello-admin-https}
   hostnames:
     - crm.gramly.tech
     - git.gramly.tech
     - tasks.gramly.tech
     - docs.gramly.tech
+    - grafana.gramly.tech
+    - cluster.gramly.tech
     - hello-admin.gramly.tech
   rules:
     - matches: [{path: {type: PathPrefix, value: /}}]
