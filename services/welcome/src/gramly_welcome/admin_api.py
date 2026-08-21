@@ -37,7 +37,7 @@ from .models import (
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
-OWNER_GROUPS = {"gramly-owners", "authentik Admins"}
+ADMIN_GROUPS = {"gramly-owners", "authentik Admins", "Business", "Product"}
 
 
 class AdminIdentity(BaseModel):
@@ -54,8 +54,8 @@ async def current_admin(
     x_authentik_groups: Annotated[str, Header(alias="X-authentik-groups")] = "",
 ) -> AdminIdentity:
     groups = _groups(x_authentik_groups)
-    if not x_authentik_username or not groups.intersection(OWNER_GROUPS):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Gramly owner access is required")
+    if not x_authentik_username or not groups.intersection(ADMIN_GROUPS):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "GramlyHello Control access is required")
     return AdminIdentity(username=x_authentik_username[:150], groups=groups)
 
 

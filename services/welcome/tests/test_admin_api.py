@@ -14,6 +14,9 @@ from gramly_welcome.models import Plan, Subscription
 
 
 class FakeSession:
+    async def scalar(self, _statement: object) -> int:
+        return 0
+
     async def scalars(self, _statement: object) -> FakeScalarResult:
         return FakeScalarResult()
 
@@ -64,6 +67,21 @@ def test_admin_api_rejects_non_owner_group_before_database_access(client: TestCl
     )
 
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("group", ["gramly-owners", "authentik Admins", "Business", "Product"])
+def test_admin_api_accepts_configured_control_group(
+    client: TestClient, group: str
+) -> None:
+    response = client.get(
+        "/api/admin/v1/overview",
+        headers={
+            "X-authentik-username": "control-user",
+            "X-authentik-groups": group,
+        },
+    )
+
+    assert response.status_code == 200
 
 
 def test_admin_mutation_requires_explicit_same_origin_confirmation(client: TestClient) -> None:

@@ -402,7 +402,9 @@ ops/welcome/release_production.sh
 Both variables reject mutable tags. `hello-admin.gramly.tech` must already
 resolve publicly to the Moscow edge so Let's Encrypt can issue its certificate;
 NetBird split DNS then maps it to the DevOps gateway. The console is reachable
-only through VPN and a `gramly-owners`/Authentik Admins SSO session.
+only through VPN. Authentik grants a Control session to `gramly-owners`,
+`authentik Admins`, `Business`, or `Product`; the same list is enforced by
+oauth2-proxy and the Welcome admin API.
 
 During authoritative DNS propagation, `gramly-cutover-bridge` on the old VPS
 forwards TCP 80/443 to the VKE public Load Balancer. Keep it until recursive DNS
