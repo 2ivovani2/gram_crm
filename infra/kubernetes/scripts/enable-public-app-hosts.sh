@@ -17,7 +17,7 @@ for host in hello.gramly.tech media.gramly.tech; do
   fi
 done
 
-allowed_hosts="gramly.tech,www.gramly.tech,hello.gramly.tech,hello-admin.gramly.tech,crm.gramly.tech"
+allowed_hosts="gramly.tech,www.gramly.tech,hello.gramly.tech,hello-admin.gramly.tech,crm.gramly.tech,grafana.gramly.tech,cluster.gramly.tech"
 kubectl -n gramly-crm patch secret gramly-crm-runtime --type=merge \
   -p "{\"stringData\":{\"ALLOWED_HOSTS\":\"${allowed_hosts}\"}}" >/dev/null
 "${infra_dir}/scripts/prepare-public-web-secrets.sh"

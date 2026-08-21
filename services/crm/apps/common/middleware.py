@@ -7,6 +7,8 @@ PRIVATE_HOSTS = {
     "git.gramly.tech": ("Gramly Git", "репозитории и pull request"),
     "tasks.gramly.tech": ("Gramly Tasks", "задачи и командные проекты"),
     "docs.gramly.tech": ("Gramly Docs", "внутренняя база знаний"),
+    "grafana.gramly.tech": ("Gramly Grafana", "мониторинг инфраструктуры"),
+    "cluster.gramly.tech": ("Gramly Cluster", "управление Kubernetes-кластером"),
     "hello-admin.gramly.tech": ("GramlyHello Control", "управление продуктом"),
 }
 
