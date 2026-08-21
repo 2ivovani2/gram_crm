@@ -36,10 +36,15 @@ class Command(BaseCommand):
         penalty_changes: list[dict] = []
         affected_by_user: dict[int, list[int]] = defaultdict(list)
 
-        reports = EmployeeReport.objects.select_for_update().select_related("template").filter(
+        reports = EmployeeReport.objects.select_related("template").filter(
             report_date__isnull=False,
             deadline_at__isnull=False,
         )
+        if apply_changes:
+            # PostgreSQL cannot apply FOR UPDATE to nullable select_related
+            # joins (EmployeeReport.template is nullable). Lock only the
+            # domain row being repaired; dry-run performs no row locks at all.
+            reports = reports.select_for_update(of=("self",))
         for report in reports:
             local_deadline = report.deadline_at.astimezone(MSK)
             if local_deadline.date() != report.report_date or local_deadline.time().replace(tzinfo=None) != dt.time(0, 0):
@@ -83,12 +88,14 @@ class Command(BaseCommand):
                     setattr(report, field, value)
                 report.save(update_fields=[*updates, "updated_at"])
 
-        penalties = Penalty.objects.select_for_update().select_related("user", "template", "report").filter(
+        penalties = Penalty.objects.select_related("user", "template", "report").filter(
             type=PenaltyType.AUTO,
             template__deadline_time=dt.time(0, 0),
             report_date__isnull=False,
             status=PenaltyStatus.ACCEPTED,
         )
+        if apply_changes:
+            penalties = penalties.select_for_update(of=("self",))
         for penalty in penalties:
             deadline = calculate_report_deadline(penalty.report_date, dt.time(0, 0))
             report = penalty.report
