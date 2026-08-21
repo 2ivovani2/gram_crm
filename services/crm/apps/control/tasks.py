@@ -201,6 +201,100 @@ def queue_report_decision_notification(report_id: int) -> bool:
         return False
 
 
+def _financial_identity(user) -> str:
+    name = " ".join(part for part in (user.first_name, user.last_name) if part).strip()
+    username = f"@{user.telegram_username}" if user.telegram_username else ""
+    return html.escape(" / ".join(part for part in (name, username) if part) or str(user.telegram_id))
+
+
+@shared_task(bind=True, name="apps.control.tasks.notify_financial_condition_change_task", queue="default", max_retries=5)
+def notify_financial_condition_change_task(self, event_id: int) -> dict:
+    """Deliver one committed before/after snapshot to employee and actor."""
+    from django.utils import timezone
+    from apps.control.models import FinancialConditionChange
+
+    event = FinancialConditionChange.objects.select_related("worker", "changed_by").filter(pk=event_id).first()
+    if event is None:
+        return {"sent": False, "reason": "event_not_found"}
+
+    rate_changed = event.previous_daily_rate != event.new_daily_rate
+    balance_changed = event.previous_available_balance != event.new_available_balance
+    rate_lines = (
+        f"Было: <b>{event.previous_daily_rate:.2f} ₽</b>\nСтало: <b>{event.new_daily_rate:.2f} ₽</b>"
+        if rate_changed else f"<b>{event.new_daily_rate:.2f} ₽</b>"
+    )
+    balance_lines = (
+        f"Было: <b>{event.previous_available_balance:.2f} ₽</b>\n"
+        f"Стало: <b>{event.new_available_balance:.2f} ₽</b>"
+        if balance_changed else f"<b>{event.new_available_balance:.2f} ₽</b>"
+    )
+    text = (
+        "⚠️ <b>[GRAMLY CRM] Изменены финансовые условия сотрудника</b>\n\n"
+        f"Сотрудник: {_financial_identity(event.worker)}\n\n"
+        f"Ставка:\n{rate_lines}\n\n"
+        f"Доступный баланс:\n{balance_lines}\n\n"
+        "Изменение выполнено администратором:\n"
+        f"{_financial_identity(event.changed_by)}"
+    )
+
+    now = timezone.now()
+    failed = False
+    if event.worker.telegram_id == event.changed_by.telegram_id:
+        if event.employee_notified_at is None or event.admin_notified_at is None:
+            if _send_message_sync(event.worker.telegram_id, text):
+                event.employee_notified_at = now
+                event.admin_notified_at = now
+            else:
+                failed = True
+    else:
+        if event.employee_notified_at is None:
+            if _send_message_sync(event.worker.telegram_id, text):
+                event.employee_notified_at = now
+            else:
+                failed = True
+        if event.admin_notified_at is None:
+            if _send_message_sync(event.changed_by.telegram_id, text):
+                event.admin_notified_at = now
+            else:
+                failed = True
+
+    event.delivery_attempts += 1
+    event.last_error = "Telegram delivery failed" if failed else ""
+    event.save(update_fields=[
+        "employee_notified_at", "admin_notified_at", "delivery_attempts", "last_error",
+    ])
+    if failed:
+        raise self.retry(countdown=min(30 * (2 ** self.request.retries), 900))
+    return {"sent": True, "event_id": event.pk}
+
+
+def queue_financial_condition_notification(event_id: int) -> bool:
+    try:
+        notify_financial_condition_change_task.delay(event_id)
+        return True
+    except Exception:
+        logger.exception("Failed to enqueue financial condition notification event=%s", event_id)
+        return False
+
+
+@shared_task(name="apps.control.tasks.notify_penalty_remediation_task", queue="default")
+def notify_penalty_remediation_task(user_id: int, penalty_ids: list[int], available_balance: str) -> dict:
+    from decimal import Decimal
+    from apps.users.models import User
+
+    user = User.objects.filter(pk=user_id).first()
+    if user is None:
+        return {"sent": False, "reason": "user_not_found"}
+    ids = ", ".join(f"#{penalty_id}" for penalty_id in penalty_ids)
+    text = (
+        "✅ <b>[GRAMLY CRM] Исправлено ошибочное начисление</b>\n\n"
+        f"Отменены автоматические штрафы: <b>{ids}</b>.\n"
+        "Они были созданы из-за неверной трактовки дедлайна 00:00.\n\n"
+        f"Доступный баланс восстановлен: <b>{Decimal(available_balance):.2f} ₽</b>."
+    )
+    return {"sent": _send_message_sync(user.telegram_id, text), "user_id": user.pk}
+
+
 @shared_task(name="apps.control.tasks.send_report_reminders_task", queue="default")
 def send_report_reminders_task():
     """
@@ -214,6 +308,7 @@ def send_report_reminders_task():
     import datetime as dt
     from zoneinfo import ZoneInfo
     from apps.users.models import User, UserRole, UserStatus
+    from apps.control.deadlines import calculate_report_deadline
     from apps.control.models import EmployeeReport, ReportTemplate
 
     _MSK = ZoneInfo("Europe/Moscow")
@@ -243,9 +338,15 @@ def send_report_reminders_task():
             continue
 
         tmpl_name = tmpl.name or "отчёт"
+        deadline_at = calculate_report_deadline(today, tmpl.deadline_time)
+        deadline_line = (
+            f"\nДедлайн: <b>{deadline_at:%d.%m.%Y %H:%M} МСК</b>"
+            if deadline_at
+            else ""
+        )
         text = (
             f"⏰ <b>Напоминание об отчёте</b>\n\n"
-            f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>"
+            f"Не забудьте сдать отчёт: <b>{tmpl_name}</b>{deadline_line}"
         )
         kb = _submit_report_keyboard()
         submitted_for_template_ids = set(
@@ -298,14 +399,28 @@ def _process_report_deadlines(now=None):
     import datetime as dt
     from zoneinfo import ZoneInfo
     from django.utils import timezone
+    from apps.control.deadlines import LATE_WINDOW, calculate_report_deadline, effective_report_deadline
     from apps.control.models import EmployeeReport, Penalty, PenaltySource, ReportStatus, ReportTemplate
     from apps.control.services import ReportDeadlineService
     from apps.users.models import UserRole, UserStatus
 
     now = now or timezone.now()
     now_msk = now.astimezone(ZoneInfo("Europe/Moscow"))
-    dates = [now_msk.date(), now_msk.date() - dt.timedelta(days=1)]
+    dates = [now_msk.date() - dt.timedelta(days=offset) for offset in range(3)]
     result = {"initial": 0, "correction": 0, "additional": 0}
+
+    # Correction windows can be opened long after the original reporting date
+    # if moderation was delayed.  Process them independently of the daily
+    # obligation horizon.
+    expired_corrections = EmployeeReport.objects.select_related("user", "template").filter(
+        status=ReportStatus.REJECTED,
+        correction_deadline__isnull=False,
+        correction_deadline__lte=now,
+        template__auto_penalty_amount__gt=0,
+    )
+    for report in expired_corrections:
+        _, created = ReportDeadlineService.create_correction_penalty(report)
+        result["correction"] += int(created)
 
     templates = ReportTemplate.objects.prefetch_related("assigned_users").filter(
         auto_penalty_amount__gt=0,
@@ -315,24 +430,30 @@ def _process_report_deadlines(now=None):
         workers = template.assigned_users.filter(status=UserStatus.ACTIVE).exclude(role=UserRole.ADMIN)
         for worker in workers:
             for report_date in dates:
-                deadline_at = dt.datetime.combine(
-                    report_date,
-                    template.deadline_time,
-                    tzinfo=ZoneInfo("Europe/Moscow"),
-                )
-                if now < deadline_at:
-                    continue
                 report = EmployeeReport.objects.select_related("user", "template").filter(
                     user=worker,
                     template=template,
                     report_date=report_date,
                 ).first()
-                if report_date != now_msk.date() and report is None and not Penalty.objects.filter(
-                    user=worker,
-                    template=template,
-                    report_date=report_date,
-                    source=PenaltySource.DEADLINE_MISSED,
-                ).exists():
+                deadline_at = (
+                    effective_report_deadline(report, template)
+                    if report is not None
+                    else calculate_report_deadline(report_date, template.deadline_time)
+                )
+                if deadline_at is None or now < deadline_at:
+                    continue
+                deadline_local_date = deadline_at.astimezone(ZoneInfo("Europe/Moscow")).date()
+                if (
+                    report_date != now_msk.date()
+                    and deadline_local_date != now_msk.date()
+                    and report is None
+                    and not Penalty.objects.filter(
+                        user=worker,
+                        template=template,
+                        report_date=report_date,
+                        source=PenaltySource.DEADLINE_MISSED,
+                    ).exists()
+                ):
                     # Assignment history is not available. Do not back-charge a
                     # newly assigned worker for yesterday; an obligation enters
                     # the 24-hour follow-up only if its first penalty exists.
@@ -343,13 +464,6 @@ def _process_report_deadlines(now=None):
                     and report.first_submission_at <= deadline_at
                 )
                 if timely:
-                    if (
-                        report.status == ReportStatus.REJECTED
-                        and report.correction_deadline
-                        and now >= report.correction_deadline
-                    ):
-                        _, created = ReportDeadlineService.create_correction_penalty(report)
-                        result["correction"] += int(created)
                     continue
 
                 _, created = ReportDeadlineService.create_initial_penalty(
@@ -360,7 +474,7 @@ def _process_report_deadlines(now=None):
                 )
                 result["initial"] += int(created)
 
-                late_end = deadline_at + dt.timedelta(hours=24)
+                late_end = deadline_at + LATE_WINDOW
                 if now < late_end:
                     continue
                 # A version sent before the window closed must wait for the

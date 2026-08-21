@@ -5,6 +5,7 @@ from unfold.admin import ModelAdmin
 from apps.control.models import (
     ReportTemplate, EmployeeReport, Penalty,
     KPISettings, KPIDocument, ControlSettings, ReportMedia,
+    FinancialConditionChange,
 )
 
 
@@ -106,3 +107,31 @@ class KPIDocumentAdmin(ModelAdmin):
         if obj.file and not obj.original_filename:
             obj.original_filename = obj.file.name.split("/")[-1]
         super().save_model(request, obj, form, change)
+
+
+@admin.register(FinancialConditionChange)
+class FinancialConditionChangeAdmin(ModelAdmin):
+    """Read-only operational view of the immutable financial audit trail."""
+
+    list_display = [
+        "id", "worker", "changed_by", "previous_daily_rate", "new_daily_rate",
+        "previous_available_balance", "new_available_balance", "created_at",
+    ]
+    list_filter = ["created_at", "employee_notified_at", "admin_notified_at"]
+    search_fields = [
+        "worker__telegram_username", "worker__telegram_id",
+        "changed_by__telegram_username", "changed_by__telegram_id",
+    ]
+    list_select_related = ["worker", "changed_by"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [field.name for field in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return bool(obj is None and super().has_change_permission(request, obj))
+
+    def has_delete_permission(self, request, obj=None):
+        return False
