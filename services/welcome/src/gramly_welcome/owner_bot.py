@@ -65,6 +65,7 @@ from .content_service import (
     set_first_delay,
     set_flow_assignments,
     set_step_delay,
+    validate_step_keyboard,
 )
 from .crypto import TokenKeyring
 from .crypto_pay import CryptoPayClient, CryptoPayError
@@ -1392,13 +1393,18 @@ async def configure_chain_buttons(callback: CallbackQuery, owner: Owner, state: 
     await state.update_data(version_id=version_id, step_id=step_id)
     await owner_answer(
         message,
-        "🔘 <b>Клавиатура шага</b>\n\n"
-        "Отправьте кнопки строками:\n"
-        "<code>url | Сайт | https://gramly.tech | primary</code>\n"
-        "<code>callback | Дальше | next | success</code>\n\n"
-        "Для reply-клавиатуры: <code>reply | Продолжить</code>. "
-        "Допустимые стили: default, primary, success, danger.\n\n"
-        "Отправьте <code>удалить</code>, чтобы убрать клавиатуру.",
+        "🔘 <b>Кнопки-ссылки</b>\n\n"
+        "Добавьте кнопки под сообщением в формате:\n"
+        "<code>Название - https://example.com</code>\n\n"
+        "Каждая новая строка — отдельный ряд:\n"
+        "<code>Открыть сайт - https://gramly.tech\n"
+        "Telegram - https://t.me/gramly</code>\n\n"
+        "Чтобы поставить до трёх кнопок в один ряд, разделите их символом <code>|</code>:\n"
+        "<code>Каталог - https://example.com/catalog | "
+        "Поддержка - https://example.com/help</code>\n\n"
+        "Можно добавить до <b>3 кнопок в ряд</b> и до <b>15 рядов</b>. "
+        "Ссылка должна начинаться с <code>http://</code> или <code>https://</code>.\n\n"
+        "Отправьте <code>удалить</code>, чтобы убрать все кнопки.",
         reply_markup=_one_button("❌ Отмена", f"chain:editor:{version_id}"),
     )
     await callback.answer()
@@ -1408,47 +1414,76 @@ def _parse_keyboard_definition(raw: str) -> dict[str, Any] | None:
     if raw.strip().lower() == "удалить":
         return None
     rows: list[list[dict[str, str]]] = []
-    kind: str | None = None
-    for raw_line in raw.splitlines():
-        if not raw_line.strip():
-            continue
-        row = []
-        for definition in raw_line.split(";;"):
-            parts = [part.strip() for part in definition.split("|")]
-            action = parts[0].lower() if parts else ""
-            if action == "reply" and len(parts) == 2:
-                button_kind, value, style = "reply", parts[1], "default"
-                button = {"text": value, "action_type": "text", "value": value, "style": style}
-            elif action in {"url", "callback"} and len(parts) in {3, 4}:
-                button_kind = "inline"
-                style = parts[3].lower() if len(parts) == 4 else "default"
-                button = {"text": parts[1], "action_type": action, "value": parts[2], "style": style}
-            else:
-                raise ContentValidationError("Неверный формат кнопки")
-            if kind is not None and kind != button_kind:
-                raise ContentValidationError("Inline и reply-кнопки нельзя смешивать")
-            kind = button_kind
-            row.append(button)
-        if row:
-            rows.append(row)
-    if not rows or kind is None:
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
         raise ContentValidationError("Добавьте хотя бы одну кнопку")
-    return {"kind": kind, "settings": {"resize_keyboard": True}, "rows": rows}
+    for row_index, raw_line in enumerate(lines, start=1):
+        row: list[dict[str, str]] = []
+        for button_index, raw_definition in enumerate(raw_line.split("|"), start=1):
+            definition = raw_definition.strip()
+            location = f"Ряд {row_index}, кнопка {button_index}"
+            if not definition:
+                raise ContentValidationError(f"{location}: уберите лишний символ |")
+            text_value, separator, url = definition.rpartition(" - ")
+            if not separator:
+                raise ContentValidationError(
+                    f"{location}: используйте формат «Название - https://example.com»"
+                )
+            row.append(
+                {
+                    "text": text_value.strip(),
+                    "action_type": "url",
+                    "value": url.strip(),
+                    "style": "default",
+                }
+            )
+        rows.append(row)
+    return validate_step_keyboard(
+        {"kind": "inline", "settings": {"resize_keyboard": True}, "rows": rows}
+    )
+
+
+def _ru_count(value: int, one: str, few: str, many: str) -> str:
+    if value % 100 in range(11, 15):
+        word = many
+    elif value % 10 == 1:
+        word = one
+    elif value % 10 in range(2, 5):
+        word = few
+    else:
+        word = many
+    return f"{value} {word}"
 
 
 @router.message(WelcomeButtonState.waiting_for_buttons)
 async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContext) -> None:
     data = await state.get_data()
     version_id, step_id = int(data.get("version_id") or 0), int(data.get("step_id") or 0)
+    if message.text is None:
+        await owner_answer(
+            message,
+            "⚠️ Отправьте кнопки одним текстовым сообщением в формате "
+            "<code>Название - https://example.com</code>.",
+        )
+        return
     try:
-        keyboard = _parse_keyboard_definition(message.text or "")
+        keyboard = _parse_keyboard_definition(message.text)
         async with session_factory() as session:
             await replace_step_keyboard(session, owner.id, step_id, keyboard)
     except ContentValidationError as exc:
         await owner_answer(message, f"⚠️ {exc}")
         return
     await state.clear()
-    await owner_answer(message, "✅ Клавиатура шага сохранена.")
+    if keyboard is None:
+        result = "✅ Все кнопки шага удалены."
+    else:
+        row_count = len(keyboard["rows"])
+        button_count = sum(len(row) for row in keyboard["rows"])
+        result = (
+            f"✅ Сохранено: {_ru_count(button_count, 'кнопка', 'кнопки', 'кнопок')} "
+            f"в {_ru_count(row_count, 'ряду', 'рядах', 'рядах')}."
+        )
+    await owner_answer(message, result)
     await send_chain_editor(message, owner, version_id)
 
 
