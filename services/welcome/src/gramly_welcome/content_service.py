@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -33,6 +34,111 @@ def flow_timeline_seconds(version: ContentFlowVersion, steps: list[ContentStep])
 
 class ContentValidationError(ValueError):
     pass
+
+
+MAX_KEYBOARD_ROWS = 15
+MAX_KEYBOARD_BUTTONS_PER_ROW = 3
+MAX_KEYBOARD_BUTTON_TEXT_LENGTH = 128
+MAX_KEYBOARD_URL_LENGTH = 1024
+
+
+def _validate_button_url(value: str, *, row: int, button: int) -> None:
+    location = f"Ряд {row}, кнопка {button}"
+    if len(value) > MAX_KEYBOARD_URL_LENGTH:
+        raise ContentValidationError(
+            f"{location}: ссылка длиннее {MAX_KEYBOARD_URL_LENGTH} символов"
+        )
+    if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ContentValidationError(f"{location}: ссылка не должна содержать пробелы")
+    if "\\" in value:
+        raise ContentValidationError(f"{location}: ссылка содержит недопустимый символ \\")
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        _ = parsed.port  # Access validates a malformed port.
+    except ValueError as exc:
+        raise ContentValidationError(f"{location}: некорректная ссылка") from exc
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ContentValidationError(
+            f"{location}: ссылка должна начинаться с http:// или https://"
+        )
+    if not parsed.netloc or not hostname:
+        raise ContentValidationError(f"{location}: в ссылке отсутствует адрес сайта")
+    try:
+        encoded_hostname = hostname.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise ContentValidationError(f"{location}: некорректный адрес сайта") from exc
+    labels = encoded_hostname.rstrip(".").split(".")
+    if not labels or any(
+        not label
+        or len(label) > 63
+        or label.startswith("-")
+        or label.endswith("-")
+        or not all(character.isalnum() or character == "-" for character in label)
+        for label in labels
+    ):
+        raise ContentValidationError(f"{location}: некорректный адрес сайта")
+
+
+def validate_step_keyboard(keyboard: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a keyboard before replacing persisted data."""
+
+    kind = str(keyboard.get("kind") or "")
+    if kind not in {"inline", "reply"}:
+        raise ContentValidationError("Тип клавиатуры должен быть inline или reply")
+    rows = keyboard.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ContentValidationError("Добавьте хотя бы одну кнопку")
+    if len(rows) > MAX_KEYBOARD_ROWS:
+        raise ContentValidationError(f"Можно добавить не более {MAX_KEYBOARD_ROWS} рядов")
+
+    normalized_rows: list[list[dict[str, str]]] = []
+    for row_index, row in enumerate(rows, start=1):
+        if not isinstance(row, list) or not row:
+            raise ContentValidationError(f"Ряд {row_index}: добавьте хотя бы одну кнопку")
+        if len(row) > MAX_KEYBOARD_BUTTONS_PER_ROW:
+            raise ContentValidationError(
+                f"Ряд {row_index}: можно добавить не более "
+                f"{MAX_KEYBOARD_BUTTONS_PER_ROW} кнопок"
+            )
+        normalized_row: list[dict[str, str]] = []
+        for button_index, raw in enumerate(row, start=1):
+            if not isinstance(raw, dict):
+                raise ContentValidationError(
+                    f"Ряд {row_index}, кнопка {button_index}: неверный формат"
+                )
+            location = f"Ряд {row_index}, кнопка {button_index}"
+            text_value = str(raw.get("text") or "").strip()
+            action = str(raw.get("action_type") or ("text" if kind == "reply" else "callback"))
+            value = str(raw.get("value") or text_value).strip()
+            style = str(raw.get("style") or "default")
+            if not text_value:
+                raise ContentValidationError(f"{location}: укажите название")
+            if len(text_value) > MAX_KEYBOARD_BUTTON_TEXT_LENGTH:
+                raise ContentValidationError(
+                    f"{location}: название длиннее {MAX_KEYBOARD_BUTTON_TEXT_LENGTH} символов"
+                )
+            if action not in {"url", "callback", "text"}:
+                raise ContentValidationError(f"{location}: неподдерживаемое действие")
+            if kind == "reply" and action != "text":
+                raise ContentValidationError(f"{location}: reply-кнопка поддерживает только текст")
+            if kind == "inline" and action == "text":
+                raise ContentValidationError(f"{location}: inline-кнопке нужна ссылка или callback")
+            if action == "callback" and (not value or len(value.encode()) > 64):
+                raise ContentValidationError(f"{location}: callback должен занимать от 1 до 64 байт")
+            if action == "url":
+                _validate_button_url(value, row=row_index, button=button_index)
+            if style not in {"default", "primary", "success", "danger"}:
+                raise ContentValidationError(f"{location}: неподдерживаемый стиль")
+            normalized_row.append(
+                {"text": text_value, "action_type": action, "value": value, "style": style}
+            )
+        normalized_rows.append(normalized_row)
+    return {
+        "kind": kind,
+        "settings": keyboard.get("settings") if isinstance(keyboard.get("settings"), dict) else {},
+        "rows": normalized_rows,
+    }
 
 
 @dataclass(frozen=True)
@@ -447,23 +553,20 @@ async def replace_step_keyboard(
     )
     if step is None:
         raise ContentValidationError("Editable step was not found")
+    normalized_keyboard = validate_step_keyboard(keyboard) if keyboard is not None else None
     existing = await session.scalar(select(ContentKeyboard).where(ContentKeyboard.step_id == step.id))
     if existing is not None:
         await session.delete(existing)
         await session.flush()
-    if keyboard is None:
+    if normalized_keyboard is None:
         await session.commit()
         return
-    kind = str(keyboard.get("kind") or "")
-    if kind not in {"inline", "reply"}:
-        raise ContentValidationError("Keyboard kind must be inline or reply")
-    rows = keyboard.get("rows")
-    if not isinstance(rows, list) or not rows:
-        raise ContentValidationError("Keyboard must contain at least one button")
+    kind = normalized_keyboard["kind"]
+    rows = normalized_keyboard["rows"]
     target = ContentKeyboard(
         step_id=step.id,
         kind=kind,
-        settings=keyboard.get("settings") if isinstance(keyboard.get("settings"), dict) else {},
+        settings=normalized_keyboard["settings"],
     )
     session.add(target)
     await session.flush()
@@ -473,24 +576,10 @@ async def replace_step_keyboard(
         for position, raw in enumerate(row):
             if not isinstance(raw, dict):
                 raise ContentValidationError("Keyboard button is invalid")
-            text_value = str(raw.get("text") or "").strip()
-            action = str(raw.get("action_type") or ("text" if kind == "reply" else "callback"))
-            value = str(raw.get("value") or text_value)
-            style = str(raw.get("style") or "default")
-            if not text_value or len(text_value) > 128:
-                raise ContentValidationError("Button text must contain 1 to 128 characters")
-            if action not in {"url", "callback", "text"}:
-                raise ContentValidationError("Unsupported button action")
-            if kind == "reply" and action != "text":
-                raise ContentValidationError("Reply keyboard supports text buttons only")
-            if kind == "inline" and action == "text":
-                raise ContentValidationError("Inline keyboard needs URL or callback action")
-            if action == "callback" and len(value.encode()) > 64:
-                raise ContentValidationError("Callback data exceeds Telegram's 64-byte limit")
-            if action == "url" and not value.startswith(("https://", "http://", "tg://")):
-                raise ContentValidationError("Button URL must be absolute")
-            if style not in {"default", "primary", "success", "danger"}:
-                raise ContentValidationError("Unsupported button style")
+            text_value = raw["text"]
+            action = raw["action_type"]
+            value = raw["value"]
+            style = raw["style"]
             session.add(
                 ContentKeyboardButton(
                     keyboard_id=target.id,
