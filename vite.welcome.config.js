@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 export default defineConfig({
   root: resolve(import.meta.dirname, "frontend/welcome"),
   base: "./",
-  publicDir: false,
+  publicDir: resolve(import.meta.dirname, "frontend/welcome/public"),
   plugins: [react()],
   build: {
     outDir: resolve(import.meta.dirname, "services/welcome-web/dist"),
