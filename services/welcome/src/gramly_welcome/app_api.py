@@ -31,6 +31,7 @@ from .content_service import (
 )
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_dependency
+from .delays import MAX_DELAY_SECONDS
 from .finance import (
     FinanceError,
     available_balance,
@@ -60,6 +61,7 @@ from .models import (
     RotationImpression,
     Withdrawal,
 )
+from .required_channel import check_required_membership
 from .rotation import set_priority_channel
 from .telegram_auth import TelegramInitDataError, verify_init_data
 from .web_sessions import (
@@ -102,11 +104,11 @@ class RotationPriorityRequest(BaseModel):
 
 class DraftStepRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
-    delay_after_seconds: int = Field(default=1, ge=0, le=86_400)
+    delay_after_seconds: int = Field(default=1, ge=0, le=MAX_DELAY_SECONDS)
 
 
 class DraftDelayRequest(BaseModel):
-    delay_seconds: int = Field(ge=0, le=86_400)
+    delay_seconds: int = Field(ge=0, le=MAX_DELAY_SECONDS)
 
 
 class DraftStepContentRequest(BaseModel):
@@ -134,7 +136,30 @@ async def current_web_user(
     return CurrentWebUser(auth)
 
 
-CurrentUserDep = Annotated[CurrentWebUser, Depends(current_web_user)]
+AuthenticatedUserDep = Annotated[CurrentWebUser, Depends(current_web_user)]
+
+
+async def required_channel_user(
+    session: SessionDep,
+    settings: SettingsDep,
+    user: AuthenticatedUserDep,
+) -> CurrentWebUser:
+    async with Bot(settings.interface_bot_token) as bot:
+        membership = await check_required_membership(session, bot, user.auth.owner)
+    if not membership.allowed:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {
+                "code": "news_subscription_required",
+                "title": membership.config.title,
+                "url": membership.config.url,
+                "temporarily_unavailable": membership.temporarily_unavailable,
+            },
+        )
+    return user
+
+
+CurrentUserDep = Annotated[CurrentWebUser, Depends(required_channel_user)]
 
 
 async def csrf_protected_user(
@@ -148,6 +173,25 @@ async def csrf_protected_user(
 
 
 CsrfUserDep = Annotated[CurrentWebUser, Depends(csrf_protected_user)]
+
+
+@router.post("/news-subscription/check")
+async def news_subscription_check(
+    session: SessionDep,
+    settings: SettingsDep,
+    user: AuthenticatedUserDep,
+    csrf_token: Annotated[str, Header(alias="X-CSRF-Token")],
+) -> dict[str, object]:
+    if not await csrf_token_valid(session, user.auth.session_id, csrf_token):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid CSRF token")
+    async with Bot(settings.interface_bot_token) as bot:
+        membership = await check_required_membership(session, bot, user.auth.owner, force=True)
+    return {
+        "allowed": membership.allowed,
+        "title": membership.config.title,
+        "url": membership.config.url,
+        "temporarily_unavailable": membership.temporarily_unavailable,
+    }
 
 
 @router.post("/session/telegram", response_model=TelegramSessionResponse)

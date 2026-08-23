@@ -121,6 +121,54 @@ class ContextHelpInput(BaseModel):
     is_active: bool = True
 
 
+class RequiredChannelInput(BaseModel):
+    enabled: bool
+    channel_id: int = Field(lt=0)
+    title: str = Field(min_length=1, max_length=160)
+    url: str = Field(min_length=1, max_length=2048)
+
+
+@router.get("/required-channel")
+async def get_required_channel(_admin: AdminDep, session: SessionDep) -> dict[str, object]:
+    flag = await session.get(FeatureFlag, "required_news_channel")
+    config = flag.config if flag and isinstance(flag.config, dict) else {}
+    return {
+        "enabled": bool(flag and flag.enabled),
+        "channel_id": int(config.get("channel_id") or 0),
+        "title": str(config.get("title") or "GRAMLY | Новости"),
+        "url": str(config.get("url") or ""),
+    }
+
+
+@router.post("/required-channel")
+async def update_required_channel(
+    payload: RequiredChannelInput,
+    admin: MutationAdminDep,
+    session: SessionDep,
+) -> dict[str, object]:
+    parsed = urlparse(payload.url.strip())
+    if parsed.scheme != "https" or parsed.hostname not in {"t.me", "telegram.me"}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Telegram HTTPS URL is required")
+    flag = await session.get(FeatureFlag, "required_news_channel", with_for_update=True)
+    if flag is None:
+        flag = FeatureFlag(key="required_news_channel")
+        session.add(flag)
+    flag.enabled = payload.enabled
+    flag.config = {
+        "channel_id": payload.channel_id,
+        "title": payload.title.strip(),
+        "url": payload.url.strip(),
+    }
+    await _audit(
+        session,
+        admin,
+        "required_news_channel_updated",
+        {"enabled": payload.enabled, "channel_id": payload.channel_id},
+    )
+    await session.commit()
+    return {"ok": True}
+
+
 class PlanPricingInput(BaseModel):
     price_rub: Decimal | None = Field(default=None, gt=0, decimal_places=2)
     price_xtr: int | None = Field(default=None, gt=0)

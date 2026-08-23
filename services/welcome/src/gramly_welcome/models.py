@@ -136,6 +136,26 @@ class FeatureFlag(Base):
     )
 
 
+class RequiredChannelMembership(Base):
+    __tablename__ = "required_channel_membership"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "channel_id", name="uq_required_channel_owner_channel"),
+        CheckConstraint(
+            "status IN ('unknown','member','administrator','creator','restricted','left','kicked')",
+            name="ck_required_channel_membership_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="unknown", index=True)
+    is_member: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Manual(Base):
     __tablename__ = "manual"
     __table_args__ = (UniqueConstraint("slug", name="manual_slug_key"),)
@@ -508,7 +528,7 @@ class ContentFlowVersion(Base):
             name="ck_content_flow_version_status",
         ),
         CheckConstraint(
-            "first_delay_seconds BETWEEN 0 AND 86400",
+            "first_delay_seconds BETWEEN 0 AND 15552000",
             name="ck_content_flow_first_delay",
         ),
         Index(
@@ -543,7 +563,7 @@ class ContentStep(Base):
         UniqueConstraint("version_id", "position", name="uq_content_step_position"),
         CheckConstraint("position >= 0", name="ck_content_step_position"),
         CheckConstraint(
-            "delay_after_seconds BETWEEN 0 AND 86400",
+            "delay_after_seconds BETWEEN 0 AND 15552000",
             name="ck_content_step_delay",
         ),
     )

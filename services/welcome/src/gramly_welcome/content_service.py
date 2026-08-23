@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
+from .delays import MAX_DELAY_SECONDS
 from .models import (
     Channel,
     ContentAttachment,
@@ -394,8 +394,8 @@ async def add_draft_step(
     )
     if version is None:
         raise ContentValidationError("Editable draft was not found")
-    if not 0 <= delay_after_seconds <= 86_400:
-        raise ContentValidationError("Step delay must be between 0 and 24 hours")
+    if not 0 <= delay_after_seconds <= MAX_DELAY_SECONDS:
+        raise ContentValidationError("Step delay must be between 0 and 180 days")
     max_position = await session.scalar(
         select(func.max(ContentStep.position)).where(ContentStep.version_id == version.id)
     )
@@ -419,8 +419,8 @@ async def add_draft_step(
 
 
 async def set_step_delay(session: AsyncSession, owner_id: int, step_id: int, delay_seconds: int) -> None:
-    if not 0 <= delay_seconds <= 86_400:
-        raise ContentValidationError("Step delay must be between 0 and 24 hours")
+    if not 0 <= delay_seconds <= MAX_DELAY_SECONDS:
+        raise ContentValidationError("Step delay must be between 0 and 180 days")
     result = await session.execute(
         update(ContentStep)
         .where(
@@ -513,8 +513,8 @@ async def copy_step(session: AsyncSession, owner_id: int, step_id: int) -> Conte
 
 
 async def set_first_delay(session: AsyncSession, owner_id: int, version_id: int, delay_seconds: int) -> None:
-    if not 0 <= delay_seconds <= 86_400:
-        raise ContentValidationError("Initial delay must be between 0 and 24 hours")
+    if not 0 <= delay_seconds <= MAX_DELAY_SECONDS:
+        raise ContentValidationError("Initial delay must be between 0 and 180 days")
     result = await session.execute(
         update(ContentFlowVersion)
         .where(
@@ -679,14 +679,9 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
             raise ContentValidationError("Farewell chain supports up to 5 messages")
         if attachment_count > 5:
             raise ContentValidationError("Farewell chain supports up to 5 files")
-    elif flow_timeline_seconds(version, steps) > JOIN_REQUEST_MAX_TIMELINE_SECONDS:
-        raise ContentValidationError(
-            "Приветственная цепочка длится больше 4 минут. Сократите задержку до первого "
-            "сообщения или паузы между шагами — иначе Telegram закроет окно заявки."
-        )
     for step in steps[:-1]:
-        if not 1 <= step.delay_after_seconds <= 86_400:
-            raise ContentValidationError("Every non-final step needs a 1s–24h delay")
+        if not 0 <= step.delay_after_seconds <= MAX_DELAY_SECONDS:
+            raise ContentValidationError("Every non-final step needs a 0s–180d delay")
     steps[-1].delay_after_seconds = 0
     await session.execute(
         update(ContentFlowVersion)

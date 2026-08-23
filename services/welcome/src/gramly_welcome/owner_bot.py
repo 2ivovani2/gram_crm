@@ -20,6 +20,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import (
     CallbackQuery,
+    ChatMemberUpdated,
     InlineKeyboardMarkup,
     LabeledPrice,
     Message,
@@ -70,6 +71,7 @@ from .content_service import (
 from .crypto import TokenKeyring
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_factory
+from .delays import DelayParseError, format_delay_clock, parse_delay
 from .finance import (
     FinanceError,
     available_balance,
@@ -100,6 +102,7 @@ from .owner_repository import (
     toggle_auto_approve,
     update_delay,
 )
+from .required_channel import check_required_membership, record_required_membership_update
 from .rotation import (
     owner_rotation_channels,
     rotation_statistics,
@@ -222,6 +225,10 @@ class WelcomeButtonState(StatesGroup):
     waiting_for_buttons = State()
 
 
+class ChainDelayState(StatesGroup):
+    waiting_for_delay = State()
+
+
 class OwnerMiddleware(BaseMiddleware):
     async def __call__(
         self,
@@ -233,7 +240,38 @@ class OwnerMiddleware(BaseMiddleware):
         if user is None:
             return None
         async with session_factory() as session:
-            data["owner"] = await owner_from_telegram(session, user)
+            owner = await owner_from_telegram(session, user)
+            data["owner"] = owner
+            if isinstance(event, Message):
+                command = (event.text or "").split(maxsplit=1)
+                if len(command) == 2 and command[0].split("@", 1)[0] == "/start" and command[1].startswith("ref_"):
+                    await record_first_touch(session, owner.id, command[1][4:])
+            is_check = isinstance(event, CallbackQuery) and event.data == "required-channel:check"
+            if not is_check:
+                membership = await check_required_membership(session, cast(Bot, data["bot"]), owner)
+                if not membership.allowed:
+                    text = (
+                        "📣 <b>Подпишитесь на новости Gramly</b>\n\n"
+                        f"Чтобы пользоваться GramlyHello, вступите в канал "
+                        f"<b>{html.escape(membership.config.title)}</b>, затем нажмите «Проверить подписку»."
+                    )
+                    markup = InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [TelegramInlineKeyboardButton(text="📣 Подписаться", url=membership.config.url)],
+                            [TelegramInlineKeyboardButton(text="🔄 Проверить подписку", callback_data="required-channel:check")],
+                        ]
+                    )
+                    if isinstance(event, CallbackQuery):
+                        await edit_with_ui_fallback(_callback_message(event), text, reply_markup=markup)
+                        await event.answer(
+                            "Telegram временно недоступен." if membership.temporarily_unavailable else "Подписка не найдена",
+                            show_alert=membership.temporarily_unavailable,
+                        )
+                    elif isinstance(event, Message):
+                        await owner_answer(event, text, reply_markup=markup)
+                    elif isinstance(event, PreCheckoutQuery):
+                        await event.answer(ok=False, error_message="Сначала подпишитесь на новости Gramly.")
+                    return None
         result = await handler(event, data)
         if isinstance(event, (Message, CallbackQuery)):
             try:
@@ -360,6 +398,17 @@ def _format_delay(seconds: int) -> str:
     if seconds:
         parts.append(f"{seconds} сек")
     return " ".join(parts)
+
+
+def _delay_prompt(label: str, current: int) -> str:
+    return (
+        f"⏱ <b>{label}</b>\n\n"
+        "Отправьте задержку в формате <code>ДД:ЧЧ:ММ:СС</code>. "
+        "Сокращённые варианты выравниваются справа: <code>05:30</code> — 5 минут 30 секунд.\n\n"
+        "Можно использовать переполнение: <code>00:25:00:00</code> станет 1 днём и 1 часом. "
+        "Допустимо от <code>0</code> до <code>180:00:00:00</code>.\n\n"
+        f"Сейчас: <code>{format_delay_clock(current)}</code>."
+    )
 
 
 def _entity_dump(entities: list[Any] | None) -> list[dict[str, Any]]:
@@ -855,7 +904,9 @@ async def send_chain_editor(
         )
         if timeline > JOIN_REQUEST_MAX_TIMELINE_SECONDS:
             lines.append(
-                "\n⚠️ Сократите задержки: новую версию длиннее четырёх минут опубликовать нельзя."
+                "\n⚠️ Цепочка будет работать для обычных вступлений, но Telegram не даёт "
+                "достаточно времени отправить её пользователю с ожидающей заявкой. "
+                "Auto-approve продолжит работать без приветствия по временному адресу."
             )
     rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
@@ -881,8 +932,10 @@ async def send_chain_editor(
                 owner_button(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
             ],
             [
-                owner_button(text="− 5 сек до старта", callback_data=f"chain:first:{version_id}:-5"),
-                owner_button(text="+ 5 сек до старта", callback_data=f"chain:first:{version_id}:5"),
+                owner_button(
+                    text="⏱ Задержка первого сообщения",
+                    callback_data=f"chain:delay-input:{version_id}:first",
+                ),
             ],
             [
                 owner_button(
@@ -921,7 +974,9 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
     await owner_answer(
         message,
         "➕ <b>Новый шаг</b>\n\nОтправьте текст или Telegram-вложение. "
-        "Форматирование и Premium Emoji будут сохранены без преобразования.",
+        "Форматирование и Premium Emoji будут сохранены без преобразования.\n\n"
+        "Персонализация необязательна: добавьте <code>{name}</code> только там, "
+        "где нужно подставить имя нового участника.",
         reply_markup=_one_button(
             "❌ Отмена",
             f"farewell:{snapshot.flow.bot_id}"
@@ -1023,9 +1078,10 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
                 owner_button(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
             ],
             [
-                owner_button(text="− 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:-5"),
-                owner_button(text="+ 5 сек", callback_data=f"chain:delay:{version_id}:{step_id}:5"),
-                owner_button(text="+ 1 мин", callback_data=f"chain:delay:{version_id}:{step_id}:60"),
+                owner_button(
+                    text="⏱ Изменить задержку",
+                    callback_data=f"chain:delay-input:{version_id}:{step_id}",
+                ),
             ],
             [owner_button(text="🔘 Клавиатура", callback_data=f"chain:buttons:{version_id}:{step_id}")],
             [owner_button(text="🗑 Удалить", callback_data=f"chain:delete:{version_id}:{step_id}")],
@@ -1042,7 +1098,8 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
 
 
 @router.callback_query(F.data.startswith("chain:editor:"))
-async def chain_editor_callback(callback: CallbackQuery, owner: Owner) -> None:
+async def chain_editor_callback(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    await state.clear()
     await send_chain_editor(
         _callback_message(callback),
         owner,
@@ -1052,7 +1109,7 @@ async def chain_editor_callback(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^chain:(move|copy|delete|delay|first):"))
+@router.callback_query(F.data.regexp(r"^chain:(move|copy|delete):"))
 async def mutate_chain(callback: CallbackQuery, owner: Owner) -> None:
     message = _callback_message(callback)
     parts = (callback.data or "").split(":")
@@ -1066,23 +1123,6 @@ async def mutate_chain(callback: CallbackQuery, owner: Owner) -> None:
                 await copy_step(session, owner.id, int(parts[3]))
             elif action == "delete":
                 orphaned_keys = await delete_step(session, owner.id, int(parts[3]))
-            elif action == "delay":
-                snapshot = await draft_snapshot(session, owner.id, version_id)
-                step_id, delta = int(parts[3]), int(parts[4])
-                step = next((item for item in snapshot.steps if item.id == step_id), None)
-                if step is None:
-                    raise ContentValidationError("Editable step was not found")
-                await set_step_delay(
-                    session, owner.id, step_id, max(0, min(86_400, step.delay_after_seconds + delta))
-                )
-            elif action == "first":
-                snapshot = await draft_snapshot(session, owner.id, version_id)
-                await set_first_delay(
-                    session,
-                    owner.id,
-                    version_id,
-                    max(0, min(86_400, snapshot.version.first_delay_seconds + int(parts[3]))),
-                )
     except ContentValidationError:
         await callback.answer("Не удалось изменить черновик.", show_alert=True)
         return
@@ -1093,6 +1133,67 @@ async def mutate_chain(callback: CallbackQuery, owner: Owner) -> None:
             logger.exception("Could not delete orphaned draft media step_id=%s", parts[3])
     await send_chain_editor(message, owner, version_id)
     await callback.answer("Сохранено")
+
+
+@router.callback_query(F.data.startswith("chain:delay-input:"))
+async def request_chain_delay(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    parts = (callback.data or "").split(":")
+    version_id = int(parts[2])
+    target = parts[3]
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    if target == "first":
+        current = snapshot.version.first_delay_seconds
+        label = "Задержка первого сообщения"
+        step_id = None
+    else:
+        step_id = int(target)
+        step = next((item for item in snapshot.steps if item.id == step_id), None)
+        if step is None:
+            await callback.answer("Шаг не найден.", show_alert=True)
+            return
+        current = step.delay_after_seconds
+        label = f"Задержка после шага {step.position + 1}"
+    await state.set_state(ChainDelayState.waiting_for_delay)
+    await state.update_data(version_id=version_id, step_id=step_id)
+    await owner_answer(
+        _callback_message(callback),
+        _delay_prompt(label, current),
+        reply_markup=_one_button("❌ Отмена", f"chain:editor:{version_id}"),
+    )
+    await callback.answer()
+
+
+@router.message(ChainDelayState.waiting_for_delay)
+async def receive_chain_delay(message: Message, owner: Owner, state: FSMContext) -> None:
+    if not message.text:
+        await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>01:30</code>.")
+        return
+    try:
+        seconds = parse_delay(message.text)
+    except DelayParseError as exc:
+        await owner_answer(message, f"⚠️ {html.escape(str(exc))}. Сохранённая задержка не изменилась.")
+        return
+    data = await state.get_data()
+    version_id = int(data.get("version_id") or 0)
+    step_id = data.get("step_id")
+    try:
+        async with session_factory() as session:
+            if step_id is None:
+                await set_first_delay(session, owner.id, version_id, seconds)
+            else:
+                await set_step_delay(session, owner.id, int(step_id), seconds)
+    except ContentValidationError:
+        await state.clear()
+        await owner_answer(message, "⚠️ Черновик уже недоступен. Откройте цепочку заново.")
+        return
+    await state.clear()
+    await owner_answer(message, f"✅ Задержка сохранена: <code>{format_delay_clock(seconds)}</code>.")
+    await send_chain_editor(message, owner, version_id)
 
 
 @router.callback_query(F.data.startswith("chain:publish:"))
@@ -1212,6 +1313,7 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
                 operation.payload,
                 operation.media,
                 storage,
+                first_name=owner.first_name,
             )
     except (ObjectStorageError, OSError):
         logger.exception("Could not materialize preview media version_id=%s", version_id)
@@ -1233,6 +1335,37 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
         logger.warning("Invalid preview operation version_id=%s error=%s", version_id, exc)
         await owner_answer(message, f"⚠️ Не удалось собрать Telegram-вызов: {exc}")
     await callback.answer()
+
+
+@router.callback_query(F.data == "required-channel:check")
+async def verify_required_channel(callback: CallbackQuery, owner: Owner) -> None:
+    async with session_factory() as session:
+        result = await check_required_membership(
+            session,
+            cast(Bot, callback.bot),
+            owner,
+            force=True,
+        )
+    if result.allowed:
+        await edit_with_ui_fallback(
+            _callback_message(callback),
+            "✅ <b>Подписка подтверждена</b>\n\nGramlyHello снова полностью доступен.",
+            reply_markup=await main_keyboard(),
+        )
+        await callback.answer("Доступ открыт")
+        return
+    await callback.answer(
+        "Не удалось проверить Telegram. Повторите через минуту."
+        if result.temporarily_unavailable
+        else "Сначала подпишитесь на канал.",
+        show_alert=True,
+    )
+
+
+@router.chat_member()
+async def required_channel_membership_update(update: ChatMemberUpdated) -> None:
+    async with session_factory() as session:
+        await record_required_membership_update(session, update)
 
 
 def _toggle_channel_assignment(
@@ -2124,7 +2257,7 @@ async def process_interface_update(payload: dict[str, Any]) -> None:
     if not isinstance(storage, RedisStorage):
         raise RuntimeError("Owner bot requires Redis FSM storage")
     user_id = 0
-    for key in ("message", "callback_query", "pre_checkout_query"):
+    for key in ("message", "callback_query", "pre_checkout_query", "chat_member"):
         event = payload.get(key)
         sender = event.get("from") if isinstance(event, dict) else None
         if isinstance(sender, dict):
