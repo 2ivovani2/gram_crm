@@ -64,6 +64,7 @@ async def reconcile() -> None:
                 "message",
                 "callback_query",
                 "my_chat_member",
+                "chat_member",
                 "pre_checkout_query",
             ],
             drop_pending_updates=False,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api, setCsrfToken } from "./api";
+import { ApiError, api, setCsrfToken } from "./api";
 import { AdminApp } from "./admin";
 import "./styles.css";
 
@@ -37,6 +37,23 @@ type Flow = {
 type Step = { id: number; position: number; payload: Record<string, unknown>; delay_after_seconds: number; attachments: Array<{id:number;type:string;name:string}> };
 type Plan = { slug: string; name: string; prices: { rub: string | null; xtr: number | null } };
 type Checkout = { payment_id: number; invoice_url: string; status: string };
+type SubscriptionGate = { code: string; title: string; url: string; temporarily_unavailable?: boolean };
+
+const MAX_DELAY_SECONDS = 180 * 24 * 60 * 60;
+function parseDelay(value: FormDataEntryValue | null): number {
+  const parts = String(value ?? "").trim().split(":");
+  if (!parts.length || parts.length > 4 || parts.some(part => !/^\s*\d+\s*$/.test(part))) throw new Error("Введите задержку в формате ДД:ЧЧ:ММ:СС");
+  const multipliers = [86400, 3600, 60, 1].slice(4 - parts.length);
+  const seconds = parts.reduce((total, part, index) => total + Number(part.trim()) * multipliers[index], 0);
+  if (!Number.isSafeInteger(seconds) || seconds > MAX_DELAY_SECONDS) throw new Error("Максимальная задержка — 180 дней");
+  return seconds;
+}
+function formatDelay(seconds: number): string {
+  const days=Math.floor(seconds/86400); let remainder=seconds%86400;
+  const hours=Math.floor(remainder/3600); remainder%=3600;
+  const minutes=Math.floor(remainder/60); const secs=remainder%60;
+  return [days,hours,minutes,secs].map(value=>String(value).padStart(2,"0")).join(":");
+}
 
 const tabs = ["Обзор", "Боты", "Цепочки", "Аналитика", "Подписка", "Партнёры", "Ещё"] as const;
 type Tab = typeof tabs[number];
@@ -111,7 +128,7 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
     event.preventDefault(); if (!data) return;
     const form = event.currentTarget; const values = new FormData(form);
     try {
-      await api(`/drafts/${data.version.id}/steps`, {method:"POST", body:JSON.stringify({text:values.get("text"),delay_after_seconds:Number(values.get("delay"))})});
+      await api(`/drafts/${data.version.id}/steps`, {method:"POST", body:JSON.stringify({text:values.get("text"),delay_after_seconds:parseDelay(values.get("delay"))})});
       form.reset(); await load();
     } catch (e) { setError((e as Error).message); }
   };
@@ -120,7 +137,7 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
     try {
       await Promise.all([
         api(`/steps/${step.id}/content`, {method:"POST", body:JSON.stringify({text:values.get("text")})}),
-        api(`/steps/${step.id}/delay`, {method:"POST", body:JSON.stringify({delay_seconds:Number(values.get("delay"))})}),
+        api(`/steps/${step.id}/delay`, {method:"POST", body:JSON.stringify({delay_seconds:parseDelay(values.get("delay"))})}),
       ]);
       setEditing(null); await load();
     } catch (e) { setError((e as Error).message); }
@@ -132,17 +149,22 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
     try { await api(`/drafts/${data.version.id}/publish`, {method:"POST"}); onClose(); }
     catch (e) { setError((e as Error).message); }
   };
+  const saveFirstDelay = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); if (!data) return;
+    try { const value=parseDelay(new FormData(event.currentTarget).get("first_delay")); await api(`/drafts/${data.version.id}/first-delay`,{method:"POST",body:JSON.stringify({delay_seconds:value})}); await load(); }
+    catch(e){setError((e as Error).message)}
+  };
   return <section className="editor">
     <header><div><span className="eyebrow">{flow.kind === "farewell" ? "FAREWELL" : "WELCOME"}</span><h2>{flow.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Закрыть">×</button></header>
     {error && <ErrorBox message={error}/>} {!data ? <div className="skeleton">Загружаем черновик…</div> : <>
-      <div className="editor-meta"><span>Версия {data.version.id}</span><span>Старт через {data.version.first_delay_seconds} сек.</span><span>Заявка: {data.version.timeline_seconds} / 240 сек.</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
-      {!data.version.join_request_compatible&&<div className="error" role="alert"><strong>Цепочка длиннее четырёх минут</strong><span>Сократите задержку до первого сообщения или паузы между шагами, чтобы Telegram не закрыл временный чат заявки.</span></div>}
+      <div className="editor-meta"><span>Версия {data.version.id}</span><form onSubmit={saveFirstDelay}><label>Старт, ДД:ЧЧ:ММ:СС <input name="first_delay" defaultValue={formatDelay(data.version.first_delay_seconds)} inputMode="numeric"/></label><button className="button ghost">Сохранить</button></form><span>Заявка: {formatDelay(data.version.timeline_seconds)} / 00:00:04:00</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
+      {!data.version.join_request_compatible&&<div className="error" role="alert"><strong>Недоступно для ожидающих заявок</strong><span>Цепочка всё равно публикуется и работает при обычном вступлении. Auto-approve обработает заявку без приветствия по временному адресу.</span></div>}
       {!data.steps.length&&<EmptyState title="В цепочке пока нет шагов" text="Добавьте первое сообщение ниже — оно станет началом приветственного сценария."/>}<div className="steps">{data.steps.map((step,index)=><article key={step.id} draggable={editing!==step.id} onDragStart={()=>setDragged(step.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged && dragged!==step.id){const ids=data.steps.map(i=>i.id);const from=ids.indexOf(dragged);ids.splice(from,1);ids.splice(index,0,dragged);void reorder(ids)}}}>
         <div className="step-index">{String(index+1).padStart(2,"0")}</div>
-        {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={String(step.payload.text||step.payload.caption||"")} required/><label>Пауза, сек.<input name="delay" type="number" min="0" max="86400" defaultValue={step.delay_after_seconds}/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{String(step.payload.text || step.payload.caption || "Медиа-сообщение")}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {step.delay_after_seconds} сек.</span></div>}
+        {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={String(step.payload.text||step.payload.caption||"")} required/><label>Пауза, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue={formatDelay(step.delay_after_seconds)} inputMode="numeric"/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{String(step.payload.text || step.payload.caption || "Медиа-сообщение")}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {formatDelay(step.delay_after_seconds)}</span></div>}
         <div className="step-actions"><button onClick={()=>move(index,-1)} aria-label="Выше">↑</button><button onClick={()=>move(index,1)} aria-label="Ниже">↓</button><button onClick={()=>setEditing(step.id)} aria-label="Изменить">✎</button><button onClick={()=>void copy(step.id)} aria-label="Копировать">⧉</button><button onClick={()=>void remove(step.id)} aria-label="Удалить">×</button><span className="drag">⋮⋮</span></div>
       </article>)}</div>
-      <form className="step-form" onSubmit={add}><span className="eyebrow">НОВЫЙ ШАГ</span><textarea name="text" placeholder="Текст сообщения. Переменные: {first_name}, {username}" required/><label>Пауза после шага, сек.<input name="delay" type="number" min="0" max="86400" defaultValue="1"/></label><button className="button acid">Добавить в цепочку</button></form>
+      <form className="step-form" onSubmit={add}><span className="eyebrow">НОВЫЙ ШАГ</span><textarea name="text" placeholder="Текст сообщения. Необязательно добавьте {name} — перед отправкой подставим имя участника." required/><label>Пауза после шага, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue="00:00:00:01" inputMode="numeric"/></label><button className="button acid">Добавить в цепочку</button></form>
     </>}
   </section>;
 }
@@ -158,6 +180,7 @@ function MiniApp() {
   const [botUsername,setBotUsername]=useState("GramlyHelloBot");
   const [paymentBusy,setPaymentBusy]=useState<"crypto"|"stars"|null>(null);
   const [paymentMessage,setPaymentMessage]=useState("");
+  const [subscriptionGate,setSubscriptionGate]=useState<SubscriptionGate|null>(null);
   useEffect(()=>{
     api<{interface_bot_username:string}>("/public-config").then(value=>{if(value.interface_bot_username)setBotUsername(value.interface_bot_username)}).catch(()=>undefined);
     if(!tg?.initData){setReady(true);return;}
@@ -172,7 +195,7 @@ function MiniApp() {
     tg.onEvent?.("themeChanged",syncTelegramChrome);
     tg.ready();
     tg.expand();
-    api<{csrf_token:string}>("/session/telegram",{method:"POST",body:JSON.stringify({init_data:tg.initData})}).then((session)=>{setCsrfToken(session.csrf_token);return Promise.all([api<any>("/me"),api<any>("/dashboard"),api<{bots:Bot[]}>("/bots"),api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);}).then(([identity,summary,botList,planList,analyticsData,referralData])=>{setMe(identity);setDashboard(summary);setBots(botList.bots);setPlans(planList.plans);setAnalytics(analyticsData);setPartners(referralData);setActiveBot(botList.bots[0]?.id||null);setReady(true)}).catch((e)=>{setError(e.message);setReady(true)});
+    api<{csrf_token:string}>("/session/telegram",{method:"POST",body:JSON.stringify({init_data:tg.initData})}).then((session)=>{setCsrfToken(session.csrf_token);return Promise.all([api<any>("/me"),api<any>("/dashboard"),api<{bots:Bot[]}>("/bots"),api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);}).then(([identity,summary,botList,planList,analyticsData,referralData])=>{setMe(identity);setDashboard(summary);setBots(botList.bots);setPlans(planList.plans);setAnalytics(analyticsData);setPartners(referralData);setActiveBot(botList.bots[0]?.id||null);setReady(true)}).catch((e)=>{if(e instanceof ApiError&&e.status===403&&typeof e.detail==="object"&&e.detail&&"code" in e.detail&&e.detail.code==="news_subscription_required")setSubscriptionGate(e.detail as SubscriptionGate);else setError(e.message);setReady(true)});
     return()=>tg.offEvent?.("themeChanged",syncTelegramChrome);
   },[]);
   useEffect(()=>{if(activeBot) api<{flows:Flow[]}>(`/bots/${activeBot}/flows`).then(r=>setFlows(r.flows)).catch(e=>setError(e.message));},[activeBot]);
@@ -183,6 +206,7 @@ function MiniApp() {
   const payStars=async()=>{setError("");setPaymentMessage("");setPaymentBusy("stars");try{const checkout=await api<Checkout>("/payments/stars",{method:"POST"});if(tg?.openInvoice){tg.openInvoice(checkout.invoice_url,status=>{if(status==="paid"){setPaymentMessage("Оплата получена. Активируем Business…");void refreshAccess().then(()=>setPaymentMessage("Business активирован."));}else if(status==="pending")setPaymentMessage("Платёж обрабатывается Telegram.");else if(status==="failed")setError("Telegram не смог провести платёж. Попробуйте ещё раз.");});}else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
   if(!ready) return <div className="loading"><Logo/><div className="loader"/><span>Синхронизируем кабинет…</span></div>;
   if(!tg?.initData) return <OutsideTelegram username={botUsername}/>;
+  if(subscriptionGate) return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОБЯЗАТЕЛЬНАЯ ПОДПИСКА</span><h1>Оставайтесь в курсе обновлений Gramly.</h1><p>Подпишитесь на «{subscriptionGate.title}», затем вернитесь сюда и проверьте подписку. Статус сверяется напрямую с Telegram.</p><a className="button acid" href={subscriptionGate.url}>📣 Подписаться</a><button className="button" onClick={()=>api<{allowed:boolean}>("/news-subscription/check",{method:"POST"}).then(result=>{if(result.allowed)location.reload();else setError("Telegram пока не видит подписку. Подпишитесь и попробуйте снова.")}).catch(e=>setError(e.message))}>🔄 Проверить подписку</button>{error&&<ErrorBox message={error}/>}</div></main>;
   if(error && !me) return <main className="outside"><Logo/><ErrorBox message={error}/><button className="button" onClick={()=>location.reload()}>Повторить</button></main>;
   const firstName=me?.owner?.first_name||"друг";
   return <div className="app-shell mini-app">

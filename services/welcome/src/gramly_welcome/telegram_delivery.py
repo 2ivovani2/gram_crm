@@ -21,6 +21,7 @@ from aiogram.types import (
 
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
+from .personalization import personalize_operation
 from .repository import DeliveryContext, JoinRequestContext
 from .rotation import RotationContext, RotationDestination
 from .storage import ObjectStorage
@@ -126,6 +127,7 @@ async def send_delivery_operation(
             context.operation.payload,
             context.operation.media,
             storage,
+            first_name=context.contact.first_name,
         )
 
 
@@ -136,8 +138,12 @@ async def send_compiled_operation(
     payload: dict[str, Any],
     raw_media: list[dict[str, Any]],
     storage: ObjectStorage,
+    *,
+    first_name: str | None = None,
 ) -> None:
     """Send one compiled operation with either a client bot or the preview bot."""
+    if first_name is not None:
+        payload, raw_media = personalize_operation(payload, raw_media, first_name)
     media_objects = [
         _OperationMedia(
             storage_key=str(item["storage_key"]),
@@ -269,7 +275,21 @@ async def send_compiled_operation(
 
 async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyring: TokenKeyring) -> None:
     token = keyring.decrypt(context.bot.token_ciphertext)
-    payload = context.version.payload
+    legacy_media = [
+        {
+            "storage_key": media.storage_key,
+            "original_name": media.original_name or "media.bin",
+            "size": media.size,
+            "media_type": media.media_type,
+            "payload": {},
+        }
+        for media in context.media
+    ]
+    payload, _ = personalize_operation(
+        context.version.payload,
+        legacy_media,
+        context.contact.first_name,
+    )
     kind = str(payload.get("type") or "text")
     async with AsyncExitStack() as stack:
         paths = [await stack.enter_async_context(storage.materialize(media)) for media in context.media]

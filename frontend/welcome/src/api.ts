@@ -2,6 +2,12 @@ export type Json = Record<string, unknown>;
 
 let csrfToken = "";
 
+export class ApiError extends Error {
+  constructor(public status: number, public detail: unknown) {
+    super(typeof detail === "string" ? detail : `HTTP ${status}`);
+  }
+}
+
 export function setCsrfToken(value: string) {
   csrfToken = value;
 }
@@ -16,7 +22,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const response = await fetch(`/api/v1${path}`, { ...options, headers, credentials: "same-origin" });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(String(payload.detail || `HTTP ${response.status}`));
+    throw new ApiError(response.status, payload.detail || `HTTP ${response.status}`);
   }
   return response.status === 204 ? ({} as T) : response.json();
 }
