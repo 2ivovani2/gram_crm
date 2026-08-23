@@ -17,6 +17,11 @@ JOIN_REQUEST_GREETINGS = Counter(
     "Join-request greeting flows by terminal result",
     ("result",),
 )
+JOIN_REQUEST_ACTIVATIONS = Counter(
+    "welcome_join_request_activations_total",
+    "Long join-request activation attempts by result",
+    ("result",),
+)
 DEPENDENCY_ERRORS = Counter(
     "welcome_dependency_errors_total",
     "Unavailable external dependencies used by Welcome workers",

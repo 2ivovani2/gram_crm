@@ -316,6 +316,47 @@ async def schedule_content_flow(
     return int(delivery_id)
 
 
+async def assigned_content_flow_timeline(
+    session: AsyncSession,
+    *,
+    bot_id: int,
+    channel_id: int,
+    kind: str = "welcome",
+) -> int | None:
+    """Return the selected published flow timeline without creating a delivery."""
+    assignment_exists = exists(
+        select(FlowChannelAssignment.id).where(
+            FlowChannelAssignment.flow_id == ContentFlow.id,
+            FlowChannelAssignment.channel_id == channel_id,
+        )
+    )
+    version = await session.scalar(
+        select(ContentFlowVersion)
+        .join(ContentFlow, ContentFlowVersion.flow_id == ContentFlow.id)
+        .where(
+            ContentFlow.bot_id == bot_id,
+            ContentFlow.kind == kind,
+            ContentFlow.is_active.is_(True),
+            ContentFlowVersion.status == "published",
+            or_(ContentFlow.assignment_mode == "all", assignment_exists),
+        )
+        .order_by((ContentFlow.assignment_mode == "selected").desc(), ContentFlow.id)
+        .limit(1)
+    )
+    if version is None:
+        return None
+    steps = list(
+        (
+            await session.scalars(
+                select(ContentStep)
+                .where(ContentStep.version_id == version.id)
+                .order_by(ContentStep.position, ContentStep.id)
+            )
+        ).all()
+    )
+    return flow_timeline_seconds(version, steps)
+
+
 async def claim_operation_batch(
     session: AsyncSession, *, worker_id: str, limit: int, lease_seconds: int
 ) -> list[DeliveryOperation]:

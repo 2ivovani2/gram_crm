@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: resolve(import.meta.dirname, "frontend/welcome"),
-  base: "./",
+  // All three SPAs are served behind path prefixes but share the same immutable
+  // asset root. Absolute URLs also keep deep activation links working without
+  // relying on a CSP-disallowed <base> element.
+  base: "/",
   publicDir: resolve(import.meta.dirname, "frontend/welcome/public"),
   plugins: [react()],
   build: {
@@ -14,6 +17,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         app: resolve(import.meta.dirname, "frontend/welcome/app.html"),
+        activate: resolve(import.meta.dirname, "frontend/welcome/activate.html"),
         admin: resolve(import.meta.dirname, "frontend/welcome/admin.html"),
       },
       output: {

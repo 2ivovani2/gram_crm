@@ -13,6 +13,7 @@ declare global {
         ready(): void;
         expand(): void;
         close(): void;
+        requestWriteAccess?(callback: (granted: boolean) => void): void;
         setHeaderColor?(color: string): void;
         setBackgroundColor?(color: string): void;
         setBottomBarColor?(color: string): void;
@@ -105,7 +106,7 @@ function EmptyState({ title, text, action, onAction }: { title: string; text: st
 }
 
 function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
-  const [data, setData] = useState<{version:{id:number;first_delay_seconds:number;timeline_seconds:number;join_request_compatible:boolean};steps:Step[]} | null>(null);
+  const [data, setData] = useState<{version:{id:number;first_delay_seconds:number;timeline_seconds:number;join_request_compatible:boolean;join_request_strategy:"direct"|"activation_required";join_request_explanation:string;auto_approve:boolean;channels_missing_invite_rights:string[]};steps:Step[]} | null>(null);
   const [error, setError] = useState("");
   const [dragged, setDragged] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
@@ -158,7 +159,7 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
     <header><div><span className="eyebrow">{flow.kind === "farewell" ? "FAREWELL" : "WELCOME"}</span><h2>{flow.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Закрыть">×</button></header>
     {error && <ErrorBox message={error}/>} {!data ? <div className="skeleton">Загружаем черновик…</div> : <>
       <div className="editor-meta"><span>Версия {data.version.id}</span><form onSubmit={saveFirstDelay}><label>Старт, ДД:ЧЧ:ММ:СС <input name="first_delay" defaultValue={formatDelay(data.version.first_delay_seconds)} inputMode="numeric"/></label><button className="button ghost">Сохранить</button></form><span>Заявка: {formatDelay(data.version.timeline_seconds)} / 00:00:04:00</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
-      {!data.version.join_request_compatible&&<div className="error" role="alert"><strong>Недоступно для ожидающих заявок</strong><span>Цепочка всё равно публикуется и работает при обычном вступлении. Auto-approve обработает заявку без приветствия по временному адресу.</span></div>}
+      <div className={data.version.join_request_compatible?"success":"error"} role="status"><strong>{data.version.join_request_compatible?"✅ До 4 минут — отправим до принятия заявки":"🔐 Больше 4 минут — потребуется разрешение пользователя"}</strong><span>{data.version.join_request_explanation}{!data.version.join_request_compatible&&` Служебное сообщение не является шагом цепочки. Автопринятие ${data.version.auto_approve?"включено: без подтверждения заявка будет принята у безопасной границы Telegram, но цепочка не запустится":"выключено: заявка останется ожидающей, а ссылка будет действовать 24 часа"}.`}</span>{!data.version.join_request_compatible&&<span>🧾 Пользователь увидит сообщение о полученной заявке и кнопки «Продолжить и вступить» / «Открыть бота».</span>}{!data.version.join_request_compatible&&data.version.auto_approve&&data.version.channels_missing_invite_rights.length>0&&<span>⚠️ Боту не хватает права приглашать пользователей: {data.version.channels_missing_invite_rights.join(", ")}.</span>}</div>
       {!data.steps.length&&<EmptyState title="В цепочке пока нет шагов" text="Добавьте первое сообщение ниже — оно станет началом приветственного сценария."/>}<div className="steps">{data.steps.map((step,index)=><article key={step.id} draggable={editing!==step.id} onDragStart={()=>setDragged(step.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged && dragged!==step.id){const ids=data.steps.map(i=>i.id);const from=ids.indexOf(dragged);ids.splice(from,1);ids.splice(index,0,dragged);void reorder(ids)}}}>
         <div className="step-index">{String(index+1).padStart(2,"0")}</div>
         {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={String(step.payload.text||step.payload.caption||"")} required/><label>Пауза, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue={formatDelay(step.delay_after_seconds)} inputMode="numeric"/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{String(step.payload.text || step.payload.caption || "Медиа-сообщение")}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {formatDelay(step.delay_after_seconds)}</span></div>}

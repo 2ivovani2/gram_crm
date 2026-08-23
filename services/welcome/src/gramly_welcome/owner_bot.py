@@ -86,7 +86,7 @@ from .learning import (
     open_help_session,
     schedule_learning_notifications,
 )
-from .models import ContentFlow, FlowChannelAssignment, ManagedBot, Owner, Payment, Plan
+from .models import Channel, ContentFlow, FlowChannelAssignment, ManagedBot, Owner, Payment, Plan
 from .owner_repository import (
     bot_channels,
     bot_media_keys,
@@ -881,6 +881,20 @@ async def send_chain_editor(
 ) -> None:
     async with session_factory() as session:
         snapshot = await draft_snapshot(session, owner.id, version_id)
+        bot = await session.get(ManagedBot, snapshot.flow.bot_id)
+        channel_query = select(Channel).where(
+            Channel.bot_id == snapshot.flow.bot_id,
+            Channel.is_active.is_(True),
+        )
+        if snapshot.flow.assignment_mode == "selected":
+            channel_query = channel_query.where(
+                Channel.id.in_(
+                    select(FlowChannelAssignment.channel_id).where(
+                        FlowChannelAssignment.flow_id == snapshot.flow.id
+                    )
+                )
+            )
+        assigned_channels = list((await session.scalars(channel_query)).all())
     is_farewell = snapshot.flow.kind == "farewell"
     lines = [
         "👋 <b>Редактор прощальной цепочки</b>"
@@ -893,21 +907,46 @@ async def send_chain_editor(
         lines.append("Лимит: до 5 сообщений и до 5 файлов.")
     else:
         timeline = flow_timeline_seconds(snapshot.version, snapshot.steps)
-        timing_marker = "✅" if timeline <= JOIN_REQUEST_MAX_TIMELINE_SECONDS else "⚠️"
-        lines.append(
-            f"{timing_marker} Время цепочки для заявки: "
-            f"<b>{_format_delay(timeline)} / 4 мин</b>."
-        )
-        lines.append(
-            "\nℹ️ При заявке Gramly пишет по временному адресу Telegram до её обработки. "
-            "При обычном вступлении без заявки человек по-прежнему должен заранее нажать /start."
-        )
-        if timeline > JOIN_REQUEST_MAX_TIMELINE_SECONDS:
+        if timeline <= JOIN_REQUEST_MAX_TIMELINE_SECONDS:
             lines.append(
-                "\n⚠️ Цепочка будет работать для обычных вступлений, но Telegram не даёт "
-                "достаточно времени отправить её пользователю с ожидающей заявкой. "
-                "Auto-approve продолжит работать без приветствия по временному адресу."
+                f"✅ <b>До 4 минут — отправим до принятия заявки.</b> "
+                f"Хронометраж: {_format_delay(timeline)}."
             )
+        else:
+            lines.append(
+                f"🔐 <b>Больше 4 минут — потребуется разрешение пользователя.</b> "
+                f"Хронометраж: {_format_delay(timeline)}."
+            )
+            lines.append(
+                "\nTelegram разрешает писать по заявке только несколько минут. Gramly сразу "
+                "попросит человека разрешить сообщения от вашего бота. После подтверждения бот "
+                "примет заявку и продолжит цепочку с настроенными интервалами. Это служебное "
+                "сообщение не является шагом цепочки."
+            )
+            auto_approve = bool(bot and bot.auto_approve)
+            lines.append(
+                "\n⚙️ Автопринятие: "
+                f"<b>{'включено' if auto_approve else 'выключено'}</b>. "
+                + (
+                    "Без подтверждения заявка будет принята у безопасной границы Telegram, "
+                    "но цепочка не запустится."
+                    if auto_approve
+                    else "Без подтверждения заявка останется ожидающей, а ссылка будет действовать 24 часа."
+                )
+            )
+            lines.append(
+                "\n🧾 <b>Служебное сообщение:</b>\n"
+                "«Ваша заявка в канал получена. Разрешите боту отправлять сообщения»\n"
+                "Кнопки: «✅ Продолжить и вступить» и «↗️ Открыть бота»."
+            )
+            missing_invite = [channel.title for channel in assigned_channels if not channel.can_invite_users]
+            if auto_approve and missing_invite:
+                preview = ", ".join(missing_invite[:3])
+                suffix = "…" if len(missing_invite) > 3 else ""
+                lines.append(
+                    "\n⚠️ Боту нужно право приглашать пользователей: "
+                    f"<b>{html.escape(preview)}{suffix}</b>."
+                )
     rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
@@ -1702,7 +1741,10 @@ async def requests_screen(callback: CallbackQuery, owner: Owner) -> None:
         f"📥 <b>Заявки · @{bot.username}</b>\n\n"
         f"Автопринятие: <b>{'включено' if bot.auto_approve else 'выключено'}</b>\n"
         f"Задержка: <b>{_format_delay(bot.approval_delay_seconds)}</b>\n"
-        f"Ожидают в системе: <b>{pending}</b>",
+        f"Ожидают в системе: <b>{pending}</b>\n\n"
+        "🔐 Для цепочек дольше 4 минут Gramly сначала попросит пользователя разрешить "
+        "сообщения. При включённом автопринятии заявка ждёт подтверждения до безопасной "
+        "границы Telegram, затем принимается даже без него.",
         reply_markup=keyboard,
     )
     await callback.answer()

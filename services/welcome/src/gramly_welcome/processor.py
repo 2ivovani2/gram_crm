@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -7,8 +8,16 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .flow_delivery import schedule_content_flow
+from .flow_delivery import assigned_content_flow_timeline, schedule_content_flow
+from .join_activation import (
+    activation_token_valid,
+    create_or_refresh_activation,
+    grant_activation,
+    load_activation_context,
+    long_activation_enabled,
+)
 from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS, message_window
+from .metrics import JOIN_REQUEST_ACTIVATIONS
 from .models import (
     Channel,
     ChannelMembership,
@@ -19,6 +28,7 @@ from .models import (
     GreetingDelivery,
     InboxEvent,
     JoinRequest,
+    JoinRequestActivation,
     ManagedBot,
     WelcomeMessageVersion,
 )
@@ -406,7 +416,33 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     if isinstance(message, dict) and isinstance(message.get("chat"), dict):
         chat = message["chat"]
         if chat.get("type") == "private":
-            await _upsert_contact(session, bot.id, user, bot_started=True)
+            contact_id = await _upsert_contact(session, bot.id, user, bot_started=True)
+            text = str(message.get("text") or "").strip()
+            parts = text.split(maxsplit=1)
+            if len(parts) == 2 and parts[0].split("@", 1)[0] == "/start" and parts[1].startswith("gramly_"):
+                token = parts[1][len("gramly_") :]
+                public_hex = token.split("_", 1)[0]
+                try:
+                    activation_public_id = uuid.UUID(hex=public_hex)
+                except ValueError:
+                    return
+                context = await load_activation_context(
+                    session, public_id=activation_public_id, for_update=True
+                )
+                if (
+                    context is not None
+                    and context.bot.id == bot.id
+                    and context.contact.id == contact_id
+                    and activation_token_valid(context.activation, context.bot, token)
+                ):
+                    was_granted = context.activation.granted_at is not None
+                    await grant_activation(
+                        session,
+                        context=context,
+                        event_key=f"join-request-activated:{context.request.telegram_update_id}",
+                    )
+                    if not was_granted:
+                        JOIN_REQUEST_ACTIVATIONS.labels("fallback_start").inc()
             return
 
     join = payload.get("chat_join_request")
@@ -418,10 +454,28 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             join.get("date"),
             now=now,
         )
-        due_at = min(
-            now + timedelta(seconds=bot.approval_delay_seconds),
-            approval_deadline,
-        ) if bot.auto_approve else None
+        greetings_enabled = await _join_request_greetings_enabled(session, bot.id)
+        timeline = (
+            await assigned_content_flow_timeline(
+                session, bot_id=bot.id, channel_id=channel_id
+            )
+            if greetings_enabled
+            else None
+        )
+        requires_activation = bool(
+            timeline is not None
+            and timeline > JOIN_REQUEST_MAX_TIMELINE_SECONDS
+            and await long_activation_enabled(session, bot.id)
+        )
+        contact = await session.get(Contact, contact_id)
+        needs_activation = requires_activation and (contact is None or not contact.bot_started)
+        due_at = (
+            approval_deadline
+            if needs_activation and bot.auto_approve
+            else min(now + timedelta(seconds=bot.approval_delay_seconds), approval_deadline)
+            if bot.auto_approve
+            else None
+        )
         request_id = await session.scalar(
             _join_request_upsert(
                 bot=bot,
@@ -438,10 +492,23 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                 now=now,
             )
         )
-        if (
-            join.get("user_chat_id") is not None
-            and await _join_request_greetings_enabled(session, bot.id)
-        ):
+        if needs_activation and join.get("user_chat_id") is not None:
+            await create_or_refresh_activation(
+                session,
+                request_id=int(request_id),
+                bot=bot,
+                contact_id=contact_id,
+                now=now,
+            )
+        elif requires_activation and contact is not None and contact.bot_started:
+            await schedule_content_flow(
+                session,
+                bot=bot,
+                channel_id=channel_id,
+                contact_id=contact_id,
+                event_key=f"join-request-known:{event.update_id}",
+            )
+        elif join.get("user_chat_id") is not None and greetings_enabled:
             delivery_id = await schedule_content_flow(
                 session,
                 bot=bot,
@@ -489,10 +556,19 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             new_active=new_status in active,
         )
         if joined:
-            await close_open_join_request(
+            open_request = await close_open_join_request(
                 session,
                 channel_id=channel_id,
                 contact_id=contact_id,
+            )
+            activation = (
+                await session.scalar(
+                    select(JoinRequestActivation).where(
+                        JoinRequestActivation.join_request_id == open_request.id
+                    )
+                )
+                if open_request is not None
+                else None
             )
             raw_invite = member.get("invite_link")
             invite_link = str(raw_invite.get("invite_link") or "") if isinstance(raw_invite, dict) else ""
@@ -504,7 +580,13 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                     telegram_update_id=event.update_id,
                     invite_link=invite_link,
                 )
-            await _schedule_greeting(session, bot, channel_id, contact_id, f"chat-member:{event.update_id}")
+            if activation is not None:
+                if activation.granted_at is None:
+                    activation.status = "approved_without_activation"
+            else:
+                await _schedule_greeting(
+                    session, bot, channel_id, contact_id, f"chat-member:{event.update_id}"
+                )
         elif left:
             await _schedule_departure(
                 session,
