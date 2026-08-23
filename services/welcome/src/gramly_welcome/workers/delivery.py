@@ -16,6 +16,7 @@ from aiogram.exceptions import (
 )
 from prometheus_client import start_http_server
 from redis.asyncio import Redis
+from sqlalchemy import update
 
 from ..commercial import access_for_owner
 from ..config import Settings, get_settings
@@ -28,14 +29,21 @@ from ..flow_delivery import (
     finish_operation,
     load_operation_context,
 )
+from ..join_activation import (
+    claim_activation_batch,
+    defer_activation,
+    finish_activation_message,
+    load_activation_context,
+)
 from ..join_request_policy import approval_action, safe_approval_deadline
 from ..metrics import (
     DELIVERY_ATTEMPTS,
     DEPENDENCY_ERRORS,
+    JOIN_REQUEST_ACTIVATIONS,
     ROTATION_RECOMMENDATIONS,
     WORKER_ACTIVE,
 )
-from ..models import FlowDelivery
+from ..models import FlowDelivery, JoinRequestActivation
 from ..owner_bot import _one_button, interface_bot, interface_dispatcher
 from ..owner_repository import complete_album_notification, finalize_due_albums
 from ..rate_limit import RateLimitUnavailable, TelegramRateLimiter
@@ -65,6 +73,7 @@ from ..telegram_delivery import (
     create_rotation_invite_link,
     send_delivery_operation,
     send_greeting,
+    send_join_activation,
     send_rotation_recommendation,
 )
 
@@ -73,6 +82,91 @@ logger = logging.getLogger(__name__)
 
 def _retry_delay(attempts: int) -> int:
     return int(min(300, 2 ** min(attempts, 8)))
+
+
+async def _process_activation(
+    activation_id: int,
+    worker_id: str,
+    settings: Settings,
+    limiter: TelegramRateLimiter,
+    keyring: TokenKeyring,
+) -> None:
+    async with session_factory() as session:
+        context = await load_activation_context(session, activation_id=activation_id)
+    if context is None:
+        async with session_factory() as session:
+            await finish_activation_message(
+                session, activation_id, worker_id, success=False, error="activation_context_missing"
+            )
+        JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
+        return
+    now = datetime.now(UTC)
+    if (
+        context.request.user_chat_id is None
+        or context.request.message_window_expires_at is None
+        or context.request.message_window_expires_at <= now
+    ):
+        async with session_factory() as session:
+            await finish_activation_message(
+                session, activation_id, worker_id, success=False, error="temporary_chat_expired"
+            )
+        JOIN_REQUEST_ACTIVATIONS.labels("expired").inc()
+        return
+    try:
+        allowed = await limiter.acquire(context.bot.id, context.request.user_chat_id)
+    except RateLimitUnavailable:
+        DEPENDENCY_ERRORS.labels("valkey").inc()
+        allowed, delay, reason = False, 5, "valkey_unavailable"
+    else:
+        delay, reason = 1, "rate_limited"
+    if not allowed:
+        async with session_factory() as session:
+            await defer_activation(
+                session, activation_id, worker_id, delay_seconds=delay, error=reason
+            )
+        JOIN_REQUEST_ACTIVATIONS.labels("deferred").inc()
+        return
+    try:
+        await send_join_activation(
+            context, keyring, activation_base_url=settings.activation_base_url
+        )
+    except TelegramRetryAfter as exc:
+        async with session_factory() as session:
+            await defer_activation(
+                session,
+                activation_id,
+                worker_id,
+                delay_seconds=max(1, int(exc.retry_after)),
+                error="telegram_429",
+            )
+        JOIN_REQUEST_ACTIVATIONS.labels("retry").inc()
+    except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError, ValueError) as exc:
+        async with session_factory() as session:
+            await finish_activation_message(
+                session, activation_id, worker_id, success=False, error=type(exc).__name__
+            )
+        JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
+    except (TelegramAPIError, OSError) as exc:
+        if context.activation.attempts >= settings.max_attempts:
+            async with session_factory() as session:
+                await finish_activation_message(
+                    session, activation_id, worker_id, success=False, error=type(exc).__name__
+                )
+            JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
+        else:
+            async with session_factory() as session:
+                await defer_activation(
+                    session,
+                    activation_id,
+                    worker_id,
+                    delay_seconds=_retry_delay(context.activation.attempts),
+                    error=type(exc).__name__,
+                )
+            JOIN_REQUEST_ACTIVATIONS.labels("retry").inc()
+    else:
+        async with session_factory() as session:
+            await finish_activation_message(session, activation_id, worker_id, success=True)
+        JOIN_REQUEST_ACTIVATIONS.labels("sent").inc()
 
 
 async def _process_operation(
@@ -468,6 +562,16 @@ async def _process_join_request(
     else:
         async with session_factory() as session:
             await finish_join_request(session, request_id, worker_id, success=True)
+            await session.execute(
+                update(JoinRequestActivation)
+                .where(
+                    JoinRequestActivation.join_request_id == request_id,
+                    JoinRequestActivation.granted_at.is_(None),
+                )
+                .values(status="approved_without_activation")
+            )
+            await session.commit()
+        JOIN_REQUEST_ACTIVATIONS.labels("approved_without_activation").inc()
         DELIVERY_ATTEMPTS.labels("approved").inc()
 
 
@@ -648,13 +752,20 @@ async def serve() -> None:
                     lease_seconds=settings.lease_seconds,
                 )
             async with session_factory() as session:
+                activations = await claim_activation_batch(
+                    session,
+                    worker_id=worker_id,
+                    limit=settings.worker_batch_size,
+                    lease_seconds=settings.lease_seconds,
+                )
+            async with session_factory() as session:
                 rotations = await claim_rotation_batch(
                     session,
                     worker_id=worker_id,
                     limit=settings.worker_batch_size,
                     lease_seconds=settings.lease_seconds,
                 )
-            if not operations and not deliveries and not join_requests and not rotations:
+            if not operations and not deliveries and not join_requests and not activations and not rotations:
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=settings.worker_poll_seconds)
                 except TimeoutError:
@@ -672,6 +783,12 @@ async def serve() -> None:
                 if stopping.is_set():
                     break
                 await _process_join_request(request.id, worker_id, settings, limiter, keyring)
+            for activation in activations:
+                if stopping.is_set():
+                    break
+                await _process_activation(
+                    activation.id, worker_id, settings, limiter, keyring
+                )
             for recommendation in rotations:
                 if stopping.is_set():
                     break

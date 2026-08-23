@@ -1122,6 +1122,39 @@ class JoinRequest(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class JoinRequestActivation(Base):
+    __tablename__ = "join_request_activation"
+    __table_args__ = (
+        UniqueConstraint("join_request_id", name="uq_join_request_activation_request"),
+        UniqueConstraint("public_id", name="uq_join_request_activation_public"),
+        CheckConstraint(
+            "status IN ('pending','processing','sent','granted','expired','failed','approved_without_activation')",
+            name="ck_join_request_activation_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    join_request_id: Mapped[int] = mapped_column(
+        ForeignKey("join_request.id", ondelete="CASCADE"), index=True
+    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    token_digest: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(40), default="pending", index=True)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flow_delivery.id", ondelete="SET NULL"), index=True
+    )
+    error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class EventLog(Base):
     __tablename__ = "event_log"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

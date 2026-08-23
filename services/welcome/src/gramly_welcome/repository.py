@@ -19,6 +19,7 @@ from .models import (
     InboxEvent,
     InboxSource,
     JoinRequest,
+    JoinRequestActivation,
     ManagedBot,
     OwnerNotification,
     QueueStatus,
@@ -481,23 +482,26 @@ async def close_open_join_request(
     *,
     channel_id: int,
     contact_id: int,
-) -> None:
+) -> JoinRequest | None:
     """Close a pending request after Telegram confirms actual membership."""
-    await session.execute(
-        update(JoinRequest)
+    request = await session.scalar(
+        select(JoinRequest)
         .where(
             JoinRequest.channel_id == channel_id,
             JoinRequest.contact_id == contact_id,
-            JoinRequest.status.in_(("pending", "scheduled", "processing")),
+            JoinRequest.status.in_(("pending", "scheduled", "processing", "approved")),
         )
-        .values(
-            status="joined",
-            processed_at=datetime.now(UTC),
-            lease_owner=None,
-            lease_expires_at=None,
-            error="",
-        )
+        .order_by(JoinRequest.created_at.desc(), JoinRequest.id.desc())
+        .with_for_update()
     )
+    if request is None:
+        return None
+    request.status = "joined"
+    request.processed_at = datetime.now(UTC)
+    request.lease_owner = None
+    request.lease_expires_at = None
+    request.error = ""
+    return request
 
 
 async def finish_join_request(
@@ -565,6 +569,9 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
         "approvals": select(func.count(JoinRequest.id), func.min(JoinRequest.due_at)).where(
             JoinRequest.status.in_(("scheduled", "processing"))
         ),
+        "join_activations": select(
+            func.count(JoinRequestActivation.id), func.min(JoinRequestActivation.due_at)
+        ).where(JoinRequestActivation.status.in_(("pending", "processing"))),
         "content_operations": select(
             func.count(DeliveryOperation.id), func.min(DeliveryOperation.due_at)
         ).where(DeliveryOperation.status.in_(("scheduled", "retry", "processing"))),
@@ -602,6 +609,15 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
                 await session.scalar(
                     select(func.count(OwnerNotification.id)).where(
                         OwnerNotification.status == "failed"
+                    )
+                )
+                or 0
+            )
+        if queue == "join_activations":
+            dead = int(
+                await session.scalar(
+                    select(func.count(JoinRequestActivation.id)).where(
+                        JoinRequestActivation.status == "failed"
                     )
                 )
                 or 0

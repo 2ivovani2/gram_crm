@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 
 from .config import get_settings
 from .db import session_factory
@@ -13,6 +13,7 @@ from .models import (
     IdempotencyRecord,
     InboxEvent,
     InboxSource,
+    JoinRequestActivation,
     QueueStatus,
     WebSession,
 )
@@ -65,6 +66,14 @@ async def maintain() -> None:
             )
             await session.execute(delete(WebSession).where(WebSession.expires_at < now))
             await session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.expires_at < now))
+            await session.execute(
+                update(JoinRequestActivation)
+                .where(
+                    JoinRequestActivation.status.in_(("sent", "approved_without_activation")),
+                    JoinRequestActivation.expires_at < now,
+                )
+                .values(status="expired", error="activation_expired")
+            )
     async with session_factory() as session:
         await purge_expired_tip_sessions(session, now=now)
 

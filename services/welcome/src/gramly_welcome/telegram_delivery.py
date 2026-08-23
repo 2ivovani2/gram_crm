@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
@@ -17,10 +18,12 @@ from aiogram.types import (
     KeyboardButton,
     MessageEntity,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
+from .join_activation import ActivationContext, build_activation_token
 from .personalization import personalize_operation
 from .repository import DeliveryContext, JoinRequestContext
 from .rotation import RotationContext, RotationDestination
@@ -58,6 +61,66 @@ async def send_rotation_recommendation(
             "Возможно, Вам будут интересны эти каналы:",
             reply_markup=keyboard,
         )
+
+
+async def send_join_activation(
+    context: ActivationContext,
+    keyring: TokenKeyring,
+    *,
+    activation_base_url: str,
+) -> None:
+    if context.request.user_chat_id is None:
+        raise ValueError("join request has no temporary chat")
+    token = build_activation_token(context.activation.public_id, context.bot.path_secret)
+    activation_url = (
+        f"{activation_base_url.rstrip('/')}/{context.bot.public_id}/{token}"
+    )
+    fallback_url = f"https://t.me/{context.bot.username}?start=gramly_{token}"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Продолжить и вступить",
+                    web_app=WebAppInfo(url=activation_url),
+                )
+            ],
+            [InlineKeyboardButton(text="↗️ Открыть бота", url=fallback_url)],
+        ]
+    )
+    message = (
+        f"👋 <b>Ваша заявка в «{context.channel.title}» получена.</b>\n\n"
+        "Чтобы бот мог продолжить знакомство после вступления, разрешите ему "
+        "отправлять сообщения. Это займёт несколько секунд."
+    )
+    bot_token = keyring.decrypt(context.bot.token_ciphertext)
+    async with Bot(token=bot_token) as bot:
+        try:
+            await bot.send_message(
+                context.request.user_chat_id,
+                message,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+        except TelegramBadRequest:
+            # Telegram may reject Web App buttons until the customer configures
+            # the domain for their bot. Keep activation possible through the
+            # bot-native deep link instead of dropping the join request.
+            await bot.send_message(
+                context.request.user_chat_id,
+                message,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Продолжить и вступить", url=fallback_url)]
+                    ]
+                ),
+            )
+
+
+async def probe_persistent_write(context: ActivationContext, keyring: TokenKeyring) -> None:
+    bot_token = keyring.decrypt(context.bot.token_ciphertext)
+    async with Bot(token=bot_token) as bot:
+        await bot.send_chat_action(context.contact.telegram_id, "typing")
 
 
 def _entities(raw: list[dict[str, Any]] | None) -> list[MessageEntity] | None:

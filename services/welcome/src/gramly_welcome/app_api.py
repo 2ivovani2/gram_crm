@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.types import LabeledPrice
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -29,6 +30,7 @@ from .content_service import (
     set_flow_assignments,
     set_step_delay,
 )
+from .crypto import TokenDecryptionError, TokenKeyring
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_dependency
 from .delays import MAX_DELAY_SECONDS
@@ -40,7 +42,15 @@ from .finance import (
     request_withdrawal,
 )
 from .idempotency import IdempotencyConflictError, claim_request, store_response
+from .join_activation import (
+    ActivationContext,
+    activation_token_valid,
+    grant_activation,
+    load_activation_context,
+    long_activation_enabled,
+)
 from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
+from .metrics import JOIN_REQUEST_ACTIVATIONS
 from .models import (
     Channel,
     Contact,
@@ -64,6 +74,7 @@ from .models import (
 from .required_channel import check_required_membership
 from .rotation import set_priority_channel
 from .telegram_auth import TelegramInitDataError, verify_init_data
+from .telegram_delivery import probe_persistent_write
 from .web_sessions import (
     AuthenticatedWebSession,
     authenticate_web_session,
@@ -84,6 +95,12 @@ class TelegramSessionRequest(BaseModel):
 class TelegramSessionResponse(BaseModel):
     csrf_token: str
     expires_at: datetime
+
+
+class ActivationSessionRequest(BaseModel):
+    bot_public_id: uuid.UUID
+    token: str = Field(min_length=32, max_length=128)
+    init_data: str = Field(min_length=1, max_length=16_384)
 
 
 class WithdrawalRequest(BaseModel):
@@ -118,6 +135,95 @@ class DraftStepContentRequest(BaseModel):
 @router.get("/public-config")
 async def public_config(settings: SettingsDep) -> dict[str, str]:
     return {"interface_bot_username": settings.interface_bot_username.lstrip("@")}
+
+
+async def _verified_activation(
+    payload: ActivationSessionRequest,
+    session: AsyncSession,
+    settings: Settings,
+) -> ActivationContext:
+    try:
+        activation_public_id = uuid.UUID(hex=payload.token.split("_", 1)[0])
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Активация не найдена") from exc
+    context = await load_activation_context(session, public_id=activation_public_id)
+    if (
+        context is None
+        or context.bot.public_id != payload.bot_public_id
+        or not activation_token_valid(context.activation, context.bot, payload.token)
+        or not await long_activation_enabled(session, context.bot.id)
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Активация не найдена")
+    if context.activation.expires_at <= datetime.now(UTC):
+        raise HTTPException(status.HTTP_410_GONE, "Ссылка активации истекла")
+    try:
+        bot_token = TokenKeyring.parse(settings.token_encryption_keys).decrypt(
+            context.bot.token_ciphertext
+        )
+        verified = verify_init_data(
+            payload.init_data,
+            bot_token,
+            max_age_seconds=settings.mini_app_auth_max_age_seconds,
+        )
+    except (TelegramInitDataError, TokenDecryptionError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Telegram не подтвердил пользователя") from exc
+    if verified.user.id != context.contact.telegram_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Эта заявка принадлежит другому пользователю")
+    return context
+
+
+@router.post("/activation/session")
+async def activation_session(
+    payload: ActivationSessionRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> dict[str, object]:
+    context = await _verified_activation(payload, session, settings)
+    return {
+        "status": context.activation.status,
+        "channel_title": context.channel.title,
+        "bot_username": context.bot.username,
+        "fallback_url": f"https://t.me/{context.bot.username}?start=gramly_{payload.token}",
+        "already_granted": context.activation.granted_at is not None,
+    }
+
+
+@router.post("/activation/confirm")
+async def confirm_activation(
+    payload: ActivationSessionRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> dict[str, object]:
+    context = await _verified_activation(payload, session, settings)
+    if context.activation.granted_at is not None:
+        return {"status": "granted", "delivery_id": context.activation.delivery_id}
+    keyring = TokenKeyring.parse(settings.token_encryption_keys)
+    try:
+        await probe_persistent_write(context, keyring)
+    except TelegramForbiddenError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Telegram ещё не разрешил боту отправлять сообщения",
+        ) from exc
+    except TelegramAPIError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Telegram временно недоступен — попробуйте ещё раз",
+        ) from exc
+    await session.commit()
+    locked_context = await load_activation_context(
+        session, public_id=context.activation.public_id, for_update=True
+    )
+    if locked_context is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Активация не найдена")
+    delivery_id = await grant_activation(
+        session,
+        context=locked_context,
+        event_key=f"join-request-activated:{locked_context.request.telegram_update_id}",
+    )
+    await session.commit()
+    JOIN_REQUEST_ACTIVATIONS.labels("granted").inc()
+    return {"status": "granted", "delivery_id": delivery_id}
 
 
 @dataclass(frozen=True)
@@ -485,16 +591,44 @@ async def flow_draft(flow_id: int, user: CurrentUserDep, session: SessionDep) ->
                 "size": attachment.size,
             }
         )
+    timeline_seconds = flow_timeline_seconds(snapshot.version, snapshot.steps)
+    bot = await session.get(ManagedBot, snapshot.flow.bot_id)
+    channel_query = select(Channel).where(
+        Channel.bot_id == snapshot.flow.bot_id,
+        Channel.is_active.is_(True),
+    )
+    if snapshot.flow.assignment_mode == "selected":
+        channel_query = channel_query.where(
+            Channel.id.in_(
+                select(FlowChannelAssignment.channel_id).where(
+                    FlowChannelAssignment.flow_id == snapshot.flow.id
+                )
+            )
+        )
+    assigned_channels = list((await session.scalars(channel_query)).all())
+    channels_missing_invite_rights = [
+        channel.title for channel in assigned_channels if not channel.can_invite_users
+    ]
     return {
         "flow": {"id": snapshot.flow.id, "name": snapshot.flow.name, "kind": snapshot.flow.kind},
         "version": {
             "id": snapshot.version.id,
             "number": snapshot.version.version,
             "first_delay_seconds": snapshot.version.first_delay_seconds,
-            "timeline_seconds": flow_timeline_seconds(snapshot.version, snapshot.steps),
-            "join_request_compatible": flow_timeline_seconds(
-                snapshot.version, snapshot.steps
-            ) <= JOIN_REQUEST_MAX_TIMELINE_SECONDS,
+            "timeline_seconds": timeline_seconds,
+            "join_request_compatible": timeline_seconds <= JOIN_REQUEST_MAX_TIMELINE_SECONDS,
+            "join_request_strategy": (
+                "direct"
+                if timeline_seconds <= JOIN_REQUEST_MAX_TIMELINE_SECONDS
+                else "activation_required"
+            ),
+            "join_request_explanation": (
+                "Отправим цепочку до принятия заявки."
+                if timeline_seconds <= JOIN_REQUEST_MAX_TIMELINE_SECONDS
+                else "Сначала попросим пользователя разрешить сообщения, затем запустим полную цепочку."
+            ),
+            "auto_approve": bool(bot and bot.auto_approve),
+            "channels_missing_invite_rights": channels_missing_invite_rights,
         },
         "steps": [
             {
