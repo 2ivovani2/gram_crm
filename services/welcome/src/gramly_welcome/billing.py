@@ -5,15 +5,60 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .commercial import feature_flag_enabled, payment_method_ready
-from .crypto_pay import CryptoInvoice, CryptoPayClient
-from .finance import FinanceError, SettlementResult, create_payment, settle_payment
-from .models import Owner, Payment, PaymentEvent, Plan, Subscription, SubscriptionReminder
+from .crypto_pay import CryptoInvoice, CryptoPayClient, CryptoPayError
+from .finance import (
+    PAYMENT_SETTLEMENT_GRACE,
+    FinanceError,
+    SettlementResult,
+    create_payment,
+    settle_payment,
+)
+from .models import (
+    FinancialLedgerEntry,
+    Owner,
+    Payment,
+    PaymentEvent,
+    Plan,
+    Subscription,
+    SubscriptionReminder,
+)
+
+PAYMENT_RECONCILE_MAX_BACKOFF_SECONDS = 900
+
+
+async def _reusable_checkout(
+    session: AsyncSession,
+    *,
+    owner_id: int,
+    plan_id: int,
+    provider: str,
+    surface: str,
+) -> Payment | None:
+    now = datetime.now(UTC)
+    return cast(
+        Payment | None,
+        await session.scalar(
+            select(Payment)
+            .where(
+                Payment.owner_id == owner_id,
+                Payment.plan_id == plan_id,
+                Payment.provider == provider,
+                Payment.status == "created",
+                Payment.expires_at > now,
+                Payment.invoice_url != "",
+                Payment.provider_payload["surface"].astext == surface,
+            )
+            .order_by(Payment.id.desc())
+            .limit(1)
+        ),
+    )
 
 
 async def business_plan(session: AsyncSession) -> Plan:
@@ -32,6 +77,15 @@ async def create_crypto_checkout(
     plan = await business_plan(session)
     if not payment_method_ready(plan, "crypto_pay") or plan.price_rub is None:
         raise FinanceError("Crypto Pay price is not configured")
+    reusable = await _reusable_checkout(
+        session,
+        owner_id=owner_id,
+        plan_id=plan.id,
+        provider="crypto_pay",
+        surface=surface,
+    )
+    if reusable is not None:
+        return reusable
     payment = await create_payment(
         session,
         owner_id=owner_id,
@@ -49,17 +103,32 @@ async def create_crypto_checkout(
     payment.invoice_url = (
         invoice.mini_app_invoice_url if surface == "mini_app" else invoice.bot_invoice_url
     )
-    payment.provider_payload = {"currency_type": invoice.currency_type, "fiat": invoice.fiat}
+    payment.provider_payload = {
+        "currency_type": invoice.currency_type,
+        "fiat": invoice.fiat,
+        "surface": surface,
+    }
     await session.commit()
     return payment
 
 
-async def create_stars_checkout(session: AsyncSession, owner_id: int) -> Payment:
+async def create_stars_checkout(
+    session: AsyncSession, owner_id: int, *, surface: str = "bot"
+) -> Payment:
     if not await feature_flag_enabled(session, "telegram_stars_checkout"):
         raise FinanceError("Telegram Stars checkout is disabled")
     plan = await business_plan(session)
     if not payment_method_ready(plan, "telegram_stars") or plan.referral_base_rub is None:
         raise FinanceError("Telegram Stars price is not configured")
+    reusable = await _reusable_checkout(
+        session,
+        owner_id=owner_id,
+        plan_id=plan.id,
+        provider="telegram_stars",
+        surface=surface,
+    )
+    if reusable is not None:
+        return reusable
     payment = await create_payment(
         session,
         owner_id=owner_id,
@@ -69,8 +138,99 @@ async def create_stars_checkout(session: AsyncSession, owner_id: int) -> Payment
         original_amount=Decimal(plan.price_xtr or 0),
         original_currency="XTR",
     )
+    payment.provider_payload = {"surface": surface}
     await session.commit()
     return payment
+
+
+async def reconcile_one_expired_payment(
+    session: AsyncSession, client: CryptoPayClient | None
+) -> tuple[str, str] | None:
+    """Expire one checkout safely while serialising concurrent billing workers."""
+
+    now = datetime.now(UTC)
+    payment = await session.scalar(
+        select(Payment)
+        .where(
+            Payment.status == "created",
+            Payment.expires_at <= now,
+            or_(Payment.reconcile_after.is_(None), Payment.reconcile_after <= now),
+        )
+        .order_by(Payment.expires_at, Payment.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if payment is None:
+        return None
+    if payment.provider == "crypto_pay" and payment.provider_invoice_id:
+        if client is None:
+            # Never expire a Crypto Pay invoice without consulting the provider.
+            # A missing runtime secret is an operational outage, not proof that the
+            # customer did not pay.
+            payment.reconcile_attempts += 1
+            payment.reconcile_after = now + timedelta(minutes=5)
+            await session.commit()
+            return payment.provider, "retry"
+        try:
+            invoice = await client.get_invoice(payment.provider_invoice_id)
+            if invoice.status == "paid":
+                await verify_and_settle_crypto_invoice(
+                    session, client, payment.provider_invoice_id, invoice=invoice
+                )
+                return payment.provider, "settled"
+            if invoice.status not in {"expired", "failed"}:
+                payment.reconcile_attempts += 1
+                payment.reconcile_after = now + timedelta(seconds=30)
+                payment.provider_payload = safe_invoice_snapshot(invoice)
+                await session.commit()
+                return payment.provider, "pending"
+            payment.provider_payload = safe_invoice_snapshot(invoice)
+        except CryptoPayError:
+            payment.reconcile_attempts += 1
+            delay = min(
+                PAYMENT_RECONCILE_MAX_BACKOFF_SECONDS,
+                15 * (2 ** min(payment.reconcile_attempts - 1, 6)),
+            )
+            payment.reconcile_after = now + timedelta(seconds=delay)
+            await session.commit()
+            return payment.provider, "retry"
+    payment.status = "expired"
+    payment.reconcile_after = None
+    await session.commit()
+    return payment.provider, "expired"
+
+
+async def purge_one_terminal_payment(session: AsyncSession) -> str | None:
+    """Delete one safely-retained dead checkout without touching financial history."""
+
+    cutoff = datetime.now(UTC) - PAYMENT_SETTLEMENT_GRACE
+    payment = await session.scalar(
+        select(Payment)
+        .where(
+            Payment.status.in_(("expired", "failed")),
+            Payment.expires_at <= cutoff,
+            ~exists(
+                select(FinancialLedgerEntry.id).where(
+                    FinancialLedgerEntry.payment_id == Payment.id
+                )
+            ),
+            ~exists(
+                select(Subscription.id).where(
+                    Payment.provider_invoice_id.is_not(None),
+                    Subscription.external_reference == Payment.provider_invoice_id,
+                )
+            ),
+        )
+        .order_by(Payment.expires_at, Payment.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if payment is None:
+        return None
+    provider = payment.provider
+    await session.delete(payment)
+    await session.commit()
+    return provider
 
 
 def payment_token_from_payload(payload: str) -> uuid.UUID:
@@ -81,9 +241,13 @@ def payment_token_from_payload(payload: str) -> uuid.UUID:
 
 
 async def verify_and_settle_crypto_invoice(
-    session: AsyncSession, client: CryptoPayClient, invoice_id: str
+    session: AsyncSession,
+    client: CryptoPayClient,
+    invoice_id: str,
+    *,
+    invoice: CryptoInvoice | None = None,
 ) -> SettlementResult:
-    invoice = await client.get_invoice(invoice_id)
+    invoice = invoice or await client.get_invoice(invoice_id)
     if invoice.status != "paid" or invoice.currency_type != "fiat" or invoice.fiat != "RUB":
         raise FinanceError("Invoice is not a paid RUB invoice")
     token = payment_token_from_payload(invoice.payload)

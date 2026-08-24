@@ -67,7 +67,7 @@ class CryptoPayClient:
                 "payload": payload,
                 "description": description[:1024],
                 "allow_anonymous": False,
-                "expires_in": 3600,
+                "expires_in": 900,
             },
         )
         if not isinstance(result, dict):

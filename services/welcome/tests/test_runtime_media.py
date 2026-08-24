@@ -9,7 +9,13 @@ from aiogram import Bot
 from aiogram.types import Message, MessageEntity
 
 from gramly_welcome.owner_bot import _downloadable, _native_sticker_metadata, serialize_message
-from gramly_welcome.telegram_delivery import _native_sticker_cache, resolve_native_sticker
+from gramly_welcome.storage import ObjectStorage
+from gramly_welcome.telegram_delivery import (
+    _native_sticker_cache,
+    observe_custom_emoji_delivery,
+    resolve_native_sticker,
+    send_compiled_operation,
+)
 
 
 @pytest.mark.parametrize(
@@ -69,6 +75,47 @@ def test_serialize_message_keeps_custom_emoji_id_and_utf16_offsets() -> None:
             "custom_emoji_id": "5368324170671202286",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_compiled_text_disables_default_parse_mode_and_preserves_custom_emoji() -> None:
+    entity = MessageEntity(
+        type="custom_emoji",
+        offset=0,
+        length=2,
+        custom_emoji_id="5368324170671202286",
+    )
+    calls: dict[str, object] = {}
+
+    async def send_message(_chat_id: int, _text: str, **kwargs: object) -> Message:
+        calls.update(kwargs)
+        return cast(Message, SimpleNamespace(entities=[entity], caption_entities=None))
+
+    bot = cast(Bot, SimpleNamespace(token="123:secret", send_message=send_message))
+    result = await send_compiled_operation(
+        bot,
+        42,
+        "text",
+        {
+            "text": "✨",
+            "entities": [entity.model_dump(mode="json", exclude_none=True)],
+        },
+        [],
+        cast(ObjectStorage, SimpleNamespace()),
+    )
+
+    assert calls["parse_mode"] is None
+    assert result.preserved
+    assert result.requested == 1
+
+
+def test_custom_emoji_downgrade_is_detected_from_telegram_response() -> None:
+    bot = cast(Bot, SimpleNamespace(token="123:secret"))
+    message = cast(Message, SimpleNamespace(entities=[], caption_entities=None))
+
+    result = observe_custom_emoji_delivery(bot, ["premium-1"], [message])
+
+    assert result.downgraded
 
 
 def test_native_sticker_metadata_keeps_premium_identity() -> None:

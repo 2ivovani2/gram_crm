@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from aiogram.types import (
     InputMediaPhoto,
     InputMediaVideo,
     KeyboardButton,
+    Message,
     MessageEntity,
     ReplyKeyboardMarkup,
     WebAppInfo,
@@ -26,7 +28,12 @@ from aiogram.types import (
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
 from .join_activation import ActivationContext, build_activation_token
-from .metrics import PREMIUM_MEDIA
+from .metrics import (
+    CUSTOM_EMOJI_DOWNGRADED,
+    CUSTOM_EMOJI_PRESERVED,
+    CUSTOM_EMOJI_TELEGRAM_ERROR,
+    PREMIUM_MEDIA,
+)
 from .personalization import personalize_operation
 from .repository import DeliveryContext, JoinRequestContext
 from .rotation import RotationContext, RotationDestination
@@ -135,6 +142,58 @@ class _OperationMedia:
     storage_key: str
     original_name: str
     size: int
+
+
+@dataclass(frozen=True)
+class PremiumEmojiDeliveryResult:
+    requested: int = 0
+    preserved: bool = True
+
+    @property
+    def downgraded(self) -> bool:
+        return self.requested > 0 and not self.preserved
+
+
+_premium_emoji_capability_cache: dict[str, bool] = {}
+
+
+def _custom_emoji_ids(entities: Any) -> list[str]:
+    if not isinstance(entities, list):
+        return []
+    return [
+        str(entity.get("custom_emoji_id"))
+        for entity in entities
+        if isinstance(entity, dict)
+        and entity.get("type") == "custom_emoji"
+        and entity.get("custom_emoji_id")
+    ]
+
+
+def _sent_custom_emoji_ids(messages: list[Message]) -> list[str]:
+    result: list[str] = []
+    for message in messages:
+        for entity in [*(message.entities or []), *(message.caption_entities or [])]:
+            if str(entity.type) == "custom_emoji" and entity.custom_emoji_id:
+                result.append(entity.custom_emoji_id)
+    return result
+
+
+def observe_custom_emoji_delivery(
+    bot: Bot, requested_ids: list[str], messages: list[Message]
+) -> PremiumEmojiDeliveryResult:
+    if not requested_ids:
+        return PremiumEmojiDeliveryResult()
+    preserved = Counter(requested_ids) <= Counter(_sent_custom_emoji_ids(messages))
+    if preserved:
+        _premium_emoji_capability_cache[_bot_fingerprint(bot)] = True
+        CUSTOM_EMOJI_PRESERVED.inc()
+    else:
+        # Only cache a positively confirmed capability. A downgrade may be
+        # transient (or caused by Telegram configuration changing), so the next
+        # delivery must verify the actual response again.
+        _premium_emoji_capability_cache.pop(_bot_fingerprint(bot), None)
+        CUSTOM_EMOJI_DOWNGRADED.inc()
+    return PremiumEmojiDeliveryResult(len(requested_ids), preserved)
 
 
 _NATIVE_STICKER_CACHE_TTL = 3600.0
@@ -266,7 +325,7 @@ async def send_compiled_operation(
     storage: ObjectStorage,
     *,
     first_name: str | None = None,
-) -> None:
+) -> PremiumEmojiDeliveryResult:
     """Send one compiled operation with either a client bot or the preview bot."""
     if first_name is not None:
         payload, raw_media = personalize_operation(payload, raw_media, first_name)
@@ -275,7 +334,7 @@ async def send_compiled_operation(
         native_file_id = await resolve_native_sticker(bot, raw_media[0])
         if native_file_id:
             await bot.send_sticker(chat_id, native_file_id, reply_markup=markup)
-            return
+            return PremiumEmojiDeliveryResult()
     media_objects = [
         _OperationMedia(
             storage_key=str(item["storage_key"]),
@@ -309,23 +368,45 @@ async def send_compiled_operation(
                     "media": upload,
                     "caption": item_payload.get("caption"),
                     "caption_entities": _entities(item_payload.get("caption_entities")),
+                    "parse_mode": None,
                 }
                 if media_type in {"photo", "video"}:
                     album_kwargs["has_spoiler"] = bool(item_payload.get("has_spoiler"))
                 album.append(media_class(**album_kwargs))
             if len(album) < 2:
                 raise ValueError("Telegram media groups require at least two items")
-            await bot.send_media_group(chat_id, media=album)
-            return
+            requested = [
+                emoji_id
+                for item in raw_media
+                for emoji_id in _custom_emoji_ids(
+                    item.get("payload", {}).get("caption_entities")
+                    if isinstance(item.get("payload"), dict)
+                    else None
+                )
+            ]
+            try:
+                sent_album = await bot.send_media_group(chat_id, media=album)
+            except TelegramAPIError:
+                if requested:
+                    CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
+                raise
+            return observe_custom_emoji_delivery(bot, requested, sent_album)
         kind = operation_type
         if kind == "text":
-            await bot.send_message(
-                chat_id,
-                str(payload.get("text") or ""),
-                entities=_entities(payload.get("entities")),
-                reply_markup=markup,
-            )
-            return
+            requested = _custom_emoji_ids(payload.get("entities"))
+            try:
+                sent_message = await bot.send_message(
+                    chat_id,
+                    str(payload.get("text") or ""),
+                    entities=_entities(payload.get("entities")),
+                    parse_mode=None,
+                    reply_markup=markup,
+                )
+            except TelegramAPIError:
+                if requested:
+                    CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
+                raise
+            return observe_custom_emoji_delivery(bot, requested, [sent_message])
         if uploads:
             upload = uploads[0]
             item = raw_media[0]
@@ -334,6 +415,7 @@ async def send_compiled_operation(
             media_kwargs: dict[str, Any] = {
                 "caption": item_payload.get("caption"),
                 "caption_entities": _entities(item_payload.get("caption_entities")),
+                "parse_mode": None,
                 "reply_markup": markup,
             }
             media_kwargs = {key: value for key, value in media_kwargs.items() if value is not None}
@@ -351,12 +433,24 @@ async def send_compiled_operation(
             }.get(kind)
             if method is not None:
                 sender = cast(Callable[..., Awaitable[Any]], method)
-                await sender(
-                    chat_id,
-                    upload,
-                    **({"reply_markup": markup} if kind in {"video_note", "sticker"} else media_kwargs),
+                requested = _custom_emoji_ids(item_payload.get("caption_entities"))
+                try:
+                    sent_media = await sender(
+                        chat_id,
+                        upload,
+                        **(
+                            {"reply_markup": markup}
+                            if kind in {"video_note", "sticker"}
+                            else media_kwargs
+                        ),
+                    )
+                except TelegramAPIError:
+                    if requested:
+                        CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
+                    raise
+                return observe_custom_emoji_delivery(
+                    bot, requested, [cast(Message, sent_media)]
                 )
-                return
         if kind == "location":
             location = payload["location"]
             await bot.send_location(
@@ -402,6 +496,7 @@ async def send_compiled_operation(
             )
         else:
             raise ValueError("Unsupported compiled Telegram operation")
+    return PremiumEmojiDeliveryResult()
 
 
 async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyring: TokenKeyring) -> None:
@@ -449,6 +544,7 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
                         "media": upload,
                         "caption": item.get("caption"),
                         "caption_entities": _entities(item.get("caption_entities")),
+                        "parse_mode": None,
                     }
                     if media.media_type in {"photo", "video"}:
                         kwargs["has_spoiler"] = bool(item.get("has_spoiler"))
@@ -462,6 +558,7 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
                     context.contact.telegram_id,
                     str(payload.get("text") or ""),
                     entities=_entities(payload.get("entities")),
+                    parse_mode=None,
                 )
                 return
             if uploads:
@@ -469,6 +566,7 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
                 kwargs = {
                     "caption": payload.get("caption"),
                     "caption_entities": _entities(payload.get("caption_entities")),
+                    "parse_mode": None,
                 }
                 kwargs = {key: value for key, value in kwargs.items() if value is not None}
                 if kind in {"photo", "video", "animation"}:

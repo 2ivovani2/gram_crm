@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -10,7 +10,9 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from gramly_welcome.billing import purge_one_terminal_payment
 from gramly_welcome.finance import (
+    FinanceError,
     add_admin_adjustment,
     available_balance,
     create_payment,
@@ -70,6 +72,9 @@ async def test_payment_referral_replay_withdrawal_and_immutable_ledger() -> None
             provider="crypto_pay",
             amount_rub=Decimal("1000"),
         )
+        assert payment.expires_at - payment.created_at == timedelta(minutes=15)
+        payment.status = "expired"
+        payment.expires_at = datetime.now(UTC) - timedelta(minutes=1)
         await session.commit()
         first = await settle_payment(
             session,
@@ -103,6 +108,47 @@ async def test_payment_referral_replay_withdrawal_and_immutable_ledger() -> None
             select(Subscription).where(Subscription.owner_id == referred.id)
         )
         assert subscription is not None and subscription.status == "active"
+
+        stale_payment = await create_payment(
+            session,
+            owner_id=referred.id,
+            plan=plan,
+            provider="telegram_stars",
+            amount_rub=Decimal("1000"),
+            original_amount=Decimal("400"),
+            original_currency="XTR",
+        )
+        stale_payment.status = "expired"
+        stale_payment.expires_at = datetime.now(UTC) - timedelta(days=2)
+        await session.commit()
+        with pytest.raises(FinanceError, match="grace period"):
+            await settle_payment(
+                session,
+                payment_id=stale_payment.id,
+                provider_invoice_id="too-late",
+                paid_at=datetime.now(UTC),
+                original_amount=Decimal("400"),
+                original_currency="XTR",
+                paid_asset="XTR",
+                exchange_rate_rub=Decimal("2.5"),
+            )
+        await session.delete(stale_payment)
+        await session.commit()
+
+        dead_payment = await create_payment(
+            session,
+            owner_id=referred.id,
+            plan=plan,
+            provider="telegram_stars",
+            amount_rub=Decimal("1000"),
+            original_amount=Decimal("400"),
+            original_currency="XTR",
+        )
+        dead_payment.status = "failed"
+        dead_payment.expires_at = datetime.now(UTC) - timedelta(days=2)
+        await session.commit()
+        assert await purge_one_terminal_payment(session) == "telegram_stars"
+        assert await session.get(type(dead_payment), dead_payment.id) is None
 
         await add_admin_adjustment(session, referrer.id, Decimal("1000"), reason="test credit")
         withdrawal = await request_withdrawal(

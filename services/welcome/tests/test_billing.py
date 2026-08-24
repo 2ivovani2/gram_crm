@@ -5,9 +5,22 @@ import hmac
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from gramly_welcome.billing import payment_token_from_payload, safe_invoice_snapshot
-from gramly_welcome.crypto_pay import CryptoInvoice, parse_invoice, webhook_signature_valid
-from gramly_welcome.finance import FinanceError, add_calendar_year, commission_rate
+from gramly_welcome.crypto_pay import (
+    CryptoInvoice,
+    CryptoPayClient,
+    parse_invoice,
+    webhook_signature_valid,
+)
+from gramly_welcome.finance import (
+    PAYMENT_SETTLEMENT_GRACE,
+    PAYMENT_TTL,
+    FinanceError,
+    add_calendar_year,
+    commission_rate,
+)
 
 
 def test_commission_tiers_are_deterministic() -> None:
@@ -83,3 +96,37 @@ def test_invalid_checkout_payload_is_rejected() -> None:
         pass
     else:
         raise AssertionError("invalid payload was accepted")
+
+
+def test_payment_lifetime_contract_is_fifteen_minutes_with_safe_grace() -> None:
+    assert PAYMENT_TTL.total_seconds() == 900
+    assert PAYMENT_SETTLEMENT_GRACE.total_seconds() == 86_400
+
+
+@pytest.mark.asyncio
+async def test_crypto_pay_invoice_expires_after_fifteen_minutes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_call(_method: str, payload: dict[str, object]) -> dict[str, object]:
+        captured.update(payload)
+        return {
+            "invoice_id": 1,
+            "status": "active",
+            "currency_type": "fiat",
+            "fiat": "RUB",
+            "amount": "419.00",
+            "payload": "checkout",
+        }
+
+    client = CryptoPayClient("token", "https://pay.example")
+    monkeypatch.setattr(client, "_call", fake_call)
+
+    await client.create_invoice(
+        amount_rub=Decimal("419.00"),
+        payload="checkout",
+        description="Business",
+    )
+
+    assert captured["expires_in"] == 900
