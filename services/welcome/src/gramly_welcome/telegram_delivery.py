@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any, cast
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import (
     FSInputFile,
     InlineKeyboardButton,
@@ -24,6 +26,7 @@ from aiogram.types import (
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
 from .join_activation import ActivationContext, build_activation_token
+from .metrics import PREMIUM_MEDIA
 from .personalization import personalize_operation
 from .repository import DeliveryContext, JoinRequestContext
 from .rotation import RotationContext, RotationDestination
@@ -134,6 +137,66 @@ class _OperationMedia:
     size: int
 
 
+_NATIVE_STICKER_CACHE_TTL = 3600.0
+_native_sticker_cache: dict[tuple[str, str], tuple[float, str]] = {}
+
+
+def _bot_fingerprint(bot: Bot) -> str:
+    return hashlib.sha256(bot.token.encode()).hexdigest()[:20]
+
+
+def _native_sticker_payload(raw_media: dict[str, Any]) -> dict[str, Any] | None:
+    payload = raw_media.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    native = payload.get("telegram_native")
+    return native if isinstance(native, dict) else None
+
+
+async def resolve_native_sticker(bot: Bot, raw_media: dict[str, Any]) -> str | None:
+    """Resolve a sticker to a file_id scoped to the bot performing the delivery."""
+
+    native = _native_sticker_payload(raw_media)
+    if native is None:
+        PREMIUM_MEDIA.labels("legacy", "fallback").inc()
+        return None
+    custom_emoji_id = str(native.get("custom_emoji_id") or "")
+    set_name = str(native.get("set_name") or "")
+    file_unique_id = str(native.get("file_unique_id") or "")
+    identity = f"emoji:{custom_emoji_id}" if custom_emoji_id else f"set:{set_name}:{file_unique_id}"
+    if not custom_emoji_id and (not set_name or not file_unique_id):
+        PREMIUM_MEDIA.labels("native", "incomplete").inc()
+        return None
+    cache_key = (_bot_fingerprint(bot), identity)
+    cached = _native_sticker_cache.get(cache_key)
+    if cached is not None and cached[0] > monotonic():
+        PREMIUM_MEDIA.labels("native", "cache_hit").inc()
+        return cached[1]
+    try:
+        if custom_emoji_id:
+            stickers = await bot.get_custom_emoji_stickers([custom_emoji_id])
+            candidate = next(
+                (item for item in stickers if item.custom_emoji_id == custom_emoji_id), None
+            )
+        else:
+            sticker_set = await bot.get_sticker_set(set_name)
+            candidate = next(
+                (item for item in sticker_set.stickers if item.file_unique_id == file_unique_id), None
+            )
+    except TelegramAPIError:
+        PREMIUM_MEDIA.labels("native", "telegram_error").inc()
+        return None
+    if candidate is None:
+        PREMIUM_MEDIA.labels("native", "not_found").inc()
+        return None
+    _native_sticker_cache[cache_key] = (
+        monotonic() + _NATIVE_STICKER_CACHE_TTL,
+        candidate.file_id,
+    )
+    PREMIUM_MEDIA.labels("custom_emoji" if custom_emoji_id else "premium_sticker", "resolved").inc()
+    return candidate.file_id
+
+
 def _reply_markup(raw: dict[str, Any] | None) -> InlineKeyboardMarkup | ReplyKeyboardMarkup | None:
     if not raw:
         return None
@@ -207,6 +270,12 @@ async def send_compiled_operation(
     """Send one compiled operation with either a client bot or the preview bot."""
     if first_name is not None:
         payload, raw_media = personalize_operation(payload, raw_media, first_name)
+    markup = _reply_markup(payload.get("keyboard") if isinstance(payload.get("keyboard"), dict) else None)
+    if operation_type == "sticker" and raw_media:
+        native_file_id = await resolve_native_sticker(bot, raw_media[0])
+        if native_file_id:
+            await bot.send_sticker(chat_id, native_file_id, reply_markup=markup)
+            return
     media_objects = [
         _OperationMedia(
             storage_key=str(item["storage_key"]),
@@ -221,7 +290,6 @@ async def send_compiled_operation(
             FSInputFile(path, filename=media.original_name)
             for path, media in zip(paths, media_objects, strict=True)
         ]
-        markup = _reply_markup(payload.get("keyboard") if isinstance(payload.get("keyboard"), dict) else None)
         if operation_type == "media_group":
             classes = {
                 "photo": InputMediaPhoto,

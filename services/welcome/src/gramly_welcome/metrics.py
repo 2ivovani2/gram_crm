@@ -64,3 +64,8 @@ BILLING_OPERATIONS = Counter(
     "Subscription reminders and partner payouts by operation and result",
     ("operation", "result"),
 )
+PREMIUM_MEDIA = Counter(
+    "welcome_premium_media_total",
+    "Telegram-native premium media resolution attempts",
+    ("kind", "result"),
+)
