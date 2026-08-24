@@ -463,6 +463,21 @@ def _downloadable(message: Message) -> tuple[str, Any, str, str] | None:
     return kind, obj, name, mime
 
 
+def _native_sticker_metadata(message: Message) -> dict[str, Any] | None:
+    sticker = message.sticker
+    if sticker is None:
+        return None
+    return {
+        "type": str(sticker.type),
+        "custom_emoji_id": sticker.custom_emoji_id,
+        "set_name": sticker.set_name,
+        "file_unique_id": sticker.file_unique_id,
+        "emoji": sticker.emoji,
+        "format": "animated" if sticker.is_animated else "video" if sticker.is_video else "static",
+        "premium_animation": getattr(sticker, "premium_animation", None) is not None,
+    }
+
+
 async def download_message_media(
     bot: Bot, message: Message, storage: ObjectStorage, prefix: str
 ) -> dict[str, Any] | None:
@@ -478,13 +493,16 @@ async def download_message_media(
     body = target.getvalue()
     key = f"{prefix}/{uuid.uuid4().hex}-{filename}"
     await storage.upload(key, body, mime)
-    return {
+    result: dict[str, Any] = {
         "media_type": kind,
         "storage_key": key,
         "original_name": filename,
         "mime_type": mime,
         "size": len(body),
     }
+    if kind == "sticker" and message.sticker is not None:
+        result["payload"] = {"telegram_native": _native_sticker_metadata(message)}
+    return result
 
 
 async def configure_customer_webhook(managed: ManagedBot, token: str, settings: Settings) -> None:
@@ -1333,46 +1351,90 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
     try:
         async with session_factory() as session:
             snapshot = await draft_snapshot(session, owner.id, version_id)
-            operations = await compile_preview_operations(session, snapshot.steps)
+            step_operations = [
+                (index, await compile_preview_operations(session, [step]))
+                for index, step in enumerate(snapshot.steps, start=1)
+            ]
     except ContentValidationError:
         await callback.answer("Черновик уже недоступен.", show_alert=True)
         return
     await owner_answer(
         message,
         "👁 <b>Предпросмотр цепочки</b>\n\n"
-        "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены.",
+        "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены.\n\n"
+        "✨ Premium Emoji здесь отправляет @gramlyHelloBot, а в рабочей цепочке — ваш "
+        "клиентский бот. Для Premium Emoji владелец каждого отправляющего бота должен "
+        "иметь Telegram Premium.",
     )
+    legacy_sticker = any(
+        operation.operation_type == "sticker"
+        and operation.media
+        and not isinstance(operation.media[0].get("payload", {}).get("telegram_native"), dict)
+        for _, operations in step_operations
+        for operation in operations
+    )
+    if legacy_sticker:
+        await owner_answer(
+            message,
+            "⚠️ <b>В цепочке есть стикер старого формата.</b>\n\n"
+            "Он продолжит отправляться файлом, но Premium-анимация не гарантируется. "
+            "Удалите старый шаг и отправьте исходный стикер заново, чтобы Gramly сохранил "
+            "Telegram-native данные.",
+            reply_markup=_one_button(
+                "♻️ Переимпортировать стикер", f"chain:add:{version_id}"
+            ),
+        )
     storage = ObjectStorage(get_settings())
-    try:
-        for operation in operations:
-            await send_compiled_operation(
-                cast(Bot, message.bot),
-                message.chat.id,
-                operation.operation_type,
-                operation.payload,
-                operation.media,
-                storage,
-                first_name=owner.first_name,
-            )
-    except (ObjectStorageError, OSError):
-        logger.exception("Could not materialize preview media version_id=%s", version_id)
-        await owner_answer(
-            message,
-            "🛠 <b>Медиа временно недоступно для предпросмотра.</b>\n\n"
-            "Шаг сохранён, но сервис не смог подготовить файл к отправке. "
-            "Повторите предпросмотр через минуту.",
-        )
-    except TelegramAPIError:
-        logger.exception("Could not preview draft version_id=%s", version_id)
-        await owner_answer(
-            message,
-            "⚠️ <b>Telegram отклонил один из элементов.</b>\n\n"
-            "Проверьте файл и клавиатуру. Для Premium Emoji владелец отправляющего "
-            "бота должен иметь Telegram Premium; сам emoji сохраняется без преобразования.",
-        )
-    except ValueError as exc:
-        logger.warning("Invalid preview operation version_id=%s error=%s", version_id, exc)
-        await owner_answer(message, f"⚠️ Не удалось собрать Telegram-вызов: {exc}")
+    for step_number, operations in step_operations:
+        for operation_number, operation in enumerate(operations, start=1):
+            try:
+                await send_compiled_operation(
+                    cast(Bot, message.bot),
+                    message.chat.id,
+                    operation.operation_type,
+                    operation.payload,
+                    operation.media,
+                    storage,
+                    first_name=owner.first_name,
+                )
+            except (ObjectStorageError, OSError):
+                logger.exception(
+                    "Could not materialize preview media version_id=%s step=%s operation=%s",
+                    version_id,
+                    step_number,
+                    operation_number,
+                )
+                await owner_answer(
+                    message,
+                    f"🛠 <b>Шаг {step_number}, элемент {operation_number}: медиа временно "
+                    "недоступно.</b>\n\nШаг сохранён. Повторите предпросмотр через минуту.",
+                )
+            except TelegramAPIError as exc:
+                logger.exception(
+                    "Could not preview draft version_id=%s step=%s operation=%s",
+                    version_id,
+                    step_number,
+                    operation_number,
+                )
+                await owner_answer(
+                    message,
+                    f"⚠️ <b>Шаг {step_number}, элемент {operation_number}: Telegram отклонил "
+                    "отправку.</b>\n\nПроверьте файл, Premium-доступ владельца бота и клавиатуру. "
+                    f"Код ответа: <code>{html.escape(type(exc).__name__)}</code>.",
+                )
+            except ValueError as exc:
+                logger.warning(
+                    "Invalid preview operation version_id=%s step=%s operation=%s error=%s",
+                    version_id,
+                    step_number,
+                    operation_number,
+                    exc,
+                )
+                await owner_answer(
+                    message,
+                    f"⚠️ Шаг {step_number}, элемент {operation_number}: "
+                    f"{html.escape(str(exc))}",
+                )
     await callback.answer()
 
 

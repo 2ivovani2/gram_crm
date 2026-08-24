@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -7,13 +9,18 @@ from typing import Annotated, Any, cast
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import String, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.sql.selectable import Select
 
+from .billing import safe_invoice_snapshot, verify_and_settle_crypto_invoice
 from .config import Settings, get_settings
+from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_dependency
+from .finance import FinanceError
 from .models import (
     AdCreative,
     AdImpression,
@@ -23,6 +30,7 @@ from .models import (
     ContextualHelp,
     EventLog,
     FeatureFlag,
+    FinancialLedgerEntry,
     FlowDelivery,
     ManagedBot,
     Manual,
@@ -230,6 +238,381 @@ async def overview(_admin: AdminDep, session: SessionDep) -> dict[str, object]:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+PAYMENT_STATUSES = {"created", "paid", "expired", "refunded", "failed"}
+PAYMENT_PROVIDERS = {"crypto_pay", "telegram_stars", "manual"}
+
+
+def _payment_filters(
+    *,
+    q: str,
+    payment_status: str,
+    provider: str,
+    plan: str,
+    created_from: datetime | None,
+    created_to: datetime | None,
+) -> list[ColumnElement[bool]]:
+    filters: list[ColumnElement[bool]] = []
+    normalized = q.strip().lstrip("@").lower()
+    if normalized:
+        search = f"%{normalized}%"
+        candidates: list[ColumnElement[bool]] = [
+            func.lower(Owner.username).like(search),
+            func.lower(Owner.first_name).like(search),
+            func.lower(Owner.last_name).like(search),
+            func.cast(Owner.telegram_id, String).like(search),
+            func.cast(Payment.id, String).like(search),
+            func.lower(func.coalesce(Payment.provider_invoice_id, "")).like(search),
+        ]
+        filters.append(or_(*candidates))
+    if payment_status == "unpaid":
+        filters.append(Payment.status.in_(("created", "expired", "failed")))
+    elif payment_status != "all":
+        if payment_status not in PAYMENT_STATUSES:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown payment status")
+        filters.append(Payment.status == payment_status)
+    if provider != "all":
+        if provider not in PAYMENT_PROVIDERS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown payment provider")
+        filters.append(Payment.provider == provider)
+    if plan != "all":
+        filters.append(Plan.slug == plan.strip().lower())
+    if created_from is not None:
+        filters.append(Payment.created_at >= created_from)
+    if created_to is not None:
+        filters.append(Payment.created_at <= created_to)
+    return filters
+
+
+def _payment_row(payment: Payment, owner: Owner, plan: Plan) -> dict[str, object]:
+    return {
+        "id": payment.id,
+        "provider_invoice_id": payment.provider_invoice_id,
+        "provider": payment.provider,
+        "status": payment.status,
+        "amount_rub": str(payment.amount_rub),
+        "original_amount": str(payment.original_amount) if payment.original_amount is not None else None,
+        "original_currency": payment.original_currency,
+        "paid_asset": payment.paid_asset,
+        "exchange_rate_rub": (
+            str(payment.exchange_rate_rub) if payment.exchange_rate_rub is not None else None
+        ),
+        "invoice_url": payment.invoice_url,
+        "period_days": payment.period_days,
+        "created_at": _iso(payment.created_at),
+        "paid_at": _iso(payment.paid_at),
+        "refunded_at": _iso(payment.refunded_at),
+        "owner": {
+            "id": owner.id,
+            "telegram_id": owner.telegram_id,
+            "username": owner.username,
+            "name": " ".join(item for item in (owner.first_name, owner.last_name) if item),
+        },
+        "plan": {"id": plan.id, "slug": plan.slug, "name": plan.display_name},
+    }
+
+
+def _payment_base(filters: list[ColumnElement[bool]]) -> Select[tuple[Payment, Owner, Plan]]:
+    return (
+        select(Payment, Owner, Plan)
+        .join(Owner, Owner.id == Payment.owner_id)
+        .join(Plan, Plan.id == Payment.plan_id)
+        .where(*filters)
+    )
+
+
+@router.get("/payments")
+async def payments(
+    _admin: AdminDep,
+    session: SessionDep,
+    q: str = "",
+    payment_status: str = "all",
+    provider: str = "all",
+    plan: str = "all",
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    sort: str = "created_desc",
+    page: int = 1,
+    page_size: int = 25,
+) -> dict[str, object]:
+    page = max(1, page)
+    page_size = max(10, min(page_size, 100))
+    filters = _payment_filters(
+        q=q,
+        payment_status=payment_status,
+        provider=provider,
+        plan=plan,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    base = _payment_base(filters)
+    aggregate = base.with_only_columns(Payment.status, Payment.amount_rub).subquery()
+    summary_rows = (
+        await session.execute(
+            select(
+                aggregate.c.status,
+                func.count(),
+                func.coalesce(func.sum(aggregate.c.amount_rub), 0),
+            ).group_by(aggregate.c.status)
+        )
+    ).all()
+    by_status: dict[str, dict[str, object]] = {
+        str(row_status): {"count": int(count), "rub": str(amount)}
+        for row_status, count, amount in summary_rows
+    }
+    total = sum(int(count) for _, count, _ in summary_rows)
+    errors = sum(
+        int(count) for row_status, count, _ in summary_rows if row_status in {"failed", "expired"}
+    )
+    sort_options: dict[str, ColumnElement[Any]] = {
+        "created_desc": Payment.created_at.desc(),
+        "created_asc": Payment.created_at.asc(),
+        "paid_desc": Payment.paid_at.desc().nullslast(),
+        "paid_asc": Payment.paid_at.asc().nullsfirst(),
+        "amount_desc": Payment.amount_rub.desc(),
+        "amount_asc": Payment.amount_rub.asc(),
+    }
+    if sort not in sort_options:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown payment sort")
+    rows = (
+        await session.execute(
+            base.order_by(sort_options[sort], Payment.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    return {
+        "items": [_payment_row(payment, owner, payment_plan) for payment, owner, payment_plan in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": {
+            "count": total,
+            "paid_rub": by_status.get("paid", {}).get("rub", "0"),
+            "pending_rub": by_status.get("created", {}).get("rub", "0"),
+            "refunded_rub": by_status.get("refunded", {}).get("rub", "0"),
+            "errors": errors,
+            "by_status": by_status,
+        },
+    }
+
+
+@router.get("/payments/export.csv")
+async def export_payments(
+    _admin: AdminDep,
+    session: SessionDep,
+    q: str = "",
+    payment_status: str = "all",
+    provider: str = "all",
+    plan: str = "all",
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> Response:
+    filters = _payment_filters(
+        q=q,
+        payment_status=payment_status,
+        provider=provider,
+        plan=plan,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    rows = (await session.execute(_payment_base(filters).order_by(Payment.id.desc()))).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "payment_id", "provider_invoice_id", "status", "provider", "amount_rub",
+            "original_amount", "currency", "asset", "plan", "owner", "telegram_id",
+            "created_at", "paid_at", "refunded_at",
+        ]
+    )
+    for payment, owner, payment_plan in rows:
+        writer.writerow(
+            [
+                payment.id, payment.provider_invoice_id or "", payment.status, payment.provider,
+                payment.amount_rub, payment.original_amount or "", payment.original_currency,
+                payment.paid_asset or "", payment_plan.slug, owner.username or "",
+                owner.telegram_id, _iso(payment.created_at), _iso(payment.paid_at),
+                _iso(payment.refunded_at),
+            ]
+        )
+    filename = f"gramlyhello-invoices-{datetime.now(UTC).date().isoformat()}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/payments/readiness")
+async def payment_readiness(
+    _admin: AdminDep, session: SessionDep, settings: SettingsDep
+) -> dict[str, object]:
+    """Expose configuration health without ever returning secret material."""
+    keys = {
+        "crypto_pay_bot_checkout",
+        "crypto_pay_mini_app_checkout",
+        "telegram_stars_checkout",
+    }
+    flags = list((await session.scalars(select(FeatureFlag).where(FeatureFlag.key.in_(keys)))).all())
+    return {
+        "crypto_pay": {
+            "api_token_configured": bool(settings.crypto_pay_api_token),
+            "webhook_secret_configured": bool(settings.crypto_pay_webhook_secret),
+            "production_api": settings.crypto_pay_api_base_url.rstrip("/") == "https://pay.crypt.bot",
+        },
+        "telegram_stars": {
+            "interface_bot_configured": bool(settings.interface_bot_token),
+        },
+        "feature_flags": {flag.key: flag.enabled for flag in flags},
+    }
+
+
+@router.get("/payments/{payment_id}")
+async def payment_detail(
+    payment_id: int, _admin: AdminDep, session: SessionDep
+) -> dict[str, object]:
+    row = (
+        await session.execute(_payment_base([Payment.id == payment_id]))
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Payment not found")
+    payment, owner, payment_plan = row
+    subscription = await session.scalar(
+        select(Subscription).where(Subscription.owner_id == payment.owner_id)
+    )
+    ledger = list(
+        (
+            await session.scalars(
+                select(FinancialLedgerEntry)
+                .where(FinancialLedgerEntry.payment_id == payment.id)
+                .order_by(FinancialLedgerEntry.id)
+            )
+        ).all()
+    )
+    audits = list(
+        (
+            await session.scalars(
+                select(EventLog)
+                .where(
+                    EventLog.event_type == "welcome_admin_mutation",
+                    EventLog.context["payment_id"].astext == str(payment.id),
+                )
+                .order_by(EventLog.id.desc())
+                .limit(20)
+            )
+        ).all()
+    )
+    provider_snapshot = (
+        payment.provider_payload if isinstance(payment.provider_payload, dict) else {}
+    )
+    result = _payment_row(payment, owner, payment_plan)
+    result.update(
+        {
+            "subscription": {
+                "status": subscription.status,
+                "source": subscription.source,
+                "starts_at": _iso(subscription.starts_at),
+                "ends_at": _iso(subscription.ends_at),
+                "auto_renew": subscription.auto_renew,
+                "matches_invoice": subscription.external_reference == payment.provider_invoice_id,
+            }
+            if subscription is not None
+            else None,
+            "ledger": [
+                {
+                    "id": item.id,
+                    "type": item.entry_type,
+                    "amount_rub": str(item.amount_rub),
+                    "rate_percent": str(item.rate_percent) if item.rate_percent is not None else None,
+                    "reason": item.reason,
+                    "created_at": _iso(item.created_at),
+                }
+                for item in ledger
+            ],
+            "verification": {
+                "has_provider_reference": bool(payment.provider_invoice_id),
+                "snapshot": {
+                    key: provider_snapshot.get(key)
+                    for key in (
+                        "invoice_id", "status", "amount", "fiat", "paid_asset",
+                        "paid_amount", "paid_fiat_rate", "snapshot_hash",
+                        "telegram_payment_charge_id",
+                    )
+                    if key in provider_snapshot
+                },
+            },
+            "audit": [
+                {"message": item.message, "created_at": _iso(item.created_at), "context": item.context}
+                for item in audits
+            ],
+        }
+    )
+    return result
+
+
+@router.post("/payments/{payment_id}/reconcile")
+async def reconcile_payment(
+    payment_id: int,
+    admin: MutationAdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> dict[str, object]:
+    payment = await session.scalar(
+        select(Payment).where(Payment.id == payment_id).with_for_update()
+    )
+    if payment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Payment not found")
+    result = "unchanged"
+    detail = ""
+    try:
+        if payment.provider == "crypto_pay":
+            if not payment.provider_invoice_id:
+                raise FinanceError("Crypto Pay invoice reference is missing")
+            client = CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url)
+            invoice = await client.get_invoice(payment.provider_invoice_id)
+            if invoice.status == "paid":
+                await verify_and_settle_crypto_invoice(session, client, payment.provider_invoice_id)
+                result, detail = "settled", "Crypto Pay confirmed the paid invoice"
+            elif invoice.status == "expired" and payment.status == "created":
+                payment.status = "expired"
+                payment.provider_payload = safe_invoice_snapshot(invoice)
+                result, detail = "expired", "Crypto Pay confirmed invoice expiration"
+            else:
+                payment.provider_payload = safe_invoice_snapshot(invoice)
+                detail = f"Crypto Pay status: {invoice.status}"
+        elif payment.provider == "telegram_stars":
+            snapshot_charge = str(payment.provider_payload.get("telegram_payment_charge_id") or "")
+            trusted = bool(
+                payment.status == "paid"
+                and payment.provider_invoice_id
+                and snapshot_charge == payment.provider_invoice_id
+            )
+            if not trusted:
+                raise FinanceError("No trusted successful_payment event matches this Stars invoice")
+            subscription = await session.scalar(
+                select(Subscription).where(Subscription.owner_id == payment.owner_id)
+            )
+            result = "verified" if subscription is not None else "inconsistent"
+            detail = (
+                "Stars successful_payment, payment and subscription are linked"
+                if subscription is not None and subscription.external_reference == payment.provider_invoice_id
+                else "Stars payment is trusted, but the subscription link requires attention"
+            )
+        else:
+            detail = "Manual payments have no external provider to reconcile"
+    except (CryptoPayError, FinanceError) as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    await _audit(
+        session,
+        admin,
+        "payment_reconciled",
+        {"payment_id": payment.id, "owner_id": payment.owner_id, "result": result, "detail": detail},
+    )
+    await session.commit()
+    return {"ok": True, "result": result, "detail": detail}
 
 
 def _subscription_is_business(subscription: Subscription | None, plan: Plan | None) -> bool:
@@ -773,30 +1156,6 @@ async def admin_plans(_admin: AdminDep, session: SessionDep) -> dict[str, object
             }
             for row in rows
         ]
-    }
-
-
-@router.get("/payments/readiness")
-async def payment_readiness(
-    _admin: AdminDep, session: SessionDep, settings: SettingsDep
-) -> dict[str, object]:
-    """Expose configuration health without ever returning secret material."""
-    keys = {
-        "crypto_pay_bot_checkout",
-        "crypto_pay_mini_app_checkout",
-        "telegram_stars_checkout",
-    }
-    flags = list((await session.scalars(select(FeatureFlag).where(FeatureFlag.key.in_(keys)))).all())
-    return {
-        "crypto_pay": {
-            "api_token_configured": bool(settings.crypto_pay_api_token),
-            "webhook_secret_configured": bool(settings.crypto_pay_webhook_secret),
-            "production_api": settings.crypto_pay_api_base_url.rstrip("/") == "https://pay.crypt.bot",
-        },
-        "telegram_stars": {
-            "interface_bot_configured": bool(settings.interface_bot_token),
-        },
-        "feature_flags": {flag.key: flag.enabled for flag in flags},
     }
 
 
