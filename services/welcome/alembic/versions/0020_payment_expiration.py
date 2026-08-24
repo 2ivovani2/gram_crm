@@ -18,27 +18,31 @@ def upgrade() -> None:
         ALTER TABLE payment
           ADD COLUMN expires_at TIMESTAMPTZ,
           ADD COLUMN reconcile_after TIMESTAMPTZ,
-          ADD COLUMN reconcile_attempts INTEGER NOT NULL DEFAULT 0;
-
+          ADD COLUMN reconcile_attempts INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    op.execute(
+        """
         UPDATE payment
         SET expires_at = created_at + INTERVAL '15 minutes',
-            reconcile_after = created_at + INTERVAL '15 minutes';
-
-        ALTER TABLE payment ALTER COLUMN expires_at SET NOT NULL;
-        ALTER TABLE payment ALTER COLUMN expires_at SET DEFAULT (now() + INTERVAL '15 minutes');
-        CREATE INDEX ix_payment_expiration
-          ON payment (status, reconcile_after, expires_at, id);
+            reconcile_after = created_at + INTERVAL '15 minutes'
         """
+    )
+    op.execute("ALTER TABLE payment ALTER COLUMN expires_at SET NOT NULL")
+    op.execute(
+        "ALTER TABLE payment ALTER COLUMN expires_at SET DEFAULT (now() + INTERVAL '15 minutes')"
+    )
+    op.execute(
+        "CREATE INDEX ix_payment_expiration "
+        "ON payment (status, reconcile_after, expires_at, id)"
     )
 
 
 def downgrade() -> None:
+    op.execute("DROP INDEX IF EXISTS ix_payment_expiration")
     op.execute(
-        """
-        DROP INDEX IF EXISTS ix_payment_expiration;
-        ALTER TABLE payment
-          DROP COLUMN reconcile_attempts,
-          DROP COLUMN reconcile_after,
-          DROP COLUMN expires_at;
-        """
+        "ALTER TABLE payment "
+        "DROP COLUMN reconcile_attempts, "
+        "DROP COLUMN reconcile_after, "
+        "DROP COLUMN expires_at"
     )
