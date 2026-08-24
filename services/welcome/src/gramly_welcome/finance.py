@@ -26,6 +26,8 @@ from .models import (
 
 MONEY = Decimal("0.01")
 MINIMUM_WITHDRAWAL_RUB = Decimal("1000.00")
+PAYMENT_TTL = timedelta(minutes=15)
+PAYMENT_SETTLEMENT_GRACE = timedelta(hours=24)
 
 
 class FinanceError(ValueError):
@@ -121,6 +123,7 @@ async def create_payment(
 ) -> Payment:
     if plan.slug != "business" or amount_rub <= 0:
         raise FinanceError("Business plan price is not configured")
+    now = datetime.now(UTC)
     payment = Payment(
         checkout_token=uuid.uuid4(),
         owner_id=owner_id,
@@ -131,6 +134,9 @@ async def create_payment(
         original_amount=original_amount,
         original_currency=original_currency,
         period_days=30,
+        created_at=now,
+        expires_at=now + PAYMENT_TTL,
+        reconcile_after=now + PAYMENT_TTL,
     )
     session.add(payment)
     await session.flush()
@@ -178,7 +184,12 @@ async def settle_payment(
         raise FinanceError("Invoice does not belong to this checkout")
     if payment.status == "paid":
         return SettlementResult(payment.id, True, Decimal("0.00"))
-    if payment.status != "created":
+    now = datetime.now(UTC)
+    if now > payment.expires_at + PAYMENT_SETTLEMENT_GRACE:
+        raise FinanceError("Payment settlement grace period has expired")
+    if payment.status == "expired":
+        pass
+    elif payment.status != "created":
         raise FinanceError("Payment is not payable")
 
     plan = await session.get(Plan, payment.plan_id)

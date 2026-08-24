@@ -266,7 +266,9 @@ def _payment_filters(
             func.lower(func.coalesce(Payment.provider_invoice_id, "")).like(search),
         ]
         filters.append(or_(*candidates))
-    if payment_status == "unpaid":
+    if payment_status == "active":
+        filters.append(Payment.status.not_in(("expired", "failed")))
+    elif payment_status == "unpaid":
         filters.append(Payment.status.in_(("created", "expired", "failed")))
     elif payment_status != "all":
         if payment_status not in PAYMENT_STATUSES:
@@ -301,6 +303,7 @@ def _payment_row(payment: Payment, owner: Owner, plan: Plan) -> dict[str, object
         "invoice_url": payment.invoice_url,
         "period_days": payment.period_days,
         "created_at": _iso(payment.created_at),
+        "expires_at": _iso(payment.expires_at),
         "paid_at": _iso(payment.paid_at),
         "refunded_at": _iso(payment.refunded_at),
         "owner": {
@@ -327,7 +330,7 @@ async def payments(
     _admin: AdminDep,
     session: SessionDep,
     q: str = "",
-    payment_status: str = "all",
+    payment_status: str = "active",
     provider: str = "all",
     plan: str = "all",
     created_from: datetime | None = None,
@@ -403,7 +406,7 @@ async def export_payments(
     _admin: AdminDep,
     session: SessionDep,
     q: str = "",
-    payment_status: str = "all",
+    payment_status: str = "active",
     provider: str = "all",
     plan: str = "all",
     created_from: datetime | None = None,

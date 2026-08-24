@@ -6,8 +6,10 @@ import io
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import PurePath
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import redis.asyncio as redis
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
@@ -1388,7 +1390,7 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
     for step_number, operations in step_operations:
         for operation_number, operation in enumerate(operations, start=1):
             try:
-                await send_compiled_operation(
+                delivery_result = await send_compiled_operation(
                     cast(Bot, message.bot),
                     message.chat.id,
                     operation.operation_type,
@@ -1397,6 +1399,15 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
                     storage,
                     first_name=owner.first_name,
                 )
+                if delivery_result.downgraded:
+                    await owner_answer(
+                        message,
+                        f"⚠️ <b>Шаг {step_number}, элемент {operation_number}: Telegram "
+                        "заменил Premium Emoji обычным.</b>\n\n"
+                        "Данные emoji сохранены правильно, но Telegram не подтвердил Premium-доступ "
+                        "владельца @gramlyHelloBot. Проверьте активную Premium-подписку у аккаунта, "
+                        "которому бот принадлежит в BotFather.",
+                    )
             except (ObjectStorageError, OSError):
                 logger.exception(
                     "Could not materialize preview media version_id=%s step=%s operation=%s",
@@ -2032,7 +2043,9 @@ async def pay_crypto(callback: CallbackQuery, owner: Owner) -> None:
         f"💎 <b>{_owner_display_name(owner)}, счёт Crypto Pay готов</b>\n\n"
         "Он оформлен на 30 дней Business. После подтверждения оплаты мы автоматически "
         "уберём рекламу из приветствий и включим ротацию каналов — дополнительно сообщать "
-        "об оплате не нужно.",
+        "об оплате не нужно.\n\n"
+        f"⏱ Счёт действует 15 минут — до "
+        f"<b>{payment.expires_at.astimezone(ZoneInfo('Europe/Moscow')):%H:%M} МСК</b>.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [owner_button(text="💎 Оплатить в Crypto Bot", url=payment.invoice_url)],
@@ -2073,15 +2086,17 @@ async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
     payment_id: int | None = None
     try:
         async with session_factory() as session:
-            payment = await create_stars_checkout(session, owner.id)
+            payment = await create_stars_checkout(session, owner.id, surface="bot")
             payment_id = payment.id
             plan = await session.get(Plan, payment.plan_id)
             if plan is None:
                 raise FinanceError("Тариф Business временно недоступен")
-            invoice_url = await _create_owner_stars_invoice_link(payment, plan)
-            payment.invoice_url = invoice_url
-            payment.provider_payload = {"subscription_period": 2_592_000, "surface": "bot"}
-            await session.commit()
+            invoice_url = payment.invoice_url
+            if not invoice_url:
+                invoice_url = await _create_owner_stars_invoice_link(payment, plan)
+                payment.invoice_url = invoice_url
+                payment.provider_payload = {"subscription_period": 2_592_000, "surface": "bot"}
+                await session.commit()
     except (FinanceError, TelegramAPIError):
         if payment_id is not None:
             await _fail_created_payment(payment_id)
@@ -2109,7 +2124,9 @@ async def pay_stars(callback: CallbackQuery, owner: Owner) -> None:
         f"⭐ <b>{_owner_display_name(owner)}, счёт в Telegram Stars готов</b>\n\n"
         f"Стоимость — <b>{plan.price_xtr} XTR</b> за 30 дней Business. Telegram покажет "
         "итоговую сумму до подтверждения. После оплаты подписка активируется автоматически, "
-        "реклама исчезнет из приветствий, а ротация каналов станет доступна сразу.",
+        "реклама исчезнет из приветствий, а ротация каналов станет доступна сразу.\n\n"
+        f"⏱ Счёт действует 15 минут — до "
+        f"<b>{payment.expires_at.astimezone(ZoneInfo('Europe/Moscow')):%H:%M} МСК</b>.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [owner_button(text=f"⭐ Оплатить {plan.price_xtr} XTR", url=invoice_url)],
@@ -2128,6 +2145,7 @@ async def approve_stars_checkout(query: PreCheckoutQuery) -> None:
                     Payment.checkout_token == uuid.UUID(query.invoice_payload),
                     Payment.provider == "telegram_stars",
                     Payment.status == "created",
+                    Payment.expires_at > datetime.now(UTC),
                 )
             )
         valid = payment is not None and payment.original_amount == query.total_amount

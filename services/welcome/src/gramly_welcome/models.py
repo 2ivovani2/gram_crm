@@ -393,6 +393,11 @@ class Payment(Base):
     invoice_url: Mapped[str] = mapped_column(String(1024), default="")
     period_days: Mapped[int] = mapped_column(Integer, default=30)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("(now() + interval '15 minutes')"), index=True
+    )
+    reconcile_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    reconcile_attempts: Mapped[int] = mapped_column(Integer, default=0)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

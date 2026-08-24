@@ -37,7 +37,7 @@ type Flow = {
 };
 type Step = { id: number; position: number; payload: Record<string, unknown>; delay_after_seconds: number; attachments: Array<{id:number;type:string;name:string}> };
 type Plan = { slug: string; name: string; prices: { rub: string | null; xtr: number | null } };
-type Checkout = { payment_id: number; invoice_url: string; status: string };
+type Checkout = { payment_id: number; invoice_url: string; status: string; expires_at: string };
 type SubscriptionGate = { code: string; title: string; url: string; temporarily_unavailable?: boolean };
 type AppTheme = "dark" | "light";
 
@@ -55,6 +55,12 @@ function formatDelay(seconds: number): string {
   const hours=Math.floor(remainder/3600); remainder%=3600;
   const minutes=Math.floor(remainder/60); const secs=remainder%60;
   return [days,hours,minutes,secs].map(value=>String(value).padStart(2,"0")).join(":");
+}
+
+function formatCountdown(expiresAt: string, now: number): string {
+  const seconds=Math.max(0,Math.ceil((new Date(expiresAt).getTime()-now)/1000));
+  const minutes=Math.floor(seconds/60);const remainder=seconds%60;
+  return seconds>0?`${String(minutes).padStart(2,"0")}:${String(remainder).padStart(2,"0")}`:"истёк";
 }
 
 const tabs = ["Обзор", "Боты", "Цепочки", "Аналитика", "Подписка", "Партнёры", "Ещё"] as const;
@@ -183,6 +189,8 @@ function MiniApp() {
   const [botUsername,setBotUsername]=useState("GramlyHelloBot");
   const [paymentBusy,setPaymentBusy]=useState<"crypto"|"stars"|null>(null);
   const [paymentMessage,setPaymentMessage]=useState("");
+  const [paymentExpiresAt,setPaymentExpiresAt]=useState("");
+  const [paymentClock,setPaymentClock]=useState(Date.now());
   const [subscriptionGate,setSubscriptionGate]=useState<SubscriptionGate|null>(null);
   useEffect(()=>{
     api<{interface_bot_username:string}>("/public-config").then(value=>{if(value.interface_bot_username)setBotUsername(value.interface_bot_username)}).catch(()=>undefined);
@@ -200,12 +208,13 @@ function MiniApp() {
     try { tg?.setBackgroundColor?.(dark?"#090c0a":"#dcded5"); } catch { /* Legacy Telegram client. */ }
     try { tg?.setBottomBarColor?.(dark?"#111512":"#e9e7dc"); } catch { /* Legacy Telegram client. */ }
   },[theme,tg]);
+  useEffect(()=>{if(!paymentExpiresAt)return;const timer=window.setInterval(()=>setPaymentClock(Date.now()),1000);return()=>window.clearInterval(timer)},[paymentExpiresAt]);
   useEffect(()=>{if(activeBot) api<{flows:Flow[]}>(`/bots/${activeBot}/flows`).then(r=>setFlows(r.flows)).catch(e=>setError(e.message));},[activeBot]);
   const openTab=(next:Tab)=>{tg?.HapticFeedback?.impactOccurred("light");setTab(next)};
   const openOwnerBot=()=>{const url=`https://t.me/${botUsername}`;if(tg?.openTelegramLink)tg.openTelegramLink(url);else location.href=url};
   const refreshAccess=async()=>{for(let attempt=0;attempt<6;attempt+=1){const identity=await api<any>("/me");setMe(identity);if(identity?.access?.plan==="business")return;await new Promise(resolve=>setTimeout(resolve,1500));}};
-  const payCrypto=async()=>{setError("");setPaymentMessage("");setPaymentBusy("crypto");try{const checkout=await api<Checkout>("/payments/crypto",{method:"POST"});setPaymentMessage("Счёт создан. После оплаты Business включится автоматически.");if(tg?.openTelegramLink)tg.openTelegramLink(checkout.invoice_url);else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
-  const payStars=async()=>{setError("");setPaymentMessage("");setPaymentBusy("stars");try{const checkout=await api<Checkout>("/payments/stars",{method:"POST"});if(tg?.openInvoice){tg.openInvoice(checkout.invoice_url,status=>{if(status==="paid"){setPaymentMessage("Оплата получена. Активируем Business…");void refreshAccess().then(()=>setPaymentMessage("Business активирован."));}else if(status==="pending")setPaymentMessage("Платёж обрабатывается Telegram.");else if(status==="failed")setError("Telegram не смог провести платёж. Попробуйте ещё раз.");});}else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
+  const payCrypto=async()=>{setError("");setPaymentMessage("");setPaymentBusy("crypto");try{const checkout=await api<Checkout>("/payments/crypto",{method:"POST"});setPaymentExpiresAt(checkout.expires_at);setPaymentClock(Date.now());setPaymentMessage("Счёт создан. После оплаты Business включится автоматически.");if(tg?.openTelegramLink)tg.openTelegramLink(checkout.invoice_url);else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
+  const payStars=async()=>{setError("");setPaymentMessage("");setPaymentBusy("stars");try{const checkout=await api<Checkout>("/payments/stars",{method:"POST"});setPaymentExpiresAt(checkout.expires_at);setPaymentClock(Date.now());if(tg?.openInvoice){tg.openInvoice(checkout.invoice_url,status=>{if(status==="paid"){setPaymentExpiresAt("");setPaymentMessage("Оплата получена. Активируем Business…");void refreshAccess().then(()=>setPaymentMessage("Business активирован."));}else if(status==="pending")setPaymentMessage("Платёж обрабатывается Telegram.");else if(status==="failed")setError("Telegram не смог провести платёж. Попробуйте ещё раз.");});}else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
   if(!ready) return <div className="loading"><Logo/><div className="loader"/><span>Синхронизируем кабинет…</span></div>;
   if(!tg?.initData) return <OutsideTelegram username={botUsername}/>;
   if(subscriptionGate) return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОБЯЗАТЕЛЬНАЯ ПОДПИСКА</span><h1>Оставайтесь в курсе обновлений Gramly.</h1><p>Подпишитесь на «{subscriptionGate.title}», затем вернитесь сюда и проверьте подписку. Статус сверяется напрямую с Telegram.</p><a className="button acid" href={subscriptionGate.url}>📣 Подписаться</a><button className="button" onClick={()=>api<{allowed:boolean}>("/news-subscription/check",{method:"POST"}).then(result=>{if(result.allowed)location.reload();else setError("Telegram пока не видит подписку. Подпишитесь и попробуйте снова.")}).catch(e=>setError(e.message))}>🔄 Проверить подписку</button>{error&&<ErrorBox message={error}/>}</div></main>;
@@ -214,6 +223,7 @@ function MiniApp() {
   return <div className="app-shell mini-app">
     <header className="topbar"><div><span className="topbar-kicker">GRAMLY HELLO</span><strong>Привет, {firstName}</strong></div><div className="account"><button className="theme-toggle" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label={theme==="dark"?"Включить светлую тему":"Включить тёмную тему"}>{theme==="dark"?"☀":"☾"}</button><span className="account-avatar">{firstName.slice(0,1).toUpperCase()}</span><Status ok={me?.access?.plan === "business"}>{me?.access?.plan_name || "Free"}</Status></div></header>
     <main className="content">{error&&<ErrorBox message={error}/>}
+      {paymentExpiresAt&&<div className="payment-message" role="timer">Счёт действует ещё <b>{formatCountdown(paymentExpiresAt,paymentClock)}</b></div>}
       {tab==="Обзор"&&<><section className="hero-panel wet-panel"><div><span className="eyebrow">СЕЙЧАС В GRAMLY</span><h1>{bots.length?"Ваши приветствия работают.":"Начнём с первого бота."}</h1><p>{bots.length?"Мы принимаем события Telegram, выбираем сценарий и доставляем сообщение каждому новому участнику.":"Подключите Telegram-бота, добавьте его в канал и соберите первую цепочку приветствия."}</p><button className="button acid quick-action" onClick={bots.length?()=>openTab("Цепочки"):openOwnerBot}>{bots.length?"Открыть цепочки":"Подключить бота"} <Icon name="arrow"/></button></div><div className="route"><span>СОБЫТИЕ</span><i/><span>GRAMLY</span><i/><span>ДОСТАВЛЕНО</span></div></section><section className="metrics wet-panel"><Metric label="Боты" value={dashboard?.bots??0}/><Metric label="Каналы" value={dashboard?.channels??0}/><Metric label="Контакты" value={dashboard?.contacts??0}/><Metric label="Доставлено" value={dashboard?.delivered??0}/></section></>}
       {tab==="Боты"&&<section><div className="section-head"><div><span className="eyebrow">ПОДКЛЮЧЕНИЯ</span><h2>Мои боты</h2></div></div>{!bots.length?<EmptyState title="Здесь появятся ваши боты" text="Откройте GramlyHello, отправьте токен от BotFather и завершите безопасное подключение по подсказкам." action="Подключить первого бота" onAction={openOwnerBot}/>:<div className="bot-list">{bots.map(bot=><article className="wet-panel" key={bot.id}><div className="bot-id"><span className="avatar">{bot.display_name.slice(0,1)}</span><div><strong>@{bot.username||bot.display_name}</strong><small>{bot.channels} каналов · {bot.contacts} контактов</small></div></div><Status ok={bot.webhook_configured}>{bot.webhook_configured?"Webhook online":"Нужно подключить"}</Status><button className="button ghost" onClick={()=>{setActiveBot(bot.id);openTab("Цепочки")}}>Цепочки <Icon name="arrow"/></button></article>)}</div>}</section>}
       {tab==="Цепочки"&&<section><div className="section-head"><div><span className="eyebrow">КОНТЕНТ</span><h2>Цепочки</h2></div>{bots.length>0&&<select value={activeBot||""} onChange={e=>setActiveBot(Number(e.target.value))}>{bots.map(bot=><option key={bot.id} value={bot.id}>@{bot.username}</option>)}</select>}</div>{!bots.length?<EmptyState title="Сначала подключите бота" text="Цепочка всегда принадлежит конкретному Telegram-боту. Подключение займёт пару минут." action="Перейти к подключению" onAction={openOwnerBot}/>:!flows.length?<EmptyState title="У этого бота ещё нет цепочек" text="Создайте приветствие или прощание в GramlyHello — после сохранения оно сразу появится здесь." action="Создать цепочку" onAction={openOwnerBot}/>:<div className="flow-list">{flows.map(flow=><button className="wet-panel" key={flow.id} onClick={()=>setEditor(flow)}><div><span>{flow.kind==="farewell"?"ПРОЩАНИЕ":"ПРИВЕТСТВИЕ"}</span><strong>{flow.name}</strong></div><div><small>{flow.versions.find(v=>v.status==="published")?"Опубликовано":"Черновик"}</small><Icon name="arrow"/></div></button>)}</div>}</section>}

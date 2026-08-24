@@ -1045,6 +1045,7 @@ async def crypto_checkout(
             "payment_id": payment.id,
             "invoice_url": payment.invoice_url,
             "status": payment.status,
+            "expires_at": payment.expires_at.isoformat(),
         }
         await store_response(
             session,
@@ -1092,15 +1093,24 @@ async def stars_checkout(
         )
         if stored is not None:
             return stored.body
-        payment = await create_stars_checkout(session, user.auth.owner.id)
+        payment = await create_stars_checkout(session, user.auth.owner.id, surface="mini_app")
         plan = await session.get(Plan, payment.plan_id)
         if plan is None:
             raise FinanceError("Business plan is unavailable")
-        invoice_url = await _create_stars_invoice_link(settings, payment, plan)
+        invoice_url = payment.invoice_url
+        if not invoice_url:
+            invoice_url = await _create_stars_invoice_link(settings, payment, plan)
+            payment.invoice_url = invoice_url
+            payment.provider_payload = {
+                "subscription_period": 2_592_000,
+                "surface": "mini_app",
+            }
+            await session.commit()
         body: dict[str, object] = {
             "payment_id": payment.id,
             "invoice_url": invoice_url,
             "status": payment.status,
+            "expires_at": payment.expires_at.isoformat(),
         }
         await store_response(
             session,

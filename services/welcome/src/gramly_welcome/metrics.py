@@ -69,3 +69,15 @@ PREMIUM_MEDIA = Counter(
     "Telegram-native premium media resolution attempts",
     ("kind", "result"),
 )
+CUSTOM_EMOJI_PRESERVED = Counter(
+    "welcome_custom_emoji_preserved_total",
+    "Telegram messages that retained every requested custom emoji entity",
+)
+CUSTOM_EMOJI_DOWNGRADED = Counter(
+    "welcome_custom_emoji_downgraded_total",
+    "Telegram messages where requested custom emoji entities were removed",
+)
+CUSTOM_EMOJI_TELEGRAM_ERROR = Counter(
+    "welcome_custom_emoji_telegram_error_total",
+    "Telegram API errors while sending messages containing custom emoji",
+)

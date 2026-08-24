@@ -8,7 +8,12 @@ from decimal import ROUND_DOWN, Decimal
 from aiogram.exceptions import TelegramAPIError
 from prometheus_client import start_http_server
 
-from ..billing import claim_due_reminder, finish_reminder
+from ..billing import (
+    claim_due_reminder,
+    finish_reminder,
+    purge_one_terminal_payment,
+    reconcile_one_expired_payment,
+)
 from ..config import get_settings
 from ..crypto_pay import CryptoPayClient, CryptoPayError
 from ..db import session_factory
@@ -92,6 +97,31 @@ async def process_one_reminder() -> bool:
     return True
 
 
+async def process_one_expired_payment() -> bool:
+    settings = get_settings()
+    client = (
+        CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url)
+        if settings.crypto_pay_api_token
+        else None
+    )
+    async with session_factory() as session:
+        result = await reconcile_one_expired_payment(session, client)
+    if result is None:
+        return False
+    provider, outcome = result
+    BILLING_OPERATIONS.labels(f"payment_expiry_{provider}", outcome).inc()
+    return True
+
+
+async def purge_one_expired_payment() -> bool:
+    async with session_factory() as session:
+        provider = await purge_one_terminal_payment(session)
+    if provider is None:
+        return False
+    BILLING_OPERATIONS.labels(f"payment_cleanup_{provider}", "deleted").inc()
+    return True
+
+
 async def worker_loop() -> None:
     logging.basicConfig(level=logging.INFO)
     logger.info("Starting Gramly Welcome billing worker")
@@ -104,7 +134,9 @@ async def worker_loop() -> None:
         while not stopping.is_set():
             handled = await process_one()
             reminded = await process_one_reminder()
-            if handled or reminded:
+            expired = await process_one_expired_payment()
+            purged = await purge_one_expired_payment()
+            if handled or reminded or expired or purged:
                 continue
             try:
                 await asyncio.wait_for(stopping.wait(), timeout=1)
