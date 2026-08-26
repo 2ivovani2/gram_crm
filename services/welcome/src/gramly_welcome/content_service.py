@@ -40,6 +40,37 @@ MAX_KEYBOARD_ROWS = 15
 MAX_KEYBOARD_BUTTONS_PER_ROW = 3
 MAX_KEYBOARD_BUTTON_TEXT_LENGTH = 128
 MAX_KEYBOARD_URL_LENGTH = 1024
+MAX_FLOW_STEPS = 5
+MAX_FLOW_ATTACHMENTS = 5
+
+
+async def _flow_usage(session: AsyncSession, version_id: int) -> tuple[int, int]:
+    step_count = int(
+        await session.scalar(
+            select(func.count(ContentStep.id)).where(ContentStep.version_id == version_id)
+        )
+        or 0
+    )
+    attachment_count = int(
+        await session.scalar(
+            select(func.count(ContentAttachment.id))
+            .join(ContentStep, ContentStep.id == ContentAttachment.step_id)
+            .where(ContentStep.version_id == version_id)
+        )
+        or 0
+    )
+    return step_count, attachment_count
+
+
+def _validate_flow_limits(step_count: int, attachment_count: int) -> None:
+    if step_count > MAX_FLOW_STEPS:
+        raise ContentValidationError(
+            f"В одной цепочке можно сохранить не более {MAX_FLOW_STEPS} сообщений"
+        )
+    if attachment_count > MAX_FLOW_ATTACHMENTS:
+        raise ContentValidationError(
+            f"В одной цепочке можно сохранить не более {MAX_FLOW_ATTACHMENTS} файлов"
+        )
 
 
 def _validate_button_url(value: str, *, row: int, button: int) -> None:
@@ -396,6 +427,8 @@ async def add_draft_step(
         raise ContentValidationError("Editable draft was not found")
     if not 0 <= delay_after_seconds <= MAX_DELAY_SECONDS:
         raise ContentValidationError("Step delay must be between 0 and 180 days")
+    step_count, attachment_count = await _flow_usage(session, version.id)
+    _validate_flow_limits(step_count + 1, attachment_count + len(attachments))
     max_position = await session.scalar(
         select(func.max(ContentStep.position)).where(ContentStep.version_id == version.id)
     )
@@ -491,6 +524,14 @@ async def copy_step(session: AsyncSession, owner_id: int, step_id: int) -> Conte
     )
     if step is None:
         raise ContentValidationError("Editable step was not found")
+    copied_attachment_count = int(
+        await session.scalar(
+            select(func.count(ContentAttachment.id)).where(ContentAttachment.step_id == step.id)
+        )
+        or 0
+    )
+    step_count, attachment_count = await _flow_usage(session, step.version_id)
+    _validate_flow_limits(step_count + 1, attachment_count + copied_attachment_count)
     await session.execute(
         update(ContentStep)
         .where(
@@ -510,6 +551,67 @@ async def copy_step(session: AsyncSession, owner_id: int, step_id: int) -> Conte
     target = await _clone_step(session, step, step.version_id, step.position + 1)
     await session.commit()
     return target
+
+
+async def replace_draft_step(
+    session: AsyncSession,
+    owner_id: int,
+    step_id: int,
+    payload: dict[str, Any],
+    attachments: list[dict[str, Any]],
+) -> list[str]:
+    """Atomically replace a draft step while preserving position, delay and keyboard."""
+
+    step = await session.scalar(
+        select(ContentStep)
+        .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+        .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+        .join(ManagedBot, ManagedBot.id == ContentFlow.bot_id)
+        .where(
+            ContentStep.id == step_id,
+            ContentFlowVersion.status == "draft",
+            ManagedBot.owner_id == owner_id,
+        )
+        .with_for_update(of=ContentFlowVersion)
+    )
+    if step is None:
+        raise ContentValidationError("Editable step was not found")
+    old_attachments = list(
+        (
+            await session.scalars(
+                select(ContentAttachment)
+                .where(ContentAttachment.step_id == step.id)
+                .order_by(ContentAttachment.position, ContentAttachment.id)
+            )
+        ).all()
+    )
+    step_count, attachment_count = await _flow_usage(session, step.version_id)
+    _validate_flow_limits(
+        step_count,
+        attachment_count - len(old_attachments) + len(attachments),
+    )
+    candidate_keys = [item.storage_key for item in old_attachments]
+    await session.execute(
+        delete(ContentAttachment).where(ContentAttachment.step_id == step.id)
+    )
+    step.payload = payload
+    session.add_all(
+        [
+            ContentAttachment(step_id=step.id, position=index, **attachment)
+            for index, attachment in enumerate(attachments)
+        ]
+    )
+    await session.commit()
+    if not candidate_keys:
+        return []
+    referenced = set(
+        await session.scalars(
+            select(ContentAttachment.storage_key).where(
+                ContentAttachment.storage_key.in_(candidate_keys)
+            )
+        )
+    )
+    return sorted(set(candidate_keys) - referenced)
 
 
 async def set_first_delay(session: AsyncSession, owner_id: int, version_id: int, delay_seconds: int) -> None:
@@ -666,19 +768,15 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
     flow = await session.get(ContentFlow, version.flow_id)
     if flow is None:
         raise RuntimeError("Content flow disappeared")
-    if flow.kind == "farewell":
-        attachment_count = int(
-            await session.scalar(
-                select(func.count(ContentAttachment.id)).where(
-                    ContentAttachment.step_id.in_([step.id for step in steps])
-                )
+    attachment_count = int(
+        await session.scalar(
+            select(func.count(ContentAttachment.id)).where(
+                ContentAttachment.step_id.in_([step.id for step in steps])
             )
-            or 0
         )
-        if len(steps) > 5:
-            raise ContentValidationError("Farewell chain supports up to 5 messages")
-        if attachment_count > 5:
-            raise ContentValidationError("Farewell chain supports up to 5 files")
+        or 0
+    )
+    _validate_flow_limits(len(steps), attachment_count)
     for step in steps[:-1]:
         if not 0 <= step.delay_after_seconds <= MAX_DELAY_SECONDS:
             raise ContentValidationError("Every non-final step needs a 0s–180d delay")

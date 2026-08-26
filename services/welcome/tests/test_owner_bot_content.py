@@ -9,7 +9,11 @@ import pytest
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from gramly_welcome import owner_bot
-from gramly_welcome.content_service import ContentValidationError, validate_step_keyboard
+from gramly_welcome.content_service import (
+    ContentValidationError,
+    _validate_flow_limits,
+    validate_step_keyboard,
+)
 from gramly_welcome.models import Payment, Plan
 from gramly_welcome.owner_bot import _parse_keyboard_definition, _toggle_channel_assignment
 from gramly_welcome.telegram_delivery import _reply_markup
@@ -259,6 +263,32 @@ def test_assignment_toggle_reports_concrete_result_and_preserves_selection() -> 
     assert selected == {40}
     assert message == "Канал назначен"
 
+
+def test_composer_summary_counts_text_and_files() -> None:
+    summary = owner_bot._composer_summary(
+        {
+            "composer_items": [
+                {"kind": "message", "payload": {"type": "text", "text": "Один"}},
+                {"kind": "attachment", "attachment_index": 0},
+                {"kind": "attachment", "attachment_index": 1},
+            ],
+            "composer_attachments": [{"storage_key": "one"}, {"storage_key": "two"}],
+        }
+    )
+
+    assert "1</b> текстовых" in summary
+    assert "2</b> файлов" in summary
+
+
+@pytest.mark.parametrize(
+    ("steps", "files", "error"),
+    [(6, 0, "не более 5 сообщений"), (1, 6, "не более 5 файлов")],
+)
+def test_flow_limits_are_shared_by_welcome_and_farewell(
+    steps: int, files: int, error: str
+) -> None:
+    with pytest.raises(ContentValidationError, match=error):
+        _validate_flow_limits(steps, files)
 
 @pytest.mark.asyncio
 async def test_owner_stars_checkout_exports_recurring_invoice_link(
