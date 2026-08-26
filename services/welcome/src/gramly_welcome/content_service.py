@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -22,6 +23,7 @@ from .models import (
     EventLog,
     FlowChannelAssignment,
     ManagedBot,
+    RotationChannel,
 )
 
 
@@ -179,6 +181,144 @@ class DraftSnapshot:
     steps: list[ContentStep]
 
 
+@dataclass(frozen=True)
+class BotTemplateCopyResult:
+    flows: int
+    versions: int
+    steps: int
+
+
+async def clone_bot_configuration(
+    session: AsyncSession,
+    owner_id: int,
+    source_bot_id: int,
+    destination_bot_id: int,
+    *,
+    business_enabled: bool,
+) -> BotTemplateCopyResult:
+    """Copy reusable bot configuration without operational or customer data."""
+
+    if source_bot_id == destination_bot_id:
+        raise ContentValidationError("Нельзя использовать нового бота как его собственный шаблон")
+    bots = list(
+        (
+            await session.scalars(
+                select(ManagedBot)
+                .where(
+                    ManagedBot.id.in_([source_bot_id, destination_bot_id]),
+                    ManagedBot.owner_id == owner_id,
+                    ManagedBot.is_active.is_(True),
+                )
+                .with_for_update()
+            )
+        ).all()
+    )
+    by_id = {bot.id: bot for bot in bots}
+    source = by_id.get(source_bot_id)
+    destination = by_id.get(destination_bot_id)
+    if source is None or destination is None:
+        raise ContentValidationError("Исходный или новый бот не найден")
+    existing_flows = int(
+        await session.scalar(
+            select(func.count(ContentFlow.id)).where(ContentFlow.bot_id == destination.id)
+        )
+        or 0
+    )
+    if existing_flows:
+        raise ContentValidationError("Шаблон для этого бота уже был применён")
+    has_rotation = bool(
+        await session.scalar(
+            select(RotationChannel.id)
+            .join(Channel, Channel.id == RotationChannel.channel_id)
+            .where(
+                Channel.bot_id == source.id,
+                (RotationChannel.is_enabled.is_(True) | RotationChannel.is_priority.is_(True)),
+            )
+            .limit(1)
+        )
+    )
+    if has_rotation and not business_enabled:
+        raise ContentValidationError(
+            "В шаблоне настроена Business-ротация. Подключите Business или начните с нуля"
+        )
+
+    destination.welcome_delay_seconds = source.welcome_delay_seconds
+    destination.approval_delay_seconds = source.approval_delay_seconds
+    destination.auto_approve = source.auto_approve
+
+    source_flows = list(
+        (
+            await session.scalars(
+                select(ContentFlow)
+                .where(ContentFlow.bot_id == source.id)
+                .order_by(ContentFlow.id)
+            )
+        ).all()
+    )
+    version_count = 0
+    step_count = 0
+    for source_flow in source_flows:
+        target_flow = ContentFlow(
+            bot_id=destination.id,
+            name=source_flow.name,
+            kind=source_flow.kind,
+            assignment_mode=source_flow.assignment_mode,
+            is_active=source_flow.is_active,
+        )
+        session.add(target_flow)
+        await session.flush()
+        versions = list(
+            (
+                await session.scalars(
+                    select(ContentFlowVersion)
+                    .where(ContentFlowVersion.flow_id == source_flow.id)
+                    .order_by(ContentFlowVersion.version, ContentFlowVersion.id)
+                )
+            ).all()
+        )
+        for source_version in versions:
+            target_version = ContentFlowVersion(
+                flow_id=target_flow.id,
+                version=source_version.version,
+                status=source_version.status,
+                author_telegram_id=source_version.author_telegram_id,
+                first_delay_seconds=source_version.first_delay_seconds,
+                legacy_version_id=None,
+                published_at=source_version.published_at,
+            )
+            session.add(target_version)
+            await session.flush()
+            steps = list(
+                (
+                    await session.scalars(
+                        select(ContentStep)
+                        .where(ContentStep.version_id == source_version.id)
+                        .order_by(ContentStep.position, ContentStep.id)
+                    )
+                ).all()
+            )
+            for source_step in steps:
+                await _clone_step(session, source_step, target_version.id, source_step.position)
+            version_count += 1
+            step_count += len(steps)
+    session.add(
+        EventLog(
+            bot_id=destination.id,
+            owner_id=owner_id,
+            event_type="bot_template_applied",
+            message="Bot configuration copied from an owned template",
+            context={
+                "source_bot_id": source.id,
+                "flows": len(source_flows),
+                "versions": version_count,
+                "steps": step_count,
+            },
+        )
+    )
+    await session.commit()
+    return BotTemplateCopyResult(len(source_flows), version_count, step_count)
+
+
 async def _owned_flow(
     session: AsyncSession, owner_id: int, flow_id: int, *, lock: bool = False
 ) -> ContentFlow:
@@ -255,7 +395,7 @@ async def _clone_step(
     target = ContentStep(
         version_id=target_version_id,
         position=position,
-        payload=source.payload,
+        payload=copy.deepcopy(source.payload),
         delay_after_seconds=source.delay_after_seconds,
     )
     session.add(target)
@@ -279,7 +419,7 @@ async def _clone_step(
                 original_name=item.original_name,
                 mime_type=item.mime_type,
                 size=item.size,
-                payload=item.payload,
+                payload=copy.deepcopy(item.payload),
             )
             for item in attachments
         ]
@@ -289,7 +429,7 @@ async def _clone_step(
         target_keyboard = ContentKeyboard(
             step_id=target.id,
             kind=keyboard.kind,
-            settings=keyboard.settings,
+            settings=copy.deepcopy(keyboard.settings),
         )
         session.add(target_keyboard)
         await session.flush()

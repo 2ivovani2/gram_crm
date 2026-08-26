@@ -57,6 +57,7 @@ from .content_compiler import AttachmentSpec, compile_step
 from .content_service import (
     ContentValidationError,
     add_draft_step,
+    clone_bot_configuration,
     copy_step,
     delete_step,
     draft_snapshot,
@@ -220,6 +221,7 @@ def _owner_display_name(owner: Owner) -> str:
 
 class AddBotState(StatesGroup):
     waiting_for_token = State()
+    waiting_for_template = State()
 
 
 class WelcomeMessageState(StatesGroup):
@@ -708,6 +710,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
         )
         return
     managed: ManagedBot | None = None
+    template_bots: list[ManagedBot] = []
     settings = get_settings()
     try:
         async with Bot(token=token) as probe:
@@ -718,6 +721,8 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
         async with session_factory() as session:
             await set_webhook_configured(session, managed.id, True)
             await ensure_free_access(session, owner.id)
+            owned, _ = await list_owned_bots(session, owner.id, 0, 100)
+            template_bots = [item for item in owned if item.id != managed.id]
     except IntegrityError:
         await owner_answer(
             message,
@@ -759,6 +764,42 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
         )
         return
+    if template_bots:
+        await state.set_state(AddBotState.waiting_for_template)
+        await state.update_data(destination_bot_id=managed.id)
+        rows = [
+            [
+                owner_button(
+                    text=f"Скопировать @{item.username or item.display_name}"[:64],
+                    callback_data=f"bot-template:{managed.id}:{item.id}",
+                    emoji_key="copy",
+                )
+            ]
+            for item in template_bots
+        ]
+        rows.extend(
+            [
+                [
+                    owner_button(
+                        text="Настроить с нуля",
+                        callback_data=f"bot-template:{managed.id}:scratch",
+                        emoji_key="add",
+                    )
+                ],
+                [owner_button(text="❌ Отмена", callback_data="cancel")],
+                _home_row(),
+            ]
+        )
+        await owner_answer(
+            message,
+            f"✅ <b>Токен принят · шаг 2 из 3</b>\n\n"
+            f"Бот <b>@{managed.username}</b> зарегистрирован. Выберите, как его настроить:\n\n"
+            "• <b>Скопировать</b> — перенесём цепочки, кнопки, задержки и автоматизацию;\n"
+            "• <b>С нуля</b> — создадим чистую конфигурацию.\n\n"
+            "Каналы, участники, статистика, доставки и платежи никогда не копируются.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
+        return
     await state.clear()
     await owner_answer(
         message,
@@ -767,6 +808,73 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
         "канала с правом «Добавление подписчиков».",
         reply_markup=_connection_keyboard(managed),
     )
+
+
+@router.callback_query(F.data.startswith("bot-template:"))
+async def apply_bot_template(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    message = _callback_message(callback)
+    parts = (callback.data or "").split(":")
+    if len(parts) != 3:
+        await callback.answer("Некорректная команда.", show_alert=True)
+        return
+    try:
+        destination_id = int(parts[1])
+    except ValueError:
+        await callback.answer("Некорректный бот.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("destination_bot_id") != destination_id:
+        await callback.answer("Этот экран устарел. Начните подключение заново.", show_alert=True)
+        return
+    destination = await _get_owned(owner, str(destination_id))
+    if destination is None:
+        await callback.answer("Новый бот не найден.", show_alert=True)
+        return
+    if parts[2] == "scratch":
+        await state.clear()
+        await owner_answer(
+            message,
+            f"✅ <b>@{destination.username} готов к настройке</b>\n\n"
+            "Добавьте бота администратором канала с правом «Добавление подписчиков».",
+            reply_markup=_connection_keyboard(destination),
+        )
+        await callback.answer("Создана чистая конфигурация")
+        return
+    try:
+        source_id = int(parts[2])
+        async with session_factory() as session:
+            access = await access_for_owner(session, owner.id)
+            result = await clone_bot_configuration(
+                session,
+                owner.id,
+                source_id,
+                destination.id,
+                business_enabled=access.plan_slug == "business",
+            )
+            source = await owned_bot(session, owner.id, source_id)
+    except (ValueError, ContentValidationError) as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    except Exception:
+        logger.exception(
+            "Could not apply bot template owner_id=%s destination_bot_id=%s",
+            owner.id,
+            destination.id,
+        )
+        await callback.answer("Не удалось скопировать настройки. Попробуйте ещё раз.", show_alert=True)
+        return
+    await state.clear()
+    source_name = source.username if source is not None else "шаблона"
+    await owner_answer(
+        message,
+        f"✅ <b>Настройки скопированы из @{html.escape(source_name)}</b>\n\n"
+        f"Перенесено цепочек: <b>{result.flows}</b>, версий: <b>{result.versions}</b>, "
+        f"шагов: <b>{result.steps}</b>.\n\n"
+        "Каналы и рабочая история остались раздельными. Теперь добавьте нового бота "
+        "администратором нужного канала.",
+        reply_markup=_connection_keyboard(destination),
+    )
+    await callback.answer("Шаблон применён")
 
 
 async def _get_owned(owner: Owner, raw_id: str) -> ManagedBot | None:
