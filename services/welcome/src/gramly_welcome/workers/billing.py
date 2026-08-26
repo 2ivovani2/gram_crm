@@ -10,6 +10,7 @@ from prometheus_client import start_http_server
 
 from ..billing import (
     claim_due_reminder,
+    expire_one_business_subscription,
     finish_reminder,
     purge_one_terminal_payment,
     reconcile_one_expired_payment,
@@ -81,13 +82,17 @@ async def process_one_reminder() -> bool:
         claimed = await claim_due_reminder(session)
     if claimed is None:
         return False
-    reminder, telegram_id = claimed
+    reminder, telegram_id, bot_names = claimed
     error: str | None = None
     try:
+        affected = ", ".join(bot_names) if bot_names else "подключённые боты"
         await interface_bot().send_message(
             telegram_id,
             "⏳ Подписка GramlyHello Business закончится через "
-            f"{reminder.days_before} дн. Продлите её в разделе «💎 ПОДПИСКА».",
+            f"{reminder.days_before} дн.\n\n"
+            f"Затронуто: {affected}. После окончания приветствия продолжат работать на Free, "
+            "но в них вернётся реклама, а ротация будет приостановлена. "
+            "Продлите Business в разделе «💎 ПОДПИСКА».",
         )
     except TelegramAPIError as exc:
         error = str(exc)
@@ -122,6 +127,14 @@ async def purge_one_expired_payment() -> bool:
     return True
 
 
+async def process_one_expired_subscription() -> bool:
+    async with session_factory() as session:
+        expired = await expire_one_business_subscription(session)
+    if expired:
+        BILLING_OPERATIONS.labels("subscription_expiry", "downgraded").inc()
+    return expired
+
+
 async def worker_loop() -> None:
     logging.basicConfig(level=logging.INFO)
     logger.info("Starting Gramly Welcome billing worker")
@@ -136,7 +149,8 @@ async def worker_loop() -> None:
             reminded = await process_one_reminder()
             expired = await process_one_expired_payment()
             purged = await purge_one_expired_payment()
-            if handled or reminded or expired or purged:
+            downgraded = await process_one_expired_subscription()
+            if handled or reminded or expired or purged or downgraded:
                 continue
             try:
                 await asyncio.wait_for(stopping.wait(), timeout=1)

@@ -45,6 +45,7 @@ from .bot_ui import (
     inline_button,
     load_bot_ui_theme,
 )
+from .campaigns import record_campaign_touch
 from .commercial import (
     access_for_owner,
     ensure_free_access,
@@ -255,6 +256,8 @@ class OwnerMiddleware(BaseMiddleware):
                 command = (event.text or "").split(maxsplit=1)
                 if len(command) == 2 and command[0].split("@", 1)[0] == "/start" and command[1].startswith("ref_"):
                     await record_first_touch(session, owner.id, command[1][4:])
+                elif len(command) == 2 and command[0].split("@", 1)[0] == "/start" and command[1].startswith("cmp_"):
+                    await record_campaign_touch(session, owner.id, command[1][4:])
             is_check = isinstance(event, CallbackQuery) and event.data == "required-channel:check"
             if not is_check:
                 membership = await check_required_membership(session, cast(Bot, data["bot"]), owner)

@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import cast
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,8 +21,11 @@ from .finance import (
     settle_payment,
 )
 from .models import (
+    EventLog,
     FinancialLedgerEntry,
+    ManagedBot,
     Owner,
+    OwnerNotification,
     Payment,
     PaymentEvent,
     Plan,
@@ -380,13 +383,17 @@ def safe_invoice_snapshot(invoice: CryptoInvoice) -> dict[str, object]:
 
 async def claim_due_reminder(
     session: AsyncSession,
-) -> tuple[SubscriptionReminder, int] | None:
+) -> tuple[SubscriptionReminder, int, list[str]] | None:
     now = datetime.now(UTC)
     reminder = await session.scalar(
         select(SubscriptionReminder)
+        .join(Subscription, Subscription.id == SubscriptionReminder.subscription_id)
         .where(
             SubscriptionReminder.status.in_(("pending", "retry")),
             SubscriptionReminder.due_at <= now,
+            Subscription.status == "active",
+            Subscription.ends_at.is_not(None),
+            Subscription.ends_at > now,
         )
         .order_by(SubscriptionReminder.due_at, SubscriptionReminder.id)
         .with_for_update(skip_locked=True)
@@ -406,8 +413,103 @@ async def claim_due_reminder(
         return None
     reminder.status = "processing"
     reminder.attempts += 1
+    bot_names = list(
+        (
+            await session.scalars(
+                select(ManagedBot.display_name)
+                .join(Subscription, Subscription.owner_id == ManagedBot.owner_id)
+                .where(Subscription.id == reminder.subscription_id, ManagedBot.is_active.is_(True))
+                .order_by(ManagedBot.id)
+            )
+        ).all()
+    )
     await session.commit()
-    return reminder, int(telegram_id)
+    return reminder, int(telegram_id), [str(name) for name in bot_names]
+
+
+async def expire_one_business_subscription(session: AsyncSession) -> bool:
+    """Atomically downgrade one elapsed Business subscription to Free."""
+
+    now = datetime.now(UTC)
+    subscription = await session.scalar(
+        select(Subscription)
+        .join(Plan, Plan.id == Subscription.plan_id)
+        .where(
+            Plan.slug == "business",
+            Subscription.status == "active",
+            Subscription.ends_at.is_not(None),
+            Subscription.ends_at <= now,
+        )
+        .order_by(Subscription.ends_at, Subscription.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if subscription is None:
+        return False
+    free_plan = await session.scalar(
+        select(Plan).where(Plan.slug == "free", Plan.is_active.is_(True))
+    )
+    if free_plan is None:
+        return False
+    ended_at = subscription.ends_at
+    bot_names = list(
+        (
+            await session.scalars(
+                select(ManagedBot.display_name)
+                .where(ManagedBot.owner_id == subscription.owner_id, ManagedBot.is_active.is_(True))
+                .order_by(ManagedBot.id)
+            )
+        ).all()
+    )
+    subscription.plan_id = free_plan.id
+    subscription.source = "free"
+    subscription.status = "active"
+    subscription.starts_at = now
+    subscription.ends_at = None
+    subscription.auto_renew = False
+    subscription.external_reference = ""
+    await session.execute(
+        delete(SubscriptionReminder).where(
+            SubscriptionReminder.subscription_id == subscription.id
+        )
+    )
+    affected = ", ".join(str(name) for name in bot_names) or "подключённые боты"
+    await session.execute(
+        insert(OwnerNotification)
+        .values(
+            owner_id=subscription.owner_id,
+            announcement_id=None,
+            kind="subscription_change",
+            dedupe_key=f"business-expired:{subscription.id}:{ended_at.isoformat() if ended_at else 'unknown'}",
+            sequence=0,
+            payload={
+                "title": "Business завершён",
+                "body": (
+                    "Аккаунт автоматически переведён на Free. Приветственные цепочки продолжают "
+                    f"работать, но реклама вернулась, а ротация приостановлена. Затронуто: {affected}. "
+                    "После оплаты Business восстановится автоматически — настройки ротации сохранены."
+                ),
+            },
+            status="pending",
+            attempts=0,
+            due_at=now,
+        )
+        .on_conflict_do_nothing(constraint="uq_owner_notification_dedupe")
+    )
+    session.add(
+        EventLog(
+            owner_id=subscription.owner_id,
+            event_type="business_subscription_expired",
+            message="Business subscription downgraded to Free",
+            context={
+                "subscription_id": subscription.id,
+                "ended_at": ended_at.isoformat() if ended_at else None,
+                "affected_bots": len(bot_names),
+            },
+        )
+    )
+    await session.commit()
+    return True
 
 
 async def finish_reminder(

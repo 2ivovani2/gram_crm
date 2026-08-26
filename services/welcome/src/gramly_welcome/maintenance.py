@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select, text, update
 
+from .business_metrics import ensure_weekly_snapshot
 from .config import get_settings
 from .db import session_factory
 from .learning import purge_expired_tip_sessions
@@ -76,6 +77,8 @@ async def maintain() -> None:
             )
     async with session_factory() as session:
         await purge_expired_tip_sessions(session, now=now)
+    async with session_factory() as session:
+        await ensure_weekly_snapshot(session, now=now)
 
 
 def run() -> None:
