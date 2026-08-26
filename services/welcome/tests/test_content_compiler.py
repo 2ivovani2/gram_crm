@@ -94,3 +94,62 @@ def test_text_becomes_first_attachment_caption() -> None:
 
     assert operations[0].operation_type == "photo"
     assert operations[0].payload["caption"] == "Привет"
+
+
+def test_composite_step_preserves_editor_order_and_groups_only_adjacent_media() -> None:
+    quote = {
+        "type": "expandable_blockquote",
+        "offset": 0,
+        "length": 12,
+    }
+    operations = compile_step(
+        {
+            "type": "composite",
+            "sequence": [
+                {
+                    "kind": "message",
+                    "payload": {
+                        "type": "text",
+                        "text": "Важный текст",
+                        "entities": [quote],
+                    },
+                },
+                {"kind": "attachment", "attachment_index": 0},
+                {"kind": "attachment", "attachment_index": 1},
+                {
+                    "kind": "message",
+                    "payload": {"type": "text", "text": "После альбома"},
+                },
+                {"kind": "attachment", "attachment_index": 2},
+            ],
+        },
+        [media("photo", 1), media("video", 2), media("document", 3)],
+    )
+
+    assert [item.operation_type for item in operations] == [
+        "text",
+        "media_group",
+        "text",
+        "document",
+    ]
+    assert operations[0].payload["entities"] == [quote]
+    assert [item["media_type"] for item in operations[1].media] == ["photo", "video"]
+
+
+def test_composite_attachment_keeps_caption_entities() -> None:
+    entity = {"type": "blockquote", "offset": 0, "length": 6}
+    attachment = AttachmentSpec(
+        "photo",
+        "objects/photo",
+        payload={"caption": "Цитата", "caption_entities": [entity]},
+    )
+
+    operations = compile_step(
+        {
+            "type": "composite",
+            "sequence": [{"kind": "attachment", "attachment_index": 0}],
+        },
+        [attachment],
+    )
+
+    assert operations[0].payload["caption_entities"] == [entity]

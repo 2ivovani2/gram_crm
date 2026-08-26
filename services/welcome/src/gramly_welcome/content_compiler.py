@@ -123,7 +123,40 @@ def compile_step(
     keyboard: dict[str, Any] | None = None,
 ) -> list[CompiledOperation]:
     """Compile one logical editor step into legal, independently retryable Bot API calls."""
-    if not attachments:
+    sequence = step_payload.get("sequence")
+    if isinstance(sequence, list):
+        operations: list[CompiledOperation] = []
+        pending_media: list[dict[str, Any]] = []
+
+        def flush_media() -> None:
+            nonlocal pending_media
+            if pending_media:
+                operations.extend(_split_media(pending_media))
+                pending_media = []
+
+        for raw_item in sequence:
+            if not isinstance(raw_item, dict):
+                continue
+            if raw_item.get("kind") == "attachment":
+                try:
+                    attachment_index = int(raw_item["attachment_index"])
+                    attachment = attachments[attachment_index]
+                except (KeyError, TypeError, ValueError, IndexError):
+                    continue
+                pending_media.append(
+                    attachment.as_media(dict(attachment.payload or {}))
+                )
+                continue
+            if raw_item.get("kind") == "message" and isinstance(raw_item.get("payload"), dict):
+                flush_media()
+                payload = dict(raw_item["payload"])
+                operations.append(
+                    CompiledOperation(str(payload.get("type") or "text"), payload, [])
+                )
+        flush_media()
+        if not operations:
+            operations = [CompiledOperation("text", {"type": "text", "text": ""}, [])]
+    elif not attachments:
         operation_type = str(step_payload.get("type") or "text")
         operations = [CompiledOperation(operation_type, dict(step_payload), [])]
     else:

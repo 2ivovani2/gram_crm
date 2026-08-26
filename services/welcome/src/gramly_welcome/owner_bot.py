@@ -52,6 +52,7 @@ from .commercial import (
     payment_method_ready,
 )
 from .config import Settings, get_settings
+from .content_compiler import AttachmentSpec, compile_step
 from .content_service import (
     ContentValidationError,
     add_draft_step,
@@ -64,6 +65,7 @@ from .content_service import (
     move_step,
     open_draft,
     publish_draft,
+    replace_draft_step,
     replace_step_keyboard,
     set_first_delay,
     set_flow_assignments,
@@ -221,6 +223,7 @@ class AddBotState(StatesGroup):
 
 class WelcomeMessageState(StatesGroup):
     waiting_for_message = State()
+    waiting_for_confirmation = State()
 
 
 class WelcomeButtonState(StatesGroup):
@@ -228,6 +231,10 @@ class WelcomeButtonState(StatesGroup):
 
 
 class ChainDelayState(StatesGroup):
+    waiting_for_delay = State()
+
+
+class BotDelayState(StatesGroup):
     waiting_for_delay = State()
 
 
@@ -259,8 +266,13 @@ class OwnerMiddleware(BaseMiddleware):
                     )
                     markup = InlineKeyboardMarkup(
                         inline_keyboard=[
-                            [TelegramInlineKeyboardButton(text="📣 Подписаться", url=membership.config.url)],
-                            [TelegramInlineKeyboardButton(text="🔄 Проверить подписку", callback_data="required-channel:check")],
+                            [owner_button(text="📣 Подписаться", url=membership.config.url)],
+                            [
+                                owner_button(
+                                    text="🔄 Проверить подписку",
+                                    callback_data="required-channel:check",
+                                )
+                            ],
                         ]
                     )
                     if isinstance(event, CallbackQuery):
@@ -923,9 +935,8 @@ async def send_chain_editor(
         f"\nЧерновик версии <b>{snapshot.version.version}</b>",
         f"Первое сообщение: <b>{_format_delay(snapshot.version.first_delay_seconds)}</b>",
     ]
-    if is_farewell:
-        lines.append("Лимит: до 5 сообщений и до 5 файлов.")
-    else:
+    lines.append("Лимит цепочки: до 5 сообщений и до 5 файлов.")
+    if not is_farewell:
         timeline = flow_timeline_seconds(snapshot.version, snapshot.steps)
         if timeline <= JOIN_REQUEST_MAX_TIMELINE_SECONDS:
             lines.append(
@@ -1029,21 +1040,71 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
         await callback.answer("Черновик уже недоступен.", show_alert=True)
         return
     await state.set_state(WelcomeMessageState.waiting_for_message)
-    await state.update_data(bot_id=snapshot.flow.bot_id, version_id=version_id)
+    await state.set_data(
+        {
+            "bot_id": snapshot.flow.bot_id,
+            "version_id": version_id,
+            "composer_mode": "add",
+            "composer_items": [],
+            "composer_attachments": [],
+        }
+    )
     await owner_answer(
         message,
-        "➕ <b>Новый шаг</b>\n\nОтправьте текст или Telegram-вложение. "
-        "Форматирование и Premium Emoji будут сохранены без преобразования.\n\n"
+        "➕ <b>Новый шаг</b>\n\nОтправляйте сюда текст, отдельные файлы или целый альбом "
+        "в нужном порядке. Gramly соберёт их в одно логическое сообщение. Когда всё добавите, "
+        "нажмите «Готово».\n\nФорматирование и Premium Emoji сохранятся без преобразования.\n\n"
         "Персонализация необязательна: добавьте <code>{name}</code> только там, "
         "где нужно подставить имя нового участника.",
-        reply_markup=_one_button(
-            "❌ Отмена",
-            f"farewell:{snapshot.flow.bot_id}"
-            if snapshot.flow.kind == "farewell"
-            else f"msg:{snapshot.flow.bot_id}",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    owner_button(
+                        text="✅ Готово",
+                        callback_data="chain:compose-done",
+                        style="success",
+                    )
+                ],
+                [owner_button(text="❌ Отмена", callback_data="chain:compose-cancel")],
+            ]
         ),
     )
     await callback.answer()
+
+
+def _composer_summary(data: dict[str, Any]) -> str:
+    items = list(data.get("composer_items") or [])
+    attachments = list(data.get("composer_attachments") or [])
+    text_count = sum(1 for item in items if item.get("kind") == "message")
+    return (
+        f"Сейчас в шаге: <b>{text_count}</b> текстовых элементов и "
+        f"<b>{len(attachments)}</b> файлов."
+    )
+
+
+def _composer_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                owner_button(
+                    text="✅ Готово",
+                    callback_data="chain:compose-done",
+                    style="success",
+                )
+            ],
+            [owner_button(text="❌ Отмена", callback_data="chain:compose-cancel")],
+        ]
+    )
+
+
+def _merge_attachment_payload(media: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    result = dict(media)
+    raw_native_payload = result.get("payload")
+    native_payload: dict[str, Any] = (
+        dict(raw_native_payload) if isinstance(raw_native_payload, dict) else {}
+    )
+    result["payload"] = {**payload, **native_payload}
+    return result
 
 
 @router.message(WelcomeMessageState.waiting_for_message)
@@ -1066,7 +1127,9 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
             cast(Bot, message.bot), message, storage, f"welcome-bots/{bot.public_id}/messages"
         )
         payload = serialize_message(message)
-        attachments = [media] if media else []
+        data = await state.get_data()
+        composer_items = list(data.get("composer_items") or [])
+        composer_attachments = list(data.get("composer_attachments") or [])
         if message.media_group_id:
             if message.content_type not in {"photo", "video", "audio", "document"} or not media:
                 raise ValueError("Этот тип вложения нельзя сохранить внутри Telegram-альбома.")
@@ -1075,7 +1138,9 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
             if current_group and current_group != message.media_group_id:
                 raise ValueError("Дождитесь сохранения предыдущего альбома.")
             album_items = list(current.get("album_items") or [])
-            album_items.append({"payload": payload, "media": media})
+            album_items.append(
+                {"payload": payload, "media": _merge_attachment_payload(media, payload)}
+            )
             await state.update_data(
                 album_group=message.media_group_id,
                 album_items=album_items,
@@ -1086,20 +1151,34 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
             if int(latest.get("album_last_message_id") or 0) != message.message_id:
                 return
             collected = list(latest.get("album_items") or [])
-            payload = {
-                "type": "media_group",
-                "items": [item["payload"] for item in collected],
-            }
-            attachments = [item["media"] for item in collected]
-        async with session_factory() as session:
-            await add_draft_step(
-                session,
-                owner.id,
-                version_id,
-                payload,
-                attachments,
-                delay_after_seconds=1,
+            latest_items = list(latest.get("composer_items") or [])
+            latest_attachments = list(latest.get("composer_attachments") or [])
+            for item in collected:
+                attachment_index = len(latest_attachments)
+                latest_attachments.append(item["media"])
+                latest_items.append(
+                    {"kind": "attachment", "attachment_index": attachment_index}
+                )
+            await state.update_data(
+                composer_items=latest_items,
+                composer_attachments=latest_attachments,
+                album_group=None,
+                album_items=[],
+                album_last_message_id=None,
             )
+        elif media:
+            attachment_index = len(composer_attachments)
+            composer_attachments.append(_merge_attachment_payload(media, payload))
+            composer_items.append(
+                {"kind": "attachment", "attachment_index": attachment_index}
+            )
+            await state.update_data(
+                composer_items=composer_items,
+                composer_attachments=composer_attachments,
+            )
+        else:
+            composer_items.append({"kind": "message", "payload": payload})
+            await state.update_data(composer_items=composer_items)
     except (ValueError, MediaTooLargeError, ContentValidationError) as exc:
         await owner_answer(message, f"⚠️ {exc}")
         return
@@ -1109,9 +1188,149 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
         logger.exception("Could not save welcome message bot_id=%s", bot.id)
         await owner_answer(message, "Не удалось сохранить сообщение целиком. Попробуйте ещё раз.")
         return
+    latest = await state.get_data()
+    await owner_answer(
+        message,
+        f"✅ Элемент добавлен. {_composer_summary(latest)}\n\n"
+        "Можно отправить следующий элемент или завершить шаг.",
+        reply_markup=_composer_markup(),
+    )
+
+
+async def _delete_staged_media(data: dict[str, Any]) -> None:
+    keys = [
+        str(item.get("storage_key"))
+        for item in list(data.get("composer_attachments") or [])
+        if item.get("storage_key")
+    ]
+    for album_item in list(data.get("album_items") or []):
+        media = album_item.get("media") if isinstance(album_item, dict) else None
+        if isinstance(media, dict) and media.get("storage_key"):
+            keys.append(str(media["storage_key"]))
+    if keys:
+        await ObjectStorage(get_settings()).delete_many(sorted(set(keys)))
+
+
+@router.callback_query(F.data == "chain:compose-cancel")
+async def cancel_composer(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    try:
+        await _delete_staged_media(data)
+    except Exception:
+        logger.exception("Could not clean cancelled composer media")
+    version_id = int(data.get("version_id") or 0)
     await state.clear()
-    await owner_answer(message, "✅ Шаг добавлен в черновик. В production пока ничего не изменилось.")
-    await send_chain_editor(message, owner, version_id)
+    if version_id:
+        await send_chain_editor(_callback_message(callback), owner, version_id, edit=True)
+    await callback.answer("Изменения отменены")
+
+
+async def _send_staged_preview(message: Message, owner: Owner, data: dict[str, Any]) -> None:
+    payload = {"type": "composite", "sequence": list(data.get("composer_items") or [])}
+    attachments = [
+        AttachmentSpec(
+            media_type=str(item["media_type"]),
+            storage_key=str(item["storage_key"]),
+            original_name=str(item.get("original_name") or ""),
+            mime_type=str(item.get("mime_type") or ""),
+            size=int(item.get("size") or 0),
+            payload=item.get("payload") if isinstance(item.get("payload"), dict) else None,
+        )
+        for item in list(data.get("composer_attachments") or [])
+    ]
+    storage = ObjectStorage(get_settings())
+    for operation in compile_step(payload, attachments):
+        await send_compiled_operation(
+            cast(Bot, message.bot),
+            message.chat.id,
+            operation.operation_type,
+            operation.payload,
+            operation.media,
+            storage,
+            first_name=owner.first_name,
+        )
+
+
+@router.callback_query(F.data == "chain:compose-done")
+async def finish_composer(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    items = list(data.get("composer_items") or [])
+    if not items:
+        await callback.answer("Сначала добавьте текст или файл.", show_alert=True)
+        return
+    await callback.answer("Готовлю предпросмотр…")
+    try:
+        await _send_staged_preview(_callback_message(callback), owner, data)
+    except (TelegramAPIError, ObjectStorageError, OSError):
+        logger.exception("Could not preview staged composer version_id=%s", data.get("version_id"))
+        await owner_answer(
+            _callback_message(callback),
+            "⚠️ Telegram не смог воспроизвести будущий шаг. Исправьте последний элемент "
+            "или отмените создание — сохранённая цепочка пока не изменилась.",
+            reply_markup=_composer_markup(),
+        )
+        return
+    await state.set_state(WelcomeMessageState.waiting_for_confirmation)
+    action = "заменить выбранный шаг" if data.get("composer_mode") == "replace" else "добавить шаг"
+    await owner_answer(
+        _callback_message(callback),
+        f"🔎 Выше — фактический предпросмотр. Подтвердите, чтобы {action}.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    owner_button(
+                        text="✅ Подтвердить",
+                        callback_data="chain:compose-confirm",
+                        style="success",
+                    )
+                ],
+                [owner_button(text="❌ Отмена", callback_data="chain:compose-cancel")],
+            ]
+        ),
+    )
+
+
+@router.callback_query(F.data == "chain:compose-confirm")
+async def confirm_composer(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    version_id = int(data.get("version_id") or 0)
+    payload = {"type": "composite", "sequence": list(data.get("composer_items") or [])}
+    attachments = list(data.get("composer_attachments") or [])
+    orphaned_keys: list[str] = []
+    try:
+        async with session_factory() as session:
+            if data.get("composer_mode") == "replace":
+                orphaned_keys = await replace_draft_step(
+                    session,
+                    owner.id,
+                    int(data.get("step_id") or 0),
+                    payload,
+                    attachments,
+                )
+            else:
+                await add_draft_step(
+                    session,
+                    owner.id,
+                    version_id,
+                    payload,
+                    attachments,
+                    delay_after_seconds=1,
+                )
+    except ContentValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    if orphaned_keys:
+        try:
+            await ObjectStorage(get_settings()).delete_many(orphaned_keys)
+        except Exception:
+            logger.exception("Could not delete replaced composer media")
+    await state.clear()
+    await owner_answer(
+        _callback_message(callback),
+        "✅ Шаг сохранён в черновике. Опубликованная цепочка пока не изменилась.",
+    )
+    await send_chain_editor(_callback_message(callback), owner, version_id)
+    await callback.answer("Сохранено")
 
 
 @router.callback_query(F.data.startswith("chain:step:"))
@@ -1122,6 +1341,10 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
     try:
         async with session_factory() as session:
             snapshot = await draft_snapshot(session, owner.id, version_id)
+            preview_operations = await compile_preview_operations(
+                session,
+                [item for item in snapshot.steps if item.id == step_id],
+            )
     except ContentValidationError:
         await callback.answer("Черновик уже недоступен.", show_alert=True)
         return
@@ -1142,16 +1365,75 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
                     callback_data=f"chain:delay-input:{version_id}:{step_id}",
                 ),
             ],
+            [
+                owner_button(
+                    text="✏️ Изменить содержимое",
+                    callback_data=f"chain:replace:{version_id}:{step_id}",
+                )
+            ],
             [owner_button(text="🔘 Клавиатура", callback_data=f"chain:buttons:{version_id}:{step_id}")],
             [owner_button(text="🗑 Удалить", callback_data=f"chain:delete:{version_id}:{step_id}")],
             [owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
         ]
     )
+    await callback.answer("Показываю шаг…")
+    storage = ObjectStorage(get_settings())
+    try:
+        for operation in preview_operations:
+            await send_compiled_operation(
+                cast(Bot, message.bot),
+                message.chat.id,
+                operation.operation_type,
+                operation.payload,
+                operation.media,
+                storage,
+                first_name=owner.first_name,
+            )
+    except (TelegramAPIError, ObjectStorageError, OSError):
+        logger.exception("Could not preview selected draft step step_id=%s", step_id)
+        await owner_answer(
+            message,
+            "⚠️ Не удалось воспроизвести этот шаг. Данные черновика не изменены.",
+        )
     await owner_answer(
         message,
         f"<b>Шаг {step.position + 1}</b> · {step.payload.get('type', 'message')}\n"
         f"Задержка до следующего: <b>{_format_delay(step.delay_after_seconds)}</b>",
         reply_markup=keyboard,
+    )
+
+
+@router.callback_query(F.data.startswith("chain:replace:"))
+async def replace_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    _, _, raw_version, raw_step = (callback.data or "").split(":")
+    version_id, step_id = int(raw_version), int(raw_step)
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+    except ContentValidationError:
+        await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    if not any(item.id == step_id for item in snapshot.steps):
+        await callback.answer("Шаг не найден.", show_alert=True)
+        return
+    await state.set_state(WelcomeMessageState.waiting_for_message)
+    await state.set_data(
+        {
+            "bot_id": snapshot.flow.bot_id,
+            "version_id": version_id,
+            "step_id": step_id,
+            "composer_mode": "replace",
+            "composer_items": [],
+            "composer_attachments": [],
+        }
+    )
+    await owner_answer(
+        _callback_message(callback),
+        "✏️ <b>Новое содержимое шага</b>\n\n"
+        "Соберите замену из текста, отдельных файлов или альбома и нажмите «Готово». "
+        "Старый шаг останется неизменным до финального подтверждения; его позиция, задержка "
+        "и кнопки сохранятся.",
+        reply_markup=_composer_markup(),
     )
     await callback.answer()
 
@@ -1735,18 +2017,14 @@ async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContex
 async def send_delay_screen(message: Message, bot: ManagedBot, kind: str) -> None:
     value = bot.welcome_delay_seconds if kind == "welcome" else bot.approval_delay_seconds
     title = "Задержка приветственного сообщения" if kind == "welcome" else "Задержка принятия"
-    prefix = "wdelay" if kind == "welcome" else "adelay"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                owner_button(text="− 5 мин", callback_data=f"{prefix}:{bot.id}:-300"),
-                owner_button(text="+ 5 мин", callback_data=f"{prefix}:{bot.id}:300"),
+                owner_button(
+                    text="✏️ Ввести задержку",
+                    callback_data=f"bot-delay-input:{kind}:{bot.id}",
+                )
             ],
-            [
-                owner_button(text="− 1 час", callback_data=f"{prefix}:{bot.id}:-3600"),
-                owner_button(text="+ 1 час", callback_data=f"{prefix}:{bot.id}:3600"),
-            ],
-            [owner_button(text="Обнулить", callback_data=f"{prefix}:{bot.id}:zero")],
             [owner_button(text="✅ Готово", callback_data=f"bot:{bot.id}")],
         ]
     )
@@ -1768,23 +2046,73 @@ async def show_welcome_delay(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data.regexp(r"^(wdelay|adelay):"))
-async def change_delay(callback: CallbackQuery, owner: Owner) -> None:
-    message = _callback_message(callback)
-    kind, raw_id, raw_delta = (callback.data or "").split(":")
+@router.callback_query(F.data.startswith("bot-delay-input:"))
+async def request_bot_delay(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    _, kind, raw_id = (callback.data or "").split(":")
     bot = await _get_owned(owner, raw_id)
     if bot is None:
         await callback.answer("Нет доступа.", show_alert=True)
         return
-    field = "welcome_delay_seconds" if kind == "wdelay" else "approval_delay_seconds"
-    current = int(getattr(bot, field))
-    value = 0 if raw_delta == "zero" else max(0, min(30 * 86400, current + int(raw_delta)))
+    if kind not in {"welcome", "approval"}:
+        await callback.answer("Неизвестная настройка.", show_alert=True)
+        return
+    current = bot.welcome_delay_seconds if kind == "welcome" else bot.approval_delay_seconds
+    await state.set_state(BotDelayState.waiting_for_delay)
+    await state.set_data({"bot_id": bot.id, "delay_kind": kind})
+    await owner_answer(
+        _callback_message(callback),
+        _delay_prompt(
+            "Задержка приветственного сообщения"
+            if kind == "welcome"
+            else "Задержка принятия заявки",
+            current,
+        ),
+        reply_markup=_one_button("❌ Отмена", f"bot:{bot.id}"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.regexp(r"^(wdelay|adelay):"))
+async def legacy_delay_button(callback: CallbackQuery, owner: Owner) -> None:
+    """Keep already-sent keyboards usable without preserving the increment UX."""
+
+    prefix, raw_id, _raw_delta = (callback.data or "").split(":")
+    bot = await _get_owned(owner, raw_id)
+    if bot is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await send_delay_screen(
+        _callback_message(callback),
+        bot,
+        "welcome" if prefix == "wdelay" else "approval",
+    )
+    await callback.answer("Введите точное значение")
+
+
+@router.message(BotDelayState.waiting_for_delay)
+async def receive_bot_delay(message: Message, owner: Owner, state: FSMContext) -> None:
+    if not message.text:
+        await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>05:30</code>.")
+        return
+    try:
+        value = parse_delay(message.text)
+    except DelayParseError as exc:
+        await owner_answer(message, f"⚠️ {html.escape(str(exc))}. Сохранённое значение не изменилось.")
+        return
+    data = await state.get_data()
+    bot = await _get_owned(owner, str(data.get("bot_id") or ""))
+    kind = str(data.get("delay_kind") or "")
+    if bot is None or kind not in {"welcome", "approval"}:
+        await state.clear()
+        await owner_answer(message, "⚠️ Сессия настройки устарела. Откройте бота заново.")
+        return
+    field = "welcome_delay_seconds" if kind == "welcome" else "approval_delay_seconds"
     async with session_factory() as session:
         await update_delay(session, bot.id, field, value)
     setattr(bot, field, value)
-    await message.delete()
-    await send_delay_screen(message, bot, "welcome" if kind == "wdelay" else "approval")
-    await callback.answer("Сохранено")
+    await state.clear()
+    await owner_answer(message, f"✅ Задержка сохранена: <code>{format_delay_clock(value)}</code>.")
+    await send_delay_screen(message, bot, kind)
 
 
 @router.callback_query(F.data.startswith("requests:"))

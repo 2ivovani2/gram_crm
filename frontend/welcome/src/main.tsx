@@ -57,6 +57,18 @@ function formatDelay(seconds: number): string {
   return [days,hours,minutes,secs].map(value=>String(value).padStart(2,"0")).join(":");
 }
 
+function stepText(step: Step): string {
+  const direct = step.payload.text || step.payload.caption;
+  if (typeof direct === "string") return direct;
+  const sequence = step.payload.sequence;
+  if (Array.isArray(sequence)) {
+    const message = sequence.find(item => typeof item === "object" && item !== null && (item as {kind?:unknown}).kind === "message") as {payload?:{text?:unknown;caption?:unknown}} | undefined;
+    const nested = message?.payload?.text || message?.payload?.caption;
+    if (typeof nested === "string") return nested;
+  }
+  return "Медиа-сообщение";
+}
+
 function formatCountdown(expiresAt: string, now: number): string {
   const seconds=Math.max(0,Math.ceil((new Date(expiresAt).getTime()-now)/1000));
   const minutes=Math.floor(seconds/60);const remainder=seconds%60;
@@ -169,7 +181,7 @@ function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
       <div className={data.version.join_request_compatible?"success":"error"} role="status"><strong>{data.version.join_request_compatible?"✅ До 4 минут — отправим до принятия заявки":"🔐 Больше 4 минут — потребуется разрешение пользователя"}</strong><span>{data.version.join_request_explanation}{!data.version.join_request_compatible&&` Служебное сообщение не является шагом цепочки. Автопринятие ${data.version.auto_approve?"включено: без подтверждения заявка будет принята у безопасной границы Telegram, но цепочка не запустится":"выключено: заявка останется ожидающей, а ссылка будет действовать 24 часа"}.`}</span>{!data.version.join_request_compatible&&<span>🧾 Пользователь увидит сообщение о полученной заявке и кнопки «Продолжить и вступить» / «Открыть бота».</span>}{!data.version.join_request_compatible&&data.version.auto_approve&&data.version.channels_missing_invite_rights.length>0&&<span>⚠️ Боту не хватает права приглашать пользователей: {data.version.channels_missing_invite_rights.join(", ")}.</span>}</div>
       {!data.steps.length&&<EmptyState title="В цепочке пока нет шагов" text="Добавьте первое сообщение ниже — оно станет началом приветственного сценария."/>}<div className="steps">{data.steps.map((step,index)=><article key={step.id} draggable={editing!==step.id} onDragStart={()=>setDragged(step.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged && dragged!==step.id){const ids=data.steps.map(i=>i.id);const from=ids.indexOf(dragged);ids.splice(from,1);ids.splice(index,0,dragged);void reorder(ids)}}}>
         <div className="step-index">{String(index+1).padStart(2,"0")}</div>
-        {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={String(step.payload.text||step.payload.caption||"")} required/><label>Пауза, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue={formatDelay(step.delay_after_seconds)} inputMode="numeric"/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{String(step.payload.text || step.payload.caption || "Медиа-сообщение")}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {formatDelay(step.delay_after_seconds)}</span></div>}
+        {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={stepText(step)==="Медиа-сообщение"?"":stepText(step)} required/><label>Пауза, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue={formatDelay(step.delay_after_seconds)} inputMode="numeric"/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{stepText(step)}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {formatDelay(step.delay_after_seconds)}</span></div>}
         <div className="step-actions"><button onClick={()=>move(index,-1)} aria-label="Выше">↑</button><button onClick={()=>move(index,1)} aria-label="Ниже">↓</button><button onClick={()=>setEditing(step.id)} aria-label="Изменить">✎</button><button onClick={()=>void copy(step.id)} aria-label="Копировать">⧉</button><button onClick={()=>void remove(step.id)} aria-label="Удалить">×</button><span className="drag">⋮⋮</span></div>
       </article>)}</div>
       <form className="step-form" onSubmit={add}><span className="eyebrow">НОВЫЙ ШАГ</span><textarea name="text" placeholder="Текст сообщения. Необязательно добавьте {name} — перед отправкой подставим имя участника." required/><label>Пауза после шага, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue="00:00:00:01" inputMode="numeric"/></label><button className="button acid">Добавить в цепочку</button></form>

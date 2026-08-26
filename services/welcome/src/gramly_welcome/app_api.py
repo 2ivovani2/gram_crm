@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -751,8 +752,8 @@ async def update_step_content(
     session: SessionDep,
     _idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
 ) -> dict[str, object]:
-    result = await session.execute(
-        update(ContentStep)
+    step = await session.scalar(
+        select(ContentStep)
         .where(
             ContentStep.id == step_id,
             ContentStep.version_id.in_(
@@ -765,11 +766,29 @@ async def update_step_content(
                 )
             ),
         )
-        .values(payload={"text": payload.text, "entities": []})
-        .returning(ContentStep.id)
+        .with_for_update()
     )
-    if result.scalar_one_or_none() is None:
+    if step is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Editable step not found")
+    next_payload = deepcopy(step.payload)
+    sequence = next_payload.get("sequence")
+    if isinstance(sequence, list):
+        replacement = {"type": "text", "text": payload.text, "entities": []}
+        first_message = next(
+            (
+                item
+                for item in sequence
+                if isinstance(item, dict) and item.get("kind") == "message"
+            ),
+            None,
+        )
+        if first_message is None:
+            sequence.insert(0, {"kind": "message", "payload": replacement})
+        else:
+            first_message["payload"] = replacement
+    else:
+        next_payload = {"type": "text", "text": payload.text, "entities": []}
+    step.payload = next_payload
     await session.commit()
     return {"step_id": step_id, "updated": True}
 
