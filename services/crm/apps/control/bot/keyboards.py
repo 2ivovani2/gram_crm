@@ -174,8 +174,8 @@ def worker_deadline_detail_keyboard(item, selected_filter: str, page: int) -> In
 
 def admin_control_main_menu() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="📋 Мои отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
-    b.button(text="📋 Все отчёты (без шаблона)", callback_data=CtrlAdminCB(action="reports_all"))
+    b.button(text="📋 Все отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
+    b.button(text="👤 Только мои шаблоны", callback_data=CtrlAdminCB(action="reports_mine"))
     b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
     b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
     b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))

@@ -8,6 +8,7 @@ import re
 from django.contrib import messages
 from django.core.files.storage import default_storage
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.views import View
 from django.http import FileResponse, HttpResponse, HttpResponseForbidden, StreamingHttpResponse
 from django.utils.http import content_disposition_header
@@ -238,7 +239,7 @@ class ReportsListView(AdminOrCuratorMixin, View):
             .select_related("user", "reviewed_by", "template", "template__created_by")
             .order_by("-submitted_at")
         )
-        if status_filter:
+        if status_filter and status_filter != "all":
             qs = qs.filter(status=status_filter)
         if search:
             qs = qs.filter(
@@ -672,13 +673,13 @@ class UsersListView(AdminOnlyMixin, View):
         from apps.crm.models import WorkspaceMembership, CRMRole
 
         role_filter = request.GET.get("role", "anonymous")
-        status_filter = request.GET.get("status", "")
+        status_filter = request.GET.get("status", UserStatus.ACTIVE)
         search = request.GET.get("q", "")
 
         qs = User.objects.order_by("telegram_username")
         if role_filter:
             qs = qs.filter(role=role_filter)
-        if status_filter:
+        if status_filter and status_filter != "all":
             qs = qs.filter(status=status_filter)
         if search:
             qs = qs.filter(
@@ -708,8 +709,14 @@ class UsersListView(AdminOnlyMixin, View):
         for u in users:
             u.crm_membership = memberships.get(u.pk)
 
+        count_qs = User.objects.all()
+        if status_filter and status_filter != "all":
+            count_qs = count_qs.filter(status=status_filter)
         role_counts = dict(
-            User.objects.values("role").annotate(c=Count("id")).values_list("role", "c")
+            count_qs.values("role").annotate(c=Count("id")).values_list("role", "c")
+        )
+        status_counts = dict(
+            User.objects.values("status").annotate(c=Count("id")).values_list("status", "c")
         )
 
         return render(request, "control/users_list.html", self.ctx(request, {
@@ -726,6 +733,8 @@ class UsersListView(AdminOnlyMixin, View):
             "curator_count":    role_counts.get("curator", 0),
             "accountant_count": role_counts.get("accountant", 0),
             "admin_count":      role_counts.get("admin", 0),
+            "active_count":     status_counts.get(UserStatus.ACTIVE, 0),
+            "archived_count":   status_counts.get(UserStatus.INACTIVE, 0),
         }))
 
     def post(self, request):
@@ -861,7 +870,11 @@ class UserEditView(AdminOnlyMixin, View):
                 )
 
         elif action == "delete":
-            if not user.is_admin():
+            if user.pk == request.crm_user.pk:
+                messages.error(request, "Нельзя архивировать собственную текущую учётную запись.")
+            elif user.status == UserStatus.INACTIVE:
+                messages.info(request, "Сотрудник уже находится в архиве.")
+            elif not user.is_admin():
                 # Employee records own financial history, reports, penalties and
                 # audit trails through cascading relations. "Delete" therefore
                 # archives access instead of physically deleting that history.
@@ -872,7 +885,7 @@ class UserEditView(AdminOnlyMixin, View):
                     request,
                     "Сотрудник архивирован. Отчёты, штрафы и финансовая история сохранены.",
                 )
-                return redirect("control:users")
+                return redirect(f"{reverse('control:users')}?status={UserStatus.ACTIVE}")
 
         return redirect(next_url)
 

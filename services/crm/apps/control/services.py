@@ -356,6 +356,30 @@ class ReportService:
 
     @staticmethod
     @transaction.atomic
+    def complete_submission(report_id: int, user: User) -> "EmployeeReport":
+        """Confirm that the employee finished composing a persisted report."""
+        from apps.control.models import EmployeeReport
+        from apps.control.tasks import queue_report_submission_notification
+
+        report = EmployeeReport.objects.select_for_update().filter(
+            pk=report_id,
+            user=user,
+        ).first()
+        if report is None:
+            raise ValueError("Отчёт не найден. Начните подачу заново.")
+        if not report.text_content and not report.media_files.filter(
+            revision=report.current_revision,
+            status="ready",
+        ).exists():
+            raise ValueError("Отчёт пуст. Отправьте текст или файл.")
+        if report.submission_completed_at is None:
+            report.submission_completed_at = timezone.now()
+            report.save(update_fields=["submission_completed_at", "updated_at"])
+            transaction.on_commit(lambda: queue_report_submission_notification(report.pk))
+        return report
+
+    @staticmethod
+    @transaction.atomic
     def accept_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
         from apps.control.models import (
             EmployeeReport, ModerationHistory, ReportStatus,

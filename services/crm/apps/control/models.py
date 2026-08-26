@@ -237,6 +237,11 @@ class EmployeeReport(models.Model):
         null=True, blank=True,
         verbose_name="Время последней подачи",
     )
+    submission_completed_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Время завершения подачи",
+        help_text="Устанавливается после явного подтверждения сотрудником",
+    )
 
     # Deadline calculated from template.deadline_time + report_date at submission time.
     # Stored here so changes to the template do not affect existing reports.
@@ -351,6 +356,54 @@ class ReportMedia(models.Model):
     def is_video(self) -> bool:
         return self.media_type in {"video", "animation", "video_note"} or self.mime_type.startswith("video/")
 
+
+class ReportSubmissionReceipt(models.Model):
+    """Idempotency receipt for one Telegram message in a report submission."""
+
+    submission_key = models.CharField(max_length=160, unique=True)
+    report = models.ForeignKey(
+        EmployeeReport,
+        on_delete=models.CASCADE,
+        related_name="submission_receipts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+
+class ReportSubmissionDelivery(models.Model):
+    """Durable per-recipient delivery state for a completed report."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        RETRY = "retry", "Повтор"
+        SENT = "sent", "Отправлено"
+
+    report = models.ForeignKey(
+        EmployeeReport,
+        on_delete=models.CASCADE,
+        related_name="submission_deliveries",
+    )
+    recipient = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        related_name="report_submission_deliveries",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=255, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report", "recipient"],
+                name="uniq_report_submission_delivery_recipient",
+            ),
+        ]
 
 class ModerationHistory(models.Model):
     """Immutable audit trail of every moderation action on a report."""

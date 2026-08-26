@@ -82,23 +82,34 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 </div>
 
 <!-- Role tabs -->
+<div class="tab-row" style="margin-bottom:10px">
+  <a href="?status=active{% if role_filter %}&role={{ role_filter }}{% endif %}{% if search %}&q={{ search }}{% endif %}" class="tab {% if status_filter == 'active' %}active{% endif %}">
+    Активные <span style="font-size:11px;opacity:.7">({{ active_count }})</span>
+  </a>
+  <a href="?status=inactive{% if role_filter %}&role={{ role_filter }}{% endif %}{% if search %}&q={{ search }}{% endif %}" class="tab {% if status_filter == 'inactive' %}active{% endif %}">
+    Архив <span style="font-size:11px;opacity:.7">({{ archived_count }})</span>
+  </a>
+  <a href="?status=all{% if role_filter %}&role={{ role_filter }}{% endif %}{% if search %}&q={{ search }}{% endif %}" class="tab {% if status_filter == 'all' %}active{% endif %}">
+    Все статусы
+  </a>
+</div>
 <div class="tab-row">
-  <a href="?role=anonymous{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'anonymous' %}active{% endif %}">
+  <a href="?role=anonymous&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'anonymous' %}active{% endif %}">
     Анонимы <span style="font-size:11px;opacity:.7">({{ anon_count }})</span>
   </a>
-  <a href="?role=worker{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'worker' %}active{% endif %}">
+  <a href="?role=worker&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'worker' %}active{% endif %}">
     Сотрудники <span style="font-size:11px;opacity:.7">({{ worker_count }})</span>
   </a>
-  <a href="?role=curator{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'curator' %}active{% endif %}">
+  <a href="?role=curator&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'curator' %}active{% endif %}">
     Кураторы <span style="font-size:11px;opacity:.7">({{ curator_count }})</span>
   </a>
-  <a href="?role=accountant{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'accountant' %}active{% endif %}">
+  <a href="?role=accountant&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'accountant' %}active{% endif %}">
     Бухгалтеры <span style="font-size:11px;opacity:.7">({{ accountant_count }})</span>
   </a>
-  <a href="?role=admin{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'admin' %}active{% endif %}">
+  <a href="?role=admin&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if role_filter == 'admin' %}active{% endif %}">
     Админы <span style="font-size:11px;opacity:.7">({{ admin_count }})</span>
   </a>
-  <a href="?{% if search %}q={{ search }}{% endif %}" class="tab {% if not role_filter %}active{% endif %}">
+  <a href="?role=&status={{ status_filter }}{% if search %}&q={{ search }}{% endif %}" class="tab {% if not role_filter %}active{% endif %}">
     Все
   </a>
 </div>
@@ -109,14 +120,14 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     {% if role_filter %}<input type="hidden" name="role" value="{{ role_filter }}">{% endif %}
     <input name="q" value="{{ search }}" placeholder="Поиск по username / Telegram ID..." style="min-width:240px"/>
     <select name="status">
-      <option value="">Все статусы</option>
+      <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все статусы</option>
       {% for val, label in statuses %}
       <option value="{{ val }}" {% if val == status_filter %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
     <button type="submit" class="btn-xs" style="background:var(--accent-soft);color:var(--accent)">Найти</button>
-    {% if search or status_filter %}
-    <a href="?{% if role_filter %}role={{ role_filter }}{% endif %}" class="btn-xs" style="background:var(--surface-3);color:var(--text)">Сбросить</a>
+    {% if search or status_filter != 'active' %}
+    <a href="?status=active{% if role_filter %}&role={{ role_filter }}{% endif %}" class="btn-xs" style="background:var(--surface-3);color:var(--text)">Сбросить</a>
     {% endif %}
   </form>
 </div>
