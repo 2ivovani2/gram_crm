@@ -49,7 +49,7 @@ async def _show_reports_list(callback: CallbackQuery, db_user: User, only_mine: 
         pending = await sync_to_async(
             lambda: list(ReportService.get_all_pending()[:15])
         )()
-        title = "📋 <b>Все отчёты без шаблона / legacy</b>"
+        title = "📋 <b>Все отчёты на проверке</b>"
         empty_text = "✅ Нет отчётов, ожидающих проверки."
 
     await callback.answer()
@@ -77,6 +77,11 @@ async def _show_reports_list(callback: CallbackQuery, db_user: User, only_mine: 
 
 @router.callback_query(CtrlAdminCB.filter(F.action == "reports"), IsAdmin())
 async def cb_reports_list(callback: CallbackQuery, db_user: User):
+    await _show_reports_list(callback, db_user, only_mine=False)
+
+
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports_mine"), IsAdmin())
+async def cb_reports_list_mine(callback: CallbackQuery, db_user: User):
     await _show_reports_list(callback, db_user, only_mine=True)
 
 

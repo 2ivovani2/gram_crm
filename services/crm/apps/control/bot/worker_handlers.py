@@ -2,8 +2,11 @@
 Worker-facing handlers for the Gramly Control bot.
 Handles: personal cabinet, KPI, withdrawal, report submission, penalties.
 """
+import asyncio
 import datetime as dt
 import html
+import logging
+import time
 
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
@@ -22,6 +25,7 @@ from apps.control.bot.keyboards import (
 from apps.control.bot.states import SubmitReportState, WithdrawalState, DisputePenaltyState, CryptoAddressState
 
 router = Router(name="control_worker")
+logger = logging.getLogger(__name__)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -166,14 +170,27 @@ async def cb_main_menu(callback: CallbackQuery, db_user: User, state: FSMContext
 async def cb_cancel(callback: CallbackQuery, db_user: User, state: FSMContext):
     data = await state.get_data()
     report_id = data.get("active_report_id")
-    await callback.answer("Отчёт уже сохранён" if report_id else "Отменено")
-    await state.clear()
     if report_id:
+        from asgiref.sync import sync_to_async
+        from apps.control.services import ReportService
+        try:
+            await sync_to_async(ReportService.complete_submission)(report_id, db_user)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        except Exception:
+            logger.exception("crm_report_cancel_finish_failed report_id=%s user_id=%s", report_id, db_user.pk)
+            await callback.answer("Не удалось завершить отчёт. Попробуйте ещё раз.", show_alert=True)
+            return
+        await callback.answer("Отчёт уже сохранён и отправлен")
+        await state.clear()
         await callback.message.edit_text(
             f"✅ <b>Отчёт #{report_id} отправлен на проверку</b>",
             reply_markup=worker_back_to_menu(),
         )
         return
+    await callback.answer("Отменено")
+    await state.clear()
     await send_worker_cabinet(callback, db_user, state)
 
 
@@ -437,7 +454,41 @@ async def cb_submit_report(callback: CallbackQuery, db_user: User, state: FSMCon
     await callback.answer()
 
     # Get assigned templates (no global blocking — per-template blocking handled in submit_report)
-    templates = await sync_to_async(ReportService.get_active_templates_for_user)(db_user)
+    started_at = time.monotonic()
+    try:
+        templates = await asyncio.wait_for(
+            sync_to_async(ReportService.get_active_templates_for_user)(db_user),
+            timeout=8,
+        )
+    except TimeoutError:
+        await state.clear()
+        logger.warning(
+            "crm_report_start_timeout user_id=%s elapsed_ms=%s",
+            db_user.pk,
+            round((time.monotonic() - started_at) * 1000),
+        )
+        await callback.message.edit_text(
+            "⚠️ <b>CRM отвечает дольше обычного</b>\n\n"
+            "Попробуйте открыть подачу отчёта ещё раз через несколько секунд.",
+            reply_markup=worker_back_to_menu(),
+        )
+        return
+    except Exception:
+        await state.clear()
+        logger.exception("crm_report_start_failed user_id=%s", db_user.pk)
+        await callback.message.edit_text(
+            "❌ <b>Не удалось открыть подачу отчёта</b>\n\n"
+            "Ошибка уже записана. Повторите попытку немного позже.",
+            reply_markup=worker_back_to_menu(),
+        )
+        return
+
+    logger.info(
+        "crm_report_start_ready user_id=%s templates=%s elapsed_ms=%s",
+        db_user.pk,
+        len(templates),
+        round((time.monotonic() - started_at) * 1000),
+    )
 
     if len(templates) > 1:
         # Multiple templates — let worker pick
@@ -449,7 +500,15 @@ async def cb_submit_report(callback: CallbackQuery, db_user: User, state: FSMCon
         return
 
     # 0 or 1 template — go straight to submission
-    template = templates[0] if templates else None
+    if not templates:
+        await state.clear()
+        await callback.message.edit_text(
+            "📭 <b>Нет доступных отчётов</b>\n\n"
+            "Вам пока не назначен активный шаблон отчёта. Обратитесь к администратору.",
+            reply_markup=worker_back_to_menu(),
+        )
+        return
+    template = templates[0]
     await _start_report_input(callback.message, state, template)
 
 
@@ -638,10 +697,24 @@ async def cb_worker_dynamic(callback: CallbackQuery, callback_data: CtrlWorkerCB
         if not report_id:
             await callback.answer("Сначала отправьте текст или файл", show_alert=True)
             return
+        from asgiref.sync import sync_to_async
+        from apps.control.services import ReportService
+        try:
+            report = await sync_to_async(ReportService.complete_submission)(
+                report_id,
+                db_user,
+            )
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        except Exception:
+            logger.exception("crm_report_finish_failed report_id=%s user_id=%s", report_id, db_user.pk)
+            await callback.answer("Не удалось завершить отчёт. Попробуйте ещё раз.", show_alert=True)
+            return
         await state.clear()
         await callback.answer("Отчёт завершён")
         await callback.message.edit_text(
-            f"✅ <b>Отчёт #{report_id} отправлен на проверку</b>\n\n"
+            f"✅ <b>Отчёт #{report.pk} отправлен на проверку</b>\n\n"
             "Все приложенные файлы сохранены в CRM.",
             reply_markup=worker_back_to_menu(),
         )
@@ -782,7 +855,6 @@ async def _start_report_input(
 @router.message(SubmitReportState.waiting_for_report)
 async def process_report_submission(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
-    from apps.control.services import ReportService
     from apps.control.models import ReportTemplate
 
     data = await state.get_data()
@@ -841,135 +913,49 @@ async def process_report_submission(message: Message, db_user: User, state: FSMC
         )
         return
 
+    from apps.control.report_media import ReportMediaSaveError, persist_report_message
+    submission_key = f"telegram:{message.chat.id}:{message.message_id}"
     try:
-        if active_report_id:
-            from apps.control.models import EmployeeReport
-            report = await sync_to_async(
-                lambda: EmployeeReport.objects.select_related("template").get(
-                    pk=active_report_id,
-                    user=db_user,
-                )
-            )()
-            report = await sync_to_async(ReportService.append_to_current_revision)(
-                report,
-                db_user,
-                text=text_content,
-            )
-        else:
-            report = await sync_to_async(ReportService.submit_report)(
-                user=db_user,
-                template=template,
-                text=text_content,
-                file_id=file_id,
-                file_type=file_type,
-                original_filename=original_filename,
-                report_id=report_id,
-                explicit_report_date=explicit_report_date,
-            )
-    except ValueError as e:
+        report, created = await persist_report_message(
+            bot=message.bot,
+            message=message,
+            user=db_user,
+            submission_key=submission_key,
+            template=template,
+            text=text_content,
+            file_id=file_id,
+            file_type=file_type,
+            original_filename=original_filename,
+            report_id=report_id,
+            explicit_report_date=explicit_report_date,
+            active_report_id=active_report_id,
+        )
+    except (ValueError, ReportMediaSaveError) as e:
         await state.clear()
         await message.answer(str(e), reply_markup=worker_back_to_menu())
         return
-
-    if media_object:
-        from apps.control.report_media import ReportMediaSaveError, save_message_attachment
-        try:
-            await save_message_attachment(message.bot, message, report)
-        except ReportMediaSaveError as exc:
-            await state.update_data(
-                report_id=report.pk,
-                active_report_id=report.pk,
-            )
-            await message.answer(
-                f"⚠️ {exc}\nОтчёт сохранён; отправьте файл повторно или завершите отчёт.",
-                reply_markup=worker_report_upload_keyboard(),
-            )
-            return
+    except Exception:
+        logger.exception(
+            "crm_report_content_failed user_id=%s submission_key=%s",
+            db_user.pk,
+            submission_key,
+        )
+        await message.answer(
+            "❌ Содержимое не сохранено. Попробуйте отправить его ещё раз.",
+            reply_markup=worker_cancel_report(),
+        )
+        return
 
     await state.update_data(
         report_id=report.pk,
         active_report_id=report.pk,
     )
-    from apps.control.models import ReportStatus
-    is_resubmission = report.status == ReportStatus.UPDATED
-
-    # Notify the right admin(s)
-    from apps.users.models import UserRole, UserStatus
-    from apps.control.bot.keyboards import admin_report_actions
-
-    username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
-    template_label = ""
-    if template and template.name:
-        template_label = f"\nТип: {template.name}"
-
-    admin_text = (
-        f"📋 <b>Новый отчёт от {username}</b>\n\n"
-        f"Дата: {report.period_label}{template_label}\n"
-        f"ID отчёта: #{report.pk}\n\n"
+    confirm_text = (
+        f"{'✅ Содержимое сохранено' if created else 'ℹ️ Это содержимое уже было сохранено'}\n\n"
+        f"Отчёт #{report.pk} за {report.period_label}.\n"
+        "Добавьте ещё текст или файлы либо нажмите «Завершить отчёт». "
+        "Только после завершения администратор получит уведомление."
     )
-    if text_content:
-        admin_text += f"<b>Текст:</b>\n{text_content[:500]}"
-
-    # Route: if template has created_by → notify only them; otherwise notify all admins
-    if template and template.created_by_id:
-        admin_ids = [template.created_by.telegram_id]
-    else:
-        admin_ids = await sync_to_async(
-            lambda: list(
-                User.objects.filter(
-                    role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_blocked_bot=False
-                ).values_list("telegram_id", flat=True)
-            )
-        )()
-
-    for admin_id in admin_ids:
-        try:
-            if file_id and file_type == "document":
-                await message.bot.send_document(
-                    admin_id,
-                    document=file_id,
-                    caption=admin_text,
-                    parse_mode="HTML",
-                    reply_markup=admin_report_actions(report.pk),
-                )
-            elif file_id and file_type == "photo":
-                await message.bot.send_photo(
-                    admin_id,
-                    photo=file_id,
-                    caption=admin_text,
-                    parse_mode="HTML",
-                    reply_markup=admin_report_actions(report.pk),
-                )
-            elif file_id and file_type in {"video", "animation", "video_note"}:
-                await message.bot.send_video(
-                    admin_id,
-                    video=file_id,
-                    caption=admin_text,
-                    parse_mode="HTML",
-                    reply_markup=admin_report_actions(report.pk),
-                )
-            else:
-                await message.bot.send_message(
-                    admin_id,
-                    admin_text,
-                    parse_mode="HTML",
-                    reply_markup=admin_report_actions(report.pk),
-                )
-        except Exception:
-            pass
-
-    if is_resubmission:
-        confirm_text = (
-            f"🔄 <b>Отчёт обновлён</b>\n\n"
-            f"Ваш исправленный отчёт за {report.period_label} отправлен на проверку.\n"
-            "Файл сохранён. Можно отправить ещё один или завершить отчёт."
-        )
-    else:
-        confirm_text = (
-            f"✅ <b>Отчёт отправлен на проверку</b>\n\n"
-            f"Ваш отчёт за {report.period_label} отправлен администратору.\n"
-            "Можно отправить ещё один файл или завершить отчёт."
-        )
     await message.answer(confirm_text, reply_markup=worker_report_upload_keyboard())
 
 

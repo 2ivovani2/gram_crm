@@ -201,6 +201,110 @@ def queue_report_decision_notification(report_id: int) -> bool:
         return False
 
 
+@shared_task(
+    bind=True,
+    name="apps.control.tasks.notify_report_submission_task",
+    queue="default",
+    max_retries=5,
+)
+def notify_report_submission_task(self, report_id: int) -> dict:
+    """Notify each responsible administrator after a report is committed."""
+    from django.db import transaction
+    from django.utils import timezone
+    from apps.control.bot.keyboards import admin_report_actions
+    from apps.control.models import EmployeeReport, ReportSubmissionDelivery
+    from apps.users.models import User, UserRole, UserStatus
+
+    report = EmployeeReport.objects.select_related("user", "template", "template__created_by").filter(
+        pk=report_id,
+        submission_completed_at__isnull=False,
+    ).first()
+    if report is None:
+        return {"sent": 0, "reason": "report_not_completed"}
+
+    creator = report.template.created_by if report.template else None
+    if (
+        creator is not None
+        and creator.status == UserStatus.ACTIVE
+        and not creator.is_blocked_bot
+    ):
+        recipient_ids = [creator.pk]
+    else:
+        recipient_ids = list(
+            User.objects.filter(
+                role=UserRole.ADMIN,
+                status=UserStatus.ACTIVE,
+                is_blocked_bot=False,
+            ).values_list("id", flat=True)
+        )
+    for recipient_id in recipient_ids:
+        ReportSubmissionDelivery.objects.get_or_create(
+            report=report,
+            recipient_id=recipient_id,
+        )
+
+    pending_ids = list(
+        ReportSubmissionDelivery.objects.filter(
+            report=report,
+            recipient_id__in=recipient_ids,
+        )
+        .exclude(status=ReportSubmissionDelivery.Status.SENT)
+        .values_list("id", flat=True)
+    )
+    username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)
+    template_label = report.template.name if report.template and report.template.name else "Без шаблона"
+    text = (
+        "📋 <b>Новый отчёт отправлен на проверку</b>\n\n"
+        f"Сотрудник: {html.escape(username)}\n"
+        f"Шаблон: {html.escape(template_label)}\n"
+        f"Дата: {html.escape(report.period_label or str(report.report_date or 'Не указана'))}\n"
+        f"ID отчёта: #{report.pk}"
+    )
+
+    sent = 0
+    failed = 0
+    for delivery_id in pending_ids:
+        with transaction.atomic():
+            delivery = ReportSubmissionDelivery.objects.select_for_update().select_related("recipient").get(
+                pk=delivery_id
+            )
+            if delivery.status == ReportSubmissionDelivery.Status.SENT:
+                continue
+            delivery.attempts += 1
+            delivery.save(update_fields=["attempts", "updated_at"])
+        ok = _send_message_sync(
+            delivery.recipient.telegram_id,
+            text,
+            reply_markup=admin_report_actions(report.pk),
+        )
+        if ok:
+            ReportSubmissionDelivery.objects.filter(pk=delivery.pk).update(
+                status=ReportSubmissionDelivery.Status.SENT,
+                sent_at=timezone.now(),
+                last_error="",
+            )
+            sent += 1
+        else:
+            ReportSubmissionDelivery.objects.filter(pk=delivery.pk).update(
+                status=ReportSubmissionDelivery.Status.RETRY,
+                last_error="Временная ошибка Telegram",
+            )
+            failed += 1
+
+    if failed:
+        raise self.retry(countdown=min(300, 15 * (2 ** self.request.retries)))
+    return {"sent": sent, "failed": failed, "report_id": report.pk}
+
+
+def queue_report_submission_notification(report_id: int) -> bool:
+    try:
+        notify_report_submission_task.delay(report_id)
+        return True
+    except Exception:
+        logger.exception("Failed to enqueue report submission notification report=%s", report_id)
+        return False
+
+
 def _financial_identity(user) -> str:
     name = " ".join(part for part in (user.first_name, user.last_name) if part).strip()
     username = f"@{user.telegram_username}" if user.telegram_username else ""
