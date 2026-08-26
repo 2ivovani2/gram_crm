@@ -18,7 +18,7 @@ from gramly_welcome.finance import (
     PAYMENT_SETTLEMENT_GRACE,
     PAYMENT_TTL,
     FinanceError,
-    add_calendar_year,
+    add_calendar_months,
     commission_rate,
 )
 
@@ -33,8 +33,14 @@ def test_commission_tiers_are_deterministic() -> None:
 
 
 def test_commission_term_handles_leap_day() -> None:
-    assert add_calendar_year(datetime(2024, 2, 29, 12, tzinfo=UTC)) == datetime(
-        2025, 2, 28, 12, tzinfo=UTC
+    assert add_calendar_months(datetime(2024, 2, 29, 12, tzinfo=UTC)) == datetime(
+        2024, 8, 29, 12, tzinfo=UTC
+    )
+
+
+def test_commission_term_clamps_end_of_month_after_six_months() -> None:
+    assert add_calendar_months(datetime(2025, 8, 31, 12, tzinfo=UTC)) == datetime(
+        2026, 2, 28, 12, tzinfo=UTC
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,11 +52,52 @@ def commission_rate(active_referrals: int) -> Decimal:
     return Decimal("0")
 
 
-def add_calendar_year(value: datetime) -> datetime:
-    try:
-        return value.replace(year=value.year + 1)
-    except ValueError:
-        return value.replace(year=value.year + 1, month=2, day=28)
+def add_calendar_months(value: datetime, months: int = 6) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+async def schedule_subscription_reminders(
+    session: AsyncSession, subscription: Subscription, ends_at: datetime
+) -> None:
+    """Replace stale reminders and schedule the canonical 5/3/1-day sequence."""
+
+    await session.flush()
+    await session.execute(
+        delete(SubscriptionReminder).where(
+            SubscriptionReminder.subscription_id == subscription.id
+        )
+    )
+    now = datetime.now(UTC)
+    for days_before in (5, 3, 1):
+        due_at = ends_at - timedelta(days=days_before)
+        if due_at <= now:
+            continue
+        await session.execute(
+            insert(SubscriptionReminder)
+            .values(
+                subscription_id=subscription.id,
+                days_before=days_before,
+                due_at=due_at,
+                status="pending",
+                attempts=0,
+                last_error="",
+                sent_at=None,
+            )
+            .on_conflict_do_update(
+                constraint="uq_subscription_reminder_day",
+                set_={
+                    "due_at": due_at,
+                    "status": "pending",
+                    "attempts": 0,
+                    "last_error": "",
+                    "sent_at": None,
+                },
+            )
+        )
 
 
 async def ensure_referral_code(session: AsyncSession, owner_id: int) -> ReferralCode:
@@ -222,30 +264,7 @@ async def settle_payment(
         subscription.ends_at = ends_at
         subscription.auto_renew = payment.provider == "telegram_stars"
         subscription.external_reference = provider_invoice_id
-    await session.flush()
-    for days_before in (7, 3, 1):
-        await session.execute(
-            insert(SubscriptionReminder)
-            .values(
-                subscription_id=subscription.id,
-                days_before=days_before,
-                due_at=ends_at - timedelta(days=days_before),
-                status="pending",
-                attempts=0,
-                last_error="",
-                sent_at=None,
-            )
-            .on_conflict_do_update(
-                constraint="uq_subscription_reminder_day",
-                set_={
-                    "due_at": ends_at - timedelta(days=days_before),
-                    "status": "pending",
-                    "attempts": 0,
-                    "last_error": "",
-                    "sent_at": None,
-                },
-            )
-        )
+    await schedule_subscription_reminders(session, subscription, ends_at)
 
     payment.provider_invoice_id = provider_invoice_id
     payment.status = "paid"
@@ -277,7 +296,7 @@ async def settle_payment(
         )
         if attribution.first_paid_at is None:
             attribution.first_paid_at = paid_at
-            attribution.commission_ends_at = add_calendar_year(paid_at)
+            attribution.commission_ends_at = add_calendar_months(paid_at)
         attribution.status = "active"
         if attribution.commission_ends_at is not None and paid_at < attribution.commission_ends_at:
             active = await _active_referral_count(session, attribution.referrer_owner_id, paid_at)
@@ -296,6 +315,9 @@ async def settle_payment(
                         metadata_json={"referred_owner_id": payment.owner_id},
                     )
                 )
+    from .campaigns import attribute_campaign_payment
+
+    await attribute_campaign_payment(session, payment, paid_at=paid_at)
     await session.commit()
     return SettlementResult(payment.id, False, commission)
 

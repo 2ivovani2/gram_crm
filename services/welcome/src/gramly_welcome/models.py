@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -10,6 +10,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -82,6 +83,7 @@ class Plan(Base):
     price_rub: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     price_xtr: Mapped[int | None] = mapped_column(Integer)
     referral_base_rub: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    calculation_price_rub: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     crypto_pay_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     stars_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_sellable: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -422,7 +424,7 @@ class SubscriptionReminder(Base):
         UniqueConstraint(
             "subscription_id", "days_before", name="uq_subscription_reminder_day"
         ),
-        CheckConstraint("days_before IN (7,3,1)", name="ck_subscription_reminder_day"),
+        CheckConstraint("days_before IN (5,3,1)", name="ck_subscription_reminder_day"),
         CheckConstraint(
             "status IN ('pending','processing','retry','sent','failed')",
             name="ck_subscription_reminder_status",
@@ -439,6 +441,80 @@ class SubscriptionReminder(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str] = mapped_column(String(500), default="")
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MarketingCampaign(Base):
+    __tablename__ = "marketing_campaign"
+    __table_args__ = (
+        UniqueConstraint("public_token", name="marketing_campaign_public_token_key"),
+        CheckConstraint("attribution_window_days BETWEEN 1 AND 365", name="ck_campaign_window"),
+        CheckConstraint("ends_at IS NULL OR ends_at > starts_at", name="ck_campaign_period"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    attribution_window_days: Mapped[int] = mapped_column(Integer, default=30)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CampaignTouch(Base):
+    __tablename__ = "campaign_touch"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "owner_id", name="uq_campaign_touch_owner"),
+        CheckConstraint("click_count > 0", name="ck_campaign_touch_click_count"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("marketing_campaign.id", ondelete="CASCADE"), index=True
+    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    click_count: Mapped[int] = mapped_column(Integer, default=1)
+    is_new_free: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_clicked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_clicked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CampaignAttribution(Base):
+    __tablename__ = "campaign_attribution"
+    __table_args__ = (UniqueConstraint("owner_id", name="campaign_attribution_owner_id_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("marketing_campaign.id", ondelete="RESTRICT"), index=True
+    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    attributed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CampaignPayment(Base):
+    __tablename__ = "campaign_payment"
+    __table_args__ = (UniqueConstraint("payment_id", name="campaign_payment_payment_id_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("marketing_campaign.id", ondelete="RESTRICT"), index=True
+    )
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payment.id", ondelete="RESTRICT"), index=True)
+    amount_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class WeeklyBusinessSnapshot(Base):
+    __tablename__ = "weekly_business_snapshot"
+    __table_args__ = (UniqueConstraint("week_start", name="weekly_business_snapshot_week_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, index=True)
+    calculation_price_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    active_paid_clients: Mapped[int] = mapped_column(Integer)
+    first_paid_30d: Mapped[int] = mapped_column(Integer)
+    churned_7d: Mapped[int] = mapped_column(Integer)
+    weekly_revenue_run_rate_rub: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

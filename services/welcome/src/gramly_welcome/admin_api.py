@@ -11,20 +11,24 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import String, and_, case, func, or_, select
+from sqlalchemy import String, and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Select
 
 from .billing import safe_invoice_snapshot, verify_and_settle_crypto_invoice
+from .business_metrics import live_business_metrics
 from .config import Settings, get_settings
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_dependency
-from .finance import FinanceError
+from .finance import FinanceError, schedule_subscription_reminders
 from .models import (
     AdCreative,
     AdImpression,
     Announcement,
+    CampaignAttribution,
+    CampaignPayment,
+    CampaignTouch,
     Channel,
     Contact,
     ContextualHelp,
@@ -34,12 +38,15 @@ from .models import (
     FlowDelivery,
     ManagedBot,
     Manual,
+    MarketingCampaign,
     Owner,
     OwnerNotification,
     Payment,
     Plan,
     Subscription,
+    SubscriptionReminder,
     Tip,
+    WeeklyBusinessSnapshot,
 )
 
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
@@ -181,6 +188,7 @@ class PlanPricingInput(BaseModel):
     price_rub: Decimal | None = Field(default=None, gt=0, decimal_places=2)
     price_xtr: int | None = Field(default=None, gt=0)
     referral_base_rub: Decimal | None = Field(default=None, gt=0, decimal_places=2)
+    calculation_price_rub: Decimal | None = Field(default=None, gt=0, decimal_places=2)
     crypto_pay_enabled: bool
     stars_enabled: bool
 
@@ -198,6 +206,14 @@ class SubscriptionActionInput(BaseModel):
     action: str = Field(pattern=r"^(grant_business|extend_business|cancel_renewal|revoke_now)$")
     days: int | None = Field(default=None, ge=1, le=3650)
     reason: str = Field(min_length=5, max_length=500)
+
+
+class CampaignInput(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    starts_at: datetime
+    ends_at: datetime | None = None
+    attribution_window_days: int = Field(default=30, ge=1, le=365)
+    is_active: bool = True
 
 
 class ActiveStateInput(BaseModel):
@@ -399,6 +415,209 @@ async def payments(
             "by_status": by_status,
         },
     }
+
+
+async def _campaign_payload(
+    session: AsyncSession, campaign: MarketingCampaign, settings: Settings
+) -> dict[str, object]:
+    clicks, visitors, new_free = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(CampaignTouch.click_count), 0),
+                func.count(CampaignTouch.id),
+                func.count(CampaignTouch.id).filter(CampaignTouch.is_new_free.is_(True)),
+            ).where(CampaignTouch.campaign_id == campaign.id)
+        )
+    ).one()
+    paid_clients, revenue = (
+        await session.execute(
+            select(
+                func.count(func.distinct(CampaignPayment.owner_id)),
+                func.coalesce(func.sum(CampaignPayment.amount_rub), 0),
+            ).where(CampaignPayment.campaign_id == campaign.id)
+        )
+    ).one()
+    active_clients = int(
+        await session.scalar(
+            select(func.count(func.distinct(CampaignAttribution.owner_id)))
+            .join(Subscription, Subscription.owner_id == CampaignAttribution.owner_id)
+            .join(Plan, Plan.id == Subscription.plan_id)
+            .where(
+                CampaignAttribution.campaign_id == campaign.id,
+                Plan.slug == "business",
+                Subscription.status == "active",
+                Subscription.ends_at > datetime.now(UTC),
+            )
+        )
+        or 0
+    )
+    visitors_count = int(visitors or 0)
+    paid_count = int(paid_clients or 0)
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "starts_at": _iso(campaign.starts_at),
+        "ends_at": _iso(campaign.ends_at),
+        "attribution_window_days": campaign.attribution_window_days,
+        "is_active": campaign.is_active,
+        "deep_link": f"https://t.me/{settings.interface_bot_username}?start=cmp_{campaign.public_token}",
+        "metrics": {
+            "clicks": int(clicks or 0),
+            "unique_visitors": visitors_count,
+            "new_free": int(new_free or 0),
+            "paid_clients": paid_count,
+            "active_clients": active_clients,
+            "revenue_rub": str(revenue or 0),
+            "click_to_paid_percent": (
+                round(paid_count * 100 / visitors_count, 2) if visitors_count else 0
+            ),
+        },
+    }
+
+
+def _campaign_filters(
+    q: str, state: str, starts_from: datetime | None, starts_to: datetime | None
+) -> list[ColumnElement[bool]]:
+    now = datetime.now(UTC)
+    filters: list[ColumnElement[bool]] = []
+    if q.strip():
+        filters.append(func.lower(MarketingCampaign.name).like(f"%{q.strip().lower()}%"))
+    if state == "active":
+        filters.extend(
+            [
+                MarketingCampaign.is_active.is_(True),
+                MarketingCampaign.starts_at <= now,
+                or_(MarketingCampaign.ends_at.is_(None), MarketingCampaign.ends_at > now),
+            ]
+        )
+    elif state == "scheduled":
+        filters.append(MarketingCampaign.starts_at > now)
+    elif state == "ended":
+        filters.append(MarketingCampaign.ends_at <= now)
+    elif state != "all":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Unknown campaign state")
+    if starts_from is not None:
+        filters.append(MarketingCampaign.starts_at >= starts_from)
+    if starts_to is not None:
+        filters.append(MarketingCampaign.starts_at <= starts_to)
+    return filters
+
+
+@router.get("/campaigns")
+async def campaigns(
+    _admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    q: str = "",
+    state: str = "all",
+    starts_from: datetime | None = None,
+    starts_to: datetime | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> dict[str, object]:
+    page = max(page, 1)
+    page_size = max(10, min(page_size, 100))
+    filters = _campaign_filters(q, state, starts_from, starts_to)
+    total = int(
+        await session.scalar(select(func.count(MarketingCampaign.id)).where(*filters)) or 0
+    )
+    rows = list(
+        (
+            await session.scalars(
+                select(MarketingCampaign)
+                .where(*filters)
+                .order_by(MarketingCampaign.created_at.desc(), MarketingCampaign.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+        ).all()
+    )
+    return {
+        "items": [await _campaign_payload(session, row, settings) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/campaigns/export.csv")
+async def export_campaigns(
+    _admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    q: str = "",
+    state: str = "all",
+    starts_from: datetime | None = None,
+    starts_to: datetime | None = None,
+) -> Response:
+    rows = list(
+        (
+            await session.scalars(
+                select(MarketingCampaign)
+                .where(*_campaign_filters(q, state, starts_from, starts_to))
+                .order_by(MarketingCampaign.created_at.desc())
+            )
+        ).all()
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id", "name", "starts_at", "ends_at", "window_days", "clicks",
+            "unique_visitors", "new_free", "paid_clients", "active_clients",
+            "revenue_rub", "conversion_percent", "deep_link",
+        ]
+    )
+    for row in rows:
+        item = await _campaign_payload(session, row, settings)
+        metrics = cast(dict[str, object], item["metrics"])
+        writer.writerow(
+            [
+                item["id"], item["name"], item["starts_at"], item["ends_at"],
+                item["attribution_window_days"], metrics["clicks"],
+                metrics["unique_visitors"], metrics["new_free"], metrics["paid_clients"],
+                metrics["active_clients"], metrics["revenue_rub"],
+                metrics["click_to_paid_percent"], item["deep_link"],
+            ]
+        )
+    return Response(
+        output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=gramly-campaigns.csv"},
+    )
+
+
+@router.post("/campaigns", status_code=status.HTTP_201_CREATED)
+async def create_campaign(
+    payload: CampaignInput, admin: MutationAdminDep, session: SessionDep
+) -> dict[str, object]:
+    if payload.ends_at is not None and payload.ends_at <= payload.starts_at:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "End must be after start")
+    row = MarketingCampaign(**payload.model_dump(), public_token=uuid.uuid4())
+    session.add(row)
+    await session.flush()
+    await _audit(session, admin, "marketing_campaign_created", {"campaign_id": row.id})
+    await session.commit()
+    return {"id": row.id}
+
+
+@router.post("/campaigns/{campaign_id}")
+async def update_campaign(
+    campaign_id: int,
+    payload: CampaignInput,
+    admin: MutationAdminDep,
+    session: SessionDep,
+) -> dict[str, object]:
+    if payload.ends_at is not None and payload.ends_at <= payload.starts_at:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "End must be after start")
+    row = await session.get(MarketingCampaign, campaign_id, with_for_update=True)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Campaign not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    await _audit(session, admin, "marketing_campaign_updated", {"campaign_id": row.id})
+    await session.commit()
+    return {"id": row.id, "updated": True}
 
 
 @router.get("/payments/export.csv")
@@ -701,6 +920,16 @@ async def dashboard(
             .order_by(func.date(Payment.paid_at))
         )
     ).all()
+    commercial_metrics = await live_business_metrics(session)
+    weekly_snapshots = list(
+        (
+            await session.scalars(
+                select(WeeklyBusinessSnapshot)
+                .order_by(WeeklyBusinessSnapshot.week_start.desc())
+                .limit(16)
+            )
+        ).all()
+    )
     return {
         "range_days": days,
         "owners": {"total": owners_total, "new": owners_new, "active": owners_active},
@@ -708,6 +937,21 @@ async def dashboard(
         "infrastructure": {"bots": bot_count, "channels": channel_count, "contacts": contact_count},
         "deliveries": deliveries,
         "payments": {"count": int(paid[0]), "rub": str(paid[1])},
+        "commercial": {
+            key: str(value) if isinstance(value, Decimal) else value
+            for key, value in commercial_metrics.items()
+        },
+        "weekly_snapshots": [
+            {
+                "week_start": str(row.week_start),
+                "calculation_price_rub": str(row.calculation_price_rub),
+                "active_paid_clients": row.active_paid_clients,
+                "first_paid_30d": row.first_paid_30d,
+                "churned_7d": row.churned_7d,
+                "weekly_revenue_run_rate_rub": str(row.weekly_revenue_run_rate_rub),
+            }
+            for row in reversed(weekly_snapshots)
+        ],
         "series": {
             "owners": [{"date": str(day), "value": int(value)} for day, value in owner_series],
             "deliveries": [
@@ -980,6 +1224,14 @@ async def manage_owner_subscription(
     if existing is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Subscription action could not be applied")
     await session.flush()
+    if payload.action in {"grant_business", "extend_business"} and existing.ends_at is not None:
+        await schedule_subscription_reminders(session, existing, existing.ends_at)
+    elif payload.action == "revoke_now":
+        await session.execute(
+            delete(SubscriptionReminder).where(
+                SubscriptionReminder.subscription_id == existing.id
+            )
+        )
     notification_labels = {
         "grant_business": "Business подключён вручную",
         "extend_business": "Business продлён",
@@ -1154,6 +1406,9 @@ async def admin_plans(_admin: AdminDep, session: SessionDep) -> dict[str, object
                 "price_rub": str(row.price_rub) if row.price_rub is not None else None,
                 "price_xtr": row.price_xtr,
                 "referral_base_rub": str(row.referral_base_rub) if row.referral_base_rub else None,
+                "calculation_price_rub": (
+                    str(row.calculation_price_rub) if row.calculation_price_rub else None
+                ),
                 "crypto_pay_enabled": row.crypto_pay_enabled,
                 "stars_enabled": row.stars_enabled,
             }

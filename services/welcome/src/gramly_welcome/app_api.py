@@ -16,6 +16,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .billing import create_crypto_checkout, create_stars_checkout
+from .campaigns import record_campaign_touch
 from .commercial import access_for_owner, list_sellable_plans
 from .config import Settings, get_settings
 from .content_service import (
@@ -323,6 +324,8 @@ async def telegram_session(
     )
     if verified.start_param.startswith("ref_"):
         await record_first_touch(session, created.owner.id, verified.start_param[4:])
+    elif verified.start_param.startswith("cmp_"):
+        await record_campaign_touch(session, created.owner.id, verified.start_param[4:])
     response.set_cookie(
         settings.mini_app_cookie_name,
         created.token,
