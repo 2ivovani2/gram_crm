@@ -68,6 +68,7 @@
   gap: 20px;
   margin-bottom: 24px;
 }
+.ctrl-cols--single { grid-template-columns: minmax(0, 1fr); }
 @media (max-width: 900px) { .ctrl-cols { grid-template-columns: 1fr; } }
 
 /* ── Section cards ────────────────────────────────────────────────── */
@@ -219,10 +220,11 @@
 
 {% block content %}
 
-{% if is_admin %}
+{% if can_moderate %}
 <!-- ── KPI cards ─────────────────────────────────────────────────────────── -->
 <div class="ctrl-kpi-grid">
 
+  {% if is_admin %}
   <div class="ctrl-kpi" style="--kpi-color:var(--accent)">
     <div class="ctrl-kpi-icon">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -233,6 +235,7 @@
     <div class="ctrl-kpi-num">{{ active_workers }}</div>
     <div class="ctrl-kpi-label">Активных сотрудников</div>
   </div>
+  {% endif %}
 
   <div class="ctrl-kpi" style="--kpi-color:{% if pending_reports > 0 %}#FFB84D{% else %}var(--success){% endif %}">
     <div class="ctrl-kpi-icon">
@@ -245,6 +248,7 @@
     <div class="ctrl-kpi-label">Отчётов на проверке</div>
   </div>
 
+  {% if is_admin %}
   <div class="ctrl-kpi" style="--kpi-color:{% if pending_penalties > 0 %}#F87171{% else %}var(--success){% endif %}">
     <div class="ctrl-kpi-icon">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -265,6 +269,7 @@
     <div class="ctrl-kpi-num">{{ pending_withdrawals }}</div>
     <div class="ctrl-kpi-label">Выводов ожидает</div>
   </div>
+  {% endif %}
 
   <div class="ctrl-kpi" style="--kpi-color:#60A5FA">
     <div class="ctrl-kpi-icon">
@@ -280,7 +285,7 @@
 </div>
 
 <!-- ── Two columns: reports + penalties ─────────────────────────────────── -->
-<div class="ctrl-cols">
+<div class="ctrl-cols{% if not is_admin %} ctrl-cols--single{% endif %}">
 
   <!-- Reports -->
   <div class="ctrl-panel">
@@ -314,6 +319,7 @@
     </div>
   </div>
 
+  {% if is_admin %}
   <!-- Penalties -->
   <div class="ctrl-panel">
     <div class="ctrl-panel-hdr">
@@ -348,6 +354,7 @@
       {% endfor %}
     </div>
   </div>
+  {% endif %}
 
 </div>
 {% endif %}
@@ -382,14 +389,19 @@
 {% endif %}
 
 <!-- ── Quick nav (if nothing urgent) ────────────────────────────────────── -->
-{% if not pending_reports and not pending_penalties and not pending_withdrawals_list %}
+{% if can_moderate and not pending_reports %}
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px">
-  {% if is_admin %}
   <a href="{% url 'control:reports' %}" class="card" style="text-decoration:none;padding:20px;text-align:center">
     <svg style="width:22px;margin:0 auto 10px;color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
     <div style="font-size:13px;font-weight:600;color:var(--text)">Отчёты</div>
     <div style="font-size:11px;color:var(--muted);margin-top:3px">История</div>
   </a>
+  <a href="{% url 'control:report_templates' %}" class="card" style="text-decoration:none;padding:20px;text-align:center">
+    <svg style="width:22px;margin:0 auto 10px;color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+    <div style="font-size:13px;font-weight:600;color:var(--text)">Шаблоны</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:3px">Настройка отчётов</div>
+  </a>
+  {% if is_admin %}
   <a href="{% url 'control:penalties' %}" class="card" style="text-decoration:none;padding:20px;text-align:center">
     <svg style="width:22px;margin:0 auto 10px;color:var(--warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg>
     <div style="font-size:13px;font-weight:600;color:var(--text)">Штрафы</div>
@@ -410,7 +422,17 @@
     <div style="font-size:13px;font-weight:600;color:var(--text)">Аналитика</div>
     <div style="font-size:11px;color:var(--muted);margin-top:3px">Статистика</div>
   </a>
+  <a href="{% url 'control:withdrawals' %}" class="card" style="text-decoration:none;padding:20px;text-align:center">
+    <svg style="width:22px;margin:0 auto 10px;color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+    <div style="font-size:13px;font-weight:600;color:var(--text)">Выводы</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:3px">Все заявки</div>
+  </a>
   {% endif %}
+</div>
+{% endif %}
+
+{% if is_accountant and not pending_withdrawals_list %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px">
   <a href="{% url 'control:withdrawals' %}" class="card" style="text-decoration:none;padding:20px;text-align:center">
     <svg style="width:22px;margin:0 auto 10px;color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
     <div style="font-size:13px;font-weight:600;color:var(--text)">Выводы</div>

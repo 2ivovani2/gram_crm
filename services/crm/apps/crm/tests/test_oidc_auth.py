@@ -9,6 +9,7 @@ from apps.crm.auth import (
     normalize_telegram_id,
 )
 from apps.crm.identity import terminate_user_sessions
+from apps.crm.models import CRMRole, Workspace, WorkspaceMembership
 from apps.users.models import User, UserRole, UserStatus
 
 
@@ -54,6 +55,20 @@ def test_initial_oidc_login_matches_explicit_telegram_id_claim(settings):
     assert user.oidc_subject == "stable-authentik-subject"
     assert user.oidc_linked_at is not None
     assert user.email == "owner@example.com"
+
+
+def test_oidc_login_provisions_default_workspace_membership(settings):
+    settings.OIDC_RP_CLIENT_ID = "client"
+    settings.OIDC_RP_CLIENT_SECRET = "secret"
+    workspace = Workspace.objects.create(name="Gramly", slug="gramly", is_active=True)
+    user = make_user(role=UserRole.CURATOR)
+    backend = CRMOIDCBackend()
+
+    backend.update_user(user, claims())
+
+    membership = WorkspaceMembership.objects.get(workspace=workspace, user=user)
+    assert membership.role == CRMRole.VIEWER
+    assert membership.is_active is True
 
 
 def test_oidc_self_registration_is_disabled_in_settings(settings):

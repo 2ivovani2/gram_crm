@@ -268,6 +268,9 @@ class DashboardView(CRMLoginMixin, TemplateView):
     template_name = "crm/dashboard.html"
 
     def get(self, request):
+        if request.crm_user.is_curator() and request.crm_workspace:
+            return redirect("control:dashboard")
+
         ctx = self.get_crm_context(request)
 
         if request.crm_is_owner:

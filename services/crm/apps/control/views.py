@@ -50,9 +50,21 @@ class AdminOrCuratorMixin(ControlAccessMixin):
             return HttpResponseForbidden("Только для администраторов и кураторов")
 
 
+class ControlDashboardAccessMixin(ControlAccessMixin):
+    """Dashboard access without widening permissions of other Control pages."""
+
+    def check_crm_permissions(self, request):
+        if not (
+            _is_control_admin(request)
+            or request.crm_user.is_accountant()
+            or request.crm_user.is_curator()
+        ):
+            return HttpResponseForbidden("Доступ запрещён")
+
+
 # ── Dashboard overview ─────────────────────────────────────────────────────────
 
-class ControlDashboardView(ControlAccessMixin, View):
+class ControlDashboardView(ControlDashboardAccessMixin, View):
     def get(self, request):
         from apps.control.models import EmployeeReport, Penalty, PenaltyStatus
         from apps.withdrawals.models import WithdrawalRequest
@@ -64,14 +76,24 @@ class ControlDashboardView(ControlAccessMixin, View):
             "page": "control_dashboard",
             "is_admin": _is_control_admin(request),
             "is_accountant": user.is_accountant(),
+            "is_curator": user.is_curator(),
+            "can_moderate": _is_control_admin(request) or user.is_curator(),
         }
 
-        if _is_control_admin(request):
+        if _is_control_admin(request) or user.is_curator():
             from apps.control.models import REPORT_MODERATION_STATUSES
             extra.update({
                 "pending_reports": EmployeeReport.objects.filter(
                     status__in=REPORT_MODERATION_STATUSES
                 ).count(),
+                "reports_submitted_today": EmployeeReport.objects.filter(report_date=today).count(),
+                "recent_reports": EmployeeReport.objects.filter(
+                    status__in=REPORT_MODERATION_STATUSES
+                ).select_related("user", "template").order_by("-submitted_at")[:5],
+            })
+
+        if _is_control_admin(request):
+            extra.update({
                 "pending_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
                 ).count(),
@@ -79,10 +101,6 @@ class ControlDashboardView(ControlAccessMixin, View):
                     status__in=["pending", "processing", "receipt_sent"]
                 ).count(),
                 "active_workers": User.objects.filter(role=UserRole.WORKER, status=UserStatus.ACTIVE).count(),
-                "reports_submitted_today": EmployeeReport.objects.filter(report_date=today).count(),
-                "recent_reports": EmployeeReport.objects.filter(
-                    status__in=REPORT_MODERATION_STATUSES
-                ).select_related("user", "template").order_by("-submitted_at")[:5],
                 "recent_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
                 ).select_related("user", "created_by").order_by("-created_at")[:5],
@@ -693,7 +711,7 @@ class UsersListView(AdminOnlyMixin, View):
 
         users = list(qs[:200])
 
-        # Attach CRM membership for the active workspace to each user
+        # Attach both active and revoked CRM membership states for the workspace.
         workspace = request.crm_workspace
         if workspace:
             memberships = {
@@ -701,13 +719,14 @@ class UsersListView(AdminOnlyMixin, View):
                 for m in WorkspaceMembership.objects.filter(
                     workspace=workspace,
                     user_id__in=[u.pk for u in users],
-                    is_active=True,
                 )
             }
         else:
             memberships = {}
         for u in users:
-            u.crm_membership = memberships.get(u.pk)
+            membership = memberships.get(u.pk)
+            u.crm_membership_record = membership
+            u.crm_membership = membership if membership and membership.is_active else None
 
         count_qs = User.objects.all()
         if status_filter and status_filter != "all":
