@@ -210,10 +210,18 @@ class CRMOIDCBackend(OIDCAuthenticationBackend):
                 changed_fields.append("updated_at")
                 locked.save(update_fields=changed_fields)
 
+            # Authentik proves identity, while CRM maps the already assigned
+            # business role to a safe initial role in the default workspace.
+            # Explicit memberships (including revoked ones) are never changed.
+            from apps.crm.provisioning import ensure_default_workspace_membership
+
+            provisioned = ensure_default_workspace_membership(locked)
+
             if is_new_binding:
                 logger.info(
-                    "crm_oidc_linked crm_user_id=%s subject_sha256=%s",
+                    "crm_oidc_linked crm_user_id=%s subject_sha256=%s workspace_action=%s",
                     locked.pk,
                     _subject_fingerprint(subject),
+                    provisioned.action,
                 )
             return locked

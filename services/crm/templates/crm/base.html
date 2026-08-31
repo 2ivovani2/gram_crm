@@ -61,9 +61,15 @@
         <a href="{% url 'control:analytics' %}" class="sidebar-item {% block nav_ctrl_analytics %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 20v-6m6 6V4m6 16V9"/></svg><span>Аналитика</span></a>
         <a href="{% url 'control:users' %}" class="sidebar-item {% block nav_ctrl_users %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2m2-13h4m-2-2v4"/></svg><span>Пользователи</span></a>
         {% endif %}
+        {% if crm_user.is_admin or is_owner %}
         <a href="{% url 'control:deadline_notifications' %}" class="sidebar-item {% block nav_ctrl_deadline_notif %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21h-4"/></svg><span>Уведомления</span></a>
+        {% endif %}
+        {% if crm_user.is_admin or crm_user.is_accountant or is_owner %}
         <a href="{% url 'control:withdrawals' %}" class="sidebar-item {% block nav_ctrl_withdrawals %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Выводы</span></a>
+        {% endif %}
+        {% if crm_user.is_admin or is_owner %}
         <a href="{% url 'control:settings' %}" class="sidebar-item {% block nav_ctrl_settings %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.05.06-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15.0 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.05-.06 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg><span>Настройки</span></a>
+        {% endif %}
       </div>{% endif %}
     </nav>
 

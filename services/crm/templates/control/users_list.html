@@ -41,6 +41,9 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 .sso-linked { background:rgba(74,222,128,.12); color:#4ADE80; }
 .sso-pending { background:rgba(250,250,251,.07); color:var(--muted); }
 .sso-blocked { background:rgba(239,68,68,.12); color:#F87171; }
+.workspace-ok { background:rgba(85,207,232,.12); color:#55CFE8; }
+.workspace-missing { background:rgba(255,184,77,.12); color:#FFB84D; }
+.workspace-revoked { background:rgba(239,68,68,.12); color:#F87171; }
 .btn-unlink { background:rgba(239,68,68,.10); color:#F87171; }
 .btn-rebind { background:var(--accent-soft); color:var(--accent); }
 
@@ -163,11 +166,18 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <!-- Authentik identity link -->
     <td class="sso-cell">
       {% if u.oidc_subject %}
-        <span class="badge sso-linked">Подключено</span>
+        <span class="badge sso-linked">SSO привязан</span>
         <span class="sso-meta">
           {% if u.email %}{{ u.email }}<br>{% endif %}
           {% if u.oidc_linked_at %}с {{ u.oidc_linked_at|date:"d.m.Y H:i" }}{% else %}старая привязка{% endif %}
         </span>
+        {% if u.crm_membership %}
+          <span class="badge workspace-ok" style="margin-top:6px">Workspace доступен · {{ u.crm_membership.get_role_display }}</span>
+        {% elif u.crm_membership_record %}
+          <span class="badge workspace-revoked" style="margin-top:6px">Доступ отозван</span>
+        {% else %}
+          <span class="badge workspace-missing" style="margin-top:6px">Нет workspace-доступа</span>
+        {% endif %}
         {% if u.pk != crm_user.pk %}
         <form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
               onsubmit="return confirm('Разорвать SSO-связь и завершить все CRM-сессии пользователя?')">
@@ -189,8 +199,8 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
           <button type="submit" class="btn-xs btn-rebind">Разрешить заново</button>
         </form>
       {% else %}
-        <span class="badge sso-pending">Ожидает привязки</span>
-        <span class="sso-meta">Укажите @{{ u.telegram_username|default:"username" }} в Authentik</span>
+        <span class="badge sso-pending">Ожидает первого SSO-входа</span>
+        <span class="sso-meta">Укажите Telegram ID {{ u.telegram_id }} в Authentik</span>
       {% endif %}
     </td>
 
