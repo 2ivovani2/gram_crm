@@ -7,10 +7,11 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import engine, session_factory
+from .join_request_policy import OPEN_JOIN_REQUEST_SQL_PREDICATE
 from .models import InboxEvent, InboxSource, JoinRequest, ManagedBot, QueueStatus
 
 LEGACY_INBOX_ERROR = "ProgrammingError"
@@ -21,6 +22,7 @@ LEGACY_APPROVAL_ERROR = "TelegramBadRequest"
 class ReconciliationReport:
     inbox_events: int = 0
     approval_requests: int = 0
+    superseded_requests: int = 0
     mode: str = "dry-run"
 
 
@@ -104,13 +106,42 @@ async def reconcile(
                 .where(
                     *_approval_criteria(),
                 )
-                .order_by(JoinRequest.id)
+                # When legacy failures contain more than one application for
+                # the same contact, only the newest Telegram request can still
+                # be meaningful. Older rows are closed below.
+                .order_by(
+                    JoinRequest.channel_id,
+                    JoinRequest.contact_id,
+                    JoinRequest.created_at.desc(),
+                    JoinRequest.id.desc(),
+                )
                 .limit(batch_size)
                 .with_for_update(of=JoinRequest, skip_locked=True)
             )
         ).all()
     )
     report.approval_requests = len(approval_requests)
+
+    candidate_pairs = {
+        (request.channel_id, request.contact_id) for request in approval_requests
+    }
+    occupied_pairs: set[tuple[int, int]] = set()
+    if candidate_pairs:
+        occupied_pairs = {
+            (int(channel_id), int(contact_id))
+            for channel_id, contact_id in (
+                await session.execute(
+                    select(JoinRequest.channel_id, JoinRequest.contact_id)
+                    .where(
+                        tuple_(JoinRequest.channel_id, JoinRequest.contact_id).in_(
+                            candidate_pairs
+                        ),
+                        text(OPEN_JOIN_REQUEST_SQL_PREDICATE),
+                    )
+                    .with_for_update()
+                )
+            ).all()
+        }
 
     source_keys: set[str] = set()
     for event in affected_events:
@@ -124,6 +155,16 @@ async def reconcile(
         event.last_error = "reconciled_partial_index_conflict"
 
     for request in approval_requests:
+        pair = (request.channel_id, request.contact_id)
+        if pair in occupied_pairs:
+            request.due_at = None
+            request.lease_owner = None
+            request.lease_expires_at = None
+            request.processed_at = now
+            request.error = "superseded_by_open_join_request"
+            report.superseded_requests += 1
+            continue
+        occupied_pairs.add(pair)
         request.status = "scheduled"
         request.attempts = 0
         request.due_at = now
@@ -145,6 +186,7 @@ async def _run(*, apply: bool, batch_size: int) -> ReconciliationReport:
             report = await reconcile(session, apply=apply, batch_size=batch_size)
             total.inbox_events += report.inbox_events
             total.approval_requests += report.approval_requests
+            total.superseded_requests += report.superseded_requests
             if not apply or (
                 report.inbox_events < batch_size
                 and report.approval_requests < batch_size

@@ -127,6 +127,33 @@ async def test_partial_index_upsert_replay_and_concurrency() -> None:
             select(InboxEvent).where(InboxEvent.source_key == source_key)
         )
         assert recovered_event is not None and recovered_event.status == "retry"
+
+        # Production can contain a legacy failed row plus a newer open request
+        # for the same contact. Recovery must preserve the live request instead
+        # of violating the partial unique index by reopening both rows.
+        request.status = "failed"
+        request.error = "TelegramBadRequest"
+        newer_request = JoinRequest(
+            bot_id=bot_id,
+            channel_id=channel_id,
+            contact_id=contact_id,
+            telegram_update_id=201,
+            user_chat_id=2001,
+            message_window_expires_at=now + timedelta(minutes=5),
+            status="pending",
+        )
+        session.add(newer_request)
+        await session.commit()
+
+        duplicate_recovery = await reconcile(session, apply=True)
+        assert duplicate_recovery.approval_requests == 1
+        assert duplicate_recovery.superseded_requests == 1
+        await session.refresh(request)
+        await session.refresh(newer_request)
+        assert request.status == "failed"
+        assert request.error == "superseded_by_open_join_request"
+        assert newer_request.status == "pending"
+
         await session.execute(delete(Owner).where(Owner.id == owner_id))
         await session.commit()
     await engine.dispose()
