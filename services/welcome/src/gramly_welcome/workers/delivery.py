@@ -54,6 +54,7 @@ from ..repository import (
     defer_join_request,
     finish_delivery,
     finish_join_request,
+    finish_join_request_terminal,
     load_delivery_context,
     load_join_request_context,
     pause_join_request,
@@ -76,6 +77,7 @@ from ..telegram_delivery import (
     send_join_activation,
     send_rotation_recommendation,
 )
+from ..telegram_errors import normalize_bad_request
 
 logger = logging.getLogger(__name__)
 
@@ -520,9 +522,25 @@ async def _process_join_request(
                 error="telegram_429",
             )
         DELIVERY_ATTEMPTS.labels("telegram_429").inc()
-    except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError) as exc:
+    except TelegramBadRequest as exc:
+        reason = normalize_bad_request(exc)
+        status = "joined" if reason == "user_already_participant" else "failed"
         async with session_factory() as session:
-            await finish_join_request(session, request_id, worker_id, success=False, error=type(exc).__name__)
+            await finish_join_request_terminal(
+                session,
+                request_id,
+                worker_id,
+                status=status,
+                error=reason,
+            )
+        DELIVERY_ATTEMPTS.labels(
+            "approval_already_joined" if status == "joined" else "approval_failed"
+        ).inc()
+    except (TelegramForbiddenError, TokenDecryptionError) as exc:
+        async with session_factory() as session:
+            await finish_join_request(
+                session, request_id, worker_id, success=False, error=type(exc).__name__
+            )
         DELIVERY_ATTEMPTS.labels("approval_failed").inc()
     except (TelegramAPIError, OSError) as exc:
         if context.request.attempts >= settings.max_attempts:

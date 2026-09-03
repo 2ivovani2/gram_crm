@@ -25,6 +25,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
+from .join_request_policy import OPEN_JOIN_REQUEST_SQL_PREDICATE
+
 
 class Base(DeclarativeBase):
     pass
@@ -1179,7 +1181,7 @@ class JoinRequest(Base):
             "channel_id",
             "contact_id",
             unique=True,
-            postgresql_where=text("status IN ('pending', 'scheduled', 'processing')"),
+            postgresql_where=text(OPEN_JOIN_REQUEST_SQL_PREDICATE),
         ),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

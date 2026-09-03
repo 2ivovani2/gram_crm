@@ -41,6 +41,21 @@ type Checkout = { payment_id: number; invoice_url: string; status: string; expir
 type SubscriptionGate = { code: string; title: string; url: string; temporarily_unavailable?: boolean };
 type AppTheme = "dark" | "light";
 
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: Error) {
+    console.error("GramlyHello render failed", error.name);
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОШИБКА ИНТЕРФЕЙСА</span><h1>Кабинет не загрузился.</h1><p>Ваши настройки сохранены. Перезапустите экран — обычно этого достаточно.</p><button className="button acid" onClick={()=>location.reload()}>Повторить</button></div></main>;
+  }
+}
+
 const MAX_DELAY_SECONDS = 180 * 24 * 60 * 60;
 function parseDelay(value: FormDataEntryValue | null): number {
   const parts = String(value ?? "").trim().split(":");
@@ -204,12 +219,37 @@ function MiniApp() {
   const [paymentExpiresAt,setPaymentExpiresAt]=useState("");
   const [paymentClock,setPaymentClock]=useState(Date.now());
   const [subscriptionGate,setSubscriptionGate]=useState<SubscriptionGate|null>(null);
+  const [secondaryError,setSecondaryError]=useState("");
   useEffect(()=>{
     api<{interface_bot_username:string}>("/public-config").then(value=>{if(value.interface_bot_username)setBotUsername(value.interface_bot_username)}).catch(()=>undefined);
     if(!tg?.initData){setReady(true);return;}
     tg.ready();
     tg.expand();
-    api<{csrf_token:string}>("/session/telegram",{method:"POST",body:JSON.stringify({init_data:tg.initData})}).then((session)=>{setCsrfToken(session.csrf_token);return Promise.all([api<any>("/me"),api<any>("/dashboard"),api<{bots:Bot[]}>("/bots"),api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);}).then(([identity,summary,botList,planList,analyticsData,referralData])=>{setMe(identity);setDashboard(summary);setBots(botList.bots);setPlans(planList.plans);setAnalytics(analyticsData);setPartners(referralData);setActiveBot(botList.bots[0]?.id||null);setReady(true)}).catch((e)=>{if(e instanceof ApiError&&e.status===403&&typeof e.detail==="object"&&e.detail&&"code" in e.detail&&e.detail.code==="news_subscription_required")setSubscriptionGate(e.detail as SubscriptionGate);else setError(e.message);setReady(true)});
+    let active=true;
+    const bootstrap=async()=>{
+      try {
+        const session=await api<{csrf_token:string}>("/session/telegram",{method:"POST",body:JSON.stringify({init_data:tg.initData})});
+        setCsrfToken(session.csrf_token);
+        const [identity,summary,botList]=await Promise.all([api<any>("/me"),api<any>("/dashboard"),api<{bots:Bot[]}>("/bots")]);
+        if(!active)return;
+        setMe(identity);setDashboard(summary);setBots(botList.bots);setActiveBot(botList.bots[0]?.id||null);
+        setReady(true);
+        const optional=await Promise.allSettled([api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);
+        if(!active)return;
+        if(optional[0].status==="fulfilled")setPlans(optional[0].value.plans);
+        if(optional[1].status==="fulfilled")setAnalytics(optional[1].value);
+        if(optional[2].status==="fulfilled")setPartners(optional[2].value);
+        if(optional.some(result=>result.status==="rejected"))setSecondaryError("Часть дополнительной статистики временно недоступна. Основные функции продолжают работать.");
+      } catch(e) {
+        if(!active)return;
+        if(e instanceof ApiError&&e.status===403&&typeof e.detail==="object"&&e.detail&&"code" in e.detail&&e.detail.code==="news_subscription_required")setSubscriptionGate(e.detail as SubscriptionGate);
+        else setError(e instanceof Error?e.message:"Не удалось загрузить кабинет.");
+      } finally {
+        if(active)setReady(true);
+      }
+    };
+    void bootstrap();
+    return()=>{active=false};
   },[]);
   useEffect(()=>{
     document.documentElement.dataset.gramlyTheme=theme;
@@ -234,7 +274,7 @@ function MiniApp() {
   const firstName=me?.owner?.first_name||"друг";
   return <div className="app-shell mini-app">
     <header className="topbar"><div><span className="topbar-kicker">GRAMLY HELLO</span><strong>Привет, {firstName}</strong></div><div className="account"><button className="theme-toggle" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label={theme==="dark"?"Включить светлую тему":"Включить тёмную тему"}>{theme==="dark"?"☀":"☾"}</button><span className="account-avatar">{firstName.slice(0,1).toUpperCase()}</span><Status ok={me?.access?.plan === "business"}>{me?.access?.plan_name || "Free"}</Status></div></header>
-    <main className="content">{error&&<ErrorBox message={error}/>}
+    <main className="content">{error&&<ErrorBox message={error}/>} {secondaryError&&<ErrorBox message={secondaryError}/>}
       {paymentExpiresAt&&<div className="payment-message" role="timer">Счёт действует ещё <b>{formatCountdown(paymentExpiresAt,paymentClock)}</b></div>}
       {tab==="Обзор"&&<><section className="hero-panel wet-panel"><div><span className="eyebrow">СЕЙЧАС В GRAMLY</span><h1>{bots.length?"Ваши приветствия работают.":"Начнём с первого бота."}</h1><p>{bots.length?"Мы принимаем события Telegram, выбираем сценарий и доставляем сообщение каждому новому участнику.":"Подключите Telegram-бота, добавьте его в канал и соберите первую цепочку приветствия."}</p><button className="button acid quick-action" onClick={bots.length?()=>openTab("Цепочки"):openOwnerBot}>{bots.length?"Открыть цепочки":"Подключить бота"} <Icon name="arrow"/></button></div><div className="route"><span>СОБЫТИЕ</span><i/><span>GRAMLY</span><i/><span>ДОСТАВЛЕНО</span></div></section><section className="metrics wet-panel"><Metric label="Боты" value={dashboard?.bots??0}/><Metric label="Каналы" value={dashboard?.channels??0}/><Metric label="Контакты" value={dashboard?.contacts??0}/><Metric label="Доставлено" value={dashboard?.delivered??0}/></section></>}
       {tab==="Боты"&&<section><div className="section-head"><div><span className="eyebrow">ПОДКЛЮЧЕНИЯ</span><h2>Мои боты</h2></div></div>{!bots.length?<EmptyState title="Здесь появятся ваши боты" text="Откройте GramlyHello, отправьте токен от BotFather и завершите безопасное подключение по подсказкам." action="Подключить первого бота" onAction={openOwnerBot}/>:<div className="bot-list">{bots.map(bot=><article className="wet-panel" key={bot.id}><div className="bot-id"><span className="avatar">{bot.display_name.slice(0,1)}</span><div><strong>@{bot.username||bot.display_name}</strong><small>{bot.channels} каналов · {bot.contacts} контактов</small></div></div><Status ok={bot.webhook_configured}>{bot.webhook_configured?"Webhook online":"Нужно подключить"}</Status><button className="button ghost" onClick={()=>{setActiveBot(bot.id);openTab("Цепочки")}}>Цепочки <Icon name="arrow"/></button></article>)}</div>}</section>}
@@ -250,4 +290,5 @@ function MiniApp() {
 }
 
 const isAdmin = document.title.includes("Control");
-createRoot(document.getElementById("root")!).render(<React.StrictMode>{isAdmin?<AdminApp/>:<MiniApp/>}</React.StrictMode>);
+const rootElement=document.getElementById("root");
+if(rootElement)createRoot(rootElement).render(<React.StrictMode><AppErrorBoundary>{isAdmin?<AdminApp/>:<MiniApp/>}</AppErrorBoundary></React.StrictMode>);

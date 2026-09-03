@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gramly_welcome.join_request_policy import temporary_chat_available
 from gramly_welcome.models import FeatureFlag, InboxEvent, ManagedBot
 from gramly_welcome.processor import (
     _join_request_greetings_enabled,
@@ -25,6 +26,12 @@ def test_membership_transition_deduplicates_repeated_leave_state() -> None:
 
 def test_membership_transition_allows_real_rejoin() -> None:
     assert membership_transition_flags("left", old_active=False, new_active=True) == (True, False)
+
+
+def test_expired_temporary_chat_does_not_block_approval_path() -> None:
+    now = datetime(2026, 8, 20, 12, 5, tzinfo=UTC)
+    assert not temporary_chat_available(now, now=now)
+    assert temporary_chat_available(now.replace(minute=6), now=now)
 
 
 @pytest.mark.asyncio
@@ -95,6 +102,8 @@ def test_join_request_upsert_refreshes_an_existing_open_request() -> None:
     sql = str(statement.compile(dialect=postgresql.dialect()))  # type: ignore[no-untyped-call]
 
     assert "ON CONFLICT (channel_id, contact_id)" in sql
+    assert "WHERE status IN ('pending', 'scheduled', 'processing')" in sql
+    assert "status IN (__[POSTCOMPILE" not in sql
     assert "DO UPDATE SET telegram_update_id = excluded.telegram_update_id" in sql
     assert "user_chat_id = excluded.user_chat_id" in sql
     assert "welcome_delivery_id = %(param_1)s" in sql

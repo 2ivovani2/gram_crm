@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,12 @@ from .join_activation import (
     load_activation_context,
     long_activation_enabled,
 )
-from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS, message_window
+from .join_request_policy import (
+    JOIN_REQUEST_MAX_TIMELINE_SECONDS,
+    OPEN_JOIN_REQUEST_SQL_PREDICATE,
+    message_window,
+    temporary_chat_available,
+)
 from .metrics import JOIN_REQUEST_ACTIVATIONS
 from .models import (
     Channel,
@@ -105,7 +110,7 @@ def _join_request_upsert(
     )
     return statement.on_conflict_do_update(
         index_elements=[JoinRequest.channel_id, JoinRequest.contact_id],
-        index_where=JoinRequest.status.in_(("pending", "scheduled", "processing")),
+        index_where=text(OPEN_JOIN_REQUEST_SQL_PREDICATE),
         set_={
             "telegram_update_id": statement.excluded.telegram_update_id,
             "user_chat_id": statement.excluded.user_chat_id,
@@ -508,7 +513,11 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                 contact_id=contact_id,
                 event_key=f"join-request-known:{event.update_id}",
             )
-        elif join.get("user_chat_id") is not None and greetings_enabled:
+        elif (
+            join.get("user_chat_id") is not None
+            and greetings_enabled
+            and temporary_chat_available(message_window_expires_at, now=now)
+        ):
             delivery_id = await schedule_content_flow(
                 session,
                 bot=bot,
@@ -536,6 +545,22 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                         context={"join_request_id": int(request_id)},
                     )
                 )
+        elif greetings_enabled and not temporary_chat_available(
+            message_window_expires_at, now=now
+        ):
+            session.add(
+                EventLog(
+                    bot_id=bot.id,
+                    owner_id=bot.owner_id,
+                    event_type="join_request_greeting_skipped",
+                    level="warning",
+                    message="Temporary Telegram chat window already expired",
+                    context={
+                        "join_request_id": int(request_id),
+                        "reason": "temporary_chat_expired",
+                    },
+                )
+            )
         return
 
     member = payload.get("chat_member")
