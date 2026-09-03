@@ -61,8 +61,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      WELCOME_DATABASE_URL: postgresql+asyncpg://gramly_welcome:gramly_welcome@127.0.0.1:5432/gramly_welcome_test
-      WELCOME_TEST_DATABASE_URL: postgresql+asyncpg://gramly_welcome:gramly_welcome@127.0.0.1:5432/gramly_welcome_test
+      WELCOME_DATABASE_URL: postgresql+asyncpg://gramly_welcome:gramly_welcome@postgres:5432/gramly_welcome_test
+      WELCOME_TEST_DATABASE_URL: postgresql+asyncpg://gramly_welcome:gramly_welcome@postgres:5432/gramly_welcome_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
