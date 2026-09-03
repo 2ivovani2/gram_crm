@@ -531,6 +531,35 @@ async def finish_join_request(
     return bool(cast(CursorResult[tuple[int]], result).rowcount)
 
 
+async def finish_join_request_terminal(
+    session: AsyncSession,
+    request_id: int,
+    worker_id: str,
+    *,
+    status: str,
+    error: str,
+) -> bool:
+    if status not in {"joined", "failed"}:
+        raise ValueError("unsupported terminal join request status")
+    result = await session.execute(
+        update(JoinRequest)
+        .where(
+            JoinRequest.id == request_id,
+            JoinRequest.status == "processing",
+            JoinRequest.lease_owner == worker_id,
+        )
+        .values(
+            status=status,
+            processed_at=datetime.now(UTC),
+            lease_owner=None,
+            lease_expires_at=None,
+            error=error[:500],
+        )
+    )
+    await session.commit()
+    return bool(cast(CursorResult[tuple[int]], result).rowcount)
+
+
 async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, float]]:
     now = datetime.now(UTC)
     pending_count, pending_oldest = (

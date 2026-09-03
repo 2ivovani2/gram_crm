@@ -6,6 +6,10 @@ JOIN_REQUEST_WINDOW_SECONDS = 300
 JOIN_REQUEST_MAX_TIMELINE_SECONDS = 240
 JOIN_REQUEST_APPROVAL_SAFETY_SECONDS = 5
 ACTIVE_DELIVERY_STATUSES = frozenset({"scheduled", "processing"})
+# PostgreSQL must be able to prove that an ON CONFLICT predicate implies the
+# partial unique index predicate. Bound parameters break that inference, so the
+# model and every upsert deliberately share this trusted literal.
+OPEN_JOIN_REQUEST_SQL_PREDICATE = "status IN ('pending', 'scheduled', 'processing')"
 
 
 def message_window(event_date: object, *, now: datetime) -> tuple[datetime, datetime]:
@@ -22,6 +26,11 @@ def message_window(event_date: object, *, now: datetime) -> tuple[datetime, date
 
 def safe_approval_deadline(expires_at: datetime) -> datetime:
     return expires_at - timedelta(seconds=JOIN_REQUEST_APPROVAL_SAFETY_SECONDS)
+
+
+def temporary_chat_available(expires_at: datetime, *, now: datetime) -> bool:
+    """The temporary address may be used only inside Telegram's five-minute window."""
+    return now < expires_at
 
 
 def approval_action(

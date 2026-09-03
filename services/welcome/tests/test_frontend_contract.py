@@ -24,3 +24,17 @@ def test_control_center_exposes_invoice_section_and_safe_reconciliation() -> Non
     assert 'Сверить с провайдером' in source
     assert 'Скачать CSV' in source
     assert 'section==="Инвойсы"&&<Invoices/>' in source
+
+
+def test_mini_app_bootstrap_has_timeout_uuid_fallback_and_error_boundary() -> None:
+    html = (REPO_ROOT / "frontend/welcome/app.html").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "frontend/welcome/src/main.tsx").read_text(encoding="utf-8")
+    api = (REPO_ROOT / "frontend/welcome/src/api.ts").read_text(encoding="utf-8")
+
+    assert "boot-fallback" in html
+    assert "AppErrorBoundary" in source
+    assert "Promise.allSettled" in source
+    assert "finally" in source and "setReady(true)" in source
+    assert "fetchWithTimeout" in api and "AbortController" in api
+    assert "crypto.randomUUID()" not in api
+    assert "getRandomValues" in api

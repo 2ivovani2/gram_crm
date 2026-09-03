@@ -16,6 +16,7 @@
     <style>
       html,body{background:#090c0a;color:#f3f4ed}
       html[data-gramly-theme="light"],html[data-gramly-theme="light"] body{background:#dcded5;color:#171b17}
+      .boot-fallback{min-height:100svh;box-sizing:border-box;display:grid;place-content:center;gap:16px;padding:28px;text-align:center;font:500 15px/1.5 system-ui,sans-serif}.boot-fallback b{font-size:26px}.boot-fallback a{color:#11140f;background:#ddf45b;padding:12px 18px;border-radius:12px;text-decoration:none;font-weight:750}
     </style>
     <title>GramlyHello</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -24,5 +25,5 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <link rel="manifest" href="/site.webmanifest" />
   </head>
-  <body class="mini-app-body"><div id="root"></div><script src="https://telegram.org/js/telegram-web-app.js?63"></script><script type="module" src="/src/main.tsx"></script></body>
+  <body class="mini-app-body"><div id="root"><main class="boot-fallback"><b>GramlyHello загружается…</b><span>Если экран не откроется, проверьте соединение и повторите запуск.</span><a href="/app/">Повторить</a></main></div><noscript><main class="boot-fallback"><b>Нужен JavaScript</b><span>Откройте Mini App во встроенном браузере Telegram.</span></main></noscript><script src="https://telegram.org/js/telegram-web-app.js?63"></script><script type="module" src="/src/main.tsx"></script></body>
 </html>
