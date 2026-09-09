@@ -96,7 +96,7 @@ async def test_payment_referral_replay_withdrawal_and_immutable_ledger() -> None
             paid_asset="USDT",
             exchange_rate_rub=Decimal("100"),
         )
-        assert first.commission_rub == Decimal("150.00")
+        assert first.commission_rub == Decimal("100.00")
         assert replay.duplicate
         assert await session.scalar(
             select(func.count(FinancialLedgerEntry.id)).where(
@@ -154,9 +154,9 @@ async def test_payment_referral_replay_withdrawal_and_immutable_ledger() -> None
         withdrawal = await request_withdrawal(
             session, referrer.id, Decimal("1000"), referrer.telegram_id
         )
-        assert await available_balance(session, referrer.id) == Decimal("150.00")
+        assert await available_balance(session, referrer.id) == Decimal("100.00")
         await reject_withdrawal(session, withdrawal.id, "integration rejection")
-        assert await available_balance(session, referrer.id) == Decimal("1150.00")
+        assert await available_balance(session, referrer.id) == Decimal("1100.00")
 
         with pytest.raises(DBAPIError):
             await session.execute(

@@ -71,6 +71,17 @@ jobs:
           cache: pip
           cache-dependency-path: services/welcome/pyproject.toml
       - run: python -m pip install -e "services/welcome[dev]"
+      - name: Verify PostgreSQL service DNS
+        run: |
+          python - <<'PY'
+          import socket
+          try:
+              socket.getaddrinfo("postgres", 5432)
+              with socket.create_connection(("postgres", 5432), timeout=10):
+                  pass
+          except OSError as exc:
+              raise SystemExit("PostgreSQL service is unreachable. Forgejo runner must use container.network: empty (per-job network), not Docker default bridge.") from exc
+          PY
       - run: cd services/welcome && alembic upgrade head
       - run: python -m ruff check services/welcome ops/welcome
       - run: cd services/welcome && python -m mypy src tests
@@ -96,6 +107,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install PyYAML==6.0.3
+      - run: python -m unittest discover -s ops/ci/tests -v
       - name: Install pinned kubectl
         run: |
           curl --fail --location --silent --show-error \
