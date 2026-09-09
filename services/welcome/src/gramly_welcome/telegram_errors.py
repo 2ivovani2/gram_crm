@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def normalize_bad_request(exc: Exception) -> str:
     """Return a stable, non-PII reason for a Telegram Bad Request."""
     message = str(getattr(exc, "message", "") or exc).casefold()
