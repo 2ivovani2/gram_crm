@@ -43,6 +43,10 @@ spec:
           image: FORGEJO_IMAGE_PLACEHOLDER
           imagePullPolicy: IfNotPresent
           env:
+            - name: FORGEJO__service__REQUIRE_SIGNIN_VIEW
+              value: "true"
+            - name: FORGEJO__service__DISABLE_REGISTRATION
+              value: "true"
             - name: FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION
               value: "true"
             - name: FORGEJO__oauth2_client__USERNAME
@@ -120,11 +124,8 @@ metadata:
     app.kubernetes.io/name: forgejo
 spec:
   parentRefs:
-    - name: gramly-collaboration
-      namespace: traefik-collaboration
-      sectionName: http
-    - name: gramly-collaboration
-      namespace: traefik-collaboration
+    - name: gramly-public-access
+      namespace: traefik-public
       sectionName: git-https
   hostnames:
     - git.gramly.tech

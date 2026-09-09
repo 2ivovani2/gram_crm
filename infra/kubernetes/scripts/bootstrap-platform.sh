@@ -34,13 +34,6 @@ helm upgrade --install traefik-public traefik/traefik \
   --values "$infra_dir/platform/gateway/traefik-public-values.yaml" \
   --wait --timeout 15m
 
-helm upgrade --install traefik-private traefik/traefik \
-  --version "$TRAEFIK_CHART_VERSION" \
-  --namespace traefik-private \
-  --create-namespace \
-  --values "$infra_dir/platform/gateway/traefik-private-values.yaml" \
-  --wait --timeout 15m
-
 echo "Platform bootstrap complete."
 kubectl get pods --all-namespaces
 kubectl get services --all-namespaces

@@ -42,9 +42,6 @@ kubectl rollout status deployment/outline-valkey -n devtools --timeout=10m
 kubectl rollout status deployment/outline -n devtools --timeout=10m
 kubectl apply -f "${infra_dir}/apps/devtools/outline-tls.yaml"
 kubectl wait certificate/docs-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m
-kubectl apply -f "${infra_dir}/platform/gateway/private-access-gateways.yaml"
-kubectl wait gateway/gramly-collaboration -n traefik-collaboration --for=condition=Programmed --timeout=5m
-kubectl rollout restart deployment/traefik-collaboration -n traefik-collaboration
-kubectl rollout status deployment/traefik-collaboration -n traefik-collaboration --timeout=5m
-"${infra_dir}/apps/vpn/ensure-private-app-records.sh"
-echo "Outline is ready on the collaboration access plane."
+kubectl apply -f "${infra_dir}/platform/gateway/public-gateway.yaml"
+kubectl wait gateway/gramly-public-access -n traefik-public --for=condition=Programmed --timeout=5m
+echo "Outline is ready through public HTTPS and Gramly SSO."

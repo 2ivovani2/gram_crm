@@ -5,9 +5,9 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 certificate="${1:?Usage: import-crm-tls.sh fullchain.pem privkey.pem}"
 private_key="${2:?Usage: import-crm-tls.sh fullchain.pem privkey.pem}"
 
-kubectl -n traefik-business create secret tls crm-gramly-tech-tls \
+kubectl -n traefik-public create secret tls crm-gramly-tech-tls \
   --cert="${certificate}" --key="${private_key}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl apply -f "${root_dir}/infra/kubernetes/platform/gateway/private-access-gateways.yaml" >/dev/null
-kubectl wait gateway/gramly-business -n traefik-business --for=condition=Programmed --timeout=5m
-echo "Private CRM TLS listener is ready."
+kubectl apply -f "${root_dir}/infra/kubernetes/platform/gateway/public-gateway.yaml" >/dev/null
+kubectl wait gateway/gramly-public-access -n traefik-public --for=condition=Programmed --timeout=5m
+echo "Public CRM TLS listener is ready."

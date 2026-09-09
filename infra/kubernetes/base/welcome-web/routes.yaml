@@ -29,7 +29,7 @@ metadata:
   namespace: gramly-welcome
 spec:
   parentRefs:
-    - {name: gramly-infrastructure, namespace: traefik-private, sectionName: hello-admin-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: hello-admin-https}
   hostnames: [hello-admin.gramly.tech]
   rules:
     - backendRefs: [{name: gramly-welcome-admin-auth, port: 4180}]

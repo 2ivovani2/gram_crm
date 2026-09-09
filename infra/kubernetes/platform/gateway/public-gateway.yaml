@@ -142,10 +142,10 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: crm-gramly-tech-tls}]
-      allowedRoutes: &public-routes
+      allowedRoutes:
         namespaces:
           from: Selector
-          selector: {matchLabels: {gramly.tech/contour: public}}
+          selector: {matchLabels: {kubernetes.io/metadata.name: gramly-crm}}
     - name: git-https
       hostname: git.gramly.tech
       protocol: HTTPS
@@ -153,7 +153,10 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: git-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes: &collaboration-routes
+        namespaces:
+          from: Selector
+          selector: {matchLabels: {kubernetes.io/metadata.name: devtools}}
     - name: tasks-https
       hostname: tasks.gramly.tech
       protocol: HTTPS
@@ -161,7 +164,7 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: tasks-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes: *collaboration-routes
     - name: docs-https
       hostname: docs.gramly.tech
       protocol: HTTPS
@@ -169,7 +172,7 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: docs-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes: *collaboration-routes
     - name: grafana-https
       hostname: grafana.gramly.tech
       protocol: HTTPS
@@ -177,7 +180,10 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: grafana-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes: &observability-routes
+        namespaces:
+          from: Selector
+          selector: {matchLabels: {kubernetes.io/metadata.name: observability}}
     - name: cluster-https
       hostname: cluster.gramly.tech
       protocol: HTTPS
@@ -185,7 +191,7 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: cluster-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes: *observability-routes
     - name: hello-admin-https
       hostname: hello-admin.gramly.tech
       protocol: HTTPS
@@ -193,4 +199,7 @@ spec:
       tls:
         mode: Terminate
         certificateRefs: [{kind: Secret, name: hello-admin-gramly-tech-tls}]
-      allowedRoutes: *public-routes
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector: {matchLabels: {kubernetes.io/metadata.name: gramly-welcome}}

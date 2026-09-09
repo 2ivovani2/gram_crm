@@ -65,16 +65,6 @@ patches:
       group: gateway.networking.k8s.io
       version: v1
       kind: HTTPRoute
-      name: gramly-private-access-gate
-      namespace: gramly-hello
-    patch: |-
-      - op: replace
-        path: /spec/rules/0/backendRefs/0/name
-        value: gramly-public-web-staging
-  - target:
-      group: gateway.networking.k8s.io
-      version: v1
-      kind: HTTPRoute
       name: gramly-public-web
       namespace: gramly-hello
     patch: |-

@@ -42,7 +42,6 @@ kubectl kustomize "${infra_dir}/base/public-web" | \
 kubectl apply -f "${infra_dir}/base/welcome-web/hello-admin-tls.yaml"
 kubectl wait certificate/hello-admin-gramly-tech -n traefik-public \
   --for=condition=Ready --timeout=10m
-"${infra_dir}/scripts/deploy-private-admin-gateway.sh"
 "${infra_dir}/apps/identity/configure-welcome-admin-oidc.sh"
 
 kubectl -n gramly-welcome delete job gramly-welcome-migrate --ignore-not-found=true
@@ -59,7 +58,6 @@ kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-alerts.yaml"
 
 kubectl -n gramly-welcome rollout status deployment/gramly-welcome-api --timeout=10m
 kubectl -n gramly-welcome exec deployment/gramly-welcome-api -- welcome-reconcile-interface-webhook
-"${infra_dir}/apps/vpn/ensure-private-app-records.sh"
 "${repo_root}/ops/welcome/production_smoke.sh"
 
 echo "GramlyHello production release completed with immutable images."

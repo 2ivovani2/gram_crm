@@ -4,6 +4,3 @@ kind: Kustomization
 resources:
   - public-gateway.yaml
   - public-http-redirect.yaml
-  - private-access-gateways.yaml
-  - private-access-network-resources.yaml
-  - private-ingress-network-resource.yaml
