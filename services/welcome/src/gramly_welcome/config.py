@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import IPv4Address
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,9 @@ class Settings(BaseSettings):
     interface_bot_username: str = ""
     interface_webhook_secret: str = ""
     public_webhook_base_url: str = "https://gramly.tech/welcome/client"
+    # Optional Telegram setWebhook IPv4 override. This is an operational
+    # mitigation, not evidence of a DNS failure. URL/Host and TLS are unchanged.
+    webhook_ip_address: str = ""
     accept_webhooks: bool = True
     max_webhook_body_bytes: int = Field(default=1_048_576, ge=1024, le=4_194_304)
     lease_seconds: int = Field(default=60, ge=15, le=600)
@@ -48,6 +52,12 @@ class Settings(BaseSettings):
     crypto_pay_api_base_url: str = "https://pay.crypt.bot"
     crypto_pay_webhook_secret: str = ""
     crypto_pay_webhook_max_age_seconds: int = Field(default=300, ge=30, le=3600)
+
+    @field_validator("webhook_ip_address")
+    @classmethod
+    def validate_webhook_ip_address(cls, value: str) -> str:
+        value = value.strip()
+        return str(IPv4Address(value)) if value else ""
 
 
 @lru_cache
