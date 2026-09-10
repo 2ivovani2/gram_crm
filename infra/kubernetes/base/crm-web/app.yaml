@@ -72,8 +72,7 @@ kind: HTTPRoute
 metadata: {name: gramly-crm-private, namespace: gramly-crm}
 spec:
   parentRefs:
-    - {name: gramly-business, namespace: traefik-business, sectionName: http}
-    - {name: gramly-business, namespace: traefik-business, sectionName: crm-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: crm-https}
   hostnames: [crm.gramly.tech]
   rules:
     - matches:

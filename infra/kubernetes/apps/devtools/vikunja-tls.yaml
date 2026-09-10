@@ -11,18 +11,3 @@ spec:
     name: letsencrypt-production
   dnsNames:
     - tasks.gramly.tech
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: ReferenceGrant
-metadata:
-  name: collaboration-tasks-tls
-  namespace: traefik-public
-spec:
-  from:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      namespace: traefik-collaboration
-  to:
-    - group: ""
-      kind: Secret
-      name: tasks-gramly-tech-tls

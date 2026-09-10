@@ -45,13 +45,6 @@ with transaction.atomic():
         raise RuntimeError('Gramly owner account was not found in Authentik')
     owner.groups.add(groups['gramly-owners'])
 
-    netbird = Application.objects.filter(slug='netbird').first()
-    if netbird is None:
-        raise RuntimeError('Authentik application netbird does not exist')
-    netbird.policy_engine_mode = 'any'
-    netbird.save(update_fields=['policy_engine_mode'])
-    PolicyBinding.objects.filter(target=netbird).delete()
-
     for slug, allowed_names in application_groups.items():
         application = Application.objects.filter(slug=slug).first()
         if application is None:

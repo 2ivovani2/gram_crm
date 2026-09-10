@@ -10,6 +10,13 @@ spec:
   hostnames:
     - auth.gramly.tech
     - vpn.gramly.tech
+    - crm.gramly.tech
+    - git.gramly.tech
+    - tasks.gramly.tech
+    - docs.gramly.tech
+    - grafana.gramly.tech
+    - cluster.gramly.tech
+    - hello-admin.gramly.tech
   rules:
     - filters:
         - type: RequestRedirect

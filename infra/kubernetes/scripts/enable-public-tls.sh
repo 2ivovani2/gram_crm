@@ -8,10 +8,10 @@ infra_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$infra_dir/bootstrap/versions.env"
 
-for host in auth.gramly.tech vpn.gramly.tech; do
+for host in auth.gramly.tech; do
   resolved="$(dig +short "$host" A @ns1.reg.ru | tail -n 1)"
-  if [[ "$resolved" != "45.77.149.91" ]]; then
-    printf 'Refusing to request certificates: %s resolves to %s, expected 45.77.149.91\n' \
+  if [[ "$resolved" != "45.146.131.207" ]]; then
+    printf 'Refusing to request certificates: %s resolves to %s, expected 45.146.131.207\n' \
       "$host" "${resolved:-nothing}" >&2
     exit 1
   fi
@@ -28,12 +28,8 @@ helm upgrade --install traefik-public traefik/traefik \
 kubectl apply -f "$infra_dir/platform/gateway/public-gateway.yaml"
 kubectl apply -f "$infra_dir/platform/gateway/public-http-redirect.yaml"
 kubectl apply -f "$infra_dir/apps/identity/http-route.yaml"
-kubectl --namespace vpn delete udproute netbird-stun --ignore-not-found
-kubectl apply -f "$infra_dir/apps/vpn/routes.yaml"
 
 kubectl wait --for=condition=Ready certificate/auth-gramly-tech-tls \
-  --namespace traefik-public --timeout=300s
-kubectl wait --for=condition=Ready certificate/vpn-gramly-tech-tls \
   --namespace traefik-public --timeout=300s
 kubectl wait --for=condition=Programmed gateway/gramly-public \
   --namespace traefik-public --timeout=180s

@@ -40,20 +40,9 @@ kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-alerts.yaml"
 kubectl apply -f "${infra_dir}/apps/observability/tls.yaml"
 kubectl wait certificate/grafana-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m
 kubectl wait certificate/cluster-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m
-for secret_name in grafana-gramly-tech-tls cluster-gramly-tech-tls; do
-  kubectl -n traefik-public get secret "${secret_name}" -o json \
-    | jq '{apiVersion:"v1", kind:"Secret", metadata:{name:.metadata.name, namespace:"traefik-private"}, type:.type, data:.data}' \
-    | kubectl apply -f - >/dev/null
-done
-bootstrap_job="observability-tls-sync-$(date +%s)"
-kubectl -n traefik-private create job "${bootstrap_job}" \
-  --from=cronjob/observability-tls-sync >/dev/null
-kubectl -n traefik-private wait "job/${bootstrap_job}" \
-  --for=condition=Complete --timeout=2m
-kubectl apply -f "${infra_dir}/platform/gateway/private-access-gateways.yaml"
-kubectl apply -f "${infra_dir}/platform/gateway/private-ingress-network-resource.yaml"
+kubectl apply -f "${infra_dir}/platform/gateway/public-gateway.yaml"
 kubectl apply -f "${infra_dir}/apps/observability/routes.yaml"
-kubectl wait gateway/gramly-infrastructure -n traefik-private --for=condition=Programmed --timeout=5m
-"${infra_dir}/apps/vpn/ensure-private-app-records.sh"
+kubectl apply -f "${infra_dir}/apps/observability/headlamp-network-policy.yaml"
+kubectl wait gateway/gramly-public-access -n traefik-public --for=condition=Programmed --timeout=5m
 
-echo "Observability is ready on the DevOps-only private access plane."
+echo "Observability is ready through public HTTPS and its existing SSO restrictions."

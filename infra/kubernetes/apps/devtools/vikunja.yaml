@@ -148,8 +148,7 @@ metadata:
   namespace: devtools
 spec:
   parentRefs:
-    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: http}
-    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: tasks-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: tasks-https}
   hostnames: [tasks.gramly.tech]
   rules:
     - backendRefs:

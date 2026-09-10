@@ -219,8 +219,7 @@ metadata:
   namespace: devtools
 spec:
   parentRefs:
-    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: http}
-    - {name: gramly-collaboration, namespace: traefik-collaboration, sectionName: docs-https}
+    - {name: gramly-public-access, namespace: traefik-public, sectionName: docs-https}
   hostnames: [docs.gramly.tech]
   rules:
     - backendRefs:

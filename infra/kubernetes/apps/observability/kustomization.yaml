@@ -8,4 +8,5 @@ resources:
   - gramly-welcome-dashboard.yaml
   - rbac.yaml
   - routes.yaml
+  - headlamp-network-policy.yaml
   - tls.yaml

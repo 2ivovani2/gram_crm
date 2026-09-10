@@ -19,10 +19,10 @@ fi
 "${infra_dir}/apps/identity/configure-vikunja-oidc.sh"
 kubectl apply -f "${infra_dir}/apps/devtools/vikunja-tls.yaml"
 kubectl wait certificate/tasks-gramly-tech -n traefik-public --for=condition=Ready --timeout=10m
-kubectl apply -f "${infra_dir}/platform/gateway/private-access-gateways.yaml"
-kubectl wait gateway/gramly-collaboration -n traefik-collaboration --for=condition=Programmed --timeout=5m
+kubectl apply -f "${infra_dir}/platform/gateway/public-gateway.yaml"
+kubectl wait gateway/gramly-public-access -n traefik-public --for=condition=Programmed --timeout=5m
 kubectl apply -f "${infra_dir}/apps/devtools/vikunja-postgres.yaml"
 kubectl wait cluster/vikunja-postgres -n devtools --for=condition=Ready --timeout=10m
 sed "s|VIKUNJA_IMAGE_PLACEHOLDER|${VIKUNJA_IMAGE}|" "${infra_dir}/apps/devtools/vikunja.yaml" | kubectl apply -f -
 kubectl rollout status deployment/vikunja -n devtools --timeout=10m
-echo "Vikunja is ready on the collaboration access plane."
+echo "Vikunja is ready through public HTTPS and Gramly SSO."

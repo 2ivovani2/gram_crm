@@ -159,19 +159,21 @@ async def test_bot_template_copies_configuration_without_operational_data() -> N
             )
         )
         await session.commit()
+        blocked_destination_id = blocked_destination.id
+        owner_id = owner.id
         with pytest.raises(ContentValidationError, match="Business-ротация"):
             await clone_bot_configuration(
                 session,
                 owner.id,
                 source.id,
-                blocked_destination.id,
+                blocked_destination_id,
                 business_enabled=False,
             )
         await session.rollback()
         assert await session.scalar(
-            select(func.count(ContentFlow.id)).where(ContentFlow.bot_id == blocked_destination.id)
+            select(func.count(ContentFlow.id)).where(ContentFlow.bot_id == blocked_destination_id)
         ) == 0
 
-        await session.execute(delete(Owner).where(Owner.id == owner.id))
+        await session.execute(delete(Owner).where(Owner.id == owner_id))
         await session.commit()
     await engine.dispose()

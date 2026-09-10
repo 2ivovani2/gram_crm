@@ -14,6 +14,7 @@ fi
 
 namespace=devtools
 connection_secret=forgejo-runner-connection
+umask 077
 
 kubectl --namespace "${namespace}" rollout status deployment/forgejo --timeout=5m
 
@@ -48,7 +49,8 @@ runner:
 cache:
   enabled: false
 container:
-  network: bridge
+  # Empty means one user-defined network per job, with service DNS aliases.
+  network: ""
   privileged: false
   valid_volumes: []
   docker_host: tcp://172.17.0.1:2375
@@ -70,11 +72,32 @@ EOF
     --from-file=config.yml="${config_file}"
 fi
 
+# Existing registrations must receive the fix too, without replacing UUID/token.
+# Secret changes are not automatically reloaded by a running daemon. Restart
+# only after the operator has verified that the capacity-one runner is idle.
+network_patch="$(mktemp)"
+trap 'rm -f "${network_patch}" "${config_file:-}"' EXIT
+kubectl --namespace "${namespace}" get secret "${connection_secret}" -o json | \
+  "${PYTHON:-python3}" "${root_dir}/ops/ci/reconcile_runner_network.py" >"${network_patch}"
+network_changed=false
+if [[ -s "${network_patch}" ]]; then
+  if [[ "${RUNNER_IDLE_CONFIRMED:-false}" != true ]]; then
+    echo "Runner network update is ready. Wait for active jobs to finish, then set RUNNER_IDLE_CONFIRMED=true." >&2
+    exit 1
+  fi
+  kubectl --namespace "${namespace}" patch secret "${connection_secret}" \
+    --type=merge --patch-file="${network_patch}" >/dev/null
+  network_changed=true
+fi
+
 sed \
   -e "s|FORGEJO_RUNNER_IMAGE_PLACEHOLDER|${FORGEJO_RUNNER_IMAGE}|" \
   -e "s|FORGEJO_DIND_IMAGE_PLACEHOLDER|${FORGEJO_DIND_IMAGE}|" \
   "${infra_dir}/apps/devtools/forgejo-runner.yaml" | kubectl apply --filename -
 
+if [[ "${network_changed}" == true ]]; then
+  kubectl --namespace "${namespace}" rollout restart deployment/forgejo-runner
+fi
 kubectl --namespace "${namespace}" rollout status deployment/forgejo-runner --timeout=10m
 kubectl --namespace "${namespace}" get pods \
   --selector app.kubernetes.io/name=forgejo-runner --output wide

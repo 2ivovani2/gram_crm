@@ -22,6 +22,8 @@ providers:
       - gramly-crm
       - gramly-staging
       - gramly-welcome
+      - devtools
+      - observability
   kubernetesGateway:
     enabled: true
     labelSelector: gramly.tech/controller=public
@@ -33,6 +35,8 @@ providers:
       - gramly-crm
       - gramly-staging
       - gramly-welcome
+      - devtools
+      - observability
 
 gateway:
   enabled: false

@@ -2,7 +2,7 @@ replicaCount: 1
 
 config:
   inCluster: true
-  # Safe only because the service is behind NetBird and the admin-only OIDC proxy.
+  # HTTPRoute must target the admin-only OIDC proxy, never Headlamp directly.
   unsafeUseServiceAccountToken: true
   sessionTTL: 28800
   enableHelm: false

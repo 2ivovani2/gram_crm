@@ -21,15 +21,3 @@ metadata:
   namespace: gramly-hello
 spec:
   hostnames: [staging.gramly.tech, hello.staging.gramly.tech]
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: gramly-private-access-gate
-  namespace: gramly-hello
-spec:
-  hostnames:
-    - crm.staging.gramly.tech
-    - git.staging.gramly.tech
-    - tasks.staging.gramly.tech
-    - docs.staging.gramly.tech
