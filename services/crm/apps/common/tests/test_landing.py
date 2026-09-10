@@ -1,4 +1,5 @@
 from django.test import override_settings
+from django.template.loader import get_template
 from django.urls import reverse
 
 
@@ -14,6 +15,28 @@ def test_landing_promotes_welcome_bot(client):
     assert response.context["welcome_bot_username"] == "gramly_welcome_bot"
     assert b"https://t.me/gramly_welcome_bot" in response.content
     assert "Gramly Welcome" in response.content.decode()
+
+
+def test_landing_describes_independent_products_and_sso_access(client):
+    content = client.get(reverse("landing")).content.decode()
+
+    assert "Два независимых продукта" in content
+    assert "Контакты, история и финансы между ними автоматически не передаются." in content
+    assert "Защищено · SSO" in content
+    assert "SSO + VPN" not in content
+    assert "CRM synced" not in content
+    assert "CRM handoff" not in content
+    assert "источник в CRM" not in content
+    assert "Синхронизирован" not in content
+    assert "Контакт и источник переходят" not in content
+    assert "На модерации" in content
+
+
+def test_crm_shell_describes_sso_instead_of_vpn_access():
+    source = get_template("crm/base.html").template.source
+
+    assert "SSO protected" in source
+    assert "VPN protected" not in source
 
 
 @override_settings(PUBLIC_ACCESS_GATE=True)
