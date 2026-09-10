@@ -172,16 +172,9 @@ def worker_deadline_detail_keyboard(item, selected_filter: str, page: int) -> In
 
 # ── Admin keyboards ───────────────────────────────────────────────────────────
 
-def admin_control_main_menu() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    b.button(text="📋 Все отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
-    b.button(text="👤 Только мои шаблоны", callback_data=CtrlAdminCB(action="reports_mine"))
-    b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
-    b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
-    b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
-    b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
-    b.adjust(1)
-    return b.as_markup()
+def admin_control_main_menu(access=None) -> InlineKeyboardMarkup:
+    from apps.telegram_bot.admin_keyboards import get_admin_main_menu
+    return get_admin_main_menu(access)
 
 
 def admin_cancel_withdrawal() -> InlineKeyboardMarkup:
@@ -214,20 +207,22 @@ def admin_addresses_list_keyboard(addresses: list) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def admin_report_actions(report_id: int) -> InlineKeyboardMarkup:
+def admin_report_actions(report_id: int, *, can_moderate: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✅ Принять", callback_data=CtrlAdminCB(action="rep_accept", obj_id=report_id))
-    b.button(text="❌ Отклонить", callback_data=CtrlAdminCB(action="rep_reject", obj_id=report_id))
+    if can_moderate:
+        b.button(text="✅ Принять", callback_data=CtrlAdminCB(action="rep_accept", obj_id=report_id))
+        b.button(text="❌ Отклонить", callback_data=CtrlAdminCB(action="rep_reject", obj_id=report_id))
     b.button(text="◀️ Список отчётов", callback_data=CtrlAdminCB(action="reports"))
     b.adjust(2, 1)
     return b.as_markup()
 
 
-def admin_penalty_actions(penalty_id: int) -> InlineKeyboardMarkup:
+def admin_penalty_actions(penalty_id: int, *, can_resolve: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✅ Подтвердить", callback_data=CtrlAdminCB(action="pen_accept", obj_id=penalty_id))
-    b.button(text="❌ Отменить", callback_data=CtrlAdminCB(action="pen_reject", obj_id=penalty_id))
-    b.button(text="🗑 Удалить", callback_data=CtrlAdminCB(action="pen_delete", obj_id=penalty_id))
+    if can_resolve:
+        b.button(text="✅ Подтвердить", callback_data=CtrlAdminCB(action="pen_accept", obj_id=penalty_id))
+        b.button(text="❌ Отменить", callback_data=CtrlAdminCB(action="pen_reject", obj_id=penalty_id))
+        b.button(text="🗑 Удалить", callback_data=CtrlAdminCB(action="pen_delete", obj_id=penalty_id))
     b.button(text="◀️ Список штрафов", callback_data=CtrlAdminCB(action="penalties"))
     b.adjust(3, 1)
     return b.as_markup()
@@ -253,16 +248,19 @@ def admin_back() -> InlineKeyboardMarkup:
 def accountant_main_menu() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="💳 Заявки на вывод", callback_data=CtrlAccountantCB(action="withdrawals"))
+    from apps.telegram_bot.callbacks import AdminMenuCallback
+    b.button(text="◀️ Главное меню", callback_data=AdminMenuCallback(section="main"))
     b.adjust(1)
     return b.as_markup()
 
 
-def accountant_withdrawal_actions(withdrawal_id: int) -> InlineKeyboardMarkup:
+def accountant_withdrawal_actions(withdrawal_id: int, *, can_manage: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="🔄 В обработку", callback_data=CtrlAccountantCB(action="w_processing", obj_id=withdrawal_id))
-    b.button(text="📤 Чек отправлен", callback_data=CtrlAccountantCB(action="w_receipt", obj_id=withdrawal_id))
-    b.button(text="✅ Выполнено", callback_data=CtrlAccountantCB(action="w_done", obj_id=withdrawal_id))
-    b.button(text="❌ Отклонить", callback_data=CtrlAccountantCB(action="w_reject", obj_id=withdrawal_id))
+    if can_manage:
+        b.button(text="🔄 В обработку", callback_data=CtrlAccountantCB(action="w_processing", obj_id=withdrawal_id))
+        b.button(text="📤 Чек отправлен", callback_data=CtrlAccountantCB(action="w_receipt", obj_id=withdrawal_id))
+        b.button(text="✅ Выполнено", callback_data=CtrlAccountantCB(action="w_done", obj_id=withdrawal_id))
+        b.button(text="❌ Отклонить", callback_data=CtrlAccountantCB(action="w_reject", obj_id=withdrawal_id))
     b.button(text="◀️ Список", callback_data=CtrlAccountantCB(action="withdrawals"))
     b.adjust(2, 2, 1)
     return b.as_markup()

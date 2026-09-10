@@ -103,6 +103,8 @@ class WorkspaceMembership(TimeStampedModel):
         verbose_name="Кто пригласил",
     )
     joined_at  = models.DateTimeField(null=True, blank=True, verbose_name="Дата вступления")
+    permission_overrides = models.JSONField(default=dict, blank=True)
+    access_version = models.PositiveIntegerField(default=0)
 
     class Meta:
         verbose_name        = "Участник пространства"
@@ -127,6 +129,26 @@ class WorkspaceMembership(TimeStampedModel):
 
 
 # ─── Weekly Plan ─────────────────────────────────────────────────────────────
+
+class AccessChange(models.Model):
+    """Append-only application audit. Never store identity tokens or subjects."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.PROTECT)
+    actor = models.ForeignKey("users.User", null=True, on_delete=models.SET_NULL, related_name="access_changes_made")
+    target = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="access_changes")
+    action = models.CharField(max_length=32)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError("Access audit records cannot be modified")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Access audit records cannot be deleted")
+
 
 class WeeklyPlan(TimeStampedModel):
     """

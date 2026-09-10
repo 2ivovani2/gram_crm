@@ -21,7 +21,7 @@ pytestmark = pytest.mark.django_db
 
 
 def _user(telegram_id: int, username: str, role=UserRole.WORKER, status=UserStatus.ACTIVE):
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=telegram_id,
         telegram_username=username,
         username=f"tg-{telegram_id}",
@@ -30,6 +30,11 @@ def _user(telegram_id: int, username: str, role=UserRole.WORKER, status=UserStat
         is_active=True,
         is_activated=True,
     )
+    if role in (UserRole.ADMIN, UserRole.CURATOR):
+        from apps.crm.models import Workspace, WorkspaceMembership
+        workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+        WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def _template(worker, creator=None):

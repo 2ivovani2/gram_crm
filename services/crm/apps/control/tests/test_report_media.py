@@ -17,12 +17,17 @@ MSK = ZoneInfo("Europe/Moscow")
 
 
 def _user(telegram_id, role=UserRole.WORKER):
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=telegram_id,
         username=f"media-{telegram_id}",
         role=role,
         status=UserStatus.ACTIVE,
     )
+    if role in (UserRole.ADMIN, UserRole.CURATOR):
+        from apps.crm.models import Workspace, WorkspaceMembership
+        workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+        WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def _report(worker):

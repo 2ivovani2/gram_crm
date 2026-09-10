@@ -14,6 +14,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from apps.users.models import User
+from apps.telegram_bot.permissions import permitted_recipient_ids
 from apps.control.bot.keyboards import (
     CtrlWorkerCB, worker_main_menu, worker_kpi_keyboard,
     worker_back_to_menu, worker_cancel_report, worker_cancel_withdrawal,
@@ -349,6 +350,7 @@ async def _create_and_notify_withdrawal(message: Message, db_user: User, wallet:
     await state.clear()
 
     processor_ids = await sync_to_async(ControlWithdrawalService.get_processor_ids)()
+    processor_ids = await permitted_recipient_ids(processor_ids, "withdrawals.manage")
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     notify_text = (
@@ -365,7 +367,7 @@ async def _create_and_notify_withdrawal(message: Message, db_user: User, wallet:
         try:
             msg = await message.bot.send_message(
                 tg_id, notify_text, parse_mode="HTML",
-                reply_markup=accountant_withdrawal_actions(withdrawal.pk),
+                reply_markup=accountant_withdrawal_actions(withdrawal.pk, can_manage=True),
             )
             notifications.append({"telegram_id": tg_id, "message_id": msg.message_id})
         except Exception:
@@ -967,7 +969,7 @@ async def process_dispute_comment(message: Message, db_user: User, state: FSMCon
 
     data = await state.get_data()
     penalty_id = data.get("penalty_id")
-    penalty = await sync_to_async(Penalty.objects.filter(pk=penalty_id).first)()
+    penalty = await sync_to_async(Penalty.objects.filter(pk=penalty_id, user=db_user).first)()
 
     if not penalty:
         await state.clear()
@@ -986,6 +988,8 @@ async def process_dispute_comment(message: Message, db_user: User, state: FSMCon
         )
     )()
 
+    admin_ids = await permitted_recipient_ids(admin_ids, "penalties.resolve")
+
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     admin_text = (
         f"🔄 <b>Оспаривание штрафа #{penalty_id}</b>\n\n"
@@ -1000,7 +1004,7 @@ async def process_dispute_comment(message: Message, db_user: User, state: FSMCon
                 admin_id,
                 admin_text,
                 parse_mode="HTML",
-                reply_markup=admin_penalty_actions(penalty_id),
+                reply_markup=admin_penalty_actions(penalty_id, can_resolve=True),
             )
         except Exception:
             pass

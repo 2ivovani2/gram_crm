@@ -32,12 +32,16 @@ def _user(telegram_id=81001):
 
 
 def _admin(telegram_id=81999):
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=telegram_id,
         username=f"admin-{telegram_id}",
         role=UserRole.ADMIN,
         status=UserStatus.ACTIVE,
     )
+    from apps.crm.models import Workspace, WorkspaceMembership
+    workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+    WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def _template(worker, deadline=dt.time(23, 0), amount="500"):

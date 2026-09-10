@@ -53,9 +53,9 @@ def _send_message_sync(telegram_id: int, text: str, reply_markup=None) -> bool:
 
 
 @shared_task(name="apps.control.tasks.notify_penalty_created_task", queue="default")
-def notify_penalty_created_task(penalty_id: int) -> dict:
-    """Notify an employee about a manual penalty, regardless of where it was created."""
-    from apps.control.models import Penalty, PenaltyType
+def notify_penalty_created_task(penalty_id: int, expected_status: str | None = None) -> dict:
+    """Proposals go to administrators; only confirmed charges go to employees."""
+    from apps.control.models import Penalty, PenaltyType, PenaltyStatus
     from apps.control.bot.keyboards import CtrlWorkerCB
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -65,6 +65,25 @@ def notify_penalty_created_task(penalty_id: int) -> dict:
     ).first()
     if penalty is None:
         return {"sent": False, "reason": "penalty_not_found"}
+    if expected_status is not None and penalty.status != expected_status:
+        return {"sent": False, "reason": "penalty_state_changed"}
+
+    if penalty.status == PenaltyStatus.CREATED:
+        from apps.crm.access import has_permission
+        from apps.users.models import User, UserRole, UserStatus
+        text = (
+            f"📋 <b>Предложение штрафа #{penalty.pk}</b>\n\n"
+            f"Сумма: <b>{penalty.amount:.2f} ₽</b>\n"
+            f"Причина: {html.escape(penalty.reason)}\n\n"
+            "Ожидает подтверждения в разделе штрафов. Баланс сотрудника не изменён."
+        )
+        sent = 0
+        for admin in User.objects.filter(role=UserRole.ADMIN, status=UserStatus.ACTIVE, is_active=True):
+            if has_permission(admin, "penalties.resolve"):
+                sent += bool(_send_message_sync(admin.telegram_id, text))
+        return {"sent": bool(sent), "recipients": sent, "penalty_id": penalty.pk, "proposal": True}
+    if penalty.status != PenaltyStatus.ACCEPTED:
+        return {"sent": False, "reason": "penalty_not_confirmed"}
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
@@ -82,10 +101,10 @@ def notify_penalty_created_task(penalty_id: int) -> dict:
     return {"sent": sent, "penalty_id": penalty.pk}
 
 
-def queue_penalty_notification(penalty_id: int) -> bool:
+def queue_penalty_notification(penalty_id: int, *, expected_status: str | None = None) -> bool:
     """Enqueue without turning a temporary broker outage into a failed admin action."""
     try:
-        notify_penalty_created_task.delay(penalty_id)
+        notify_penalty_created_task.delay(penalty_id, expected_status=expected_status)
         return True
     except Exception:
         logger.exception("Failed to enqueue manual penalty notification penalty=%s", penalty_id)
@@ -213,6 +232,8 @@ def notify_report_submission_task(self, report_id: int) -> dict:
     from django.utils import timezone
     from apps.control.bot.keyboards import admin_report_actions
     from apps.control.models import EmployeeReport, ReportSubmissionDelivery
+    from apps.control.services import ReportService
+    from apps.crm.access import has_permission
     from apps.users.models import User, UserRole, UserStatus
 
     report = EmployeeReport.objects.select_related("user", "template", "template__created_by").filter(
@@ -227,6 +248,7 @@ def notify_report_submission_task(self, report_id: int) -> dict:
         creator is not None
         and creator.status == UserStatus.ACTIVE
         and not creator.is_blocked_bot
+        and has_permission(creator, "reports.view")
     ):
         recipient_ids = [creator.pk]
     else:
@@ -270,12 +292,16 @@ def notify_report_submission_task(self, report_id: int) -> dict:
             )
             if delivery.status == ReportSubmissionDelivery.Status.SENT:
                 continue
+            if not has_permission(delivery.recipient, "reports.view"):
+                continue
             delivery.attempts += 1
             delivery.save(update_fields=["attempts", "updated_at"])
         ok = _send_message_sync(
             delivery.recipient.telegram_id,
             text,
-            reply_markup=admin_report_actions(report.pk),
+            reply_markup=admin_report_actions(
+                report.pk, can_moderate=ReportService.can_moderate(delivery.recipient, report),
+            ),
         )
         if ok:
             ReportSubmissionDelivery.objects.filter(pk=delivery.pk).update(

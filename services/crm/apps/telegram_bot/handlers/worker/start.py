@@ -6,6 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from apps.users.models import User
+from apps.telegram_bot.permissions import bot_can
 
 router = Router(name="start")
 
@@ -22,18 +23,8 @@ def _welcome_keyboard(crm_url: str, docs_url: str) -> InlineKeyboardMarkup:
 async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
     await state.clear()
 
-    if db_user.is_admin():
-        # Handled by admin menu router (registered before this one)
-        return
-
-    if db_user.is_accountant():
-        await message.answer(
-            "💼 <b>Панель бухгалтера</b>\n\nВыберите раздел:",
-            reply_markup=__accountant_menu(),
-        )
-        return
-
-    if db_user.is_worker() and db_user.status == "active":
+    # Users with management permissions are handled by the preceding router.
+    if await bot_can(db_user, "personal.use"):
         from apps.control.bot.worker_handlers import send_worker_cabinet
         await send_worker_cabinet(message, db_user, state)
         return
@@ -41,11 +32,6 @@ async def cmd_start(message: Message, db_user: User, state: FSMContext) -> None:
     # Anonymous / unregistered users
     await message.answer(
         f"👋 Привет, <b>{db_user.display_name}</b>!\n\n"
-        "Вы не зарегистрированы как сотрудник.\n"
+        "Рабочий доступ пока не выдан или отозван.\n"
         "Если вы работаете с нами — обратитесь к администратору.",
     )
-
-
-def __accountant_menu():
-    from apps.control.bot.keyboards import accountant_main_menu
-    return accountant_main_menu()

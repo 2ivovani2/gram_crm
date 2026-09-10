@@ -57,7 +57,7 @@ def test_initial_oidc_login_matches_explicit_telegram_id_claim(settings):
     assert user.email == "owner@example.com"
 
 
-def test_oidc_login_provisions_default_workspace_membership(settings):
+def test_oidc_login_never_grants_workspace_membership(settings):
     settings.OIDC_RP_CLIENT_ID = "client"
     settings.OIDC_RP_CLIENT_SECRET = "secret"
     workspace = Workspace.objects.create(name="Gramly", slug="gramly", is_active=True)
@@ -66,9 +66,21 @@ def test_oidc_login_provisions_default_workspace_membership(settings):
 
     backend.update_user(user, claims())
 
-    membership = WorkspaceMembership.objects.get(workspace=workspace, user=user)
-    assert membership.role == CRMRole.VIEWER
-    assert membership.is_active is True
+    assert not WorkspaceMembership.objects.filter(workspace=workspace, user=user).exists()
+
+
+def test_oidc_login_preserves_crm_overrides_and_revocation(settings):
+    settings.OIDC_RP_CLIENT_ID = "client"
+    settings.OIDC_RP_CLIENT_SECRET = "secret"
+    workspace = Workspace.objects.create(name="Gramly", slug="gramly")
+    user = make_user(role=UserRole.CURATOR)
+    membership = WorkspaceMembership.objects.create(workspace=workspace, user=user, role=CRMRole.VIEWER,
+        is_active=False, permission_overrides={"reports.moderate": False}, access_version=4)
+    CRMOIDCBackend().update_user(user, claims())
+    membership.refresh_from_db()
+    assert membership.permission_overrides == {"reports.moderate": False}
+    assert membership.access_version == 4
+    assert membership.is_active is False
 
 
 def test_oidc_self_registration_is_disabled_in_settings(settings):
@@ -239,6 +251,8 @@ def test_terminate_user_sessions_revokes_only_target_user(client):
 
 def test_admin_unlink_blocks_rebinding_and_revokes_sessions(client):
     admin = make_user(oidc_subject="admin-subject")
+    workspace = Workspace.objects.create(name="Local", slug="gramly")
+    WorkspaceMembership.objects.create(workspace=workspace, user=admin, role=CRMRole.OWNER)
     target = make_user(
         telegram_id=10002,
         username="tg_10002",
@@ -275,6 +289,8 @@ def test_admin_unlink_blocks_rebinding_and_revokes_sessions(client):
 
 def test_admin_cannot_unlink_current_identity(client):
     admin = make_user(oidc_subject="admin-subject")
+    workspace = Workspace.objects.create(name="Local", slug="gramly")
+    WorkspaceMembership.objects.create(workspace=workspace, user=admin, role=CRMRole.OWNER)
     client.force_login(admin, backend="django.contrib.auth.backends.ModelBackend")
 
     response = client.post(

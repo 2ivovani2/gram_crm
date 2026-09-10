@@ -35,7 +35,7 @@
 {% block content %}
 
 <!-- Create panel -->
-<div class="create-panel">
+{% if templates_manage %}<div class="create-panel">
   <h3>Создать шаблон отчёта</h3>
   <form method="post">
     {% csrf_token %}
@@ -48,7 +48,7 @@
       После создания откроется редактор: добавьте инструкции, назначьте сотрудников, задайте дедлайн и штраф.
     </div>
   </form>
-</div>
+</div>{% endif %}
 
 <!-- Templates table -->
 {% if templates %}

@@ -1,4 +1,4 @@
-"""Safe workspace provisioning for Authentik-backed CRM identities."""
+"""CRM enrollment provisioning. Never called by OIDC authentication."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
-from apps.crm.models import CRMRole, Workspace, WorkspaceMembership
+from apps.crm.models import AccessChange, CRMRole, Workspace, WorkspaceMembership
 from apps.users.models import UserRole, UserStatus
 
 logger = logging.getLogger(__name__)
@@ -37,8 +37,6 @@ def inspect_default_workspace_membership(user) -> MembershipProvisionResult:
     desired_role = OIDC_WORKSPACE_ROLE_MAP.get(user.role)
     if not user.is_active or user.status != UserStatus.ACTIVE:
         return MembershipProvisionResult("skipped_inactive", desired_role=desired_role)
-    if not user.oidc_subject:
-        return MembershipProvisionResult("skipped_unlinked", desired_role=desired_role)
     if desired_role is None:
         return MembershipProvisionResult("skipped_role")
 
@@ -59,8 +57,11 @@ def inspect_default_workspace_membership(user) -> MembershipProvisionResult:
             desired_role=desired_role,
             workspace_id=workspace.pk,
         )
+    action = "exists" if membership.is_active else "revoked"
+    if membership.is_active and membership.role != desired_role and membership.access_version == 0:
+        action = "ambiguous_legacy_role"
     return MembershipProvisionResult(
-        "exists" if membership.is_active else "revoked",
+        action,
         desired_role=desired_role,
         current_role=membership.role,
         membership_id=membership.pk,
@@ -119,6 +120,11 @@ def ensure_default_workspace_membership(user) -> MembershipProvisionResult:
             current_role=membership.role,
             membership_id=membership.pk,
             workspace_id=membership.workspace_id,
+        )
+        AccessChange.objects.create(
+            workspace_id=membership.workspace_id, target=locked_user,
+            action="membership_created", before={"membership": None},
+            after={"role": locked_user.role, "membership_id": membership.pk},
         )
         logger.info(
             "crm_workspace_provisioned crm_user_id=%s workspace_id=%s membership_id=%s role=%s",

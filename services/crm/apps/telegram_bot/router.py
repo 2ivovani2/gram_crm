@@ -12,6 +12,11 @@ from aiogram import Dispatcher
 
 
 def setup_routers(dp: Dispatcher) -> None:
+    from apps.telegram_bot.middleware import AccessMiddleware
+    # UserMiddleware has already injected db_user. Outer middleware also handles
+    # stale/unknown protected callbacks before filters can silently drop them.
+    dp.message.outer_middleware(AccessMiddleware())
+    dp.callback_query.outer_middleware(AccessMiddleware())
     from apps.telegram_bot.handlers.admin.menu import router as admin_menu_router
     from apps.telegram_bot.handlers.admin.users import router as admin_users_router
     from apps.telegram_bot.handlers.worker.start import router as start_router
@@ -21,7 +26,7 @@ def setup_routers(dp: Dispatcher) -> None:
     from apps.control.bot.worker_handlers import router as control_worker_router
     from apps.control.bot.accountant_handlers import router as control_accountant_router
 
-    # Admin routers first — IsAdmin() filter prevents conflicts
+    # Management entry points are selected by current permissions, not role labels.
     dp.include_router(admin_menu_router)
     dp.include_router(admin_users_router)
 

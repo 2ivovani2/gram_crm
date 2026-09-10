@@ -15,10 +15,10 @@ from apps.telegram_bot.admin_keyboards import (
     get_user_status_keyboard, get_admin_cancel_keyboard, get_admin_main_menu,
 )
 from apps.telegram_bot.callbacks import AdminUserCallback
-from apps.telegram_bot.permissions import IsAdmin
 from apps.telegram_bot.services import safe_edit_text
 from apps.telegram_bot.states import AdminUserSearchState
-from apps.users.models import User, UserRole
+from apps.users.models import User
+from apps.telegram_bot.permissions import get_bot_access
 from apps.users.services import UserService
 from apps.common.utils import format_dt
 
@@ -36,7 +36,8 @@ async def send_users_list(target, page: int = 1) -> None:
         await target.answer(text, reply_markup=get_users_list_keyboard(users, page=page, total=total))
 
 
-def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None = None) -> str:
+def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None = None,
+                    *, show_finance: bool = False) -> str:
     status_icon = {"active": "✅", "inactive": "⛔", "pending": "⏳", "banned": "🚫"}.get(user.status, "❓")
     role_icon = {"admin": "👑", "curator": "🎓", "worker": "👷", "accountant": "💼", "anonymous": "👤"}.get(user.role, "👤")
 
@@ -55,6 +56,11 @@ def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None 
         f"🔑 Активирован: {'✅ Да' if user.is_activated else '❌ Нет'}",
         f"🤖 Заблокировал бота: {'⚠️ Да' if user.is_blocked_bot else 'Нет'}",
     ]
+
+    if not show_finance:
+        lines += ["", f"📅 Зарегистрирован: {format_dt(user.created_at)}",
+                  f"⏰ Последняя активность: {format_dt(user.last_activity_at)}"]
+        return "\n".join(lines)
 
     if breakdown:
         lines += [
@@ -108,13 +114,15 @@ def _user_card_text(user: User, referral_count: int = 0, breakdown: dict | None 
     return "\n".join(lines)
 
 
-def _load_user_data(user_id: int) -> tuple:
+def _load_user_data(user_id: int, *, include_finance: bool = False) -> tuple:
     """Load user + referral_count + earnings breakdown in one sync block."""
     from decimal import Decimal
     from apps.control.services import ControlBalanceService, PenaltyService
 
     user = User.objects.select_related("referred_by").get(pk=user_id)
     referral_count = user.referrals.count()
+    if not include_finance:
+        return user, referral_count, None
     breakdown = UserService.get_earnings_breakdown(user)
     breakdown.update({
         "daily_accrued": user.daily_accrued or Decimal("0"),
@@ -128,7 +136,7 @@ def _load_user_data(user_id: int) -> tuple:
 
 # ── List ──────────────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminUserCallback.filter(F.action == "list"), IsAdmin())
+@router.callback_query(AdminUserCallback.filter(F.action == "list"))
 async def cb_users_list(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
     await callback.answer()
     page = callback_data.page
@@ -139,21 +147,29 @@ async def cb_users_list(callback: CallbackQuery, callback_data: AdminUserCallbac
 
 # ── View ──────────────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminUserCallback.filter(F.action == "view"), IsAdmin())
-async def cb_user_view(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
+@router.callback_query(AdminUserCallback.filter(F.action == "view"))
+async def cb_user_view(callback: CallbackQuery, callback_data: AdminUserCallback, db_user: User) -> None:
     await callback.answer()
-    user, referral_count, breakdown = await sync_to_async(_load_user_data)(callback_data.user_id)
+    access = await get_bot_access(db_user)
+    show_finance = access.allows("employees.finance")
+    user, referral_count, breakdown = await sync_to_async(_load_user_data)(
+        callback_data.user_id, include_finance=show_finance
+    )
     await safe_edit_text(
         callback,
-        _user_card_text(user, referral_count, breakdown),
-        get_user_card_keyboard(user, back_page=callback_data.page),
+        _user_card_text(user, referral_count, breakdown, show_finance=show_finance),
+        get_user_card_keyboard(user, back_page=callback_data.page,
+                               can_manage_access=access.allows("access.manage") and user.pk != db_user.pk),
     )
 
 
 # ── Status change ─────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminUserCallback.filter(F.action == "change_status"), IsAdmin())
-async def cb_change_status_menu(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
+@router.callback_query(AdminUserCallback.filter(F.action == "change_status"))
+async def cb_change_status_menu(callback: CallbackQuery, callback_data: AdminUserCallback, db_user: User) -> None:
+    if callback_data.user_id == db_user.pk:
+        await callback.answer("Нельзя изменять собственный доступ.", show_alert=True)
+        return
     await callback.answer()
     user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
     await safe_edit_text(
@@ -165,27 +181,31 @@ async def cb_change_status_menu(callback: CallbackQuery, callback_data: AdminUse
 
 @router.callback_query(
     AdminUserCallback.filter(F.action.in_({"set_active", "set_inactive", "set_banned"})),
-    IsAdmin(),
 )
-async def cb_set_status(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
+async def cb_set_status(callback: CallbackQuery, callback_data: AdminUserCallback, db_user: User) -> None:
     action_map = {"set_active": "active", "set_inactive": "inactive", "set_banned": "banned"}
     new_status = action_map[callback_data.action]
 
-    user, referral_count, _ = await sync_to_async(_load_user_data)(callback_data.user_id)
-    user = await sync_to_async(UserService.set_status)(user, new_status)
-    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
+    user = await sync_to_async(User.objects.get)(pk=callback_data.user_id)
+    user = await sync_to_async(UserService.set_status)(user, new_status, actor=db_user)
+    access = await get_bot_access(db_user)
+    show_finance = access.allows("employees.finance")
+    user, referral_count, breakdown = await sync_to_async(_load_user_data)(
+        user.pk, include_finance=show_finance
+    )
 
     await callback.answer(f"Статус → {user.get_status_display()}", show_alert=True)
     await safe_edit_text(
         callback,
-        _user_card_text(user, referral_count, breakdown),
-        get_user_card_keyboard(user, back_page=1),
+        _user_card_text(user, referral_count, breakdown, show_finance=show_finance),
+        get_user_card_keyboard(user, back_page=1,
+                               can_manage_access=access.allows("access.manage") and user.pk != db_user.pk),
     )
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
-@router.callback_query(AdminUserCallback.filter(F.action == "search"), IsAdmin())
+@router.callback_query(AdminUserCallback.filter(F.action == "search"))
 async def cb_user_search_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(AdminUserSearchState.waiting_for_query)
@@ -196,8 +216,8 @@ async def cb_user_search_start(callback: CallbackQuery, state: FSMContext) -> No
     )
 
 
-@router.message(AdminUserSearchState.waiting_for_query, IsAdmin())
-async def process_user_search(message: Message, state: FSMContext) -> None:
+@router.message(AdminUserSearchState.waiting_for_query)
+async def process_user_search(message: Message, state: FSMContext, db_user: User) -> None:
     await state.clear()
     query = (message.text or "").strip()
     users = await sync_to_async(UserService.search_users)(query)
@@ -205,7 +225,7 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
     if not users:
         await message.answer(
             f"🔍 По запросу «{query}» ничего не найдено.",
-            reply_markup=get_admin_main_menu(),
+            reply_markup=get_admin_main_menu(await get_bot_access(db_user)),
         )
         return
 
@@ -217,32 +237,27 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(
     AdminUserCallback.filter(F.action.in_({"set_curator", "set_worker"})),
-    IsAdmin(),
 )
 async def cb_set_role(callback: CallbackQuery, callback_data: AdminUserCallback) -> None:
-    new_role = UserRole.CURATOR if callback_data.action == "set_curator" else UserRole.WORKER
-
-    user, referral_count, breakdown = await sync_to_async(_load_user_data)(callback_data.user_id)
-
-    if user.role == new_role:
-        await callback.answer("Роль уже установлена.", show_alert=True)
-        return
-
-    user.role = new_role
-    await sync_to_async(user.save)(update_fields=["role", "updated_at"])
-    breakdown = await sync_to_async(UserService.get_earnings_breakdown)(user)
-
-    role_label = "🎓 Куратор" if new_role == UserRole.CURATOR else "👷 Воркер"
-    await callback.answer(f"Роль → {role_label}", show_alert=True)
-    await safe_edit_text(
-        callback,
-        _user_card_text(user, referral_count, breakdown),
-        get_user_card_keyboard(user, back_page=callback_data.page),
+    # Legacy buttons cannot skip version checks and role-change confirmation.
+    from django.conf import settings
+    from urllib.parse import urljoin
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    await callback.answer("Смена роли перенесена в форму доступа CRM.", show_alert=True)
+    await callback.message.answer(
+        "🔐 Чтобы изменить роль, откройте сотрудника в CRM → Доступ. "
+        "Форма покажет новые права и попросит подтвердить изменение.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Открыть управление доступом", url=urljoin(
+                getattr(settings, "CRM_URL", "https://crm.gramly.tech/crm/login/"),
+                "/crm/control/users/",
+            ))
+        ]]),
     )
 
 
 # ── Noop (pagination label tap) ───────────────────────────────────────────────
 
-@router.callback_query(AdminUserCallback.filter(F.action == "noop"), IsAdmin())
+@router.callback_query(AdminUserCallback.filter(F.action == "noop"))
 async def cb_noop(callback: CallbackQuery) -> None:
     await callback.answer()

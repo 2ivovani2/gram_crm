@@ -46,7 +46,7 @@ def test_curator_lands_on_moderation_dashboard_and_sees_only_moderation_nav(clie
     assert dashboard.status_code == 200
     assert "Отчёты" in content
     assert "Шаблоны" in content
-    assert "Штрафы" not in content
+    assert "Штрафы" in content
     assert "Сотрудники" not in content
     assert "Пользователи" not in content
     assert "Выводы" not in content
@@ -56,7 +56,6 @@ def test_curator_lands_on_moderation_dashboard_and_sees_only_moderation_nav(clie
 @pytest.mark.parametrize(
     "url_name",
     [
-        "control:penalties",
         "control:employees",
         "control:withdrawals",
         "control:analytics",
@@ -73,13 +72,28 @@ def test_curator_is_forbidden_from_administrative_control_pages(client, workspac
     assert client.get(reverse(url_name)).status_code == 403
 
 
-@pytest.mark.parametrize("url_name", ["control:dashboard", "control:reports", "control:report_templates"])
+@pytest.mark.parametrize("url_name", ["control:dashboard", "control:reports", "control:report_templates", "control:penalties"])
 def test_curator_can_open_moderation_pages(client, workspace, url_name):
     curator = make_user(33000 + len(User.objects.all()), UserRole.CURATOR)
     add_member(workspace, curator, CRMRole.VIEWER)
     client.force_login(curator)
 
     assert client.get(reverse(url_name)).status_code == 200
+
+
+@pytest.mark.parametrize("action", ["accept", "reject", "delete"])
+def test_curator_cannot_resolve_penalty_from_web(client, workspace, action):
+    from apps.control.models import Penalty, PenaltyStatus, PenaltyType
+    curator = make_user(33101, UserRole.CURATOR)
+    worker = make_user(33102, UserRole.WORKER)
+    add_member(workspace, curator, CRMRole.VIEWER)
+    penalty = Penalty.objects.create(user=worker, created_by=curator, type=PenaltyType.MANUAL,
+                                     status=PenaltyStatus.CREATED, amount="100", reason="Review required")
+    client.force_login(curator)
+    response = client.post(reverse("control:penalty_action", args=[penalty.pk]), {"action": action})
+    assert response.status_code == 403
+    penalty.refresh_from_db()
+    assert penalty.status == PenaltyStatus.CREATED
 
 
 def test_worker_cannot_open_control_dashboard(client, workspace):
@@ -114,7 +128,9 @@ def test_user_management_shows_sso_and_workspace_access_states(client, workspace
 
     assert response.status_code == 200
     assert "SSO привязан" in content
-    assert "Workspace доступен" in content
-    assert "Нет workspace-доступа" in content
+    assert "Доступ активен" in content
+    assert "Workspace-доступ не предоставлен" in content
+    assert "Настроить доступ" in content
+    assert "Наблюдатель (только просмотр)" not in content
     assert "Доступ отозван" in content
     assert "Ожидает первого SSO-входа" in content

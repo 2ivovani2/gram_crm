@@ -60,20 +60,15 @@ class UserService:
         User.objects.filter(pk=user.pk).update(last_activity_at=timezone.now())
 
     @staticmethod
-    def set_status(user: User, status: str) -> User:
-        update_fields = ["status", "updated_at"]
-        user.status = status
-        # Track deactivation timestamp for retention cohort analysis
-        if status == UserStatus.INACTIVE and not user.deactivated_at:
-            user.deactivated_at = timezone.now()
-            update_fields.append("deactivated_at")
-        user.save(update_fields=update_fields)
-        return user
+    def set_status(user: User, status: str, *, actor: User) -> User:
+        from apps.crm.access import update_user_status
+        return update_user_status(actor, user, status)
 
     @staticmethod
-    def set_role(user: User, role: str) -> User:
-        user.role = role
-        user.save(update_fields=["role", "updated_at"])
+    def set_role(user: User, role: str, *, actor: User, expected_version: int, confirm_role_change=False) -> User:
+        from apps.crm.access import update_access
+        update_access(actor, user, role, {}, expected_version, confirm_role_change=confirm_role_change)
+        user.refresh_from_db()
         return user
 
     # ── Balance ───────────────────────────────────────────────────────────────

@@ -66,8 +66,11 @@ def test_form_rejects_invalid_money_or_distribution(overrides):
 @pytest.mark.django_db
 def test_authenticated_employee_can_open_calculator(client):
     user = User.objects.create_user(
-        telegram_id=99112233, username="calculator-worker", role=UserRole.WORKER
+        telegram_id=99112233, username="calculator-worker", role=UserRole.WORKER, status="active"
     )
+    from apps.crm.models import Workspace, WorkspaceMembership
+    workspace = Workspace.objects.create(name="Local", slug="gramly")
+    WorkspaceMembership.objects.create(workspace=workspace, user=user)
     client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
     response = client.get(reverse("crm:ad_calculator"), HTTP_HOST="localhost")
     content = response.content.decode().replace(" ", "").replace(" ", "")

@@ -49,8 +49,9 @@
 
 {% block content %}
 
-<div class="create-form">
-  <h3>➕ Создать штраф вручную</h3>
+{% if penalties_create %}<div class="create-form">
+  <h3>Предложить штраф</h3>
+  <p>Предложение не меняет баланс. Начисление произойдёт только после подтверждения администратором.</p>
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="create">
@@ -60,9 +61,9 @@
       <input name="reason" placeholder="Причина" />
     </div>
     <input name="comment" placeholder="Комментарий (необязательно)" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px;box-sizing:border-box">
-    <button type="submit" class="btn-sm">Начислить штраф</button>
+    <button type="submit" class="btn-sm">Отправить на проверку</button>
   </form>
-</div>
+</div>{% endif %}
 
 <div class="filters">
   <form method="get" style="display:contents">
@@ -123,7 +124,7 @@
     </td>
     <td style="font-size:12px;color:var(--muted);white-space:nowrap">{{ p.created_at|date:"d.m.Y" }}</td>
     <td>
-      <div class="action-btns">
+      {% if penalties_resolve %}<div class="action-btns">
         {% if p.status == "pending" or p.status == "disputed" or p.status == "created" %}
         <form method="post" action="{% url 'control:penalty_action' p.pk %}">
           {% csrf_token %}
@@ -141,7 +142,7 @@
           <button name="action" value="delete" class="btn-xs btn-delete" title="Удалить" aria-label="Удалить">×</button>
         </form>
         {% endif %}
-      </div>
+      </div>{% endif %}
     </td>
   </tr>
   {% endfor %}
