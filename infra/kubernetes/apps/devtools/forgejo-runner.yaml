@@ -65,7 +65,14 @@ spec:
         - name: docker
           image: FORGEJO_DIND_IMAGE_PLACEHOLDER
           imagePullPolicy: IfNotPresent
-          args: [--host=tcp://0.0.0.0:2375, --tls=false, --storage-driver=overlay2]
+          # VKE Calico pod eth0 is 1380. Both default and per-job Docker
+          # bridges must fit the enclosing network to avoid TLS stalls.
+          args:
+            - --host=tcp://0.0.0.0:2375
+            - --tls=false
+            - --storage-driver=overlay2
+            - --mtu=1380
+            - --default-network-opt=bridge=com.docker.network.driver.mtu=1380
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
