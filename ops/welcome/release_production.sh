@@ -19,6 +19,9 @@ current_context="$(kubectl config current-context)"
 kubectl get cluster gramly-crm-postgres -n gramly-crm \
   -o jsonpath='{.status.phase}' | grep -qx 'Cluster in healthy state'
 kubectl -n gramly-welcome get secret gramly-welcome-runtime gramly-welcome-registry >/dev/null
+if [[ "${WELCOME_IMAGE}" == git.gramly.tech/* || "${WELCOME_WEB_IMAGE}" == git.gramly.tech/* ]]; then
+  kubectl -n gramly-welcome get secret gramly-forgejo-registry >/dev/null
+fi
 
 public_edge_ip="${PUBLIC_EDGE_IP:-45.146.131.207}"
 authoritative_ns="$(dig +short NS gramly.tech | head -n 1)"

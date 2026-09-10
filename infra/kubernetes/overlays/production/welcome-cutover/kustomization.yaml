@@ -6,6 +6,26 @@ resources:
   - route.yaml
 
 patches:
+  # Keep Docker Hub credentials for rollback; production images can also be
+  # pulled from the private Forgejo registry without changing shared/staging bases.
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-(api|web|worker-events|worker-delivery|worker-billing|worker-notifications)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets/-
+        value: {name: gramly-forgejo-registry}
+  - target:
+      group: batch
+      version: v1
+      kind: CronJob
+      name: gramly-welcome-maintenance
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/imagePullSecrets/-
+        value: {name: gramly-forgejo-registry}
   - target:
       group: apps
       version: v1
