@@ -38,38 +38,26 @@
     {% endif %}
 
     <nav class="sidebar-nav">
-      <div class="sidebar-section"><div class="sidebar-section-label">Рабочий стол</div>
-        <a href="{% url 'crm:dashboard' %}" class="sidebar-item {% block nav_dashboard %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Дашборд</span></a>
-        {% if is_owner %}<a href="{% url 'crm:history' %}" class="sidebar-item {% block nav_history %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><span>История</span></a>{% endif %}
-      </div>
-      <div class="sidebar-section"><div class="sidebar-section-label">Операции</div>
-        {% if can_enter_finance %}<a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h12"/><circle cx="18.5" cy="17" r="2.5"/></svg><span>Cash Flow</span></a>{% endif %}
-        <a href="{% url 'crm:ad_calculator' %}" class="sidebar-item {% block nav_calculator %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h2m4 0h2m-8 4h2m4 0h2m-8 4h2m4 0h2"/></svg><span>Калькулятор слотов</span></a>
-      </div>
-
-      {% if crm_user.is_admin or crm_user.is_accountant or is_owner or crm_user.is_curator %}
-      <div class="sidebar-section"><div class="sidebar-section-label">Управление</div>
-        <a href="{% url 'control:dashboard' %}" class="sidebar-item {% block nav_control %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span>HR Контроль</span></a>
-        {% if crm_user.is_admin or is_owner or crm_user.is_curator %}
-        <a href="{% url 'control:reports' %}" class="sidebar-item {% block nav_ctrl_reports %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg><span>Отчёты</span></a>
-        <a href="{% url 'control:report_templates' %}" class="sidebar-item {% block nav_ctrl_report_templates %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Шаблоны</span></a>
-        {% endif %}
-        {% if crm_user.is_admin or is_owner %}
-        <a href="{% url 'owners:dashboard' %}" class="sidebar-item {% block nav_owners %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16v13H4zM7 7V4h10v3M8 12h8M8 16h5"/></svg><span>Центр владельцев</span></a>
-        <a href="{% url 'control:penalties' %}" class="sidebar-item {% block nav_ctrl_penalties %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg><span>Штрафы</span></a>
-        <a href="{% url 'control:employees' %}" class="sidebar-item {% block nav_ctrl_employees %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg><span>Сотрудники</span></a>
-        <a href="{% url 'control:analytics' %}" class="sidebar-item {% block nav_ctrl_analytics %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 20v-6m6 6V4m6 16V9"/></svg><span>Аналитика</span></a>
-        <a href="{% url 'control:users' %}" class="sidebar-item {% block nav_ctrl_users %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2m2-13h4m-2-2v4"/></svg><span>Пользователи</span></a>
-        {% endif %}
-        {% if crm_user.is_admin or is_owner %}
-        <a href="{% url 'control:deadline_notifications' %}" class="sidebar-item {% block nav_ctrl_deadline_notif %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21h-4"/></svg><span>Уведомления</span></a>
-        {% endif %}
-        {% if crm_user.is_admin or crm_user.is_accountant or is_owner %}
-        <a href="{% url 'control:withdrawals' %}" class="sidebar-item {% block nav_ctrl_withdrawals %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Выводы</span></a>
-        {% endif %}
-        {% if crm_user.is_admin or is_owner %}
-        <a href="{% url 'control:settings' %}" class="sidebar-item {% block nav_ctrl_settings %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.05.06-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15.0 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.05-.06 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg><span>Настройки</span></a>
-        {% endif %}
+      {% if dashboard_view or analytics_view %}<div class="sidebar-section"><div class="sidebar-section-label">Рабочий стол</div>
+        {% if dashboard_view %}<a href="{% url 'crm:dashboard' %}" class="sidebar-item {% block nav_dashboard %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Дашборд</span></a>{% endif %}
+        {% if analytics_view %}<a href="{% url 'crm:history' %}" class="sidebar-item {% block nav_history %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><span>История</span></a>{% endif %}
+      </div>{% endif %}
+      {% if finance_view or calculator_use %}<div class="sidebar-section"><div class="sidebar-section-label">Операции</div>
+        {% if finance_view %}<a href="{% url 'crm:entry_finance' %}" class="sidebar-item {% block nav_finance %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h12"/><circle cx="18.5" cy="17" r="2.5"/></svg><span>Cash Flow</span></a>{% endif %}
+        {% if calculator_use %}<a href="{% url 'crm:ad_calculator' %}" class="sidebar-item {% block nav_calculator %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 11h2m4 0h2m-8 4h2m4 0h2m-8 4h2m4 0h2"/></svg><span>Калькулятор слотов</span></a>{% endif %}
+      </div>{% endif %}
+      {% if dashboard_view or reports_view or templates_view or owners_view or penalties_view or employees_view or analytics_view or employees_view or notifications_view or withdrawals_view or settings_manage or access_manage %}<div class="sidebar-section"><div class="sidebar-section-label">Управление</div>
+        {% if dashboard_view %}<a href="{% url 'control:dashboard' %}" class="sidebar-item {% block nav_control %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span>HR Контроль</span></a>{% endif %}
+        {% if reports_view %}<a href="{% url 'control:reports' %}" class="sidebar-item {% block nav_ctrl_reports %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg><span>Отчёты</span></a>{% endif %}
+        {% if templates_view %}<a href="{% url 'control:report_templates' %}" class="sidebar-item {% block nav_ctrl_report_templates %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span>Шаблоны</span></a>{% endif %}
+        {% if owners_view %}<a href="{% url 'owners:dashboard' %}" class="sidebar-item {% block nav_owners %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16v13H4zM7 7V4h10v3M8 12h8M8 16h5"/></svg><span>Центр владельцев</span></a>{% endif %}
+        {% if penalties_view %}<a href="{% url 'control:penalties' %}" class="sidebar-item {% block nav_ctrl_penalties %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/></svg><span>Штрафы</span></a>{% endif %}
+        {% if employees_view %}<a href="{% url 'control:employees' %}" class="sidebar-item {% block nav_ctrl_employees %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg><span>Сотрудники</span></a>{% endif %}
+        {% if analytics_view %}<a href="{% url 'control:analytics' %}" class="sidebar-item {% block nav_ctrl_analytics %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 20v-6m6 6V4m6 16V9"/></svg><span>Аналитика</span></a>{% endif %}
+        {% if employees_view or access_manage %}<a href="{% url 'control:users' %}" class="sidebar-item {% block nav_ctrl_users %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2m2-13h4m-2-2v4"/></svg><span>Пользователи</span></a>{% endif %}
+        {% if notifications_view %}<a href="{% url 'control:deadline_notifications' %}" class="sidebar-item {% block nav_ctrl_deadline_notif %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21h-4"/></svg><span>Уведомления</span></a>{% endif %}
+        {% if withdrawals_view %}<a href="{% url 'control:withdrawals' %}" class="sidebar-item {% block nav_ctrl_withdrawals %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg><span>Выводы</span></a>{% endif %}
+        {% if settings_manage %}<a href="{% url 'control:settings' %}" class="sidebar-item {% block nav_ctrl_settings %}{% endblock %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.05.06-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15.0 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.05-.06 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg><span>Настройки</span></a>{% endif %}
       </div>{% endif %}
     </nav>
 

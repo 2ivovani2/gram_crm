@@ -1,0 +1,55 @@
+{% extends "crm/base.html" %}
+{% block title %}Доступ сотрудника{% endblock %}
+{% block page_title %}Настроить доступ{% endblock %}
+{% block nav_ctrl_users %}active{% endblock %}
+{% block extra_css %}
+<style>
+.access-editor{max-width:1000px;color:var(--text)}
+.access-editor p{max-width:72ch;line-height:1.6}.access-editor h2{margin:24px 0 12px;font-size:22px}
+.access-editor label,.access-editor legend{font-weight:600}.access-editor fieldset{border:0;padding:0;margin:30px 0}
+.access-editor legend{font-size:18px;padding:0 0 10px}.access-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,280px);gap:16px;align-items:center;border-bottom:1px solid var(--border);padding:12px 0}
+.access-editor select{width:100%;min-height:44px;padding:8px 12px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;font:inherit}
+.access-editor :focus-visible{outline:2px solid var(--text);outline-offset:3px}
+.access-actions{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}.access-actions button,.access-actions a{min-height:44px;padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;text-decoration:none;cursor:pointer}
+.access-actions .primary{background:var(--crm-acid);color:var(--crm-ink);font-weight:600}
+.access-actions .primary:hover{background:var(--crm-acid-active)}
+.access-status{padding:14px 0;border-block:1px solid var(--border);margin:18px 0}.access-editor .errorlist{padding:12px 24px;border:1px solid currentColor;border-radius:8px;list-style:disc}
+.access-editor ul{line-height:1.7;padding-left:22px}.access-editor details{margin:20px 0}.access-editor summary{cursor:pointer;min-height:44px;line-height:44px}
+@media(max-width:600px){.access-row{grid-template-columns:1fr;gap:8px}.access-actions>*{flex:1;text-align:center}.access-editor h2{font-size:20px}}
+</style>
+{% endblock %}
+{% block content %}
+<section class="access-editor" aria-label="Права сотрудника">
+  <a href="{% url 'control:users' %}">Вернуться к пользователям</a>
+  <h2>{{ target.get_full_name|default:target.username }}{% if target.telegram_username %} · @{{ target.telegram_username }}{% endif %}</h2>
+  <p>Authentik отвечает за вход. Эти настройки определяют действия сотрудника внутри CRM — в веб-интерфейсе и Telegram-боте.</p>
+  <div class="access-status">
+    <strong>{{ target.get_role_display }} · {{ target.get_status_display }}</strong>
+    <p>{{ role_description }}</p>
+    {% if not membership_record %}<p>Membership ещё нет: она будет создана при сохранении. Первый SSO-вход для настройки прав не требуется.</p>
+    {% elif not membership_record.is_active %}<p><strong>Доступ отозван.</strong> Сохранение роли и повторный SSO-вход его не восстановят.</p>{% endif %}
+    {% if not target.is_active or target.status != 'active' %}<p>Статус сотрудника блокирует рабочие действия независимо от выбранных разрешений.</p>{% endif %}
+  </div>
+  {% if preview %}
+    <h2>Проверьте изменения</h2>
+    <p><strong>{{ preview.role }}</strong> — {{ preview.description }}</p>
+    {% if preview.reset %}<p>Прежние индивидуальные настройки будут сброшены к выбранной роли. Новые исключения можно задать после сохранения роли.</p>{% endif %}
+    <h3>Будет разрешено дополнительно</h3><ul>{% for label in preview.added %}<li>{{ label }}</li>{% empty %}<li>Без дополнительных разрешений</li>{% endfor %}</ul>
+    <h3>Будет запрещено</h3><ul>{% for label in preview.removed %}<li>{{ label }}</li>{% empty %}<li>Без отзыва разрешений</li>{% endfor %}</ul>
+    <details><summary>Итоговые действия по настройкам</summary><ul>{% for label in preview.actions %}<li>{{ label }}</li>{% empty %}<li>Рабочие действия недоступны</li>{% endfor %}</ul></details>
+    <p>Разрешение действия включает необходимый просмотр. Запрет просмотра снимает зависимые действия. Статус и принадлежность объектов проверяются дополнительно.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="confirmation" value="{{ preview.confirmation }}">
+      <div class="access-actions"><button class="primary" name="action" value="save">Подтвердить и сохранить</button><a href="{% url 'control:user_access' target.pk %}">Вернуться без сохранения</a><a href="{% url 'control:users' %}">Отмена</a></div>
+    </form>
+  {% else %}
+    <form method="post">{% csrf_token %}{{ form.version }}{{ form.non_field_errors }}{{ form.version.errors }}
+      <div class="access-row"><label for="{{ form.role.id_for_label }}">Базовая роль</label><div>{{ form.role }}{{ form.role.errors }}</div></div>
+      <p>Для каждого действия оставьте «По роли» или задайте исключение. Смена роли очищает прежние исключения только после подтверждения на следующем экране.</p>
+      {% for group, fields in groups %}<fieldset><legend>{{ group }}</legend>{% for field in fields %}<div class="access-row"><label for="{{ field.id_for_label }}">{{ field.label }}</label><div>{{ field }}{{ field.errors }}</div></div>{% endfor %}</fieldset>{% endfor %}
+      <p>Управлять доступом и назначать администраторов может только администратор CRM. Это право нельзя выдать отдельной галочкой.</p>
+      <div class="access-actions"><button class="primary" name="action" value="preview">Проверить изменения</button><button name="action" value="reset">Сбросить к роли</button><a href="{% url 'control:users' %}">Отмена</a></div>
+    </form>
+    <details><summary>Текущие действия по настройкам</summary><ul>{% for label in current_actions %}<li>{{ label }}</li>{% empty %}<li>Рабочие действия недоступны</li>{% endfor %}</ul></details>
+  {% endif %}
+</section>
+{% endblock %}

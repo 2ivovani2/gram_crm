@@ -5,8 +5,8 @@ Report review (with rejection comment FSM), penalty management, broadcasts.
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from apps.telegram_bot.permissions import bot_can, permitted_recipient_ids
 
-from apps.telegram_bot.permissions import IsAdmin
 from apps.users.models import User
 from apps.control.bot.keyboards import (
     CtrlAdminCB, admin_report_actions,
@@ -21,7 +21,7 @@ from apps.control.bot.states import (
 router = Router(name="control_admin")
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "main"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "main"))
 async def cb_admin_main(callback: CallbackQuery, db_user: User, state: FSMContext):
     await state.clear()
     await callback.answer()
@@ -75,22 +75,22 @@ async def _show_reports_list(callback: CallbackQuery, db_user: User, only_mine: 
     await callback.message.edit_text(text, reply_markup=b.as_markup())
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "reports"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports"))
 async def cb_reports_list(callback: CallbackQuery, db_user: User):
     await _show_reports_list(callback, db_user, only_mine=False)
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "reports_mine"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports_mine"))
 async def cb_reports_list_mine(callback: CallbackQuery, db_user: User):
     await _show_reports_list(callback, db_user, only_mine=True)
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "reports_all"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "reports_all"))
 async def cb_reports_list_all(callback: CallbackQuery, db_user: User):
     await _show_reports_list(callback, db_user, only_mine=False)
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "rep_view"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "rep_view"))
 async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
@@ -101,6 +101,12 @@ async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db
     if not report:
         await callback.answer("Отчёт не найден", show_alert=True)
         return
+
+    from apps.control.services import ReportService
+    can_moderate = await bot_can(db_user, "reports.moderate") and await sync_to_async(
+        ReportService.can_moderate
+    )(db_user, report)
+    markup = admin_report_actions(report.pk, can_moderate=can_moderate)
 
     username = f"@{report.user.telegram_username}" if report.user.telegram_username else str(report.user.telegram_id)
     tmpl_label = f"\nШаблон: {report.template.name}" if report.template and report.template.name else ""
@@ -129,22 +135,22 @@ async def cb_report_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db
             document=report.telegram_file_id,
             caption=text,
             parse_mode="HTML",
-            reply_markup=admin_report_actions(report.pk),
+            reply_markup=markup,
         )
     elif report.telegram_file_id and report.file_type == "photo":
         await callback.message.answer_photo(
             photo=report.telegram_file_id,
             caption=text,
             parse_mode="HTML",
-            reply_markup=admin_report_actions(report.pk),
+            reply_markup=markup,
         )
     else:
-        await callback.message.edit_text(text, reply_markup=admin_report_actions(report.pk))
+        await callback.message.edit_text(text, reply_markup=markup)
 
 
 # ── Report: ACCEPT (immediate) ────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "rep_accept"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "rep_accept"))
 async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
@@ -173,7 +179,7 @@ async def cb_rep_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_
 
 # ── Report: REJECT — enter FSM to collect comment ────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "rep_reject"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "rep_reject"))
 async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB,
                          db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
@@ -210,7 +216,7 @@ async def cb_rep_reject(callback: CallbackQuery, callback_data: CtrlAdminCB,
     )
 
 
-@router.message(AdminReportReviewState.waiting_for_comment, IsAdmin())
+@router.message(AdminReportReviewState.waiting_for_comment)
 async def process_reject_comment(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.models import EmployeeReport
@@ -239,7 +245,7 @@ async def process_reject_comment(message: Message, db_user: User, state: FSMCont
 
 # ── Penalties ──────────────────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "penalties"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "penalties"))
 async def cb_penalties_list(callback: CallbackQuery, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.services import PenaltyService
@@ -271,7 +277,7 @@ async def cb_penalties_list(callback: CallbackQuery, db_user: User):
     await callback.message.edit_text(text, reply_markup=b.as_markup())
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "pen_view"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "pen_view"))
 async def cb_penalty_view(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     from asgiref.sync import sync_to_async
     from apps.control.models import Penalty
@@ -305,7 +311,9 @@ async def cb_penalty_view(callback: CallbackQuery, callback_data: CtrlAdminCB, d
         text += f"\n💬 <b>Оспаривание:</b>\n{penalty.dispute_comment}"
 
     await callback.answer()
-    await callback.message.edit_text(text, reply_markup=admin_penalty_actions(penalty.pk))
+    await callback.message.edit_text(text, reply_markup=admin_penalty_actions(
+        penalty.pk, can_resolve=await bot_can(db_user, "penalties.resolve")
+    ))
 
 
 async def _resolve_penalty(callback: CallbackQuery, callback_data: CtrlAdminCB,
@@ -346,34 +354,35 @@ async def _resolve_penalty(callback: CallbackQuery, callback_data: CtrlAdminCB,
     )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "pen_accept"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "pen_accept"))
 async def cb_pen_accept(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     await _resolve_penalty(callback, callback_data, db_user, "accept")
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "pen_reject"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "pen_reject"))
 async def cb_pen_reject(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     await _resolve_penalty(callback, callback_data, db_user, "reject")
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "pen_delete"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "pen_delete"))
 async def cb_pen_delete(callback: CallbackQuery, callback_data: CtrlAdminCB, db_user: User):
     await _resolve_penalty(callback, callback_data, db_user, "delete")
 
 
 # ── Create manual penalty ─────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "create_penalty"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "create_penalty"))
 async def cb_create_penalty_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminPenaltyCreateState.waiting_for_username)
     await callback.answer()
     await callback.message.edit_text(
-        "➕ <b>Создать штраф</b>\n\nВведите @username сотрудника:",
+        "➕ <b>Предложить штраф</b>\n\nВведите @username сотрудника. "
+        "Предложение проверит сотрудник с правом подтверждения штрафов.",
         reply_markup=admin_back(),
     )
 
 
-@router.message(AdminPenaltyCreateState.waiting_for_username, IsAdmin())
+@router.message(AdminPenaltyCreateState.waiting_for_username)
 async def penalty_got_username(message: Message, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.users.models import User
@@ -391,12 +400,12 @@ async def penalty_got_username(message: Message, state: FSMContext):
     await message.answer(f"Сотрудник: @{worker.telegram_username}\n\nВведите сумму штрафа (числом, руб.):")
 
 
-@router.message(AdminPenaltyCreateState.waiting_for_amount, IsAdmin())
+@router.message(AdminPenaltyCreateState.waiting_for_amount)
 async def penalty_got_amount(message: Message, state: FSMContext):
     from decimal import Decimal, InvalidOperation
     try:
-        amount = Decimal(message.text.replace(",", "."))
-        if amount <= 0:
+        amount = Decimal((message.text or "").replace(",", "."))
+        if not amount.is_finite() or amount <= 0:
             raise ValueError()
     except (InvalidOperation, ValueError):
         await message.answer("❌ Введите корректную сумму (например: 500):")
@@ -407,7 +416,7 @@ async def penalty_got_amount(message: Message, state: FSMContext):
     await message.answer("Введите причину штрафа:")
 
 
-@router.message(AdminPenaltyCreateState.waiting_for_reason, IsAdmin())
+@router.message(AdminPenaltyCreateState.waiting_for_reason)
 async def penalty_got_reason(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from decimal import Decimal
@@ -423,11 +432,9 @@ async def penalty_got_reason(message: Message, db_user: User, state: FSMContext)
         admin=db_user, worker=worker, amount=amount, reason=reason
     )
     await state.clear()
-    from apps.control.tasks import queue_penalty_notification
-    await sync_to_async(queue_penalty_notification)(penalty.pk)
 
     await message.answer(
-        f"✅ Штраф #{penalty.pk} создан:\n"
+        f"✅ Предложение штрафа #{penalty.pk} передано на проверку:\n"
         f"Сотрудник: {data['worker_name']}\n"
         f"Сумма: {amount:.2f} ₽\n"
         f"Причина: {reason}",
@@ -437,7 +444,7 @@ async def penalty_got_reason(message: Message, db_user: User, state: FSMContext)
 
 # ── Broadcast ─────────────────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "broadcast"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "broadcast"))
 async def cb_broadcast_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminBroadcastControlState.waiting_for_text)
     await callback.answer()
@@ -447,7 +454,7 @@ async def cb_broadcast_start(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.message(AdminBroadcastControlState.waiting_for_text, IsAdmin())
+@router.message(AdminBroadcastControlState.waiting_for_text)
 async def broadcast_got_text(message: Message, state: FSMContext):
     text = message.text or message.caption or ""
     if not text:
@@ -463,7 +470,7 @@ async def broadcast_got_text(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "bc_confirm"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "bc_confirm"))
 async def cb_broadcast_confirm(callback: CallbackQuery, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.users.models import UserRole, UserStatus
@@ -504,7 +511,7 @@ async def cb_broadcast_confirm(callback: CallbackQuery, db_user: User, state: FS
     )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "bc_cancel"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "bc_cancel"))
 async def cb_broadcast_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("Отменено")
@@ -516,7 +523,7 @@ async def cb_broadcast_cancel(callback: CallbackQuery, state: FSMContext):
 
 # ── Withdrawal ─────────────────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "withdraw"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "withdraw"))
 async def cb_admin_withdraw(callback: CallbackQuery, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.services import ControlBalanceService
@@ -536,7 +543,7 @@ async def cb_admin_withdraw(callback: CallbackQuery, db_user: User, state: FSMCo
     )
 
 
-@router.message(AdminWithdrawalState.waiting_for_amount, IsAdmin())
+@router.message(AdminWithdrawalState.waiting_for_amount)
 async def process_admin_amount_input(message: Message, db_user: User, state: FSMContext):
     from decimal import Decimal, InvalidOperation
     from asgiref.sync import sync_to_async
@@ -585,7 +592,7 @@ async def process_admin_amount_input(message: Message, db_user: User, state: FSM
         )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "addr_sel"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "addr_sel"))
 async def cb_admin_addr_sel(callback: CallbackQuery, callback_data: CtrlAdminCB,
                              db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
@@ -608,7 +615,7 @@ async def cb_admin_addr_sel(callback: CallbackQuery, callback_data: CtrlAdminCB,
     await _admin_create_and_notify(callback.message, db_user, addr_obj.address, amount, state)
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "addr_new"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "addr_new"))
 async def cb_admin_addr_new(callback: CallbackQuery, db_user: User, state: FSMContext):
     data = await state.get_data()
     amount_str = data.get("amount", "")
@@ -620,7 +627,7 @@ async def cb_admin_addr_new(callback: CallbackQuery, db_user: User, state: FSMCo
     )
 
 
-@router.message(AdminWithdrawalState.waiting_for_wallet, IsAdmin())
+@router.message(AdminWithdrawalState.waiting_for_wallet)
 async def process_admin_wallet_input(message: Message, db_user: User, state: FSMContext):
     from decimal import Decimal
 
@@ -652,6 +659,7 @@ async def _admin_create_and_notify(message: Message, db_user: User, wallet: str,
     await state.clear()
 
     processor_ids = await sync_to_async(ControlWithdrawalService.get_processor_ids)()
+    processor_ids = await permitted_recipient_ids(processor_ids, "withdrawals.manage")
 
     username = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
     notify_text = (
@@ -670,7 +678,7 @@ async def _admin_create_and_notify(message: Message, db_user: User, wallet: str,
         try:
             msg = await message.bot.send_message(
                 tg_id, notify_text, parse_mode="HTML",
-                reply_markup=accountant_withdrawal_actions(withdrawal.pk),
+                reply_markup=accountant_withdrawal_actions(withdrawal.pk, can_manage=True),
             )
             notifications.append({"telegram_id": tg_id, "message_id": msg.message_id})
         except Exception:
@@ -692,7 +700,7 @@ async def _admin_create_and_notify(message: Message, db_user: User, wallet: str,
 
 # ── Admin crypto addresses ─────────────────────────────────────────────────────
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "my_addresses"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "my_addresses"))
 async def cb_admin_my_addresses(callback: CallbackQuery, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.services import ControlWithdrawalService
@@ -705,7 +713,7 @@ async def cb_admin_my_addresses(callback: CallbackQuery, db_user: User, state: F
     await callback.message.edit_text(text, reply_markup=admin_addresses_list_keyboard(addresses))
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "add_addr"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "add_addr"))
 async def cb_admin_add_addr(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminCryptoAddressState.waiting_for_name)
     await callback.answer()
@@ -715,7 +723,7 @@ async def cb_admin_add_addr(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(CtrlAdminCB.filter(F.action == "del_addr"), IsAdmin())
+@router.callback_query(CtrlAdminCB.filter(F.action == "del_addr"))
 async def cb_admin_del_addr(callback: CallbackQuery, callback_data: CtrlAdminCB,
                              db_user: User):
     from asgiref.sync import sync_to_async
@@ -730,7 +738,7 @@ async def cb_admin_del_addr(callback: CallbackQuery, callback_data: CtrlAdminCB,
     await callback.message.edit_text(text, reply_markup=admin_addresses_list_keyboard(addresses))
 
 
-@router.message(AdminCryptoAddressState.waiting_for_name, IsAdmin())
+@router.message(AdminCryptoAddressState.waiting_for_name)
 async def process_admin_addr_name(message: Message, state: FSMContext):
     name = (message.text or "").strip()
     if not name or len(name) > 100:
@@ -744,7 +752,7 @@ async def process_admin_addr_name(message: Message, state: FSMContext):
     )
 
 
-@router.message(AdminCryptoAddressState.waiting_for_address, IsAdmin())
+@router.message(AdminCryptoAddressState.waiting_for_address)
 async def process_admin_addr_address(message: Message, db_user: User, state: FSMContext):
     from asgiref.sync import sync_to_async
     from apps.control.services import ControlWithdrawalService

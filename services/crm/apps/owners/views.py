@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.views import View
 from urllib.parse import urlencode
 
-from apps.crm.views import CRMOwnerMixin
+from apps.crm.views import CRMPermissionMixin
 
 from .forms import ChannelForm, OwnerForm, StatusForm
 from .models import (
@@ -20,13 +20,22 @@ from .models import (
 from .services import create_owner, log_event, recalculate, update_owner
 
 
+class OwnerReadMixin(CRMPermissionMixin):
+    required_permission = "owners.view"
+    write_permission = "owners.manage"
+
+
+class OwnerManageMixin(OwnerReadMixin):
+    required_permission = "owners.manage"
+
+
 def _owner_queryset(request):
     return TelegramOwner.objects.filter(workspace=request.crm_workspace, deleted_at__isnull=True).select_related(
         "status", "responsible", "notes_updated_by", "last_login_by"
     ).annotate(active_channel_count=Count("channels", filter=Q(channels__is_archived=False), distinct=True))
 
 
-class OwnersDashboardView(CRMOwnerMixin, View):
+class OwnersDashboardView(OwnerReadMixin, View):
     template_name = "owners/dashboard.html"
 
     def get(self, request):
@@ -120,7 +129,7 @@ class OwnersDashboardView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class OwnerDetailView(CRMOwnerMixin, View):
+class OwnerDetailView(OwnerReadMixin, View):
     template_name = "owners/detail.html"
 
     def get(self, request, pk):
@@ -138,7 +147,7 @@ class OwnerDetailView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class OwnerCreateView(CRMOwnerMixin, View):
+class OwnerCreateView(OwnerManageMixin, View):
     template_name = "owners/form.html"
 
     def get(self, request):
@@ -163,7 +172,7 @@ class OwnerCreateView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx, status=status)
 
 
-class OwnerEditView(CRMOwnerMixin, View):
+class OwnerEditView(OwnerManageMixin, View):
     template_name = "owners/form.html"
 
     def get_owner(self, request, pk):
@@ -194,7 +203,7 @@ class OwnerEditView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx, status=status)
 
 
-class OwnerActionView(CRMOwnerMixin, View):
+class OwnerActionView(OwnerManageMixin, View):
     def post(self, request, pk, action):
         owner = get_object_or_404(
             TelegramOwner, pk=pk, workspace=request.crm_workspace, deleted_at__isnull=True
@@ -224,7 +233,7 @@ class OwnerActionView(CRMOwnerMixin, View):
         return redirect("owners:detail", pk=owner.pk)
 
 
-class OwnerChannelCreateView(CRMOwnerMixin, View):
+class OwnerChannelCreateView(OwnerManageMixin, View):
     def post(self, request, pk):
         owner = get_object_or_404(
             TelegramOwner, pk=pk, workspace=request.crm_workspace, deleted_at__isnull=True
@@ -248,7 +257,7 @@ class OwnerChannelCreateView(CRMOwnerMixin, View):
         return redirect("owners:detail", pk=owner.pk)
 
 
-class OwnerChannelActionView(CRMOwnerMixin, View):
+class OwnerChannelActionView(OwnerManageMixin, View):
     def post(self, request, pk, channel_pk, action):
         owner = get_object_or_404(
             TelegramOwner, pk=pk, workspace=request.crm_workspace, deleted_at__isnull=True
@@ -286,7 +295,7 @@ class OwnerChannelActionView(CRMOwnerMixin, View):
         return redirect("owners:detail", pk=owner.pk)
 
 
-class OwnerActivityView(CRMOwnerMixin, View):
+class OwnerActivityView(OwnerReadMixin, View):
     template_name = "owners/activity.html"
 
     def get(self, request, pk):
@@ -305,7 +314,7 @@ class OwnerActivityView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx)
 
 
-class OwnerStatusesView(CRMOwnerMixin, View):
+class OwnerStatusesView(OwnerReadMixin, View):
     template_name = "owners/statuses.html"
 
     def get(self, request):
@@ -328,7 +337,7 @@ class OwnerStatusesView(CRMOwnerMixin, View):
         return render(request, self.template_name, ctx, status=status)
 
 
-class OwnerStatusActionView(CRMOwnerMixin, View):
+class OwnerStatusActionView(OwnerManageMixin, View):
     def post(self, request, pk, action):
         status = get_object_or_404(OwnerStatus, pk=pk, workspace=request.crm_workspace)
         if action == "update":
@@ -367,7 +376,9 @@ class OwnerStatusActionView(CRMOwnerMixin, View):
         return redirect("owners:statuses")
 
 
-class SavedFilterActionView(CRMOwnerMixin, View):
+class SavedFilterActionView(OwnerReadMixin, View):
+    # Filters are scoped to the requesting user; no owner data is changed.
+    write_permission = "owners.view"
     ALLOWED_KEYS = {"q", "status", "rank", "health", "state", "sort", "archive"}
 
     def post(self, request, action, pk=None):

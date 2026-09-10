@@ -1,5 +1,6 @@
 from django.urls import path
 from apps.control import views
+from apps.control.access_views import UserAccessView
 
 app_name = "control"
 
@@ -37,6 +38,7 @@ urlpatterns = [
     # User management
     path("users/", views.UsersListView.as_view(), name="users"),
     path("users/<int:pk>/edit/", views.UserEditView.as_view(), name="user_edit"),
+    path("users/<int:pk>/access/", UserAccessView.as_view(), name="user_access"),
 
     # Deadline notification monitoring
     path("deadline-notifications/", views.DeadlineNotificationsView.as_view(), name="deadline_notifications"),

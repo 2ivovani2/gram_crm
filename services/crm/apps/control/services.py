@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Optional, List
 
 from django.db import transaction
+from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 
 import datetime as _dt
@@ -157,16 +158,18 @@ class ReportService:
         )
 
     @staticmethod
-    def can_moderate(moderator: User, report: "EmployeeReport") -> bool:
+    def can_moderate(moderator: User, report: "EmployeeReport", workspace=None) -> bool:
         """
         Permission check for moderation actions (accept / reject).
 
         Rules:
-        - ADMIN can moderate all reports except their own.
-        - CURATOR can moderate reports of WORKER and ACCOUNTANT only (not own, not other curators).
-        - WORKER / ACCOUNTANT cannot moderate anyone.
+        - Effective reports.moderate permission is mandatory (fresh DB state).
+        - Nobody can moderate their own report, including administrators.
+        - CURATOR can moderate WORKER/ACCOUNTANT reports only.
+        - Other non-admin roles require an explicit permission grant.
         """
         from apps.control.models import REPORT_MODERATION_STATUSES
+        from apps.crm.access import has_permission
 
         # Accepted/rejected reports are terminal until the employee submits an
         # allowed edit. This also protects the POST endpoint from stale pages.
@@ -174,11 +177,14 @@ class ReportService:
             return False
         if report.user_id == moderator.pk:
             return False
-        if moderator.role == UserRole.ADMIN:
-            return True
-        if moderator.role == UserRole.CURATOR:
-            return report.user.role in (UserRole.WORKER, UserRole.ACCOUNTANT)
-        return False
+        if not has_permission(moderator, "reports.moderate", workspace=workspace):
+            return False
+        # User instances retained by a bot FSM or prefetched report may be stale.
+        role = User.objects.filter(pk=moderator.pk).values_list("role", flat=True).first()
+        target_role = User.objects.filter(pk=report.user_id).values_list("role", flat=True).first()
+        if role == UserRole.CURATOR:
+            return target_role in (UserRole.WORKER, UserRole.ACCOUNTANT)
+        return target_role is not None
 
     @staticmethod
     @transaction.atomic
@@ -380,7 +386,7 @@ class ReportService:
 
     @staticmethod
     @transaction.atomic
-    def accept_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+    def accept_report(report: "EmployeeReport", admin: User, comment: str = "", *, workspace=None) -> None:
         from apps.control.models import (
             EmployeeReport, ModerationHistory, ReportStatus,
             REPORT_MODERATION_STATUSES,
@@ -389,6 +395,8 @@ class ReportService:
         report = EmployeeReport.objects.select_for_update().get(pk=report.pk)
         if report.status not in REPORT_MODERATION_STATUSES:
             raise ValueError("По этому отчёту уже принято решение.")
+        if not ReportService.can_moderate(admin, report, workspace=workspace):
+            raise PermissionDenied("Нет права модерировать этот отчёт.")
 
         prev_status = report.status
         now = timezone.now()
@@ -425,7 +433,7 @@ class ReportService:
 
     @staticmethod
     @transaction.atomic
-    def reject_report(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+    def reject_report(report: "EmployeeReport", admin: User, comment: str = "", *, workspace=None) -> None:
         """Reject a report and open the configured correction window."""
         from apps.control.models import (
             EmployeeReport, ModerationHistory, ReportStatus,
@@ -435,6 +443,8 @@ class ReportService:
         report = EmployeeReport.objects.select_for_update().get(pk=report.pk)
         if report.status not in REPORT_MODERATION_STATUSES:
             raise ValueError("По этому отчёту уже принято решение.")
+        if not ReportService.can_moderate(admin, report, workspace=workspace):
+            raise PermissionDenied("Нет права модерировать этот отчёт.")
 
         prev_status = report.status
         now = timezone.now()
@@ -507,9 +517,15 @@ class ReportService:
         )
 
     @staticmethod
-    def send_to_revision(report: "EmployeeReport", admin: User, comment: str = "") -> None:
+    @transaction.atomic
+    def send_to_revision(report: "EmployeeReport", admin: User, comment: str = "", *, workspace=None) -> None:
         """Legacy: send to revision (kept for backward compat)."""
-        from apps.control.models import ReportStatus
+        from apps.control.models import EmployeeReport, ReportStatus, REPORT_MODERATION_STATUSES
+        report = EmployeeReport.objects.select_for_update().get(pk=report.pk)
+        if report.status not in REPORT_MODERATION_STATUSES:
+            raise ValueError("По этому отчёту уже принято решение.")
+        if not ReportService.can_moderate(admin, report, workspace=workspace):
+            raise PermissionDenied("Нет права модерировать этот отчёт.")
         report.status = ReportStatus.REVISION
         report.reviewed_by = admin
         report.reviewed_at = timezone.now()
@@ -686,10 +702,23 @@ class ReportDeadlineService:
 class PenaltyService:
 
     @staticmethod
+    @transaction.atomic
     def create_manual(admin: User, worker: User, amount: Decimal,
-                      reason: str, comment: str = "") -> "Penalty":
+                      reason: str, comment: str = "", *, workspace=None) -> "Penalty":
         from apps.control.models import Penalty, PenaltyType, PenaltyStatus
-        return Penalty.objects.create(
+        from apps.crm.access import has_permission
+        from apps.control.tasks import queue_penalty_notification
+        if not has_permission(admin, "penalties.create", workspace=workspace):
+            raise PermissionDenied("Нет права предложить штраф.")
+        amount = Decimal(amount)
+        if not amount.is_finite() or amount <= 0 or amount >= Decimal("10000000000"):
+            raise ValueError("Укажите положительную сумму штрафа.")
+        if amount != amount.quantize(Decimal("0.01")):
+            raise ValueError("Сумма должна содержать не более двух знаков после запятой.")
+        reason = reason.strip()
+        if not reason or len(reason) > 500:
+            raise ValueError("Укажите причину штрафа (до 500 символов).")
+        penalty = Penalty.objects.create(
             user=worker,
             type=PenaltyType.MANUAL,
             amount=amount,
@@ -698,6 +727,40 @@ class PenaltyService:
             status=PenaltyStatus.CREATED,
             created_by=admin,
         )
+        transaction.on_commit(lambda: queue_penalty_notification(penalty.pk, expected_status=PenaltyStatus.CREATED))
+        return penalty
+
+    @staticmethod
+    @transaction.atomic
+    def resolve(penalty, actor: User, action: str, *, workspace=None) -> "Penalty":
+        """Authorize and resolve a proposal/dispute once, under a row lock.
+
+        The accepted-status ledger already drives available balance; never
+        subtract from the employee's stored balance a second time.
+        """
+        from apps.control.models import Penalty, PenaltyStatus
+        from apps.crm.access import has_permission
+        from apps.control.tasks import queue_penalty_notification
+
+        locked = Penalty.objects.select_for_update().get(pk=penalty.pk)
+        if not has_permission(actor, "penalties.resolve", workspace=workspace):
+            raise PermissionDenied("Нет права принимать решения по штрафам.")
+        statuses = {"accept": PenaltyStatus.ACCEPTED, "reject": PenaltyStatus.REJECTED,
+                    "delete": PenaltyStatus.DELETED}
+        if action not in statuses:
+            raise ValueError("Неизвестное решение по штрафу.")
+        target = statuses[action]
+        if locked.status == target:
+            return locked
+        if locked.status in (PenaltyStatus.REJECTED, PenaltyStatus.DELETED):
+            raise ValueError("По этому штрафу уже принято окончательное решение.")
+        locked.status = target
+        locked.resolved_by = actor
+        locked.resolved_at = timezone.now()
+        locked.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        if target == PenaltyStatus.ACCEPTED:
+            transaction.on_commit(lambda: queue_penalty_notification(locked.pk, expected_status=target))
+        return locked
 
     @staticmethod
     def create_auto(worker: User, report=None, amount: Optional[Decimal] = None,
@@ -733,7 +796,7 @@ class PenaltyService:
     def get_pending_penalties():
         from apps.control.models import Penalty, PenaltyStatus
         return Penalty.objects.filter(
-            status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
+            status__in=[PenaltyStatus.CREATED, PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
         ).select_related("user", "created_by", "report", "report__template").order_by("-created_at")
 
     @staticmethod
@@ -749,12 +812,21 @@ class PenaltyService:
 class EmployeeService:
     @staticmethod
     @transaction.atomic
-    def archive(user: User) -> None:
+    def archive(user: User, *, actor: User, workspace=None) -> None:
         """Disable an employee while retaining all CRM and financial history."""
+        from apps.crm.access import update_user_status
         from apps.crm.identity import terminate_user_sessions
+        from apps.crm.models import Workspace
+        from apps.users.models import UserStatus
 
-        user.deactivate()
-        terminate_user_sessions(user.pk)
+        # Match access-management lock order; a repeated archive is a no-op.
+        workspaces = Workspace.objects.select_for_update()
+        ws = (workspaces.get(pk=getattr(workspace, "pk", workspace)) if workspace is not None
+              else workspaces.get(slug="gramly"))
+        previous = User.objects.get(pk=user.pk).status
+        update_user_status(actor, user, UserStatus.INACTIVE, workspace=ws)
+        if previous != UserStatus.INACTIVE:
+            transaction.on_commit(lambda: terminate_user_sessions(user.pk))
 
 
 # ── Withdrawal services ────────────────────────────────────────────────────────
@@ -769,6 +841,9 @@ class ControlWithdrawalService:
         # Serialize requests per employee so two simultaneous bot callbacks cannot
         # create duplicate pending withdrawals against the same balance.
         locked_user = User.objects.select_for_update().get(pk=user.pk)
+        from apps.crm.access import has_permission
+        if not has_permission(locked_user, "personal.use"):
+            raise PermissionDenied("Личные операции недоступны.")
         available = ControlBalanceService.get_available_balance(locked_user)
         if amount is None:
             amount = available
@@ -799,26 +874,27 @@ class ControlWithdrawalService:
         """Return telegram_ids of all users who should receive withdrawal notifications."""
         from apps.users.models import UserRole, UserStatus
         from apps.control.models import ControlSettings
-        accountant_ids = list(
+        from apps.crm.access import has_permission
+        accountants = list(
             User.objects.filter(
                 role=UserRole.ACCOUNTANT,
                 status=UserStatus.ACTIVE,
                 is_blocked_bot=False,
-            ).values_list("telegram_id", flat=True)
+            )
         )
         settings = ControlSettings.get()
-        extra_ids = list(
+        extras = list(
             settings.withdrawal_processors.filter(
                 status=UserStatus.ACTIVE,
                 is_blocked_bot=False,
-            ).values_list("telegram_id", flat=True)
+            )
         )
         seen = set()
         result = []
-        for tid in accountant_ids + extra_ids:
-            if tid not in seen:
-                seen.add(tid)
-                result.append(tid)
+        for user in accountants + extras:
+            if user.telegram_id not in seen and has_permission(user, "withdrawals.view"):
+                seen.add(user.telegram_id)
+                result.append(user.telegram_id)
         return result
 
     @staticmethod
@@ -827,13 +903,23 @@ class ControlWithdrawalService:
         return list(CryptoAddress.objects.filter(user=user))
 
     @staticmethod
+    @transaction.atomic
     def save_address(user: User, name: str, address: str) -> "CryptoAddress":
         from apps.withdrawals.models import CryptoAddress
+        from apps.crm.access import has_permission
+        user = User.objects.select_for_update().get(pk=user.pk)
+        if not has_permission(user, "personal.use"):
+            raise PermissionDenied("Личные операции недоступны.")
         return CryptoAddress.objects.create(user=user, name=name, address=address)
 
     @staticmethod
+    @transaction.atomic
     def delete_address(user: User, address_id: int) -> bool:
         from apps.withdrawals.models import CryptoAddress
+        from apps.crm.access import has_permission
+        user = User.objects.select_for_update().get(pk=user.pk)
+        if not has_permission(user, "personal.use"):
+            raise PermissionDenied("Личные операции недоступны.")
         deleted, _ = CryptoAddress.objects.filter(pk=address_id, user=user).delete()
         return deleted > 0
 
@@ -841,15 +927,18 @@ class ControlWithdrawalService:
     def _notify_sync(telegram_id: int, text: str) -> None:
         """Send a Telegram message synchronously (for use from sync Django views / Celery)."""
         import asyncio
-        from apps.telegram_bot.bot import get_bot
-
-        bot = get_bot()  # sync call — no await
+        from aiogram import Bot
+        from django.conf import settings
 
         async def _send():
+            # A handler's singleton session belongs to another event loop.
+            bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
             try:
                 await bot.send_message(telegram_id, text, parse_mode="HTML")
             except Exception:
                 pass
+            finally:
+                await bot.session.close()
 
         try:
             loop = asyncio.new_event_loop()
@@ -860,51 +949,69 @@ class ControlWithdrawalService:
             asyncio.set_event_loop(None)
 
     @staticmethod
-    def mark_processing(withdrawal, accountant: User) -> None:
-        from apps.withdrawals.models import WithdrawalStatus
-        withdrawal.status = WithdrawalStatus.PROCESSING
-        withdrawal.processed_by = accountant
-        withdrawal.save(update_fields=["status", "processed_by", "updated_at"])
+    @transaction.atomic
+    def _transition(withdrawal, actor: User, target: str, *, workspace=None):
+        from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
+        from apps.crm.access import has_permission
+
+        locked = WithdrawalRequest.objects.select_for_update().select_related("user").get(pk=withdrawal.pk)
+        if not has_permission(actor, "withdrawals.manage", workspace=workspace):
+            raise PermissionDenied("Нет права обрабатывать выводы.")
+        role = User.objects.filter(pk=actor.pk).values_list("role", flat=True).first()
+        if locked.user_id == actor.pk and role != UserRole.ACCOUNTANT:
+            raise PermissionDenied("Нельзя обработать собственную заявку на вывод.")
+        if locked.status == target:
+            return locked
+        if locked.status in (WithdrawalStatus.APPROVED, WithdrawalStatus.REJECTED):
+            raise ValueError("Заявка уже завершена.")
+        if target == WithdrawalStatus.PROCESSING and locked.status != WithdrawalStatus.PENDING:
+            raise ValueError("Нельзя вернуть заявку на предыдущий этап.")
+        locked.status = target
+        locked.processed_by = actor
+        fields = ["status", "processed_by", "updated_at"]
+        if target != WithdrawalStatus.PROCESSING:
+            locked.processed_at = timezone.now()
+            fields.append("processed_at")
+        locked.save(update_fields=fields)
+        messages = {
+            WithdrawalStatus.RECEIPT_SENT: (
+                f"📤 <b>Чек на вывод отправлен</b>\n\n"
+                f"Заявка #{locked.pk} на <b>{locked.amount:.2f} ₽</b> — чек отправлен. "
+                "Проверьте ваш кошелёк."
+            ),
+            WithdrawalStatus.APPROVED: (
+                f"✅ <b>Вывод выполнен</b>\n\n"
+                f"Заявка #{locked.pk} на <b>{locked.amount:.2f} ₽</b> успешно выполнена."
+            ),
+            WithdrawalStatus.REJECTED: (
+                f"❌ <b>Заявка на вывод отклонена</b>\n\n"
+                f"Заявка #{locked.pk} на <b>{locked.amount:.2f} ₽</b> отклонена."
+            ),
+        }
+        if target in messages:
+            text = messages[target]
+            transaction.on_commit(lambda: ControlWithdrawalService._notify_sync(locked.user.telegram_id, text))
+        return locked
 
     @staticmethod
-    def mark_receipt_sent(withdrawal, accountant: User) -> None:
+    def mark_processing(withdrawal, accountant: User, *, workspace=None):
         from apps.withdrawals.models import WithdrawalStatus
-        withdrawal.status = WithdrawalStatus.RECEIPT_SENT
-        withdrawal.processed_by = accountant
-        withdrawal.processed_at = timezone.now()
-        withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
-        ControlWithdrawalService._notify_sync(
-            withdrawal.user.telegram_id,
-            f"📤 <b>Чек на вывод отправлен</b>\n\n"
-            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> — чек отправлен. "
-            f"Проверьте ваш кошелёк.",
-        )
+        return ControlWithdrawalService._transition(withdrawal, accountant, WithdrawalStatus.PROCESSING, workspace=workspace)
 
     @staticmethod
-    def mark_completed(withdrawal, accountant: User) -> None:
+    def mark_receipt_sent(withdrawal, accountant: User, *, workspace=None):
         from apps.withdrawals.models import WithdrawalStatus
-        withdrawal.status = WithdrawalStatus.APPROVED
-        withdrawal.processed_by = accountant
-        withdrawal.processed_at = timezone.now()
-        withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
-        ControlWithdrawalService._notify_sync(
-            withdrawal.user.telegram_id,
-            f"✅ <b>Вывод выполнен</b>\n\n"
-            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> успешно выполнена.",
-        )
+        return ControlWithdrawalService._transition(withdrawal, accountant, WithdrawalStatus.RECEIPT_SENT, workspace=workspace)
 
     @staticmethod
-    def reject(withdrawal, accountant: User) -> None:
+    def mark_completed(withdrawal, accountant: User, *, workspace=None):
         from apps.withdrawals.models import WithdrawalStatus
-        withdrawal.status = WithdrawalStatus.REJECTED
-        withdrawal.processed_by = accountant
-        withdrawal.processed_at = timezone.now()
-        withdrawal.save(update_fields=["status", "processed_by", "processed_at", "updated_at"])
-        ControlWithdrawalService._notify_sync(
-            withdrawal.user.telegram_id,
-            f"❌ <b>Заявка на вывод отклонена</b>\n\n"
-            f"Заявка #{withdrawal.pk} на <b>{withdrawal.amount:.2f} ₽</b> отклонена.",
-        )
+        return ControlWithdrawalService._transition(withdrawal, accountant, WithdrawalStatus.APPROVED, workspace=workspace)
+
+    @staticmethod
+    def reject(withdrawal, accountant: User, *, workspace=None):
+        from apps.withdrawals.models import WithdrawalStatus
+        return ControlWithdrawalService._transition(withdrawal, accountant, WithdrawalStatus.REJECTED, workspace=workspace)
 
     @staticmethod
     def get_pending_list():
@@ -1035,10 +1142,14 @@ class FinancialConditionService:
         admin: User,
         daily_rate: Decimal | None,
         available_balance: Decimal | None,
+        workspace=None,
     ):
         from apps.control.models import FinancialConditionChange
 
         worker = User.objects.select_for_update().get(pk=worker_id)
+        from apps.crm.access import has_permission
+        if not has_permission(admin, "employees.finance", workspace=workspace):
+            raise PermissionDenied("Нет права изменять финансовые условия.")
         old_rate = (worker.daily_rate or Decimal("0")).quantize(Decimal("0.01"))
         old_available = ControlBalanceService.get_available_balance(worker).quantize(Decimal("0.01"))
         daily_rate = old_rate if daily_rate is None else Decimal(daily_rate)

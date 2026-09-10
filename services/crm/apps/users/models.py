@@ -279,10 +279,15 @@ class User(AbstractUser):
     # ── State transitions ────────────────────────────────────────────────────
 
     def activate(self) -> None:
+        if not self.is_active or self.status in (UserStatus.BANNED, UserStatus.INACTIVE):
+            from django.core.exceptions import PermissionDenied
+            raise PermissionDenied("Доступ сотрудника отозван")
         self.is_activated = True
         self.status = UserStatus.ACTIVE
         self.activated_at = timezone.now()
         self.save(update_fields=["is_activated", "status", "activated_at", "updated_at"])
+        from apps.crm.provisioning import ensure_default_workspace_membership
+        ensure_default_workspace_membership(self)
 
     def deactivate(self) -> None:
         self.status = UserStatus.INACTIVE

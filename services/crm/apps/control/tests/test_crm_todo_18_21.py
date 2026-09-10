@@ -32,7 +32,7 @@ MSK = ZoneInfo("Europe/Moscow")
 
 
 def _user(telegram_id, *, role=UserRole.WORKER, username=None):
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=telegram_id,
         telegram_username=username or f"user{telegram_id}",
         username=f"internal-{telegram_id}",
@@ -40,6 +40,11 @@ def _user(telegram_id, *, role=UserRole.WORKER, username=None):
         role=role,
         status=UserStatus.ACTIVE,
     )
+    if role in (UserRole.ADMIN, UserRole.CURATOR):
+        from apps.crm.models import Workspace, WorkspaceMembership
+        workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+        WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def _template(worker, *, name="Daily", deadline=dt.time(0, 0), amount="500"):

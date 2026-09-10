@@ -6,14 +6,12 @@ URL prefix: /crm/
 Auth: Authentik OIDC → Django session. Only an existing active CRM user whose
       Telegram ID matches the explicit Authentik claim can authenticate.
 
-Access model (two levels):
-  Authenticated  — any User in DB; sees a limited dashboard only.
-  Owner          — WorkspaceMembership.role == OWNER for the active workspace;
-                   full access to all pages and actions.
+Access is resolved from current CRM role, capability overrides and active
+workspace membership. Authentik authenticates; it does not grant CRM rights.
 
 Mixins:
-  CRMLoginMixin  — authentication only (any DB user)
-  CRMOwnerMixin  — owner-only; returns 403 for authenticated non-owners
+  CRMLoginMixin       — authentication and active user/workspace hard gates
+  CRMPermissionMixin  — explicit per-method capability requirements
 
 The permission check runs BEFORE the view method via check_crm_permissions()
 hook — CRMLoginMixin.dispatch() calls it after setting up request attributes
@@ -26,7 +24,7 @@ import logging
 from zoneinfo import ZoneInfo
 
 from django.contrib import messages
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, HttpResponseForbidden
 from django.shortcuts import redirect, render, get_object_or_404
 from django.views import View
 from django.views.generic import TemplateView
@@ -45,13 +43,8 @@ class CRMLoginMixin:
       crm_user        — User instance
       crm_workspace   — Workspace or None
       crm_membership  — WorkspaceMembership or None
-      crm_is_owner    — bool; True for OWNER membership OR UserRole.ADMIN bot role
-
-    User.role is the single source of truth for access level:
-      ADMIN      → crm_is_owner = True (full access, no WorkspaceMembership required)
-      ACCOUNTANT → accountant access (Control module)
-      WORKER     → no CRM access
-    WorkspaceMembership is still used when present, but bot ADMIN always gets owner-level access.
+      crm_is_owner    — compatibility display flag for access.manage
+      crm_access      — fresh capability snapshot, never a session-level grant
     """
 
     def dispatch(self, request, *args, **kwargs):
@@ -66,18 +59,27 @@ class CRMLoginMixin:
         from apps.users.models import User
         if not isinstance(request.user, User):
             return redirect(_login_url)
-        request.crm_user = request.user
+        # Session identity is not an authorization snapshot. Role/status changes
+        # apply on the next request, including an already open browser tab.
+        request.crm_user = User.objects.get(pk=request.user.pk)
 
         # 3. Resolve workspace + membership
         workspace, membership = self._resolve_workspace_and_membership(request)
         request.crm_workspace = workspace
         request.crm_membership = membership
 
-        # 4. Bot ADMIN role always grants owner-level CRM access (single source of truth)
-        request.crm_is_owner = (
-            bool(membership and membership.is_owner())
-            or request.crm_user.is_admin()
-        )
+        from apps.crm.access import get_access
+        from apps.users.models import UserStatus, UserRole
+        request.crm_access = get_access(request.crm_user, workspace=workspace)
+        request.crm_is_owner = request.crm_access.allows("access.manage")
+        if (
+            workspace is None
+            or membership is None or not membership.is_active
+            or request.crm_user.status != UserStatus.ACTIVE
+            or request.crm_user.role == UserRole.ANONYMOUS
+            or not request.crm_access.allowed
+        ):
+            return HttpResponseForbidden("Доступ к рабочему пространству отозван или не предоставлен.")
 
         # 5. Permission hook — subclasses return a response to deny, None to allow
         denial = self.check_crm_permissions(request)
@@ -89,35 +91,22 @@ class CRMLoginMixin:
 
     def _resolve_workspace_and_membership(self, request):
         """
-        Return (workspace, membership) for the current user.
-        Bot admins without membership still get the default workspace resolved.
+        Resolve the selected workspace without silently restoring revoked access.
         """
         from apps.crm.models import WorkspaceMembership, Workspace
 
-        ws_id = request.session.get("active_workspace_id")
-        if ws_id:
-            m = WorkspaceMembership.objects.filter(
-                user=request.crm_user, workspace_id=ws_id, is_active=True
-            ).select_related("workspace").first()
-            if m:
-                return m.workspace, m
-
-        # Auto-select first active membership
-        m = WorkspaceMembership.objects.filter(
-            user=request.crm_user, is_active=True
-        ).select_related("workspace").order_by("workspace__name").first()
-        if m:
-            request.session["active_workspace_id"] = m.workspace_id
-            return m.workspace, m
-
-        # Bot admin with no explicit membership → resolve default workspace
-        if request.crm_user.is_admin():
-            ws = Workspace.objects.order_by("created_at").first()
-            if ws:
-                request.session["active_workspace_id"] = ws.pk
-                return ws, None
-
-        return None, None
+        workspace_id = request.session.get("active_workspace_id")
+        workspace = (
+            Workspace.objects.filter(pk=workspace_id).first()
+            if workspace_id else Workspace.objects.filter(slug="gramly").first()
+        )
+        if workspace is None:
+            return None, None
+        membership = WorkspaceMembership.objects.filter(
+            user=request.crm_user, workspace=workspace,
+        ).first()
+        request.session["active_workspace_id"] = workspace.pk
+        return workspace, membership
 
     def check_crm_permissions(self, request):
         """
@@ -137,9 +126,10 @@ class CRMLoginMixin:
         m = request.crm_membership
         user = request.crm_user
 
-        # Derive capabilities: membership takes precedence; bot admin gets everything
-        can_finance = bool(m and m.can_enter_finance()) or user.is_admin()
-        can_apps    = bool(m and m.can_enter_applications()) or user.is_admin()
+        from apps.crm.access import permission_context
+        permissions = permission_context(user, request.crm_workspace)
+        can_finance = request.crm_access.allows("finance.view")
+        can_apps = request.crm_access.allows("finance.view")
 
         # Role label: prefer bot role for clarity
         role_label = user.get_role_display() if hasattr(user, "get_role_display") else (
@@ -147,6 +137,8 @@ class CRMLoginMixin:
         )
 
         return {
+            **permissions,
+            "permissions": permissions,
             "crm_user":               user,
             "workspace":              request.crm_workspace,
             "membership":             m,
@@ -159,33 +151,35 @@ class CRMLoginMixin:
         }
 
 
-class CRMOwnerMixin(CRMLoginMixin):
-    """Restrict to OWNER membership or bot ADMIN role."""
+class CRMPermissionMixin(CRMLoginMixin):
+    """Explicit capabilities; workspace roles never grant an authorization bypass."""
+
+    required_permission = "access.manage"
+    write_permission = None
+
+    def get_required_permission(self, request):
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and self.write_permission:
+            return self.write_permission
+        return self.required_permission
 
     def check_crm_permissions(self, request):
-        if not request.crm_is_owner:
+        from apps.crm.access import has_permission
+        if not has_permission(request.crm_user, self.get_required_permission(request), request.crm_workspace):
             return render(request, "crm/403.html", self.get_crm_context(request), status=403)
         return None
 
 
-class CRMFinanceMixin(CRMLoginMixin):
-    """Allow OWNER/ADMIN + FINANCE roles."""
-
-    def check_crm_permissions(self, request):
-        m = request.crm_membership
-        if not (request.crm_is_owner or (m and m.can_enter_finance())):
-            return render(request, "crm/403.html", self.get_crm_context(request), status=403)
-        return None
+class CRMOwnerMixin(CRMPermissionMixin):
+    """Compatibility name: subclasses must specify their capability."""
 
 
-class CRMApplicationsMixin(CRMLoginMixin):
-    """Allow OWNER/ADMIN + APPLICATIONS roles."""
+class CRMFinanceMixin(CRMPermissionMixin):
+    required_permission = "finance.view"
+    write_permission = "finance.manage"
 
-    def check_crm_permissions(self, request):
-        m = request.crm_membership
-        if not (request.crm_is_owner or (m and m.can_enter_applications())):
-            return render(request, "crm/403.html", self.get_crm_context(request), status=403)
-        return None
+
+class CRMApplicationsMixin(CRMFinanceMixin):
+    """Operational financial inputs use the same capability boundary."""
 
 
 # ─── Auth views ───────────────────────────────────────────────────────────────
@@ -260,20 +254,18 @@ class DashboardView(CRMLoginMixin, TemplateView):
     """
     Landing page for all authenticated users.
 
-    Owners see the full operational dashboard (today's status, recent reports,
-    weekly plan progress).
-    Non-owners see a limited welcome screen with a clear "contact owner" message.
-    No financial data is exposed to non-owners.
+    Financial widgets require finance.view; report-only users go to moderation.
     """
     template_name = "crm/dashboard.html"
+    required_permission = "dashboard.view"
 
     def get(self, request):
-        if request.crm_user.is_curator() and request.crm_workspace:
+        if request.crm_access.allows("reports.view") and not request.crm_access.allows("finance.view"):
             return redirect("control:dashboard")
 
         ctx = self.get_crm_context(request)
 
-        if request.crm_is_owner:
+        if request.crm_access.allows("finance.view"):
             from apps.crm.services import DashboardService
             status = DashboardService.get_today_status(request.crm_workspace)
             recent = DashboardService.get_recent_reports(request.crm_workspace, days=7)
@@ -338,10 +330,11 @@ class FinanceEntryView(CRMFinanceMixin, View):
             return datetime.datetime.now(tz=_MSK).date()
 
 
-class AdSlotCalculatorView(CRMLoginMixin, TemplateView):
+class AdSlotCalculatorView(CRMPermissionMixin, TemplateView):
     """Stateless planner for the fixed seven daily advertising slots."""
 
     template_name = "crm/ad_calculator.html"
+    required_permission = "calculator.use"
     defaults = {
         "weekly_target": "125000",
         "average_price": "5000",
@@ -421,6 +414,7 @@ class ApplicationEntryView(CRMApplicationsMixin, View):
 # ─── History & Reports (owner only) ──────────────────────────────────────────
 
 class HistoryView(CRMOwnerMixin, TemplateView):
+    required_permission = "analytics.view"
     template_name = "crm/history.html"
 
     def get(self, request):
@@ -451,6 +445,7 @@ class HistoryView(CRMOwnerMixin, TemplateView):
 
 
 class ReportDetailView(CRMOwnerMixin, TemplateView):
+    required_permission = "analytics.view"
     template_name = "crm/report_detail.html"
 
     def get(self, request, pk):
@@ -464,6 +459,7 @@ class ReportDetailView(CRMOwnerMixin, TemplateView):
 
 
 class DayDetailView(CRMOwnerMixin, TemplateView):
+    required_permission = "analytics.view"
     """Detail view for a single history day: finance entry, application entry, screenshot."""
     template_name = "crm/day_detail.html"
 
@@ -491,6 +487,7 @@ class DayDetailView(CRMOwnerMixin, TemplateView):
 # ─── Admin views (owner only) ─────────────────────────────────────────────────
 
 class AdminIndexView(CRMOwnerMixin, TemplateView):
+    required_permission = "analytics.view"
     template_name = "crm/admin/index.html"
 
     def get(self, request):
@@ -521,6 +518,7 @@ class AdminMembersView(CRMOwnerMixin, View):
 
 
 class GenerateReportView(CRMOwnerMixin, View):
+    required_permission = "finance.manage"
     """Manual report generation for a given date."""
 
     def post(self, request, date_str: str):
@@ -549,6 +547,7 @@ class GenerateReportView(CRMOwnerMixin, View):
 # ─── Export (owner only) ──────────────────────────────────────────────────────
 
 class ExportView(CRMOwnerMixin, View):
+    required_permission = "analytics.export"
     def get(self, request):
         from apps.crm.forms import DateRangeForm
         from apps.crm.services import ExportService

@@ -14,21 +14,20 @@ from django.http import FileResponse, HttpResponse, HttpResponseForbidden, Strea
 from django.utils.http import content_disposition_header
 from django.utils import timezone
 from django.db.models import Count, Sum, Q, F
+from django.db import transaction
 
-from apps.crm.views import CRMLoginMixin
+from apps.crm.views import CRMPermissionMixin
+from apps.crm.access import has_permission
 from apps.users.models import User, UserRole, UserStatus
 
 logger = logging.getLogger(__name__)
 
 
 def _is_control_admin(request) -> bool:
-    return request.crm_user.is_admin() or request.crm_is_owner
+    return has_permission(request.crm_user, "access.manage", request.crm_workspace)
 
 
-class ControlAccessMixin(CRMLoginMixin):
-    def check_crm_permissions(self, request):
-        if not (_is_control_admin(request) or request.crm_user.is_accountant()):
-            return HttpResponseForbidden("Доступ запрещён")
+class ControlAccessMixin(CRMPermissionMixin):
 
     def ctx(self, request, extra: dict) -> dict:
         """Merge CRM base context (sidebar data) with view-specific data."""
@@ -38,28 +37,17 @@ class ControlAccessMixin(CRMLoginMixin):
 
 
 class AdminOnlyMixin(ControlAccessMixin):
-    def check_crm_permissions(self, request):
-        if not _is_control_admin(request):
-            return HttpResponseForbidden("Только для администраторов")
+    """Legacy name; capabilities are specified by each concrete endpoint."""
 
 
 class AdminOrCuratorMixin(ControlAccessMixin):
-    """Allows access for admins, owners AND curators."""
-    def check_crm_permissions(self, request):
-        if not (_is_control_admin(request) or request.crm_user.is_curator()):
-            return HttpResponseForbidden("Только для администраторов и кураторов")
+    """Legacy name; does not implicitly grant any business-role access."""
 
 
 class ControlDashboardAccessMixin(ControlAccessMixin):
     """Dashboard access without widening permissions of other Control pages."""
 
-    def check_crm_permissions(self, request):
-        if not (
-            _is_control_admin(request)
-            or request.crm_user.is_accountant()
-            or request.crm_user.is_curator()
-        ):
-            return HttpResponseForbidden("Доступ запрещён")
+    required_permission = "dashboard.view"
 
 
 # ── Dashboard overview ─────────────────────────────────────────────────────────
@@ -77,10 +65,10 @@ class ControlDashboardView(ControlDashboardAccessMixin, View):
             "is_admin": _is_control_admin(request),
             "is_accountant": user.is_accountant(),
             "is_curator": user.is_curator(),
-            "can_moderate": _is_control_admin(request) or user.is_curator(),
+            "can_moderate": request.crm_access.allows("reports.moderate"),
         }
 
-        if _is_control_admin(request) or user.is_curator():
+        if request.crm_access.allows("reports.view"):
             from apps.control.models import REPORT_MODERATION_STATUSES
             extra.update({
                 "pending_reports": EmployeeReport.objects.filter(
@@ -92,21 +80,23 @@ class ControlDashboardView(ControlDashboardAccessMixin, View):
                 ).select_related("user", "template").order_by("-submitted_at")[:5],
             })
 
-        if _is_control_admin(request):
+        if request.crm_access.allows("penalties.view"):
             extra.update({
                 "pending_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
                 ).count(),
-                "pending_withdrawals": WithdrawalRequest.objects.filter(
-                    status__in=["pending", "processing", "receipt_sent"]
-                ).count(),
-                "active_workers": User.objects.filter(role=UserRole.WORKER, status=UserStatus.ACTIVE).count(),
                 "recent_penalties": Penalty.objects.filter(
                     status__in=[PenaltyStatus.PENDING, PenaltyStatus.DISPUTED]
                 ).select_related("user", "created_by").order_by("-created_at")[:5],
             })
 
-        if _is_control_admin(request) or user.is_accountant():
+        if request.crm_access.allows("employees.view"):
+            extra["active_workers"] = User.objects.filter(role=UserRole.WORKER, status=UserStatus.ACTIVE).count()
+
+        if request.crm_access.allows("withdrawals.view"):
+            extra["pending_withdrawals"] = WithdrawalRequest.objects.filter(
+                status__in=["pending", "processing", "receipt_sent"]
+            ).count()
             extra["pending_withdrawals_list"] = WithdrawalRequest.objects.filter(
                 status__in=["pending", "processing", "receipt_sent"]
             ).select_related("user").order_by("created_at")[:10]
@@ -117,6 +107,8 @@ class ControlDashboardView(ControlDashboardAccessMixin, View):
 # ── Report templates ───────────────────────────────────────────────────────────
 
 class ReportTemplatesView(AdminOrCuratorMixin, View):
+    required_permission = "templates.view"
+    write_permission = "templates.manage"
     def get(self, request):
         from apps.control.models import ReportTemplate
         templates = (
@@ -137,6 +129,18 @@ class ReportTemplatesView(AdminOrCuratorMixin, View):
         admin = request.crm_user
 
         if action == "create":
+            from decimal import Decimal, InvalidOperation
+            try:
+                amount = Decimal(request.POST.get("auto_penalty_amount") or "0")
+            except InvalidOperation:
+                return HttpResponse("Некорректная сумма штрафа", status=400)
+            if not amount.is_finite() or amount < 0:
+                return HttpResponse("Сумма штрафа должна быть конечной и неотрицательной", status=400)
+            if (
+                amount != 0
+                and not has_permission(admin, "templates.financial", request.crm_workspace)
+            ):
+                return HttpResponseForbidden("Нет права изменять финансовые условия шаблона.")
             name = request.POST.get("name", "").strip()
             if not name:
                 return redirect("control:report_templates")
@@ -150,19 +154,16 @@ class ReportTemplatesView(AdminOrCuratorMixin, View):
                 correction_deadline_hours=1,
                 created_by=admin,
                 updated_by=admin,
+                auto_penalty_amount=amount,
             )
-            try:
-                from decimal import Decimal
-                tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
-                tmpl.save(update_fields=["auto_penalty_amount"])
-            except Exception:
-                pass
             return redirect("control:report_template_edit", pk=tmpl.pk)
 
         return redirect("control:report_templates")
 
 
 class ReportTemplateEditView(AdminOrCuratorMixin, View):
+    required_permission = "templates.view"
+    write_permission = "templates.manage"
     def get(self, request, pk):
         from apps.control.models import ReportTemplate
         from apps.users.models import User as U, UserRole
@@ -182,14 +183,29 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
             "notif_time_3": times[2] if len(times) > 2 else "",
         }))
 
+    @transaction.atomic
     def post(self, request, pk):
         from apps.control.models import ReportTemplate
         from apps.users.models import User as U, UserRole
         from decimal import Decimal, InvalidOperation
 
-        tmpl = get_object_or_404(ReportTemplate, pk=pk)
+        tmpl = get_object_or_404(ReportTemplate.objects.select_for_update(), pk=pk)
         action = request.POST.get("action", "save")
         admin = request.crm_user
+        if action not in {"save", "delete"}:
+            return HttpResponse("Неизвестное действие", status=400)
+
+        if action != "delete" and "auto_penalty_amount" in request.POST:
+            try:
+                requested_penalty = Decimal(request.POST.get("auto_penalty_amount") or "0")
+            except InvalidOperation:
+                return HttpResponse("Некорректная сумма штрафа", status=400)
+            if not requested_penalty.is_finite() or requested_penalty < 0:
+                return HttpResponse("Сумма штрафа должна быть конечной и неотрицательной", status=400)
+            if requested_penalty != tmpl.auto_penalty_amount and not has_permission(
+                admin, "templates.financial", request.crm_workspace
+            ):
+                return HttpResponseForbidden("Нет права изменять финансовые условия шаблона.")
 
         if action == "delete":
             tmpl.delete()
@@ -202,10 +218,8 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
         # Fixed by the report lifecycle specification. The model field remains
         # for backwards compatibility with existing data and integrations.
         tmpl.correction_deadline_hours = 1
-        try:
-            tmpl.auto_penalty_amount = Decimal(request.POST.get("auto_penalty_amount", "0") or "0")
-        except InvalidOperation:
-            pass
+        if "auto_penalty_amount" in request.POST:
+            tmpl.auto_penalty_amount = requested_penalty
         # deadline_time — required HH:MM field
         import datetime as _dt
         deadline_time_raw = request.POST.get("deadline_time", "").strip()
@@ -240,6 +254,7 @@ class ReportTemplateEditView(AdminOrCuratorMixin, View):
 # ── Reports ────────────────────────────────────────────────────────────────────
 
 class ReportsListView(AdminOrCuratorMixin, View):
+    required_permission = "reports.view"
     def get(self, request):
         from apps.control.models import EmployeeReport, ReportStatus, ReportTemplate
         from apps.users.models import User as U, UserRole
@@ -295,6 +310,8 @@ class ReportsListView(AdminOrCuratorMixin, View):
 
 
 class ReportDetailView(AdminOrCuratorMixin, View):
+    required_permission = "reports.view"
+    write_permission = "reports.moderate"
     def get(self, request, pk):
         from apps.control.models import EmployeeReport, ModerationHistory
         from apps.control.services import ReportService
@@ -311,7 +328,7 @@ class ReportDetailView(AdminOrCuratorMixin, View):
             report.media_files.filter(revision=report.current_revision)
             .order_by("position", "id")
         )
-        can_moderate = ReportService.can_moderate(request.crm_user, report)
+        can_moderate = ReportService.can_moderate(request.crm_user, report, request.crm_workspace)
         return render(request, "control/report_detail.html", self.ctx(request, {
             "page": "reports",
             "report": report,
@@ -331,15 +348,15 @@ class ReportDetailView(AdminOrCuratorMixin, View):
         comment = request.POST.get("comment", "")
         admin = request.crm_user
 
-        if not ReportService.can_moderate(admin, report):
-            return redirect("control:report_detail", pk=pk)
+        if not ReportService.can_moderate(admin, report, request.crm_workspace):
+            return HttpResponseForbidden("Нет права модерировать этот отчёт.")
 
         if action == "accept":
-            ReportService.accept_report(report, admin, comment)
+            ReportService.accept_report(report, admin, comment, workspace=request.crm_workspace)
         elif action == "reject":
-            ReportService.reject_report(report, admin, comment)
+            ReportService.reject_report(report, admin, comment, workspace=request.crm_workspace)
         elif action == "revision":
-            ReportService.send_to_revision(report, admin, comment)
+            ReportService.send_to_revision(report, admin, comment, workspace=request.crm_workspace)
 
         return redirect("control:reports")
 
@@ -348,6 +365,7 @@ class ReportMediaView(AdminOrCuratorMixin, View):
     """Authorized media stream; storage object URLs are never exposed."""
 
     _range_re = re.compile(r"^bytes=(\d*)-(\d*)$")
+    required_permission = "reports.view"
 
     @staticmethod
     def _chunks(handle, remaining, chunk_size=256 * 1024):
@@ -443,6 +461,8 @@ class ReportMediaView(AdminOrCuratorMixin, View):
 # ── Penalties ──────────────────────────────────────────────────────────────────
 
 class PenaltiesListView(AdminOnlyMixin, View):
+    required_permission = "penalties.view"
+    write_permission = "penalties.create"
     def get(self, request):
         from apps.control.models import Penalty, PenaltyStatus, PenaltyType
 
@@ -486,28 +506,29 @@ class PenaltiesListView(AdminOnlyMixin, View):
             comment = request.POST.get("comment", "")
             try:
                 worker = User.objects.get(telegram_username__iexact=username)
-                penalty = PenaltyService.create_manual(admin, worker, amount, reason, comment)
-                from apps.control.tasks import queue_penalty_notification
-                queue_penalty_notification(penalty.pk)
+                PenaltyService.create_manual(admin, worker, amount, reason, comment, workspace=request.crm_workspace)
             except User.DoesNotExist:
                 pass
+            except ValueError as exc:
+                messages.error(request, str(exc))
 
         return redirect("control:penalties")
 
 
 class PenaltyActionView(AdminOnlyMixin, View):
+    required_permission = "penalties.resolve"
     def post(self, request, pk):
         from apps.control.models import Penalty
+        from apps.control.services import PenaltyService
         penalty = get_object_or_404(Penalty, pk=pk)
         action = request.POST.get("action")
         admin = request.crm_user
 
-        if action == "accept":
-            penalty.accept(admin)
-        elif action == "reject":
-            penalty.reject(admin)
-        elif action == "delete":
-            penalty.delete_soft(admin)
+        if action in {"accept", "reject", "delete"}:
+            try:
+                PenaltyService.resolve(penalty, admin, action, workspace=request.crm_workspace)
+            except ValueError as exc:
+                messages.error(request, str(exc))
 
         return redirect("control:penalties")
 
@@ -515,14 +536,16 @@ class PenaltyActionView(AdminOnlyMixin, View):
 # ── KPI / Employees ────────────────────────────────────────────────────────────
 
 class EmployeesView(AdminOnlyMixin, View):
+    required_permission = "employees.view"
     def get(self, request):
         from apps.control.services import ControlBalanceService
 
         workers = list(User.objects.exclude(
             role=UserRole.ANONYMOUS
         ).prefetch_related("kpi_settings", "kpi_document").order_by("role", "telegram_username"))
-        for worker in workers:
-            worker.balance_snapshot = ControlBalanceService.get_balance_snapshot(worker)
+        if request.crm_access.allows("employees.finance"):
+            for worker in workers:
+                worker.balance_snapshot = ControlBalanceService.get_balance_snapshot(worker)
 
         return render(request, "control/employees.html", self.ctx(request, {
             "page": "employees",
@@ -531,13 +554,26 @@ class EmployeesView(AdminOnlyMixin, View):
 
 
 class EmployeeKPIView(AdminOnlyMixin, View):
+    required_permission = "employees.view"
+    write_permission = "employees.manage"
+
+    def get_required_permission(self, request):
+        if request.method == "POST" and request.POST.get("action") in {
+            "update_finances", "save_kpi", "edit_balance",
+        }:
+            return "employees.finance"
+        return super().get_required_permission(request)
     def get(self, request, user_id):
         from apps.control.models import KPISettings, KPIDocument
         from apps.control.services import ControlBalanceService
         worker = get_object_or_404(User, pk=user_id)
-        kpi, _ = KPISettings.objects.get_or_create(user=worker)
+        kpi = KPISettings.objects.filter(user=worker).first() or KPISettings(user=worker)
         doc = KPIDocument.objects.filter(user=worker).first()
-        balance = ControlBalanceService.get_balance_snapshot(worker)
+        balance = (
+            ControlBalanceService.get_balance_snapshot(worker)
+            if request.crm_access.allows("employees.finance")
+            else dict.fromkeys(("gross", "available", "withdrawn", "penalties"))
+        )
 
         return render(request, "control/employee_kpi.html", self.ctx(request, {
             "page": "employees",
@@ -606,6 +642,7 @@ class EmployeeKPIView(AdminOnlyMixin, View):
 # ── Withdrawals ────────────────────────────────────────────────────────────────
 
 class WithdrawalsListView(ControlAccessMixin, View):
+    required_permission = "withdrawals.view"
     def get(self, request):
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
 
@@ -623,6 +660,7 @@ class WithdrawalsListView(ControlAccessMixin, View):
 
 
 class WithdrawalActionView(ControlAccessMixin, View):
+    required_permission = "withdrawals.manage"
     def post(self, request, pk):
         from apps.withdrawals.models import WithdrawalRequest
         from apps.control.services import ControlWithdrawalService
@@ -646,6 +684,7 @@ class WithdrawalActionView(ControlAccessMixin, View):
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
 class AnalyticsView(ControlAccessMixin, View):
+    required_permission = "analytics.view"
     def get(self, request):
         from apps.control.models import EmployeeReport, Penalty, PenaltyStatus
         from apps.withdrawals.models import WithdrawalRequest, WithdrawalStatus
@@ -687,6 +726,15 @@ class AnalyticsView(ControlAccessMixin, View):
 # ── User management ───────────────────────────────────────────────────────────
 
 class UsersListView(AdminOnlyMixin, View):
+    required_permission = "employees.view"
+    write_permission = "employees.manage"
+
+    def get_required_permission(self, request):
+        access = getattr(request, "crm_access", None)
+        if request.method in {"GET", "HEAD"} and access and access.allows("access.manage"):
+            return "access.manage"
+        return super().get_required_permission(request)
+
     def get(self, request):
         from apps.crm.models import WorkspaceMembership, CRMRole
 
@@ -727,6 +775,23 @@ class UsersListView(AdminOnlyMixin, View):
             membership = memberships.get(u.pk)
             u.crm_membership_record = membership
             u.crm_membership = membership if membership and membership.is_active else None
+            from apps.crm.access import get_access
+            access = get_access(u, workspace)
+            summary_codes = {
+                "reports.moderate": "модерация отчётов", "templates.manage": "шаблоны",
+                "penalties.create": "предложения штрафов", "finance.manage": "Cash Flow",
+                "withdrawals.manage": "выводы", "access.manage": "управление доступом",
+            }
+            descriptions = [label for code, label in summary_codes.items() if access.allows(code)]
+            u.crm_access_summary = (
+                f"Доступ активен · {', '.join(descriptions) or str(len(access.allowed)) + ' разрешений'}"
+                if access.allowed else {
+                    "membership_missing": "Workspace-доступ не предоставлен",
+                    "revoked": "Доступ отозван",
+                    "inactive": "Учётная запись отключена",
+                    "anonymous": "Рабочая роль не назначена",
+                }.get(access.reason, "Доступ не предоставлен")
+            )
 
         count_qs = User.objects.all()
         if status_filter and status_filter != "all":
@@ -810,42 +875,33 @@ class UsersListView(AdminOnlyMixin, View):
 
 
 class UserEditView(AdminOnlyMixin, View):
+    required_permission = "access.manage"
     def post(self, request, pk):
-        from apps.crm.models import WorkspaceMembership, CRMRole
-        from apps.crm.services import WorkspaceService
+        from apps.crm.access import revoke_access, update_user_status
+        from apps.crm.identity import terminate_user_sessions
+        from django.core.exceptions import ValidationError
 
         user = get_object_or_404(User, pk=pk)
         action = request.POST.get("action")
         next_url = request.POST.get("next", "control:users")
 
-        if action == "set_role":
-            new_role = request.POST.get("role")
-            if new_role in dict(UserRole.choices):
-                user.role = new_role
-                user.save(update_fields=["role"])
+        if action in {"set_role", "set_crm_role"}:
+            messages.info(request, "Роль и индивидуальные права изменяются только в форме управления доступом.")
+            return redirect("control:user_access", pk=user.pk)
 
         elif action == "set_status":
             new_status = request.POST.get("status")
-            if new_status in dict(UserStatus.choices):
-                user.status = new_status
-                user.save(update_fields=["status"])
-
-        elif action == "set_crm_role":
-            crm_role = request.POST.get("crm_role", "")
-            workspace = request.crm_workspace
-            if workspace and crm_role in dict(CRMRole.choices):
-                WorkspaceService.add_member(workspace, user, crm_role, invited_by=request.crm_user)
-                # CRM owner → sync bot role to admin (single source of truth)
-                if crm_role == "owner" and not user.is_admin():
-                    user.role = UserRole.ADMIN
-                    user.save(update_fields=["role"])
+            try:
+                update_user_status(request.crm_user, user, new_status, request.crm_workspace)
+                if new_status != UserStatus.ACTIVE:
+                    terminate_user_sessions(user.pk)
+            except ValidationError as exc:
+                messages.error(request, "; ".join(exc.messages))
 
         elif action == "remove_crm_role":
-            workspace = request.crm_workspace
-            if workspace:
-                WorkspaceMembership.objects.filter(
-                    workspace=workspace, user=user
-                ).update(is_active=False)
+            revoke_access(request.crm_user, user, request.crm_workspace)
+            terminate_user_sessions(user.pk)
+            messages.success(request, "Workspace-доступ отозван.")
 
         elif action == "unlink_oidc":
             if user.pk == request.crm_user.pk:
@@ -889,22 +945,16 @@ class UserEditView(AdminOnlyMixin, View):
                 )
 
         elif action == "delete":
-            if user.pk == request.crm_user.pk:
-                messages.error(request, "Нельзя архивировать собственную текущую учётную запись.")
-            elif user.status == UserStatus.INACTIVE:
+            if user.status == UserStatus.INACTIVE:
                 messages.info(request, "Сотрудник уже находится в архиве.")
-            elif not user.is_admin():
-                # Employee records own financial history, reports, penalties and
-                # audit trails through cascading relations. "Delete" therefore
-                # archives access instead of physically deleting that history.
-                from apps.control.services import EmployeeService
-
-                EmployeeService.archive(user)
-                messages.success(
-                    request,
-                    "Сотрудник архивирован. Отчёты, штрафы и финансовая история сохранены.",
-                )
                 return redirect(f"{reverse('control:users')}?status={UserStatus.ACTIVE}")
+            update_user_status(request.crm_user, user, UserStatus.INACTIVE, request.crm_workspace)
+            terminate_user_sessions(user.pk)
+            messages.success(
+                request,
+                "Сотрудник архивирован. Отчёты, штрафы и финансовая история сохранены.",
+            )
+            return redirect(f"{reverse('control:users')}?status={UserStatus.ACTIVE}")
 
         return redirect(next_url)
 
@@ -912,6 +962,8 @@ class UserEditView(AdminOnlyMixin, View):
 # ── Deadline notifications ─────────────────────────────────────────────────────
 
 class DeadlineNotificationsView(AdminOnlyMixin, View):
+    required_permission = "notifications.view"
+    write_permission = "notifications.manage"
     def get(self, request):
         from apps.control.models import DeadlineNotificationLog, NotificationSlot, NotificationStatus
         from apps.users.models import User as U, UserRole
@@ -997,6 +1049,7 @@ class DeadlineNotificationsView(AdminOnlyMixin, View):
 # ── Global settings ────────────────────────────────────────────────────────────
 
 class ControlSettingsView(AdminOnlyMixin, View):
+    required_permission = "settings.manage"
     def get(self, request):
         from apps.control.models import ControlSettings
         from apps.users.models import User as _User, UserStatus, UserRole

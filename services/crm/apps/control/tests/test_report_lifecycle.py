@@ -25,12 +25,17 @@ pytestmark = pytest.mark.django_db
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 
 def _user(tg_id, role=UserRole.WORKER, username=None):
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=tg_id,
         role=role,
         status=UserStatus.ACTIVE,
         telegram_username=username or f"user{tg_id}",
     )
+    if role in (UserRole.ADMIN, UserRole.CURATOR):
+        from apps.crm.models import Workspace, WorkspaceMembership
+        workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+        WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def _template(deadline_time=datetime.time(23, 0), correction_hours=24):

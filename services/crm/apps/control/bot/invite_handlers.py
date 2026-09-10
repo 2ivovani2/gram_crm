@@ -16,6 +16,41 @@ logger = logging.getLogger(__name__)
 router = Router(name="control_invite")
 
 
+def respond_to_invite(invite_id, user, *, accept):
+    """Enrollment is allowed before personal.use exists; it cannot restore revoked access."""
+    from django.core.exceptions import PermissionDenied
+    from django.db import transaction
+    from django.utils import timezone
+    from apps.control.models import WorkerInvite, InviteStatus
+    from apps.crm.provisioning import ensure_default_workspace_membership
+    from apps.users.models import User, UserRole, UserStatus
+
+    with transaction.atomic():
+        fresh = User.objects.select_for_update().get(pk=user.pk)
+        if not fresh.is_active or fresh.status in {UserStatus.INACTIVE, UserStatus.BANNED}:
+            raise PermissionDenied("Доступ отозван. Обратитесь к администратору.")
+        invite = WorkerInvite.objects.select_for_update(of=("self",)).select_related("invited_by").filter(
+            pk=invite_id, user_id=fresh.pk,
+        ).first()
+        if invite is None:
+            raise ValueError("Приглашение не найдено.")
+        if invite.status != InviteStatus.PENDING:
+            raise ValueError("Вы уже ответили на это приглашение.")
+        invite.status = InviteStatus.ACCEPTED if accept else InviteStatus.DECLINED
+        invite.responded_at = timezone.now()
+        invite.save(update_fields=["status", "responded_at"])
+        if accept:
+            # A role assigned in CRM after the invitation must not be downgraded.
+            if fresh.role == UserRole.ANONYMOUS:
+                fresh.role = UserRole.WORKER
+            fresh.status = UserStatus.ACTIVE
+            fresh.is_activated = True
+            fresh.save(update_fields=["role", "status", "is_activated", "updated_at"])
+            ensure_default_workspace_membership(fresh)
+        invite.user = fresh
+        return invite
+
+
 def _make_bot():
     """Fresh Bot instance for asyncio.run() calls — avoids event-loop conflicts with singleton."""
     from aiogram import Bot
@@ -56,6 +91,8 @@ async def _notify_admins(bot, text: str) -> None:
         lambda: list(User.objects.filter(role=UserRole.ADMIN, is_blocked_bot=False)
                      .values_list("telegram_id", flat=True))
     )()
+    from apps.telegram_bot.permissions import permitted_recipient_ids
+    admin_ids = await permitted_recipient_ids(admin_ids, "access.manage")
     for tg_id in admin_ids:
         try:
             await bot.send_message(tg_id, text)
@@ -68,31 +105,12 @@ async def _notify_admins(bot, text: str) -> None:
 @router.callback_query(WorkerInviteCB.filter(F.action == "accept"))
 async def cb_invite_accept(callback: CallbackQuery, callback_data: WorkerInviteCB, db_user):
     from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from apps.control.models import WorkerInvite, InviteStatus
-    from apps.users.models import UserRole
-
-    invite = await sync_to_async(
-        lambda: WorkerInvite.objects.select_related("user", "invited_by")
-                .filter(pk=callback_data.invite_id).first()
-    )()
-
-    if not invite or invite.user_id != db_user.pk:
-        await callback.answer("Приглашение не найдено.", show_alert=True)
+    try:
+        invite = await sync_to_async(respond_to_invite)(callback_data.invite_id, db_user, accept=True)
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
         return
-
-    if invite.status != InviteStatus.PENDING:
-        await callback.answer("Вы уже ответили на это приглашение.", show_alert=True)
-        return
-
-    # Mark accepted, set worker role
-    invite.status = InviteStatus.ACCEPTED
-    invite.responded_at = timezone.now()
-    await sync_to_async(invite.save)(update_fields=["status", "responded_at"])
-
     user = invite.user
-    user.role = UserRole.WORKER
-    await sync_to_async(user.save)(update_fields=["role", "updated_at"])
 
     await callback.answer("✅ Вы приняли приглашение!")
     await callback.message.edit_text(
@@ -116,25 +134,11 @@ async def cb_invite_accept(callback: CallbackQuery, callback_data: WorkerInviteC
 @router.callback_query(WorkerInviteCB.filter(F.action == "decline"))
 async def cb_invite_decline(callback: CallbackQuery, callback_data: WorkerInviteCB, db_user):
     from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from apps.control.models import WorkerInvite, InviteStatus
-
-    invite = await sync_to_async(
-        lambda: WorkerInvite.objects.select_related("user", "invited_by")
-                .filter(pk=callback_data.invite_id).first()
-    )()
-
-    if not invite or invite.user_id != db_user.pk:
-        await callback.answer("Приглашение не найдено.", show_alert=True)
+    try:
+        invite = await sync_to_async(respond_to_invite)(callback_data.invite_id, db_user, accept=False)
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
         return
-
-    if invite.status != InviteStatus.PENDING:
-        await callback.answer("Вы уже ответили на это приглашение.", show_alert=True)
-        return
-
-    invite.status = InviteStatus.DECLINED
-    invite.responded_at = timezone.now()
-    await sync_to_async(invite.save)(update_fields=["status", "responded_at"])
 
     await callback.answer("Вы отклонили приглашение.")
     await callback.message.edit_text(

@@ -578,22 +578,19 @@ class Penalty(models.Model):
         return f"Штраф #{self.pk} {self.user} {self.amount}₽ [{self.get_status_display()}]"
 
     def accept(self, admin) -> None:
-        self.status = PenaltyStatus.ACCEPTED
-        self.resolved_by = admin
-        self.resolved_at = timezone.now()
-        self.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        from apps.control.services import PenaltyService
+        PenaltyService.resolve(self, admin, "accept")
+        self.refresh_from_db()
 
     def reject(self, admin) -> None:
-        self.status = PenaltyStatus.REJECTED
-        self.resolved_by = admin
-        self.resolved_at = timezone.now()
-        self.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        from apps.control.services import PenaltyService
+        PenaltyService.resolve(self, admin, "reject")
+        self.refresh_from_db()
 
     def delete_soft(self, admin) -> None:
-        self.status = PenaltyStatus.DELETED
-        self.resolved_by = admin
-        self.resolved_at = timezone.now()
-        self.save(update_fields=["status", "resolved_by", "resolved_at", "updated_at"])
+        from apps.control.services import PenaltyService
+        PenaltyService.resolve(self, admin, "delete")
+        self.refresh_from_db()
 
 
 # ── KPI system ────────────────────────────────────────────────────────────────

@@ -32,22 +32,31 @@ def _add_pagination_users(b: InlineKeyboardBuilder, page: int, total: int) -> No
 
 # ── Main Menu ─────────────────────────────────────────────────────────────────
 
-def get_admin_main_menu() -> InlineKeyboardMarkup:
+def get_admin_main_menu(access=None) -> InlineKeyboardMarkup:
     from django.conf import settings
-    from apps.control.bot.keyboards import CtrlAdminCB
+    from apps.control.bot.keyboards import CtrlAdminCB, CtrlWorkerCB, CtrlAccountantCB
     crm_url  = getattr(settings, "CRM_URL",  "https://gramly.tech/crm/login/")
     docs_url = getattr(settings, "DOCS_URL", "https://gramly.tech/docs/")
 
     b = InlineKeyboardBuilder()
-    # ── Control bot ───────────────────────────────────────────────────────────
-    b.button(text="📋 Отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
-    b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
-    b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
-    b.button(text="➕ Создать штраф", callback_data=CtrlAdminCB(action="create_penalty"))
-    b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
-    b.button(text="💳 Мои адреса", callback_data=CtrlAdminCB(action="my_addresses"))
+    allows = access.allows if access is not None else lambda code: False
+    if allows("reports.view"):
+        b.button(text="📋 Отчёты на проверке", callback_data=CtrlAdminCB(action="reports"))
+    if allows("penalties.view"):
+        b.button(text="⚠️ Штрафы", callback_data=CtrlAdminCB(action="penalties"))
+    if allows("notifications.manage"):
+        b.button(text="📢 Рассылка", callback_data=CtrlAdminCB(action="broadcast"))
+    if allows("penalties.create"):
+        b.button(text="➕ Предложить штраф", callback_data=CtrlAdminCB(action="create_penalty"))
+    if allows("personal.use"):
+        b.button(text="👤 Личный кабинет", callback_data=CtrlWorkerCB(action="main_menu"))
+        b.button(text="💸 Вывод средств", callback_data=CtrlAdminCB(action="withdraw"))
+        b.button(text="💳 Мои адреса", callback_data=CtrlAdminCB(action="my_addresses"))
+    if allows("withdrawals.view"):
+        b.button(text="💳 Заявки на вывод", callback_data=CtrlAccountantCB(action="withdrawals"))
     # ── Management ────────────────────────────────────────────────────────────
-    b.button(text="👥 Пользователи", callback_data=AdminMenuCallback(section="users"))
+    if allows("employees.view"):
+        b.button(text="👥 Пользователи", callback_data=AdminMenuCallback(section="users"))
     b.button(text="📊 CRM", url=crm_url)
     b.button(text="📖 Документация", url=docs_url)
     b.adjust(1)
@@ -85,9 +94,10 @@ def get_users_list_keyboard(users, page: int, total: int) -> InlineKeyboardMarku
     return b.as_markup()
 
 
-def get_user_card_keyboard(user, back_page: int = 1) -> InlineKeyboardMarkup:
+def get_user_card_keyboard(user, back_page: int = 1, *, can_manage_access: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="🔄 Изменить статус", callback_data=AdminUserCallback(action="change_status", user_id=user.id, page=back_page))
+    if can_manage_access:
+        b.button(text="🔄 Изменить статус", callback_data=AdminUserCallback(action="change_status", user_id=user.id, page=back_page))
     b.button(text="🔙 К списку", callback_data=AdminUserCallback(action="list", user_id=0, page=back_page))
     b.adjust(1)
     return b.as_markup()

@@ -38,7 +38,7 @@ def workspace():
         (UserRole.WORKER, CRMRole.VIEWER),
     ],
 )
-def test_oidc_role_matrix_creates_safe_membership(workspace, user_role, workspace_role):
+def test_crm_role_matrix_creates_safe_membership(workspace, user_role, workspace_role):
     user = make_user(20000 + len(User.objects.all()), user_role)
 
     first = ensure_default_workspace_membership(user)
@@ -59,7 +59,6 @@ def test_oidc_role_matrix_creates_safe_membership(workspace, user_role, workspac
         {"status": UserStatus.INACTIVE},
         {"status": UserStatus.BANNED},
         {"is_active": False},
-        {"oidc_subject": None},
     ],
 )
 def test_ineligible_users_are_not_provisioned(workspace, overrides):
@@ -105,7 +104,7 @@ def test_existing_explicit_role_is_preserved(workspace, explicit_role):
     result = ensure_default_workspace_membership(user)
 
     membership.refresh_from_db()
-    assert result.action == "exists"
+    assert result.action == "ambiguous_legacy_role"
     assert membership.role == explicit_role
 
 

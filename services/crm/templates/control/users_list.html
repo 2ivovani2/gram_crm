@@ -62,6 +62,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
 {% block content %}
 
 <!-- Invite user -->
+{% if employees_manage %}
 <div class="create-panel">
   <h3>Пригласить сотрудника</h3>
   {% with err=request.session.invite_error ok=request.session.invite_success %}
@@ -84,6 +85,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
   </div>
 </div>
 
+{% endif %}
 <!-- Role tabs -->
 <div class="tab-row" style="margin-bottom:10px">
   <a href="?status=active{% if role_filter %}&role={{ role_filter }}{% endif %}{% if search %}&q={{ search }}{% endif %}" class="tab {% if status_filter == 'active' %}active{% endif %}">
@@ -145,7 +147,7 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
       <th>Пользователь</th>
       <th>Telegram ID</th>
       <th>SSO</th>
-      <th>Роль</th>
+      <th>Доступ в CRM</th>
       <th>Статус</th>
       <th>Изменить статус</th>
       <th></th>
@@ -164,21 +166,14 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
     <td class="tg-id">{{ u.telegram_id }}</td>
 
     <!-- Authentik identity link -->
-    <td class="sso-cell">
+    <td class="sso-cell"><div>
       {% if u.oidc_subject %}
         <span class="badge sso-linked">SSO привязан</span>
         <span class="sso-meta">
           {% if u.email %}{{ u.email }}<br>{% endif %}
           {% if u.oidc_linked_at %}с {{ u.oidc_linked_at|date:"d.m.Y H:i" }}{% else %}старая привязка{% endif %}
         </span>
-        {% if u.crm_membership %}
-          <span class="badge workspace-ok" style="margin-top:6px">Workspace доступен · {{ u.crm_membership.get_role_display }}</span>
-        {% elif u.crm_membership_record %}
-          <span class="badge workspace-revoked" style="margin-top:6px">Доступ отозван</span>
-        {% else %}
-          <span class="badge workspace-missing" style="margin-top:6px">Нет workspace-доступа</span>
-        {% endif %}
-        {% if u.pk != crm_user.pk %}
+        {% if access_manage and u.pk != crm_user.pk %}
         <form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
               onsubmit="return confirm('Разорвать SSO-связь и завершить все CRM-сессии пользователя?')">
           {% csrf_token %}
@@ -191,51 +186,34 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
         {% endif %}
       {% elif u.oidc_binding_blocked %}
         <span class="badge sso-blocked">Перепривязка запрещена</span>
-        <form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
+        {% if access_manage %}<form class="sso-actions" method="post" action="{% url 'control:user_edit' u.pk %}"
               onsubmit="return confirm('Разрешить новую SSO-привязку для этого пользователя?')">
           {% csrf_token %}
           <input type="hidden" name="action" value="allow_oidc_rebind">
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
           <button type="submit" class="btn-xs btn-rebind">Разрешить заново</button>
-        </form>
+        </form>{% endif %}
       {% else %}
         <span class="badge sso-pending">Ожидает первого SSO-входа</span>
         <span class="sso-meta">Укажите Telegram ID {{ u.telegram_id }} в Authentik</span>
       {% endif %}
-    </td>
+    </div></td>
 
-    <!-- Bot role -->
-    <td>
-      {% if u.is_anon %}
-      <div style="display:flex;align-items:center;gap:6px">
-        <span class="badge r-anonymous">Аноним</span>
-        <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="set_role">
-          <input type="hidden" name="role" value="worker">
-          <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <button type="submit" class="btn-xs btn-hire">→ Сотрудник</button>
-        </form>
-      </div>
-      {% else %}
-      <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="set_role">
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <select name="role" class="inline" onchange="this.form.submit()">
-          {% for val, label in roles %}
-          <option value="{{ val }}" {% if val == u.role %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </form>
+    <!-- CRM access is independent of the SSO binding -->
+    <td class="crm-access-cell"><div>
+      <strong>{{ u.get_role_display }}</strong>
+      <span class="sso-meta">{{ u.crm_access_summary }}</span>
+      {% if access_manage and u.pk != crm_user.pk %}
+      <a class="btn-xs btn-rebind" href="{% url 'control:user_access' u.pk %}">Настроить доступ</a>
       {% endif %}
-    </td>
+    </div></td>
 
     <!-- Status badge -->
     <td><span class="badge s-{{ u.status }}">{{ u.get_status_display }}</span></td>
 
     <!-- Change status -->
     <td>
+      {% if access_manage and u.pk != crm_user.pk %}
       <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline">
         {% csrf_token %}
         <input type="hidden" name="action" value="set_status">
@@ -246,11 +224,12 @@ select.inline { background:var(--surface); border:1px solid var(--border); color
           {% endfor %}
         </select>
       </form>
+      {% endif %}
     </td>
 
     <!-- Archive -->
     <td>
-      {% if not u.is_admin %}
+      {% if access_manage and u.pk != crm_user.pk and not u.is_admin %}
       <form method="post" action="{% url 'control:user_edit' u.pk %}" style="display:inline"
             onsubmit="return confirm('Архивировать @{{ u.telegram_username|default:u.telegram_id }}? История будет сохранена.')">
         {% csrf_token %}

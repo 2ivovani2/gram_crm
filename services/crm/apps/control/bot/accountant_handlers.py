@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
 
 from apps.users.models import User
+from apps.telegram_bot.permissions import bot_can, get_bot_access
 from apps.control.bot.keyboards import (
     CtrlAccountantCB, accountant_main_menu, accountant_withdrawal_actions,
 )
@@ -11,13 +12,10 @@ from apps.control.bot.keyboards import (
 router = Router(name="control_accountant")
 
 
-def _is_accountant(db_user: User) -> bool:
-    return db_user.is_accountant() or db_user.is_admin()
-
-
 @router.message(Command("accounting"))
 async def cmd_accounting(message: Message, db_user: User):
-    if not _is_accountant(db_user):
+    if not await bot_can(db_user, "withdrawals.view"):
+        await message.answer("Недостаточно прав. Откройте /start для актуального меню.")
         return
     await message.answer(
         "💼 <b>Панель бухгалтера</b>\n\nВыберите раздел:",
@@ -27,7 +25,7 @@ async def cmd_accounting(message: Message, db_user: User):
 
 @router.callback_query(CtrlAccountantCB.filter(F.action == "withdrawals"))
 async def cb_withdrawals_list(callback: CallbackQuery, db_user: User):
-    if not _is_accountant(db_user):
+    if not await bot_can(db_user, "withdrawals.view"):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
 
@@ -65,7 +63,7 @@ async def cb_withdrawals_list(callback: CallbackQuery, db_user: User):
 
 @router.callback_query(CtrlAccountantCB.filter(F.action == "w_view"))
 async def cb_withdrawal_view(callback: CallbackQuery, callback_data: CtrlAccountantCB, db_user: User):
-    if not _is_accountant(db_user):
+    if not await bot_can(db_user, "withdrawals.view"):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
 
@@ -90,12 +88,16 @@ async def cb_withdrawal_view(callback: CallbackQuery, callback_data: CtrlAccount
     )
 
     await callback.answer()
-    await callback.message.edit_text(text, reply_markup=accountant_withdrawal_actions(w.pk))
+    access = await get_bot_access(db_user)
+    can_manage = access.allows("withdrawals.manage") and (
+        w.user_id != db_user.pk or access.role == "accountant"
+    )
+    await callback.message.edit_text(text, reply_markup=accountant_withdrawal_actions(w.pk, can_manage=can_manage))
 
 
 async def _update_withdrawal(callback: CallbackQuery, callback_data: CtrlAccountantCB,
                               db_user: User, action: str):
-    if not _is_accountant(db_user):
+    if not await bot_can(db_user, "withdrawals.manage"):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
 
@@ -111,45 +113,27 @@ async def _update_withdrawal(callback: CallbackQuery, callback_data: CtrlAccount
         return
 
     # Нельзя принять свою же заявку (кроме бухгалтера)
-    if w.user_id == db_user.pk and not db_user.is_accountant():
+    access = await get_bot_access(db_user)
+    if w.user_id == db_user.pk and access.role != "accountant":
         await callback.answer(
             "❌ Нельзя обработать собственную заявку на вывод",
             show_alert=True,
         )
         return
 
-    notify_text = None
-    if action == "processing":
-        await sync_to_async(ControlWithdrawalService.mark_processing)(w, db_user)
-        result = "В обработке 🔄"
-    elif action == "receipt":
-        await sync_to_async(ControlWithdrawalService.mark_receipt_sent)(w, db_user)
-        result = "Чек отправлен 📤"
-        notify_text = (
-            f"📤 <b>Чек на вывод отправлен</b>\n\n"
-            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> — чек отправлен. "
-            f"Проверьте ваш кошелёк."
-        )
-    elif action == "done":
-        await sync_to_async(ControlWithdrawalService.mark_completed)(w, db_user)
-        result = "Выполнена ✅"
-        notify_text = (
-            f"✅ <b>Вывод выполнен</b>\n\n"
-            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> успешно выполнена."
-        )
-    else:
-        await sync_to_async(ControlWithdrawalService.reject)(w, db_user)
-        result = "Отклонена ❌"
-        notify_text = (
-            f"❌ <b>Заявка на вывод отклонена</b>\n\n"
-            f"Заявка #{w.pk} на <b>{w.amount:.2f} ₽</b> отклонена."
-        )
-
-    if notify_text and w.user.telegram_id != db_user.telegram_id:
-        try:
-            await callback.bot.send_message(w.user.telegram_id, notify_text)
-        except Exception:
-            pass
+    # The service owns the employee notification and sends it once after commit.
+    operations = {
+        "processing": (ControlWithdrawalService.mark_processing, "В обработке 🔄"),
+        "receipt": (ControlWithdrawalService.mark_receipt_sent, "Чек отправлен 📤"),
+        "done": (ControlWithdrawalService.mark_completed, "Выполнена ✅"),
+        "reject": (ControlWithdrawalService.reject, "Отклонена ❌"),
+    }
+    operation, result = operations[action]
+    try:
+        await sync_to_async(operation)(w, db_user)
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
 
     processer = f"@{db_user.telegram_username}" if db_user.telegram_username else str(db_user.telegram_id)
 

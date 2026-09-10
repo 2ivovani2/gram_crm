@@ -214,7 +214,12 @@ class EntryService:
     @staticmethod
     @transaction.atomic
     def save_finance_entry(workspace, date: datetime.date, user, data: dict) -> "FinanceEntry":
-        from apps.crm.models import FinanceEntry
+        from django.core.exceptions import PermissionDenied
+        from apps.crm.access import has_permission
+        from apps.crm.models import FinanceEntry, Workspace
+        Workspace.objects.select_for_update().get(pk=workspace.pk)
+        if not has_permission(user, "finance.manage", workspace):
+            raise PermissionDenied("Нет права изменять Cash Flow")
         entry, created = FinanceEntry.objects.get_or_create(
             workspace=workspace,
             date=date,
@@ -232,7 +237,12 @@ class EntryService:
     @staticmethod
     @transaction.atomic
     def save_application_entry(workspace, date: datetime.date, user, data: dict) -> "ApplicationEntry":
-        from apps.crm.models import ApplicationEntry
+        from django.core.exceptions import PermissionDenied
+        from apps.crm.access import has_permission
+        from apps.crm.models import ApplicationEntry, Workspace
+        Workspace.objects.select_for_update().get(pk=workspace.pk)
+        if not has_permission(user, "finance.manage", workspace):
+            raise PermissionDenied("Нет права изменять финансовые данные")
         entry, created = ApplicationEntry.objects.get_or_create(
             workspace=workspace,
             date=date,

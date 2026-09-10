@@ -22,13 +22,18 @@ pytestmark = pytest.mark.django_db
 
 
 def _user(telegram_id: int, username: str, role=UserRole.WORKER) -> User:
-    return User.objects.create(
+    user = User.objects.create(
         telegram_id=telegram_id,
         telegram_username=username,
         username=f"test-{telegram_id}",
         role=role,
         status=UserStatus.ACTIVE,
     )
+    if role in (UserRole.ADMIN, UserRole.CURATOR):
+        from apps.crm.models import Workspace, WorkspaceMembership
+        workspace, _ = Workspace.objects.get_or_create(slug="gramly", defaults={"name": "Gramly"})
+        WorkspaceMembership.objects.create(user=user, workspace=workspace, is_active=True)
+    return user
 
 
 def test_new_template_penalty_works_when_global_penalty_is_zero(monkeypatch):
@@ -88,7 +93,7 @@ def test_manual_penalty_notification_escapes_reason(monkeypatch):
         type=PenaltyType.MANUAL,
         amount=Decimal("1200"),
         reason="Ошибка <script>",
-        status=PenaltyStatus.CREATED,
+        status=PenaltyStatus.ACCEPTED,
     )
     sent = []
     monkeypatch.setattr(
@@ -104,7 +109,7 @@ def test_manual_penalty_notification_escapes_reason(monkeypatch):
     assert sent[0][2] is not None
 
 
-def test_archiving_employee_preserves_reports_and_penalties(monkeypatch):
+def test_archiving_employee_preserves_reports_and_penalties(monkeypatch, django_capture_on_commit_callbacks):
     worker = _user(71003, "archived_worker")
     report = EmployeeReport.objects.create(
         user=worker,
@@ -124,7 +129,9 @@ def test_archiving_employee_preserves_reports_and_penalties(monkeypatch):
         lambda user_id: revoked.append(user_id) or 0,
     )
 
-    EmployeeService.archive(worker)
+    admin = _user(71004, "archive-admin", UserRole.ADMIN)
+    with django_capture_on_commit_callbacks(execute=True):
+        EmployeeService.archive(worker, actor=admin)
     worker.refresh_from_db()
 
     assert worker.status == UserStatus.INACTIVE
