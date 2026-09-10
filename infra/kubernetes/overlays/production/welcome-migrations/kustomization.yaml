@@ -6,6 +6,17 @@ namespace: gramly-welcome
 resources:
   - ../../../base/welcome-migrations
 
+patches:
+  - target:
+      group: batch
+      version: v1
+      kind: Job
+      name: gramly-welcome-migrate
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets/-
+        value: {name: gramly-forgejo-registry}
+
 labels:
   - pairs:
       gramly.tech/environment: production

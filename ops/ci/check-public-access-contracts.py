@@ -1,5 +1,6 @@
 """Validate public service routing preserves the application authentication edge."""
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -83,4 +84,41 @@ assert webhook_pins == {
     "gramly-welcome-api": "45.77.149.91",
     "gramly-welcome-worker-events": "45.77.149.91",
 }, "Telegram webhooks must bypass the browser edge via the direct public ingress"
-print("Public SSO and direct Telegram ingress routing contracts passed.")
+# Check rendered PodSpecs, not only patch text: a typo in a regex target must
+# not silently leave one image consumer unable to pull after rescheduling.
+def rendered(path):
+    return [d for d in yaml.safe_load_all(subprocess.check_output(
+        ["kubectl", "kustomize", str(INFRA / path)], text=True)) if d]
+
+
+def pull_secrets(resource):
+    spec = resource["spec"]
+    if resource["kind"] == "CronJob":
+        spec = spec["jobTemplate"]["spec"]
+    return [s["name"] for s in spec["template"]["spec"].get("imagePullSecrets", [])]
+
+
+expected_consumers = {
+    "gramly-welcome-api", "gramly-welcome-web", "gramly-welcome-worker-events",
+    "gramly-welcome-worker-delivery", "gramly-welcome-worker-billing",
+    "gramly-welcome-worker-notifications", "gramly-welcome-maintenance",
+    "gramly-welcome-migrate",
+}
+seen_consumers = set()
+for overlay in ("welcome-cutover", "welcome-migrations"):
+    for resource in rendered(f"overlays/production/{overlay}"):
+        if resource["kind"] not in {"Deployment", "CronJob", "Job"}:
+            continue
+        name = resource["metadata"]["name"]
+        secrets = pull_secrets(resource)
+        if name in expected_consumers:
+            assert sorted(secrets) == ["gramly-forgejo-registry", "gramly-welcome-registry"], name
+            seen_consumers.add(name)
+        else:
+            assert "gramly-forgejo-registry" not in secrets, name
+assert seen_consumers == expected_consumers
+for overlay in ("overlays/staging", "overlays/staging/welcome-migrations"):
+    for resource in rendered(overlay):
+        if resource["kind"] in {"Deployment", "CronJob", "Job"}:
+            assert "gramly-forgejo-registry" not in pull_secrets(resource), overlay
+print("Public SSO, Telegram ingress and production pull-secret contracts passed.")
