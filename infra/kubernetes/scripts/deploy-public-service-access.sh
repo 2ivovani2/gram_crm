@@ -23,8 +23,14 @@ kubectl apply -f "${infra_dir}/base/welcome-web/network-policy.yaml"
 kubectl apply -f "${infra_dir}/apps/observability/headlamp-network-policy.yaml"
 
 while read -r namespace route listener; do
+  # Keep the old private parent during the DNS/cache transition. Retirement
+  # removes it only after clients stop receiving private DNS/routes.
+  parents="$(kubectl -n "${namespace}" get httproute "${route}" -o json | \
+    jq -c --arg listener "${listener}" \
+      '((.spec.parentRefs // []) | map(select(.name != "gramly-public-access"))) +
+       [{name:"gramly-public-access", namespace:"traefik-public", sectionName:$listener}]')"
   kubectl -n "${namespace}" patch httproute "${route}" --type=merge \
-    -p "{\"spec\":{\"parentRefs\":[{\"name\":\"gramly-public-access\",\"namespace\":\"traefik-public\",\"sectionName\":\"${listener}\"}]}}"
+    -p "{\"spec\":{\"parentRefs\":${parents}}}"
 done <<'ROUTES'
 gramly-crm gramly-crm-private crm-https
 devtools forgejo git-https

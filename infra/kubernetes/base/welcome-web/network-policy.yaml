@@ -19,6 +19,8 @@ spec:
   ingress:
     - from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik-public}}
+        # Retained until private DNS caches/routes are retired after public smoke.
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: traefik-private}}
       ports: [{protocol: TCP, port: 4180}]
 ---
 apiVersion: networking.k8s.io/v1
