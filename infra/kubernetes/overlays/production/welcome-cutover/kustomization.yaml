@@ -17,7 +17,7 @@ patches:
         value: {name: WELCOME_ACCEPT_WEBHOOKS, value: "true"}
       - op: add
         path: /spec/template/spec/containers/0/env/-
-        value: {name: WELCOME_WEBHOOK_IP_ADDRESS, value: "45.146.131.207"}
+        value: {name: WELCOME_WEBHOOK_IP_ADDRESS, value: "45.77.149.91"}
   - target:
       group: apps
       version: v1
@@ -29,7 +29,7 @@ patches:
         value: 2
       - op: add
         path: /spec/template/spec/containers/0/env/-
-        value: {name: WELCOME_WEBHOOK_IP_ADDRESS, value: "45.146.131.207"}
+        value: {name: WELCOME_WEBHOOK_IP_ADDRESS, value: "45.77.149.91"}
   - target:
       group: apps
       version: v1

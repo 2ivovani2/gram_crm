@@ -65,4 +65,22 @@ assert "--mtu=1380" in docker["args"], "DinD default bridge must fit Calico MTU"
 assert "--default-network-opt=bridge=com.docker.network.driver.mtu=1380" in docker["args"], (
     "Per-job Docker networks must inherit Calico-compatible MTU"
 )
-print("Public SSO routing contracts passed for all seven services.")
+# Telegram must reach the public ingress directly, independently of the edge
+# used by human browser traffic. Both registration/reconciliation paths must
+# agree; otherwise an event worker can silently restore the failing edge pin.
+cutover = documents("overlays/production/welcome-cutover/kustomization.yaml")[0]
+webhook_pins = {}
+for patch in cutover["patches"]:
+    if patch["target"]["kind"] != "Deployment":
+        continue
+    pins = [op["value"]["value"] for op in yaml.safe_load(patch["patch"])
+            if isinstance(op.get("value"), dict)
+            and op["value"].get("name") == "WELCOME_WEBHOOK_IP_ADDRESS"]
+    if pins:
+        assert len(pins) == 1, "Duplicate Telegram webhook IP pin"
+        webhook_pins[patch["target"]["name"]] = pins[0]
+assert webhook_pins == {
+    "gramly-welcome-api": "45.77.149.91",
+    "gramly-welcome-worker-events": "45.77.149.91",
+}, "Telegram webhooks must bypass the browser edge via the direct public ingress"
+print("Public SSO and direct Telegram ingress routing contracts passed.")
