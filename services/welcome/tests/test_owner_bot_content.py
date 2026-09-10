@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+from aiogram.types import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
 
 from gramly_welcome import owner_bot
 from gramly_welcome.content_service import (
@@ -319,3 +320,53 @@ async def test_owner_stars_checkout_exports_recurring_invoice_link(
     assert calls["subscription_period"] == 2_592_000
     assert calls["currency"] == "XTR"
     assert calls["payload"] == str(checkout_token)
+
+
+def test_imported_url_keyboard_preserves_safe_titles_and_rows() -> None:
+    message = Message(
+        message_id=1, date=datetime.now(UTC), chat=Chat(id=7, type="private"), text="Привет",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Открыть сайт", url="https://gramly.tech"),
+        ]]),
+    )
+    result = owner_bot._import_url_keyboard(message)
+    assert result is not None
+    assert result["rows"][0][0]["value"] == "https://gramly.tech"
+    assert result["rows"][0][0]["text"] == "Открыть сайт"
+    assert result["rows"][0][0]["action_type"] == "url"
+
+
+@pytest.mark.parametrize("button", [
+    InlineKeyboardButton(text="Другой бот", callback_data="foreign:delete"),
+    InlineKeyboardButton(text="Ссылка", url="tg://user?id=7"),
+])
+def test_foreign_callbacks_and_non_http_urls_are_not_imported(button: InlineKeyboardButton) -> None:
+    message = Message(message_id=1, date=datetime.now(UTC), chat=Chat(id=7, type="private"), text="Привет",
+                      reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]))
+    if button.callback_data:
+        assert owner_bot._import_url_keyboard(message) is None
+    else:
+        with pytest.raises(ContentValidationError):
+            owner_bot._import_url_keyboard(message)
+
+
+@pytest.mark.asyncio
+async def test_composer_back_retains_collected_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    class State:
+        selected: object = None
+
+        async def set_state(self, state: object) -> None:
+            self.selected = state
+
+        async def get_data(self) -> dict[str, object]:
+            return {"composer_items": [{"kind": "message", "payload": {"text": "Draft"}}]}
+
+    async def answer(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(owner_bot, "owner_answer", answer)
+    state = State()
+    callback = SimpleNamespace(message=object(), answer=answer)
+    await owner_bot.back_to_composer(callback, state)
+    assert state.selected == owner_bot.WelcomeMessageState.waiting_for_message
+    assert (await state.get_data())["composer_items"]
