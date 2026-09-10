@@ -59,6 +59,7 @@ async def reconcile() -> None:
         )
         await bot.set_webhook(
             f"{settings.public_service_base_url.rstrip('/')}/webhook/",
+            ip_address=settings.webhook_ip_address or None,
             secret_token=settings.interface_webhook_secret,
             allowed_updates=[
                 "message",

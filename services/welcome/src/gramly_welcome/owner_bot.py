@@ -39,9 +39,6 @@ from sqlalchemy.exc import IntegrityError
 
 from .billing import create_crypto_checkout, create_stars_checkout, settle_stars_payment
 from .bot_ui import (
-    answer_with_ui_fallback,
-    edit_caption_with_ui_fallback,
-    edit_with_ui_fallback,
     inline_button,
     load_bot_ui_theme,
 )
@@ -108,6 +105,10 @@ from .owner_repository import (
     toggle_auto_approve,
     update_delay,
 )
+from .owner_ui import OwnerUiMiddleware, show_owner_ui_page, track_preview
+from .owner_ui import render_owner_ui as answer_with_ui_fallback
+from .owner_ui import render_owner_ui as edit_caption_with_ui_fallback
+from .owner_ui import render_owner_ui as edit_with_ui_fallback
 from .required_channel import check_required_membership, record_required_membership_update
 from .rotation import (
     owner_rotation_channels,
@@ -251,6 +252,16 @@ class OwnerMiddleware(BaseMiddleware):
         user = getattr(event, "from_user", None)
         if user is None:
             return None
+        if data.get("owner_ui_leave_form"):
+            state = cast(FSMContext, data["state"])
+            staged = await state.get_data()
+            if staged.get("composer_items") or staged.get("composer_attachments"):
+                try:
+                    await _delete_staged_media(staged)
+                except Exception:
+                    logger.warning("Could not clean abandoned composer media")
+            await state.clear()
+            data["raw_state"] = None
         async with session_factory() as session:
             owner = await owner_from_telegram(session, user)
             data["owner"] = owner
@@ -261,7 +272,7 @@ class OwnerMiddleware(BaseMiddleware):
                 elif len(command) == 2 and command[0].split("@", 1)[0] == "/start" and command[1].startswith("cmp_"):
                     await record_campaign_touch(session, owner.id, command[1][4:])
             is_check = isinstance(event, CallbackQuery) and event.data == "required-channel:check"
-            if not is_check:
+            if not is_check and not (isinstance(event, Message) and event.successful_payment):
                 membership = await check_required_membership(session, cast(Bot, data["bot"]), owner)
                 if not membership.allowed:
                     text = (
@@ -434,6 +445,18 @@ def _entity_dump(entities: list[Any] | None) -> list[dict[str, Any]]:
     return [entity.model_dump(mode="json", exclude_none=True) for entity in (entities or [])]
 
 
+def _import_url_keyboard(message: Message) -> dict[str, Any] | None:
+    """Only import portable URL actions; another bot's callbacks are not ours."""
+    markup = message.reply_markup
+    if markup is None or any(not button.url for row in markup.inline_keyboard for button in row):
+        return None
+    return validate_step_keyboard({
+        "kind": "inline",
+        "rows": [[{"text": button.text, "action_type": "url", "value": button.url,
+                   "style": "default"} for button in row] for row in markup.inline_keyboard],
+    })
+
+
 def serialize_message(message: Message) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "type": message.content_type,
@@ -529,6 +552,7 @@ async def configure_customer_webhook(managed: ManagedBot, token: str, settings: 
     async with Bot(token=token) as bot:
         await bot.set_webhook(
             url,
+            ip_address=settings.webhook_ip_address or None,
             secret_token=managed.webhook_secret,
             allowed_updates=["message", "my_chat_member", "chat_member", "chat_join_request"],
             drop_pending_updates=False,
@@ -584,7 +608,11 @@ async def guide(callback: CallbackQuery, owner: Owner) -> None:
         return
     title, body = GUIDE[step]
     final = step == len(GUIDE) - 1
-    markup = _one_button("🚀 Начать работу" if final else "➡️ Далее", f"guide:{step + 1}")
+    rows = [[owner_button(text="🚀 Начать работу" if final else "➡️ Далее", callback_data=f"guide:{step + 1}")]]
+    if step:
+        rows.append([owner_button(text="Назад", callback_data=f"guide:{step - 1}", emoji_key="back")])
+    rows.append(_home_row())
+    markup = InlineKeyboardMarkup(inline_keyboard=rows)
     content = f"{title}\n\n{body}\n\n<i>Шаг {step + 1} из {len(GUIDE)}</i>"
     if message.photo:
         # Keep pre-cutover onboarding messages usable after the owner webhook
@@ -665,7 +693,6 @@ async def show_bots(target: Message, owner: Owner, page: int) -> None:
 @router.callback_query(F.data.startswith("bots:"))
 async def paginate_bots(callback: CallbackQuery, owner: Owner) -> None:
     message = _callback_message(callback)
-    await message.delete()
     await show_bots(message, owner, int((callback.data or "").split(":")[1]))
     await callback.answer()
 
@@ -690,7 +717,7 @@ async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(AddBotState.waiting_for_token)
+@router.message(AddBotState.waiting_for_token, ~F.successful_payment)
 async def receive_token(message: Message, owner: Owner, state: FSMContext) -> None:
     token = (message.text or "").strip()
     try:
@@ -1218,7 +1245,7 @@ def _merge_attachment_payload(media: dict[str, Any], payload: dict[str, Any]) ->
     return result
 
 
-@router.message(WelcomeMessageState.waiting_for_message)
+@router.message(WelcomeMessageState.waiting_for_message, ~F.successful_payment)
 async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> None:
     if message.content_type not in SUPPORTED_CONTENT:
         await owner_answer(message, "Этот тип сообщения нельзя безопасно воспроизвести.")
@@ -1233,7 +1260,16 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
     settings = get_settings()
     storage = ObjectStorage(settings)
     media: dict[str, Any] | None = None
+    import_notice = ""
     try:
+        imported_keyboard = _import_url_keyboard(message)
+        if imported_keyboard:
+            import_notice = "\n\nКнопки-ссылки сохранены и появятся в конце шага."
+        elif message.forward_origin or message.reply_markup:
+            import_notice = (
+                "\n\nTelegram не передал переносимые кнопки-ссылки. После сохранения откройте "
+                "«Кнопки» у шага и добавьте их вручную: Название - https://example.com."
+            )
         media = await download_message_media(
             cast(Bot, message.bot), message, storage, f"welcome-bots/{bot.public_id}/messages"
         )
@@ -1290,6 +1326,8 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
         else:
             composer_items.append({"kind": "message", "payload": payload})
             await state.update_data(composer_items=composer_items)
+        if imported_keyboard:
+            await state.update_data(composer_keyboard=imported_keyboard)
     except (ValueError, MediaTooLargeError, ContentValidationError) as exc:
         await owner_answer(message, f"⚠️ {exc}")
         return
@@ -1303,7 +1341,7 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
     await owner_answer(
         message,
         f"✅ Элемент добавлен. {_composer_summary(latest)}\n\n"
-        "Можно отправить следующий элемент или завершить шаг.",
+        f"Можно отправить следующий элемент или завершить шаг.{import_notice}",
         reply_markup=_composer_markup(),
     )
 
@@ -1350,7 +1388,7 @@ async def _send_staged_preview(message: Message, owner: Owner, data: dict[str, A
         for item in list(data.get("composer_attachments") or [])
     ]
     storage = ObjectStorage(get_settings())
-    for operation in compile_step(payload, attachments):
+    for operation in compile_step(payload, attachments, keyboard=data.get("composer_keyboard")):
         await send_compiled_operation(
             cast(Bot, message.bot),
             message.chat.id,
@@ -1359,6 +1397,7 @@ async def _send_staged_preview(message: Message, owner: Owner, data: dict[str, A
             operation.media,
             storage,
             first_name=owner.first_name,
+            on_sent=track_preview,
         )
 
 
@@ -1385,7 +1424,8 @@ async def finish_composer(callback: CallbackQuery, owner: Owner, state: FSMConte
     action = "заменить выбранный шаг" if data.get("composer_mode") == "replace" else "добавить шаг"
     await owner_answer(
         _callback_message(callback),
-        f"🔎 Выше — фактический предпросмотр. Подтвердите, чтобы {action}.",
+        "🔎 Предпросмотр показан временными сообщениями рядом с этим экраном. "
+        f"При возврате они исчезнут. Подтвердите, чтобы {action}.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -1395,10 +1435,23 @@ async def finish_composer(callback: CallbackQuery, owner: Owner, state: FSMConte
                         style="success",
                     )
                 ],
+                [owner_button(text="Назад к редактированию", callback_data="chain:compose-back", emoji_key="back")],
                 [owner_button(text="❌ Отмена", callback_data="chain:compose-cancel")],
             ]
         ),
     )
+
+
+@router.callback_query(F.data == "chain:compose-back")
+async def back_to_composer(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(WelcomeMessageState.waiting_for_message)
+    await owner_answer(
+        _callback_message(callback),
+        f"Продолжим редактирование. {_composer_summary(await state.get_data())}\n\n"
+        "Отправьте следующий элемент или нажмите «Готово», чтобы проверить результат.",
+        reply_markup=_composer_markup(),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "chain:compose-confirm")
@@ -1419,7 +1472,7 @@ async def confirm_composer(callback: CallbackQuery, owner: Owner, state: FSMCont
                     attachments,
                 )
             else:
-                await add_draft_step(
+                step = await add_draft_step(
                     session,
                     owner.id,
                     version_id,
@@ -1427,6 +1480,9 @@ async def confirm_composer(callback: CallbackQuery, owner: Owner, state: FSMCont
                     attachments,
                     delay_after_seconds=1,
                 )
+            if data.get("composer_keyboard"):
+                step_id = int(data["step_id"]) if data.get("composer_mode") == "replace" else step.id
+                await replace_step_keyboard(session, owner.id, step_id, data["composer_keyboard"])
     except ContentValidationError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
@@ -1499,6 +1555,7 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
                 operation.media,
                 storage,
                 first_name=owner.first_name,
+                on_sent=track_preview,
             )
     except (TelegramAPIError, ObjectStorageError, OSError):
         logger.exception("Could not preview selected draft step step_id=%s", step_id)
@@ -1620,7 +1677,7 @@ async def request_chain_delay(callback: CallbackQuery, owner: Owner, state: FSMC
     await callback.answer()
 
 
-@router.message(ChainDelayState.waiting_for_delay)
+@router.message(ChainDelayState.waiting_for_delay, ~F.successful_payment)
 async def receive_chain_delay(message: Message, owner: Owner, state: FSMContext) -> None:
     if not message.text:
         await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>01:30</code>.")
@@ -1757,6 +1814,8 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
         message,
         "👁 <b>Предпросмотр цепочки</b>\n\n"
         "Ниже — реальные Telegram-вызовы будущей доставки. Задержки в preview пропущены.\n\n"
+        "Управление остаётся в этом сообщении. При следующем действии временные сообщения "
+        "предпросмотра будут удалены.\n\n"
         "✨ Premium Emoji здесь отправляет @gramlyHelloBot, а в рабочей цепочке — ваш "
         "клиентский бот. Для Premium Emoji владелец каждого отправляющего бота должен "
         "иметь Telegram Premium.",
@@ -1791,6 +1850,7 @@ async def preview_chain(callback: CallbackQuery, owner: Owner) -> None:
                     operation.media,
                     storage,
                     first_name=owner.first_name,
+                    on_sent=track_preview,
                 )
                 if delivery_result.downgraded:
                     await owner_answer(
@@ -1968,6 +2028,12 @@ async def noop(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("owner-ui-page:"))
+async def owner_screen_page(callback: CallbackQuery) -> None:
+    await show_owner_ui_page(int((callback.data or "").split(":")[1]))
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("chain:assign-all:"))
 async def chain_assign_all(callback: CallbackQuery, owner: Owner) -> None:
     parts = (callback.data or "").split(":")
@@ -2093,7 +2159,7 @@ def _ru_count(value: int, one: str, few: str, many: str) -> str:
     return f"{value} {word}"
 
 
-@router.message(WelcomeButtonState.waiting_for_buttons)
+@router.message(WelcomeButtonState.waiting_for_buttons, ~F.successful_payment)
 async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContext) -> None:
     data = await state.get_data()
     version_id, step_id = int(data.get("version_id") or 0), int(data.get("step_id") or 0)
@@ -2200,7 +2266,7 @@ async def legacy_delay_button(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer("Введите точное значение")
 
 
-@router.message(BotDelayState.waiting_for_delay)
+@router.message(BotDelayState.waiting_for_delay, ~F.successful_payment)
 async def receive_bot_delay(message: Message, owner: Owner, state: FSMContext) -> None:
     if not message.text:
         await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>05:30</code>.")
@@ -2634,7 +2700,7 @@ async def referral_dashboard(message: Message, owner: Owner) -> None:
         message,
         "🤝 <b>Партнёрская программа</b>\n\n"
         "Ставка зависит от числа активных платных клиентов: 10% / 15% / 20%. "
-        "Начисления идут 12 месяцев с первой оплаты реферала.\n\n"
+        "Начисления идут 6 месяцев с первой оплаты реферала.\n\n"
         f"Баланс: <b>{balance} ₽</b>\n"
         f"Ваша ссылка:\nhttps://t.me/{settings.interface_bot_username}?start=ref_{code.code}\n\n"
         "Минимальная сумма вывода — 1 000 ₽. Управление заявками появится в Mini App.",
@@ -2802,6 +2868,9 @@ def interface_dispatcher() -> Dispatcher:
             redis.from_url(settings.valkey_url, decode_responses=False)  # type: ignore[no-untyped-call]
         )
         dispatcher = Dispatcher(storage=storage)
+        ui_middleware = OwnerUiMiddleware()
+        dispatcher.message.outer_middleware(ui_middleware)
+        dispatcher.callback_query.outer_middleware(ui_middleware)
         middleware = OwnerMiddleware()
         dispatcher.message.outer_middleware(middleware)
         dispatcher.callback_query.outer_middleware(middleware)

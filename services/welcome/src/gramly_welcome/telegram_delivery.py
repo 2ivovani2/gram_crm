@@ -148,6 +148,7 @@ class _OperationMedia:
 class PremiumEmojiDeliveryResult:
     requested: int = 0
     preserved: bool = True
+    message_ids: tuple[int, ...] = ()
 
     @property
     def downgraded(self) -> bool:
@@ -181,8 +182,13 @@ def _sent_custom_emoji_ids(messages: list[Message]) -> list[str]:
 def observe_custom_emoji_delivery(
     bot: Bot, requested_ids: list[str], messages: list[Message]
 ) -> PremiumEmojiDeliveryResult:
+    message_ids = tuple(
+        message_id
+        for message in messages
+        if isinstance(message_id := getattr(message, "message_id", None), int)
+    )
     if not requested_ids:
-        return PremiumEmojiDeliveryResult()
+        return PremiumEmojiDeliveryResult(message_ids=message_ids)
     preserved = Counter(requested_ids) <= Counter(_sent_custom_emoji_ids(messages))
     if preserved:
         _premium_emoji_capability_cache[_bot_fingerprint(bot)] = True
@@ -193,7 +199,7 @@ def observe_custom_emoji_delivery(
         # delivery must verify the actual response again.
         _premium_emoji_capability_cache.pop(_bot_fingerprint(bot), None)
         CUSTOM_EMOJI_DOWNGRADED.inc()
-    return PremiumEmojiDeliveryResult(len(requested_ids), preserved)
+    return PremiumEmojiDeliveryResult(len(requested_ids), preserved, message_ids)
 
 
 _NATIVE_STICKER_CACHE_TTL = 3600.0
@@ -325,16 +331,24 @@ async def send_compiled_operation(
     storage: ObjectStorage,
     *,
     first_name: str | None = None,
+    on_sent: Callable[[tuple[int, ...]], Awaitable[None]] | None = None,
 ) -> PremiumEmojiDeliveryResult:
     """Send one compiled operation with either a client bot or the preview bot."""
+    async def finish_send(requested: list[str], messages: list[Message]) -> PremiumEmojiDeliveryResult:
+        if on_sent is not None:
+            # Register messages before media cleanup can fail, so preview UI
+            # still owns every message actually accepted by Telegram.
+            await on_sent(tuple(message.message_id for message in messages))
+        return observe_custom_emoji_delivery(bot, requested, messages)
+
     if first_name is not None:
         payload, raw_media = personalize_operation(payload, raw_media, first_name)
     markup = _reply_markup(payload.get("keyboard") if isinstance(payload.get("keyboard"), dict) else None)
     if operation_type == "sticker" and raw_media:
         native_file_id = await resolve_native_sticker(bot, raw_media[0])
         if native_file_id:
-            await bot.send_sticker(chat_id, native_file_id, reply_markup=markup)
-            return PremiumEmojiDeliveryResult()
+            sent_sticker = await bot.send_sticker(chat_id, native_file_id, reply_markup=markup)
+            return await finish_send([], [sent_sticker])
     media_objects = [
         _OperationMedia(
             storage_key=str(item["storage_key"]),
@@ -390,7 +404,7 @@ async def send_compiled_operation(
                 if requested:
                     CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
                 raise
-            return observe_custom_emoji_delivery(bot, requested, sent_album)
+            return await finish_send(requested, sent_album)
         kind = operation_type
         if kind == "text":
             requested = _custom_emoji_ids(payload.get("entities"))
@@ -406,7 +420,7 @@ async def send_compiled_operation(
                 if requested:
                     CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
                 raise
-            return observe_custom_emoji_delivery(bot, requested, [sent_message])
+            return await finish_send(requested, [sent_message])
         if uploads:
             upload = uploads[0]
             item = raw_media[0]
@@ -418,7 +432,12 @@ async def send_compiled_operation(
                 "parse_mode": None,
                 "reply_markup": markup,
             }
-            media_kwargs = {key: value for key, value in media_kwargs.items() if value is not None}
+            # None disables an owner bot's default HTML parser. Dropping it
+            # lets aiogram replace explicit caption entities with parsed HTML.
+            media_kwargs = {
+                key: value for key, value in media_kwargs.items()
+                if value is not None or key == "parse_mode"
+            }
             if kind in {"photo", "video", "animation"}:
                 media_kwargs["has_spoiler"] = bool(item_payload.get("has_spoiler"))
             method = {
@@ -448,12 +467,10 @@ async def send_compiled_operation(
                     if requested:
                         CUSTOM_EMOJI_TELEGRAM_ERROR.inc()
                     raise
-                return observe_custom_emoji_delivery(
-                    bot, requested, [cast(Message, sent_media)]
-                )
+                return await finish_send(requested, [cast(Message, sent_media)])
         if kind == "location":
             location = payload["location"]
-            await bot.send_location(
+            sent_message = await bot.send_location(
                 chat_id,
                 location["latitude"],
                 location["longitude"],
@@ -461,7 +478,7 @@ async def send_compiled_operation(
             )
         elif kind == "contact":
             contact = payload["contact"]
-            await bot.send_contact(
+            sent_message = await bot.send_contact(
                 chat_id,
                 contact["phone_number"],
                 contact["first_name"],
@@ -471,7 +488,7 @@ async def send_compiled_operation(
         elif kind == "venue":
             venue = payload["venue"]
             location = venue["location"]
-            await bot.send_venue(
+            sent_message = await bot.send_venue(
                 chat_id,
                 location["latitude"],
                 location["longitude"],
@@ -480,14 +497,14 @@ async def send_compiled_operation(
                 reply_markup=markup,
             )
         elif kind == "dice":
-            await bot.send_dice(
+            sent_message = await bot.send_dice(
                 chat_id,
                 emoji=payload["dice"].get("emoji"),
                 reply_markup=markup,
             )
         elif kind == "poll":
             poll = payload["poll"]
-            await bot.send_poll(
+            sent_message = await bot.send_poll(
                 chat_id,
                 poll["question"],
                 [option["text"] for option in poll.get("options", [])],
@@ -496,7 +513,7 @@ async def send_compiled_operation(
             )
         else:
             raise ValueError("Unsupported compiled Telegram operation")
-    return PremiumEmojiDeliveryResult()
+        return await finish_send([], [sent_message])
 
 
 async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyring: TokenKeyring) -> None:
@@ -568,7 +585,10 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
                     "caption_entities": _entities(payload.get("caption_entities")),
                     "parse_mode": None,
                 }
-                kwargs = {key: value for key, value in kwargs.items() if value is not None}
+                kwargs = {
+                    key: value for key, value in kwargs.items()
+                    if value is not None or key == "parse_mode"
+                }
                 if kind in {"photo", "video", "animation"}:
                     kwargs["has_spoiler"] = bool(payload.get("has_spoiler"))
                 method = {
