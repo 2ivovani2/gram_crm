@@ -54,4 +54,15 @@ for path in (ROOT / "ops/welcome/release_production.sh",
     assert "deploy-private-admin-gateway" not in text, path
 assert "Application.objects.filter(slug='netbird')" not in (
     INFRA / "apps/identity/configure-access-control.sh").read_text()
+
+# Runner job networks nest inside the VKE Calico interface (MTU 1380).
+# Setting only --mtu fixes docker0 but leaves auto-created job bridges at 1500.
+runner = next(d for d in documents("apps/devtools/forgejo-runner.yaml")
+              if d["kind"] == "Deployment")
+docker = next(c for c in runner["spec"]["template"]["spec"]["containers"]
+              if c["name"] == "docker")
+assert "--mtu=1380" in docker["args"], "DinD default bridge must fit Calico MTU"
+assert "--default-network-opt=bridge=com.docker.network.driver.mtu=1380" in docker["args"], (
+    "Per-job Docker networks must inherit Calico-compatible MTU"
+)
 print("Public SSO routing contracts passed for all seven services.")
