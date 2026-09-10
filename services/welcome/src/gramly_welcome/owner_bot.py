@@ -261,6 +261,7 @@ class OwnerMiddleware(BaseMiddleware):
                 except Exception:
                     logger.warning("Could not clean abandoned composer media")
             await state.clear()
+            data["raw_state"] = None
         async with session_factory() as session:
             owner = await owner_from_telegram(session, user)
             data["owner"] = owner
@@ -271,7 +272,7 @@ class OwnerMiddleware(BaseMiddleware):
                 elif len(command) == 2 and command[0].split("@", 1)[0] == "/start" and command[1].startswith("cmp_"):
                     await record_campaign_touch(session, owner.id, command[1][4:])
             is_check = isinstance(event, CallbackQuery) and event.data == "required-channel:check"
-            if not is_check:
+            if not is_check and not (isinstance(event, Message) and event.successful_payment):
                 membership = await check_required_membership(session, cast(Bot, data["bot"]), owner)
                 if not membership.allowed:
                     text = (
@@ -716,7 +717,7 @@ async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-@router.message(AddBotState.waiting_for_token)
+@router.message(AddBotState.waiting_for_token, ~F.successful_payment)
 async def receive_token(message: Message, owner: Owner, state: FSMContext) -> None:
     token = (message.text or "").strip()
     try:
@@ -1244,7 +1245,7 @@ def _merge_attachment_payload(media: dict[str, Any], payload: dict[str, Any]) ->
     return result
 
 
-@router.message(WelcomeMessageState.waiting_for_message)
+@router.message(WelcomeMessageState.waiting_for_message, ~F.successful_payment)
 async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> None:
     if message.content_type not in SUPPORTED_CONTENT:
         await owner_answer(message, "Этот тип сообщения нельзя безопасно воспроизвести.")
@@ -1676,7 +1677,7 @@ async def request_chain_delay(callback: CallbackQuery, owner: Owner, state: FSMC
     await callback.answer()
 
 
-@router.message(ChainDelayState.waiting_for_delay)
+@router.message(ChainDelayState.waiting_for_delay, ~F.successful_payment)
 async def receive_chain_delay(message: Message, owner: Owner, state: FSMContext) -> None:
     if not message.text:
         await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>01:30</code>.")
@@ -2158,7 +2159,7 @@ def _ru_count(value: int, one: str, few: str, many: str) -> str:
     return f"{value} {word}"
 
 
-@router.message(WelcomeButtonState.waiting_for_buttons)
+@router.message(WelcomeButtonState.waiting_for_buttons, ~F.successful_payment)
 async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContext) -> None:
     data = await state.get_data()
     version_id, step_id = int(data.get("version_id") or 0), int(data.get("step_id") or 0)
@@ -2265,7 +2266,7 @@ async def legacy_delay_button(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer("Введите точное значение")
 
 
-@router.message(BotDelayState.waiting_for_delay)
+@router.message(BotDelayState.waiting_for_delay, ~F.successful_payment)
 async def receive_bot_delay(message: Message, owner: Owner, state: FSMContext) -> None:
     if not message.text:
         await owner_answer(message, "⚠️ Отправьте задержку обычным текстом, например <code>05:30</code>.")

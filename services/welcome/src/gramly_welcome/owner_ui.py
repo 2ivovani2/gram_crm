@@ -318,6 +318,7 @@ class OwnerUiMiddleware(BaseMiddleware):
                 "/help": "help:home",
                 "🤖 Мои Боты": "menu:bots",
                 "💳 Подписка": "menu:subscription",
+                "💎 ПОДПИСКА": "menu:subscription",
                 "🤝 Партнёрская программа": "menu:referrals",
                 "📈 Аналитика": "menu:analytics",
             }.get(command if command.startswith("/") else (event.text or ""), "input")
