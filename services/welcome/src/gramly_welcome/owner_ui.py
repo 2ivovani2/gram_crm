@@ -101,6 +101,7 @@ class OwnerUiSession:
         self.data: dict[str, Any] = {}
         self.back_route = "menu:home"
         self.notices: list[str] = []
+        self.replace_anchor: int | None = None
 
     async def load(self) -> None:
         raw = await self.redis.get(self.key)
@@ -113,7 +114,7 @@ class OwnerUiSession:
         for key in ("actions",):
             if not isinstance(self.data.get(key, {}), dict):
                 self.data.pop(key, None)
-        for key in ("history", "pages", "preview_ids"):
+        for key in ("history", "pages", "preview_ids", "retired_control_ids"):
             if not isinstance(self.data.get(key, []), list):
                 self.data.pop(key, None)
         if not isinstance(self.data.get("message_id", 0), int):
@@ -144,7 +145,8 @@ class OwnerUiSession:
     async def cleanup_preview(self) -> None:
         remaining = []
         deadline = asyncio.get_running_loop().time() + 3
-        for message_id in self.data.get("preview_ids", []):
+        retired = self.data.get("retired_control_ids", [])
+        for message_id in [*self.data.get("preview_ids", []), *retired]:
             if not isinstance(message_id, int):
                 continue
             if message_id == self.data.get("message_id"):
@@ -161,7 +163,8 @@ class OwnerUiSession:
             except Exception:
                 remaining.append(message_id)
                 logger.warning("Temporary owner preview cleanup deferred")
-        self.data["preview_ids"] = remaining
+        self.data["preview_ids"] = [item for item in remaining if item not in retired]
+        self.data["retired_control_ids"] = [item for item in remaining if item in retired]
         await self.save()
 
     async def track_preview(self, message_ids: tuple[int, ...]) -> None:
@@ -233,7 +236,10 @@ class OwnerUiSession:
             encoded_rows.append(encoded)
         encoded_markup = InlineKeyboardMarkup(inline_keyboard=encoded_rows)
         anchor = self.data.get("message_id")
+        if self.replace_anchor is not None:
+            anchor = None
         if stage_screen({"chat_id": self.chat_id, "anchor": anchor, "text": text,
+                         "replace_anchor": self.replace_anchor,
                          "markup": encoded_markup.model_dump(mode="json", exclude_none=True),
                          "storage_key": self.key}):
             self.data.update(actions=actions, page=index)
@@ -257,7 +263,12 @@ class OwnerUiSession:
                 raise
             anchor = await self._send(text, encoded_markup)
         self.data.update(message_id=anchor, actions=actions, page=index)
+        if self.replace_anchor is not None:
+            self.data["retired_control_ids"] = [*self.data.get("retired_control_ids", []), self.replace_anchor]
+            self.replace_anchor = None
         await self.save()
+        if self.data.get("retired_control_ids"):
+            await self.cleanup_preview()
 
     async def _send(self, text: str, markup: InlineKeyboardMarkup) -> int:
         try:
@@ -352,6 +363,10 @@ class OwnerUiMiddleware(BaseMiddleware):
             words = (event.text or "").split(maxsplit=1)
             command = words[0] if words else ""
             command = command.split("@", 1)[0]
+            # Explicit /start must be visible at the bottom of the chat.
+            # Keep the old anchor until Telegram confirms the replacement.
+            if command == "/start":
+                session.replace_anchor = session.data.get("message_id")
             route = {
                 "/start": "menu:home",
                 "/help": "help:home",

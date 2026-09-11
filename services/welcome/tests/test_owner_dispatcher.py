@@ -330,6 +330,9 @@ async def test_real_owner_dispatcher_routes_encoded_callbacks_and_preserves_fsm(
     assert "Выберите действие" in (telegram.messages[anchor].text or "")
     assert state()["message_id"] == anchor
     await send_text("/start")
-    assert "добро пожаловать" in (telegram.messages[anchor].text or "")
+    new_anchor = state()["message_id"]
+    assert new_anchor != anchor
+    assert anchor not in telegram.messages
+    assert "добро пожаловать" in (telegram.messages[new_anchor].text or "")
     assert await fsm.get_state() is None
     await client.session.close()

@@ -7,6 +7,7 @@ blindly repeated. A connection-scoped actor lock spans those short transactions.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -91,6 +92,7 @@ async def deliver_next_reply(bot: Bot) -> bool:
                 # wait/retry; other actors continue independently.
                 markup = InlineKeyboardMarkup.model_validate(payload["markup"])
                 status, error = "delivered", ""
+                delivery_method = "edit"
                 available_at = now
                 try:
                     if anchor:
@@ -125,6 +127,7 @@ async def deliver_next_reply(bot: Bot) -> bool:
                                     request_timeout=15,
                                 )
                     if not anchor:
+                        delivery_method = "send"
                         try:
                             sent = await bot.send_message(
                                 payload["chat_id"], payload["text"], reply_markup=markup, request_timeout=15
@@ -160,13 +163,39 @@ async def deliver_next_reply(bot: Bot) -> bool:
                         key = payload["storage_key"]
                         screen = json.loads(values.get(key) or "{}")
                         screen["message_id"] = anchor
+                        old_anchor = payload.get("replace_anchor")
+                        if isinstance(old_anchor, int) and old_anchor != anchor:
+                            screen["retired_control_ids"] = list(dict.fromkeys([
+                                *screen.get("retired_control_ids", []), old_anchor,
+                            ]))
                         values[key] = json.dumps(screen)
                         state.storage = values
                     if status == "delivered":
                         reply.delivered_at = datetime.now(UTC)
+                        reply.payload = {**reply.payload, "delivered_message_id": anchor,
+                                         "delivery_method": delivery_method}
                     reply.status, reply.error = status, error
                     reply.available_at = available_at
                     reply.lease_expires_at = None
+                # The new anchor is durable before deleting the old control.
+                # Cleanup failure never retries sendMessage or loses the menu.
+                old_anchor = payload.get("replace_anchor")
+                if status == "delivered" and isinstance(old_anchor, int) and old_anchor != anchor:
+                    try:
+                        async with asyncio.timeout(3):
+                            await bot.delete_message(payload["chat_id"], old_anchor, request_timeout=3)
+                    except Exception:
+                        pass  # Persisted retired ID is retried on the next UI interaction.
+                    else:
+                        async with session.begin():
+                            values = dict(state.storage)
+                            key = payload["storage_key"]
+                            screen = json.loads(values.get(key) or "{}")
+                            screen["retired_control_ids"] = [
+                                item for item in screen.get("retired_control_ids", []) if item != old_anchor
+                            ]
+                            values[key] = json.dumps(screen)
+                            state.storage = values
                 OWNER_REPLIES.labels(status).inc()
                 return True
         finally:
