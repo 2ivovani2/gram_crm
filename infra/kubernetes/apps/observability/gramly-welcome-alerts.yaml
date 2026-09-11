@@ -10,6 +10,27 @@ spec:
   groups:
     - name: gramly.welcome.slo
       rules:
+        - alert: GramlyWelcomeOwnerWorkersStalled
+          expr: time() - min(welcome_owner_loop_heartbeat_seconds > 0) > 150
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "GramlyHello owner worker stopped making progress"
+            description: "A consumer loop is stuck; inspect progress probes and queue age."
+        - alert: GramlyWelcomeOwnerWorkersMissing
+          expr: absent(welcome_owner_loop_heartbeat_seconds) == 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "GramlyHello owner workers are missing"
+            description: "No dedicated owner consumer heartbeat is being scraped."
+        - alert: GramlyWelcomeOwnerReplyNeedsReview
+          expr: sum(increase(welcome_owner_replies_total{result=~"uncertain|failed"}[5m])) > 0
+          for: 1m
+          labels: {severity: warning}
+          annotations:
+            summary: "An owner response needs investigation"
+            description: "Do not replay the business action. Inspect the durable response outcome."
         - alert: GramlyWelcomeWebhookErrors
           expr: >-
             sum(rate(welcome_webhook_requests_total{result="error"}[5m]))

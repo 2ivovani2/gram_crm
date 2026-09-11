@@ -4,5 +4,6 @@ kind: Kustomization
 resources:
   - app.yaml
   - workers.yaml
+  - owner.yaml
   - maintenance.yaml
   - network-policy.yaml

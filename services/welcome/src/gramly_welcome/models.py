@@ -40,6 +40,38 @@ class QueueStatus(StrEnum):
     DEAD = "dead"
 
 
+class OwnerControlState(Base):
+    __tablename__ = "owner_control_state"
+    actor_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    revision: Mapped[int] = mapped_column(BigInteger, default=0)
+    storage: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+
+class OwnerAction(Base):
+    __tablename__ = "owner_action"
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    actor_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    outcome: Mapped[str] = mapped_column(String(24), default="applied")
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OwnerReply(Base):
+    __tablename__ = "owner_reply"
+    update_id: Mapped[int] = mapped_column(ForeignKey("owner_action.update_id"), primary_key=True)
+    actor_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    revision: Mapped[int] = mapped_column(BigInteger)
+    # Telegram payload stays in the protected database, never in logs/metrics.
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Owner(Base):
     __tablename__ = "owner"
     __table_args__ = (UniqueConstraint("telegram_id", name="owner_telegram_id_key"),)
@@ -1108,8 +1140,11 @@ class InboxSource(Base):
 
 class InboxEvent(Base):
     __tablename__ = "inbox_event"
+    actor_id: Mapped[int | None] = mapped_column(BigInteger)
     __table_args__ = (
         UniqueConstraint("source_key", "update_id", name="uq_inbox_source_update"),
+        Index("ix_inbox_owner_actor_open", "actor_id", "update_id",
+              postgresql_where=text("bot_id IS NULL AND status IN ('pending','retry','processing')")),
         Index(
             "ix_inbox_fair_pending",
             "source_key",

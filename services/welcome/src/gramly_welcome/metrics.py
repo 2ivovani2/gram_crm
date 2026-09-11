@@ -1,5 +1,9 @@
 from prometheus_client import Counter, Gauge, Histogram
 
+OWNER_ACTIONS = Counter("welcome_owner_actions_total", "Owner action execution results", ["result"])
+OWNER_REPLIES = Counter("welcome_owner_replies_total", "Durable owner screen delivery results", ["result"])
+OWNER_HEARTBEAT = Gauge("welcome_owner_loop_heartbeat_seconds", "Last owner loop iteration", ["kind", "slot"])
+
 WEBHOOK_REQUESTS = Counter(
     "welcome_webhook_requests_total", "Accepted Telegram webhook requests", ("source", "result")
 )

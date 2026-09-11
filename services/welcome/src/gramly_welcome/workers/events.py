@@ -110,6 +110,7 @@ async def serve() -> None:
                     worker_id=worker_id,
                     limit=settings.worker_batch_size,
                     lease_seconds=settings.lease_seconds,
+                    include_owner=not settings.separate_owner_worker,
                 )
             if not events:
                 try:

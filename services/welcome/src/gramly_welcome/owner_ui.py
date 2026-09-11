@@ -7,6 +7,7 @@ mutation. Real Telegram previews are temporary, separately tracked messages.
 
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging
@@ -22,6 +23,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, TelegramObject
 
 from .bot_ui import answer_with_ui_fallback, inline_button, plain_markup, plain_text, premium_text
+from .owner_actions import stage_screen
 
 logger = logging.getLogger(__name__)
 _current: ContextVar[OwnerUiSession | None] = ContextVar("owner_ui", default=None)
@@ -102,7 +104,25 @@ class OwnerUiSession:
 
     async def load(self) -> None:
         raw = await self.redis.get(self.key)
-        self.data = json.loads(raw) if raw else {}
+        try:
+            value = json.loads(raw) if raw else {}
+            self.data = value if isinstance(value, dict) else {}
+        except (ValueError, TypeError):
+            self.data = {}
+        # Old or partially written Redis UI state must never break /start.
+        for key in ("actions",):
+            if not isinstance(self.data.get(key, {}), dict):
+                self.data.pop(key, None)
+        for key in ("history", "pages", "preview_ids"):
+            if not isinstance(self.data.get(key, []), list):
+                self.data.pop(key, None)
+        if not isinstance(self.data.get("message_id", 0), int):
+            self.data.pop("message_id", None)
+        if self.data.get("markup"):
+            try:
+                InlineKeyboardMarkup.model_validate(self.data["markup"])
+            except ValueError:
+                self.data.pop("markup", None)
 
     async def save(self) -> None:
         await self.redis.set(self.key, json.dumps(self.data), ex=90 * 86400)
@@ -123,11 +143,18 @@ class OwnerUiSession:
 
     async def cleanup_preview(self) -> None:
         remaining = []
+        deadline = asyncio.get_running_loop().time() + 3
         for message_id in self.data.get("preview_ids", []):
+            if not isinstance(message_id, int):
+                continue
             if message_id == self.data.get("message_id"):
                 continue
+            if asyncio.get_running_loop().time() >= deadline:
+                remaining.append(message_id)
+                continue
             try:
-                await self.bot.delete_message(self.chat_id, message_id)
+                async with asyncio.timeout(1):
+                    await self.bot.delete_message(self.chat_id, message_id)
             except TelegramBadRequest:
                 # Already removed or Telegram's deletion window has elapsed.
                 continue
@@ -206,6 +233,12 @@ class OwnerUiSession:
             encoded_rows.append(encoded)
         encoded_markup = InlineKeyboardMarkup(inline_keyboard=encoded_rows)
         anchor = self.data.get("message_id")
+        if stage_screen({"chat_id": self.chat_id, "anchor": anchor, "text": text,
+                         "markup": encoded_markup.model_dump(mode="json", exclude_none=True),
+                         "storage_key": self.key}):
+            self.data.update(actions=actions, page=index)
+            await self.save()
+            return
         try:
             if anchor:
                 await self._edit(anchor, text, encoded_markup)
@@ -256,7 +289,12 @@ async def render_owner_ui(
 ) -> None:
     current = _current.get()
     if current is None:
-        await answer_with_ui_fallback(message, text, reply_markup=reply_markup)
+        # Payment receipts are notifications, not navigation. Persist their
+        # send intent too, without replacing the current control anchor.
+        markup = reply_markup or InlineKeyboardMarkup(inline_keyboard=[])
+        if not stage_screen({"notification": True, "chat_id": message.chat.id, "anchor": None,
+                             "text": text, "markup": markup.model_dump(mode="json", exclude_none=True)}):
+            await answer_with_ui_fallback(message, text, reply_markup=reply_markup)
     else:
         await current.render(text, reply_markup)
 
@@ -311,7 +349,8 @@ class OwnerUiMiddleware(BaseMiddleware):
                 await event.answer("Этот экран устарел. Откройте актуальное меню командой /start.")
                 return None
         else:
-            command = (event.text or "").split(maxsplit=1)[0] if event.text else ""
+            words = (event.text or "").split(maxsplit=1)
+            command = words[0] if words else ""
             command = command.split("@", 1)[0]
             route = {
                 "/start": "menu:home",
