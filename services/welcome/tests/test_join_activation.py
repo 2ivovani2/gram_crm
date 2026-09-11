@@ -53,7 +53,7 @@ async def test_activation_message_falls_back_when_web_app_button_is_rejected(
         pass
 
     class FakeBot:
-        def __init__(self, *, token: str) -> None:
+        def __init__(self, *, token: str, session: object = None) -> None:
             assert token == "plain-token"
 
         async def __aenter__(self) -> FakeBot:

@@ -39,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .billing import create_crypto_checkout, create_stars_checkout, settle_stars_payment
+from .bot_diagnostics import diagnostics_text, resolve_incident
 from .bot_ui import (
     inline_button,
     load_bot_ui_theme,
@@ -224,6 +225,10 @@ def _owner_display_name(owner: Owner) -> str:
 class AddBotState(StatesGroup):
     waiting_for_token = State()
     waiting_for_template = State()
+
+
+class ReconnectBotState(StatesGroup):
+    waiting_for_token = State()
 
 
 class WelcomeMessageState(StatesGroup):
@@ -986,6 +991,7 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [owner_button(text="Обновить токен", callback_data=f"reconnect:{bot.id}", emoji_key="settings")],
             [owner_button(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
             [
                 owner_button(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
@@ -1008,9 +1014,68 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         message,
         f"🤖 <b>@{bot.username or bot.display_name}</b>\n<code>{bot.telegram_id}</code>\n\n"
         f"🟢 Живые: <b>{data['live']}</b>\n🔴 Мёртвые: <b>{data['dead']}</b>\n"
-        f"📣 Каналы: <b>{len(channels)}</b>\n{channel_text}",
+        f"📣 Каналы: <b>{len(channels)}</b>\n{channel_text}"
+        + (f"\n\n<b>Диагностика</b>\n{html.escape(diagnostics_text(bot))}" if diagnostics_text(bot) else ""),
         reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data.startswith("reconnect:"))
+async def reconnect_bot(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    managed = await _get_owned(owner, (callback.data or "").split(":")[1])
+    if managed is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await state.set_state(ReconnectBotState.waiting_for_token)
+    await state.set_data({"bot_id": managed.id})
+    await owner_answer(_callback_message(callback),
+        "Получите новый токен этого же бота в BotFather и отправьте его сюда. "
+        "Сообщение с токеном будет удалено. Каналы, цепочки, статистика и настройки автоприёма сохранятся.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [owner_button(text="Отмена", callback_data=f"bot:{managed.id}", emoji_key="back")]]))
+    await callback.answer()
+
+
+@router.message(ReconnectBotState.waiting_for_token, ~F.successful_payment)
+async def receive_replacement_token(message: Message, owner: Owner, state: FSMContext) -> None:
+    token = (message.text or "").strip()
+    try:
+        await message.delete()
+    except TelegramAPIError:
+        pass
+    data = await state.get_data()
+    managed = await _get_owned(owner, str(data.get("bot_id", "")))
+    if managed is None:
+        await state.clear()
+        await owner_answer(message, "Бот недоступен. Откройте список ботов заново.")
+        return
+    settings = get_settings()
+    try:
+        async with Bot(token, session=AiohttpSession(timeout=15)) as probe:
+            identity = await probe.get_me()
+        if identity.id != managed.telegram_id:
+            await owner_answer(message, "Это токен другого бота. Пришлите новый токен выбранного бота.")
+            return
+        await configure_customer_webhook(managed, token, settings)
+        keyring = TokenKeyring.parse(settings.token_encryption_keys)
+        async with session_factory() as session:
+            current = await session.scalar(select(ManagedBot).where(
+                ManagedBot.id == managed.id, ManagedBot.owner_id == owner.id, ManagedBot.is_active.is_(True)
+            ).with_for_update())
+            if current is None:
+                raise ValueError("Bot access changed")
+            await resolve_incident(session, current.id, "invalid_bot_token")
+            current.token_ciphertext = keyring.encrypt(token)
+            current.key_version = keyring.current_version
+            current.webhook_configured = True
+            await session.commit()
+            managed = current
+    except (TelegramAPIError, ValueError):
+        await owner_answer(message, "Токен не удалось подтвердить. Проверьте его в BotFather и попробуйте снова.")
+        return
+    await state.clear()
+    await owner_answer(message, "Токен обновлён. Новые события обрабатываются; старые приветствия не пересылаем.")
+    await send_bot_card(message, managed)
 
 
 @router.callback_query(F.data.startswith("msg:"))

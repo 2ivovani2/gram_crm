@@ -270,7 +270,7 @@ class OwnerNotification(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "dedupe_key", name="uq_owner_notification_dedupe"),
         CheckConstraint(
-            "kind IN ('onboarding','announcement','subscription_change')",
+            "kind IN ('onboarding','announcement','subscription_change','delivery_incident')",
             name="ck_owner_notification_kind",
         ),
         CheckConstraint(
@@ -880,6 +880,7 @@ class ManagedBot(Base):
         UniqueConstraint("telegram_id", name="managed_bot_telegram_id_key"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    delivery_issues: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
     public_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)

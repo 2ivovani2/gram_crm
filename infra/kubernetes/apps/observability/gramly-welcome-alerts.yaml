@@ -65,13 +65,20 @@ spec:
             description: "At least one item exhausted retries and requires investigation."
         - alert: GramlyWelcomeDeliveryFailures
           expr: >-
-            sum(rate(welcome_delivery_attempts_total{result=~"failed|approval_failed"}[5m]))
+            sum(rate(welcome_delivery_attempts_total{result=~"failed|approval_failed|operation_failed"}[5m]))
             / clamp_min(sum(rate(welcome_delivery_attempts_total[5m])), 0.001) > 0.02
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome delivery failure rate is over 2%"
+            description: "Some deliveries are unavailable, including permanent recipient restrictions. Inspect reason/scope metrics; this is not by itself a platform outage."
+        - alert: GramlyWelcomePlatformDeliveryFailures
+          expr: sum(increase(welcome_delivery_failure_reasons_total{scope="platform"}[5m])) > 3
           for: 5m
           labels: {severity: critical}
           annotations:
-            summary: "Welcome delivery failure rate is over 2%"
-            description: "Telegram deliveries or join approvals are failing above the threshold."
+            summary: "Welcome has persistent platform-side delivery failures"
+            description: "Storage, token decryption or transient Telegram failures exhausted retries. Contact restrictions are excluded."
         - alert: GramlyWelcomeTelegramRateLimited
           expr: sum(rate(welcome_delivery_attempts_total{result="telegram_429"}[5m])) > 0
           for: 5m

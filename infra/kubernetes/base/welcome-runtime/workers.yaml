@@ -26,7 +26,19 @@ spec:
             - {name: WELCOME_WORKER_CONCURRENCY, value: "3"}
             - {name: WELCOME_DATABASE_POOL_SIZE, value: "3"}
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
-          ports: [{name: metrics, containerPort: 9090}]
+          ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
+          startupProbe:
+            httpGet: {path: /health/live, port: health}
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet: {path: /health/live, port: health}
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /health/ready, port: health}
+            periodSeconds: 10
+            failureThreshold: 2
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           volumeMounts: [{name: temporary-media, mountPath: /tmp}]
           resources:
@@ -61,7 +73,19 @@ spec:
             # Delivery processing is sequential inside each pod.
             - {name: WELCOME_DATABASE_POOL_SIZE, value: "1"}
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
-          ports: [{name: metrics, containerPort: 9090}]
+          ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
+          startupProbe:
+            httpGet: {path: /health/live, port: health}
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet: {path: /health/live, port: health}
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /health/ready, port: health}
+            periodSeconds: 10
+            failureThreshold: 2
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           volumeMounts: [{name: temporary-media, mountPath: /tmp}]
           resources:
