@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -199,6 +200,55 @@ async def test_initial_send_timeout_is_not_blindly_retried(
     async with store() as session:
         row = await session.get(OwnerReply, 333)
         assert row and row.status == "uncertain"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["none", "send_timeout", "delete_timeout"])
+async def test_start_replacement_is_durable_before_cleanup_and_never_resends(
+    store: async_sessionmaker[db.ApplicationSession], failure: str,
+) -> None:
+    await seed(store, anchor=None)
+    async with store() as session, session.begin():
+        reply = await session.get(OwnerReply, 333)
+        state = await session.get(OwnerControlState, 333)
+        assert reply and state
+        reply.payload = {**reply.payload, "replace_anchor": 44}
+        state.storage = {"ui": json.dumps({"message_id": 44})}
+    bot = AsyncMock()
+    bot.send_message.return_value = SimpleNamespace(message_id=99)
+    if failure == "send_timeout":
+        bot.send_message.side_effect = TimeoutError()
+
+    async def delete_after_commit(*args: Any, **kwargs: Any) -> None:
+        async with store() as session:
+            saved = await session.get(OwnerControlState, 333)
+            receipt = await session.get(OwnerReply, 333)
+            assert saved and json.loads(saved.storage["ui"])["message_id"] == 99
+            assert receipt and receipt.status == "delivered"
+        if failure == "delete_timeout":
+            raise TimeoutError()
+
+    bot.delete_message.side_effect = delete_after_commit
+    assert await owner_reply.deliver_next_reply(bot)
+    assert not await owner_reply.deliver_next_reply(bot)
+    bot.send_message.assert_awaited_once()
+    bot.edit_message_text.assert_not_awaited()
+    async with store() as session:
+        state = await session.get(OwnerControlState, 333)
+        reply = await session.get(OwnerReply, 333)
+        assert state and reply
+        screen_state = json.loads(state.storage["ui"])
+        if failure == "send_timeout":
+            assert reply.status == "uncertain"
+            assert screen_state["message_id"] == 44
+            bot.delete_message.assert_not_awaited()
+        else:
+            assert reply.status == "delivered"
+            assert reply.payload["delivery_method"] == "send"
+            assert reply.payload["delivered_message_id"] == 99
+            assert screen_state["message_id"] == 99
+            assert screen_state["retired_control_ids"] == ([44] if failure == "delete_timeout" else [])
+            bot.delete_message.assert_awaited_once_with(333, 44, request_timeout=3)
 
 
 @pytest.mark.asyncio

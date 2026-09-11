@@ -166,6 +166,35 @@ async def test_middleware_context_turns_text_input_reply_into_anchor_edit() -> N
     assert client.edit_message_text.call_args.kwargs["message_id"] == 42
 
 
+@pytest.mark.asyncio
+async def test_start_replaces_old_anchor_only_after_success_then_buttons_keep_it() -> None:
+    client, redis = bot(), MemoryRedis()
+    session = OwnerUiSession(client, redis, 11, 11)
+    await session.render("Старое меню", keyboard())
+    client.send_message.return_value = SimpleNamespace(message_id=71)
+    incoming = message().model_copy(update={
+        "message_id": 70, "text": "/start@gramlyHelloBot ref_example",
+        "from_user": User(id=11, is_bot=False, first_name="Owner"),
+    })
+
+    async def handler(event: TelegramObject, _data: dict[str, Any]) -> None:
+        assert isinstance(event, Message)
+        client.delete_message.assert_not_awaited()
+        await render_owner_ui(event, "Новое меню", reply_markup=keyboard())
+
+    await OwnerUiMiddleware()(handler, incoming, {
+        "bot": client, "state": SimpleNamespace(storage=SimpleNamespace(redis=redis)),
+    })
+    client.delete_message.assert_awaited_once_with(11, 42)
+    assert client.send_message.await_count == 2
+    latest = OwnerUiSession(client, redis, 11, 11)
+    await latest.load()
+    assert latest.data["message_id"] == 71
+    await latest.render("Боты", keyboard())
+    assert client.send_message.await_count == 2
+    assert client.edit_message_text.call_args.kwargs["message_id"] == 71
+
+
 def test_context_back_tracks_navigation_and_settings_parent() -> None:
     session = OwnerUiSession(bot(), MemoryRedis(), 11, 11)
     session.navigate("menu:bots")
