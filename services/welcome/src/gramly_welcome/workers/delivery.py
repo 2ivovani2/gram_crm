@@ -176,7 +176,7 @@ async def _process_activation(
         if context.activation.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_activation_message(
-                    session, activation_id, worker_id, success=False, error=type(exc).__name__
+                    session, activation_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
         else:
@@ -186,7 +186,7 @@ async def _process_activation(
                     activation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.activation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             JOIN_REQUEST_ACTIVATIONS.labels("retry").inc()
     else:
@@ -330,7 +330,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     success=False,
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         else:
@@ -340,7 +340,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.operation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_retry").inc()
     except Exception as exc:
@@ -356,7 +356,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     success=False,
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         else:
@@ -366,7 +366,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.operation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_retry").inc()
     else:
@@ -451,7 +451,7 @@ async def _process_delivery(
         if context.delivery.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_delivery(
-                    session, delivery_id, worker_id, success=False, error=type(exc).__name__
+                    session, delivery_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("failed").inc()
         else:
@@ -461,7 +461,7 @@ async def _process_delivery(
                     delivery_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.delivery.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("retry").inc()
     except Exception as exc:
@@ -469,7 +469,7 @@ async def _process_delivery(
         if context.delivery.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_delivery(
-                    session, delivery_id, worker_id, success=False, error=type(exc).__name__
+                    session, delivery_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("failed").inc()
         else:
@@ -479,7 +479,7 @@ async def _process_delivery(
                     delivery_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.delivery.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("retry").inc()
     else:
@@ -598,7 +598,7 @@ async def _process_join_request(
         if context.request.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_join_request(
-                    session, request_id, worker_id, success=False, error=type(exc).__name__
+                    session, request_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("approval_failed").inc()
         else:
@@ -608,7 +608,7 @@ async def _process_join_request(
                     request_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.request.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("approval_retry").inc()
     except Exception as exc:
@@ -616,7 +616,7 @@ async def _process_join_request(
         if context.request.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_join_request(
-                    session, request_id, worker_id, success=False, error=type(exc).__name__
+                    session, request_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("approval_failed").inc()
         else:
@@ -626,7 +626,7 @@ async def _process_join_request(
                     request_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.request.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("approval_retry").inc()
     else:
@@ -745,7 +745,7 @@ async def _process_rotation(
         if context.recommendation.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_rotation(
-                    session, context, worker_id, status="failed", error=type(exc).__name__
+                    session, context, worker_id, status="failed", error=normalize_delivery_error(exc)
                 )
             ROTATION_RECOMMENDATIONS.labels("failed").inc()
         else:
@@ -755,7 +755,7 @@ async def _process_rotation(
                     recommendation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.recommendation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             ROTATION_RECOMMENDATIONS.labels("retry").inc()
     else:
