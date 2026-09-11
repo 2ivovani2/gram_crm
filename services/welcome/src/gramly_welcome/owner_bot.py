@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import redis.asyncio as redis
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
@@ -2843,6 +2844,31 @@ async def tip_navigation(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
+@router.message()
+async def unmatched_owner_input(message: Message, owner: Owner, state: FSMContext) -> None:
+    if await state.get_state():
+        await owner_answer(
+            message, "Не получилось распознать ввод. Следуйте подсказке текущего шага "
+            "или нажмите «Назад». Ваши настройки не изменены.",
+        )
+    else:
+        await owner_answer(
+            message, "Выберите действие кнопками меню ниже. Чтобы вернуться в главное меню, "
+            "отправьте /start.", reply_markup=await main_keyboard(),
+        )
+
+
+async def _safe_callback_ack(make_request: Any, bot: Bot, method: Any) -> Any:
+    try:
+        return await make_request(bot, method)
+    except TelegramAPIError:
+        if getattr(method, "__api_method__", "") != "answerCallbackQuery":
+            raise
+        # A spinner acknowledgement is not a business effect and must never
+        # abort a committed/pending operation. The durable screen is the reply.
+        return True
+
+
 _bot: Bot | None = None
 _dispatcher: Dispatcher | None = None
 
@@ -2856,7 +2882,9 @@ def interface_bot() -> Bot:
         _bot = Bot(
             settings.interface_bot_token,
             default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            session=AiohttpSession(timeout=15),
         )
+        _bot.session.middleware(_safe_callback_ack)
     return _bot
 
 
@@ -2864,8 +2892,12 @@ def interface_dispatcher() -> Dispatcher:
     global _dispatcher
     if _dispatcher is None:
         settings = get_settings()
+        from .owner_actions import TransactionalRedis
         storage = RedisStorage(
-            redis.from_url(settings.valkey_url, decode_responses=False)  # type: ignore[no-untyped-call]
+            TransactionalRedis(redis.from_url(  # type: ignore[arg-type,no-untyped-call]
+                settings.valkey_url, decode_responses=False,
+                socket_timeout=5, socket_connect_timeout=3,
+            ))
         )
         dispatcher = Dispatcher(storage=storage)
         ui_middleware = OwnerUiMiddleware()
@@ -2881,6 +2913,10 @@ def interface_dispatcher() -> Dispatcher:
 
 
 async def process_interface_update(payload: dict[str, Any]) -> None:
+    if get_settings().separate_owner_worker:
+        from .owner_actions import run_owner_action
+        await run_owner_action(payload)
+        return
     update = Update.model_validate(payload)
     dispatcher = interface_dispatcher()
     storage = dispatcher.storage

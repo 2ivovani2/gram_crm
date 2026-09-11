@@ -83,6 +83,7 @@ for patch in cutover["patches"]:
 assert webhook_pins == {
     "gramly-welcome-api": "45.77.149.91",
     "gramly-welcome-worker-events": "45.77.149.91",
+    "gramly-welcome-worker-owner": "45.77.149.91",
 }, "Telegram webhooks must bypass the browser edge via the direct public ingress"
 # Check rendered PodSpecs, not only patch text: a typo in a regex target must
 # not silently leave one image consumer unable to pull after rescheduling.
@@ -100,6 +101,7 @@ def pull_secrets(resource):
 
 expected_consumers = {
     "gramly-welcome-api", "gramly-welcome-web", "gramly-welcome-worker-events",
+    "gramly-welcome-worker-owner",
     "gramly-welcome-worker-delivery", "gramly-welcome-worker-billing",
     "gramly-welcome-worker-notifications", "gramly-welcome-maintenance",
     "gramly-welcome-migrate",

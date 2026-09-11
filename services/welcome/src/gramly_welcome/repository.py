@@ -77,6 +77,8 @@ async def insert_inbox_event(
     payload: dict[str, Any],
     bot_id: int | None,
 ) -> bool:
+    from .owner_actions import owner_actor_id
+
     available_at = datetime.now(UTC)
     await session.execute(
         insert(InboxSource)
@@ -90,6 +92,7 @@ async def insert_inbox_event(
             update_id=update_id,
             payload=payload,
             bot_id=bot_id,
+            actor_id=owner_actor_id(payload) if bot_id is None else None,
             available_at=available_at,
         )
         .on_conflict_do_nothing(constraint="uq_inbox_source_update")
@@ -157,20 +160,26 @@ def _expired_inbox_claim_query(now: datetime) -> Select[tuple[InboxEvent]]:
 
 
 async def claim_inbox_batch(
-    session: AsyncSession, *, worker_id: str, limit: int, lease_seconds: int
+    session: AsyncSession, *, worker_id: str, limit: int, lease_seconds: int,
+    include_owner: bool = True,
 ) -> list[InboxEvent]:
     now = datetime.now(UTC)
     async with session.begin():
         # Recover expired leases separately so the hot pending path can use a
         # narrow partial index without an expensive OR across queue states.
-        events = list((await session.scalars(_expired_inbox_claim_query(now).limit(limit))).all())
+        expired_query = _expired_inbox_claim_query(now)
+        source_query = _inbox_source_claim_query(now)
+        if not include_owner:
+            expired_query = expired_query.where(InboxEvent.bot_id.is_not(None))
+            source_query = source_query.where(InboxSource.bot_id.is_not(None))
+        events = list((await session.scalars(expired_query.limit(limit))).all())
         remaining = limit - len(events)
         if remaining:
             # Lock one tiny source row, rotate it to the back of the scheduler,
             # then use the source-key partial index for a bounded event slice.
             # Other workers skip this source and claim the next one, preserving
             # fairness without scanning or joining the growing inbox.
-            source = await session.scalar(_inbox_source_claim_query(now).limit(1))
+            source = await session.scalar(source_query.limit(1))
             if source is not None:
                 source_events = list(
                     (await session.scalars(_inbox_claim_query(now, source.source_key).limit(remaining))).all()

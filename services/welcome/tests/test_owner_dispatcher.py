@@ -326,4 +326,10 @@ async def test_real_owner_dispatcher_routes_encoded_callbacks_and_preserves_fsm(
         sum(isinstance(call, SendMessage) and "Business активирован" in call.text for call in telegram.calls)
         == 2
     )
+    await send_text("неизвестный текст")
+    assert "Выберите действие" in (telegram.messages[anchor].text or "")
+    assert state()["message_id"] == anchor
+    await send_text("/start")
+    assert "добро пожаловать" in (telegram.messages[anchor].text or "")
+    assert await fsm.get_state() is None
     await client.session.close()

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     worker_concurrency: int = Field(default=8, ge=1, le=64)
     worker_poll_seconds: float = Field(default=0.25, ge=0.05, le=10)
     max_attempts: int = Field(default=12, ge=1, le=100)
+    separate_owner_worker: bool = False
+    owner_action_timeout_seconds: int = Field(default=120, ge=10, le=180)
+    owner_lease_seconds: int = Field(default=180, ge=30, le=300)
+    owner_concurrency: int = Field(default=4, ge=1, le=16)
     database_pool_size: int = Field(default=4, ge=1, le=50)
     database_max_overflow: int = Field(default=2, ge=0, le=50)
     raw_event_retention_days: int = Field(default=7, ge=1, le=30)

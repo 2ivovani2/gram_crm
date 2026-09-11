@@ -737,7 +737,10 @@ async def serve() -> None:
                         chat_id=owner_telegram_id,
                         user_id=owner_telegram_id,
                     )
-                    await context.clear()
+                    # The old album notification must not erase a newer,
+                    # PostgreSQL-backed composer session in the owner worker.
+                    if not settings.separate_owner_worker:
+                        await context.clear()
                     await interface_bot().send_message(
                         owner_telegram_id,
                         f"✅ Альбом сохранён · версия {version}",

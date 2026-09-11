@@ -32,6 +32,7 @@ dev = [
 [project.scripts]
 welcome-api = "gramly_welcome.main:run"
 welcome-worker-events = "gramly_welcome.workers.events:run"
+welcome-worker-owner = "gramly_welcome.workers.owner:run"
 welcome-worker-delivery = "gramly_welcome.workers.delivery:run"
 welcome-worker-billing = "gramly_welcome.workers.billing:run"
 welcome-worker-notifications = "gramly_welcome.workers.notifications:run"
