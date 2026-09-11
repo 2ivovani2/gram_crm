@@ -8,7 +8,8 @@ from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .flow_delivery import assigned_content_flow_timeline, schedule_content_flow
+from .bot_diagnostics import record_incident, resolve_incident
+from .flow_delivery import assigned_content_flow_timeline, close_temporary_delivery, schedule_content_flow
 from .join_activation import (
     activation_token_valid,
     create_or_refresh_activation,
@@ -391,9 +392,7 @@ async def _schedule_departure(
 
 
 async def process_event(session: AsyncSession, event: InboxEvent) -> None:
-    # The owner-facing setup bot remains on the Django control plane during the
-    # parallel migration. Its durable events are retained and the cutover MR
-    # will attach the control-plane consumer before routing that webhook here.
+    # Owner updates are handled by the isolated Welcome owner consumer.
     if event.bot_id is None:
         raise RuntimeError("interface consumer is not enabled before cutover")
 
@@ -586,6 +585,15 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                 channel_id=channel_id,
                 contact_id=contact_id,
             )
+            had_request_delivery = open_request is not None and open_request.welcome_delivery_id is not None
+            if had_request_delivery:
+                assert open_request is not None and open_request.welcome_delivery_id is not None
+                interrupted = await close_temporary_delivery(session, open_request.welcome_delivery_id)
+                approver = member.get("from") or {}
+                if interrupted and approver.get("is_bot") and approver.get("id") != bot.telegram_id:
+                    await record_incident(session, bot.id, "external_approval", channel_id=channel_id)
+                elif approver.get("id") == bot.telegram_id:
+                    await resolve_incident(session, bot.id, f"external_approval:{channel_id}")
             activation = (
                 await session.scalar(
                     select(JoinRequestActivation).where(
@@ -608,7 +616,7 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             if activation is not None:
                 if activation.granted_at is None:
                     activation.status = "approved_without_activation"
-            else:
+            elif not had_request_delivery:
                 await _schedule_greeting(
                     session, bot, channel_id, contact_id, f"chat-member:{event.update_id}"
                 )

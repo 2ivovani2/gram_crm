@@ -28,6 +28,7 @@ from .models import (
     FlowDelivery,
     ManagedBot,
 )
+from .telegram_errors import CLIENT_FAILURES, count_delivery_failure
 
 
 @dataclass(frozen=True)
@@ -540,12 +541,14 @@ async def finish_operation(
                 metric_result = "sent"
             elif final_status == "partial":
                 metric_result = "partial"
-            elif error in {"TelegramForbiddenError", "TelegramBadRequest"}:
+            elif error in CLIENT_FAILURES:
                 metric_result = "unreachable"
             else:
                 metric_result = "failed"
             JOIN_REQUEST_GREETINGS.labels(metric_result).inc()
     await session.commit()
+    if not success:
+        count_delivery_failure(error)
     return final_status
 
 
@@ -554,6 +557,7 @@ async def cancel_delivery_operations(
     delivery_id: int,
     *,
     reason: str,
+    commit: bool = True,
 ) -> str | None:
     """Cancel every unfinished operation and atomically terminalize its flow."""
     delivery = await session.scalar(
@@ -606,5 +610,20 @@ async def cancel_delivery_operations(
         JOIN_REQUEST_GREETINGS.labels(
             "expired" if reason == "join_request_window_expired" else final_status
         ).inc()
-    await session.commit()
+    if commit:
+        await session.commit()
     return final_status
+
+
+async def close_temporary_delivery(session: AsyncSession, delivery_id: int) -> bool:
+    """Called inside the membership transaction; never invent write access."""
+    delivery = await session.scalar(select(FlowDelivery).where(FlowDelivery.id == delivery_id).with_for_update())
+    if delivery is None or delivery.target_chat_id is None or delivery.status not in {"scheduled", "processing"}:
+        return False
+    contact = await session.get(Contact, delivery.contact_id)
+    if contact is not None and contact.bot_started:
+        delivery.target_chat_id = None
+        delivery.target_expires_at = None
+    else:
+        await cancel_delivery_operations(session, delivery.id, reason="join_request_already_processed", commit=False)
+    return True

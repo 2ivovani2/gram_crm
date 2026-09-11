@@ -16,6 +16,9 @@ WEBHOOK_LATENCY = Histogram(
 WORKER_EVENTS = Counter("welcome_worker_events_total", "Processed inbox events", ("result",))
 WORKER_ACTIVE = Gauge("welcome_worker_active", "Active Gramly Welcome worker processes", ("kind",))
 DELIVERY_ATTEMPTS = Counter("welcome_delivery_attempts_total", "Telegram delivery attempts", ("result",))
+DELIVERY_FAILURE_REASONS = Counter(
+    "welcome_delivery_failure_reasons_total", "Bounded delivery failure reasons", ("reason", "scope")
+)
 JOIN_REQUEST_GREETINGS = Counter(
     "welcome_join_request_greetings_total",
     "Join-request greeting flows by terminal result",

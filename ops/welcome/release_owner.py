@@ -33,6 +33,14 @@ def patch_worker(name: str, image: str, *, separate: bool = False) -> None:
     container: dict[str, Any] = {"name": "api" if name == "gramly-welcome-api" else "worker", "image": image}
     if separate:
         container["env"] = [{"name": "WELCOME_SEPARATE_OWNER_WORKER", "value": "true"}]
+    if name in {"gramly-welcome-worker-events", "gramly-welcome-worker-delivery"}:
+        container["ports"] = [{"name": "health", "containerPort": 9091}]
+        container["startupProbe"] = {"httpGet": {"path": "/health/live", "port": "health"},
+                                     "periodSeconds": 5, "failureThreshold": 24}
+        container["livenessProbe"] = {"httpGet": {"path": "/health/live", "port": "health"},
+                                      "periodSeconds": 10, "failureThreshold": 3}
+        container["readinessProbe"] = {"httpGet": {"path": "/health/ready", "port": "health"},
+                                       "periodSeconds": 10, "failureThreshold": 2}
     patch = {"spec": {"template": {"spec": {"containers": [container]}}}}
     print(kubectl("-n", NAMESPACE, "patch", "deployment", name, "--type=strategic", "-p", json.dumps(patch)), flush=True)
     print(kubectl("-n", NAMESPACE, "rollout", "status", f"deployment/{name}", "--timeout=5m"), flush=True)

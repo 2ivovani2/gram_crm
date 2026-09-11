@@ -7,17 +7,21 @@ import signal
 import socket
 import uuid
 from datetime import UTC, datetime
+from functools import partial
+from typing import Any
 
 from aiogram.exceptions import (
     TelegramAPIError,
     TelegramBadRequest,
     TelegramForbiddenError,
     TelegramRetryAfter,
+    TelegramUnauthorizedError,
 )
 from prometheus_client import start_http_server
 from redis.asyncio import Redis
-from sqlalchemy import update
+from sqlalchemy import select, update
 
+from ..bot_diagnostics import record_incident
 from ..commercial import access_for_owner
 from ..config import Settings, get_settings
 from ..crypto import TokenDecryptionError, TokenKeyring
@@ -43,7 +47,14 @@ from ..metrics import (
     ROTATION_RECOMMENDATIONS,
     WORKER_ACTIVE,
 )
-from ..models import FlowDelivery, JoinRequestActivation
+from ..models import (
+    DeliveryOperation,
+    FlowDelivery,
+    GreetingDelivery,
+    JoinRequest,
+    JoinRequestActivation,
+    RotationRecommendation,
+)
 from ..owner_bot import _one_button, interface_bot, interface_dispatcher
 from ..owner_repository import complete_album_notification, finalize_due_albums
 from ..rate_limit import RateLimitUnavailable, TelegramRateLimiter
@@ -77,7 +88,9 @@ from ..telegram_delivery import (
     send_join_activation,
     send_rotation_recommendation,
 )
-from ..telegram_errors import normalize_bad_request
+from ..telegram_errors import normalize_bad_request, normalize_delivery_error
+from .health import WorkerHealth
+from .leased import run_leased
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +116,14 @@ async def _process_activation(
         JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
         return
     now = datetime.now(UTC)
+    if context.request.status in {"joined", "approved", "failed"}:
+        async with session_factory() as session:
+            await session.execute(update(JoinRequestActivation).where(
+                JoinRequestActivation.id == activation_id, JoinRequestActivation.lease_owner == worker_id,
+            ).values(status="approved_without_activation", lease_owner=None, lease_expires_at=None,
+                     error="join_request_already_processed"))
+            await session.commit()
+        return
     if (
         context.request.user_chat_id is None
         or context.request.message_window_expires_at is None
@@ -142,17 +163,20 @@ async def _process_activation(
                 error="telegram_429",
             )
         JOIN_REQUEST_ACTIVATIONS.labels("retry").inc()
-    except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError, ValueError) as exc:
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError, TokenDecryptionError, ValueError) as exc:
         async with session_factory() as session:
+            if isinstance(exc, TelegramUnauthorizedError):
+                await record_incident(session, context.bot.id, "invalid_bot_token")
             await finish_activation_message(
-                session, activation_id, worker_id, success=False, error=type(exc).__name__
+                session, activation_id, worker_id, success=False,
+                error=normalize_delivery_error(exc, temporary=True)
             )
         JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
     except (TelegramAPIError, OSError) as exc:
         if context.activation.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_activation_message(
-                    session, activation_id, worker_id, success=False, error=type(exc).__name__
+                    session, activation_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             JOIN_REQUEST_ACTIVATIONS.labels("failed").inc()
         else:
@@ -162,7 +186,7 @@ async def _process_activation(
                     activation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.activation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             JOIN_REQUEST_ACTIVATIONS.labels("retry").inc()
     else:
@@ -192,6 +216,9 @@ async def _process_operation(
             )
         DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         return
+    if context.operation.status != "processing" or context.operation.lease_owner != worker_id:
+        DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
+        return
     if not context.bot.is_active or not context.channel.is_active:
         async with session_factory() as session:
             await finish_operation(
@@ -211,6 +238,11 @@ async def _process_operation(
                 reason="join_request_window_expired",
             )
         DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
+        return
+    if "invalid_bot_token" in (context.bot.delivery_issues or {}):
+        async with session_factory() as session:
+            await finish_operation(session, operation_id, worker_id, success=False, error="invalid_bot_token")
+        DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         return
     try:
         allowed = await limiter.acquire(context.bot.id, context.target_chat_id)
@@ -242,14 +274,30 @@ async def _process_operation(
                 error="telegram_429",
             )
         DELIVERY_ATTEMPTS.labels("telegram_429").inc()
-    except (TelegramForbiddenError, TelegramBadRequest, MediaTooLargeError, TokenDecryptionError) as exc:
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError,
+            MediaTooLargeError, TokenDecryptionError) as exc:
         async with session_factory() as session:
+            request_closed = bool(await session.scalar(select(JoinRequest.id).where(
+                JoinRequest.welcome_delivery_id == context.delivery.id,
+                JoinRequest.status.in_(("joined", "approved", "failed")),
+            ).limit(1))) if context.delivery.target_chat_id is not None else False
+            reason = normalize_delivery_error(exc, temporary=context.delivery.target_chat_id is not None,
+                                              expired=context.target_expired, request_closed=request_closed)
+            if isinstance(exc, TelegramUnauthorizedError):
+                await record_incident(session, context.bot.id, "invalid_bot_token")
+            # A membership update may have safely switched a known contact to
+            # its permanent target while this request was in flight.
+            latest = await session.get(FlowDelivery, context.delivery.id)
+            if (request_closed and context.contact.bot_started and latest is not None
+                    and latest.target_chat_id is None and latest.status in {"scheduled", "processing"}):
+                await defer_operation(session, operation_id, worker_id, delay_seconds=1, error="target_changed")
+                return
             await finish_operation(
                 session,
                 operation_id,
                 worker_id,
                 success=False,
-                error=type(exc).__name__,
+                error=reason,
             )
         DELIVERY_ATTEMPTS.labels("operation_failed").inc()
     except ObjectStorageError:
@@ -282,7 +330,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     success=False,
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         else:
@@ -292,11 +340,11 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.operation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_retry").inc()
     except Exception as exc:
-        logger.exception(
+        logger.warning(
             "unexpected content operation failure id=%s type=%s",
             operation_id,
             type(exc).__name__,
@@ -308,7 +356,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     success=False,
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_failed").inc()
         else:
@@ -318,7 +366,7 @@ async def _process_operation(
                     operation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.operation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("operation_retry").inc()
     else:
@@ -375,9 +423,11 @@ async def _process_delivery(
                 error="telegram_429",
             )
         DELIVERY_ATTEMPTS.labels("telegram_429").inc()
-    except (TelegramForbiddenError, TelegramBadRequest, MediaTooLargeError, TokenDecryptionError) as exc:
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError, MediaTooLargeError, TokenDecryptionError) as exc:
         async with session_factory() as session:
-            await finish_delivery(session, delivery_id, worker_id, success=False, error=type(exc).__name__)
+            if isinstance(exc, TelegramUnauthorizedError):
+                await record_incident(session, context.bot.id, "invalid_bot_token")
+            await finish_delivery(session, delivery_id, worker_id, success=False, error=normalize_delivery_error(exc))
         DELIVERY_ATTEMPTS.labels("failed").inc()
     except ObjectStorageError:
         DEPENDENCY_ERRORS.labels("object_storage").inc()
@@ -401,7 +451,7 @@ async def _process_delivery(
         if context.delivery.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_delivery(
-                    session, delivery_id, worker_id, success=False, error=type(exc).__name__
+                    session, delivery_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("failed").inc()
         else:
@@ -411,15 +461,15 @@ async def _process_delivery(
                     delivery_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.delivery.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("retry").inc()
     except Exception as exc:
-        logger.exception("unexpected delivery failure id=%s type=%s", delivery_id, type(exc).__name__)
+        logger.warning("unexpected delivery failure id=%s type=%s", delivery_id, type(exc).__name__)
         if context.delivery.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_delivery(
-                    session, delivery_id, worker_id, success=False, error=type(exc).__name__
+                    session, delivery_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("failed").inc()
         else:
@@ -429,7 +479,7 @@ async def _process_delivery(
                     delivery_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.delivery.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("retry").inc()
     else:
@@ -536,17 +586,19 @@ async def _process_join_request(
         DELIVERY_ATTEMPTS.labels(
             "approval_already_joined" if status == "joined" else "approval_failed"
         ).inc()
-    except (TelegramForbiddenError, TokenDecryptionError) as exc:
+    except (TelegramForbiddenError, TelegramUnauthorizedError, TokenDecryptionError) as exc:
         async with session_factory() as session:
+            if isinstance(exc, TelegramUnauthorizedError):
+                await record_incident(session, context.bot.id, "invalid_bot_token")
             await finish_join_request(
-                session, request_id, worker_id, success=False, error=type(exc).__name__
+                session, request_id, worker_id, success=False, error=normalize_delivery_error(exc)
             )
         DELIVERY_ATTEMPTS.labels("approval_failed").inc()
     except (TelegramAPIError, OSError) as exc:
         if context.request.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_join_request(
-                    session, request_id, worker_id, success=False, error=type(exc).__name__
+                    session, request_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("approval_failed").inc()
         else:
@@ -556,15 +608,15 @@ async def _process_join_request(
                     request_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.request.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("approval_retry").inc()
     except Exception as exc:
-        logger.exception("unexpected join approval failure id=%s type=%s", request_id, type(exc).__name__)
+        logger.warning("unexpected join approval failure id=%s type=%s", request_id, type(exc).__name__)
         if context.request.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_join_request(
-                    session, request_id, worker_id, success=False, error=type(exc).__name__
+                    session, request_id, worker_id, success=False, error=normalize_delivery_error(exc)
                 )
             DELIVERY_ATTEMPTS.labels("approval_failed").inc()
         else:
@@ -574,7 +626,7 @@ async def _process_join_request(
                     request_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.request.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             DELIVERY_ATTEMPTS.labels("approval_retry").inc()
     else:
@@ -651,10 +703,12 @@ async def _process_rotation(
             if not destination.rotation.invite_link:
                 try:
                     invite_link = await create_rotation_invite_link(destination, keyring)
-                except (TelegramForbiddenError, TelegramBadRequest) as exc:
+                except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError) as exc:
                     async with session_factory() as session:
+                        if isinstance(exc, TelegramUnauthorizedError):
+                            await record_incident(session, destination.bot.id, "invalid_bot_token")
                         await mark_rotation_channel_error(
-                            session, destination.rotation.id, type(exc).__name__
+                            session, destination.rotation.id, normalize_delivery_error(exc)
                         )
                     continue
                 destination.rotation.invite_link = invite_link
@@ -679,17 +733,19 @@ async def _process_rotation(
                 error="telegram_429",
             )
         ROTATION_RECOMMENDATIONS.labels("telegram_429").inc()
-    except (TelegramForbiddenError, TelegramBadRequest, TokenDecryptionError) as exc:
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError, TokenDecryptionError) as exc:
         async with session_factory() as session:
+            if isinstance(exc, TelegramUnauthorizedError):
+                await record_incident(session, context.source_bot.id, "invalid_bot_token")
             await finish_rotation(
-                session, context, worker_id, status="failed", error=type(exc).__name__
+                session, context, worker_id, status="failed", error=normalize_delivery_error(exc)
             )
         ROTATION_RECOMMENDATIONS.labels("failed").inc()
     except (TelegramAPIError, OSError) as exc:
         if context.recommendation.attempts >= settings.max_attempts:
             async with session_factory() as session:
                 await finish_rotation(
-                    session, context, worker_id, status="failed", error=type(exc).__name__
+                    session, context, worker_id, status="failed", error=normalize_delivery_error(exc)
                 )
             ROTATION_RECOMMENDATIONS.labels("failed").inc()
         else:
@@ -699,7 +755,7 @@ async def _process_rotation(
                     recommendation_id,
                     worker_id,
                     delay_seconds=_retry_delay(context.recommendation.attempts),
-                    error=type(exc).__name__,
+                    error=normalize_delivery_error(exc),
                 )
             ROTATION_RECOMMENDATIONS.labels("retry").inc()
     else:
@@ -717,7 +773,7 @@ async def serve() -> None:
     loop = asyncio.get_running_loop()
     for event_signal in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(event_signal, stopping.set)
-    redis = Redis.from_url(settings.valkey_url, decode_responses=False)
+    redis = Redis.from_url(settings.valkey_url, decode_responses=False, socket_timeout=5, socket_connect_timeout=3)
     limiter = TelegramRateLimiter(
         redis,
         bot_limit=settings.bot_rate_limit_per_second,
@@ -726,11 +782,29 @@ async def serve() -> None:
     storage = ObjectStorage(settings)
     keyring = TokenKeyring.parse(settings.token_encryption_keys)
     WORKER_ACTIVE.labels("delivery").inc()
+    health = WorkerHealth({"delivery": 150})
+    server = health.start()
+    common: dict[str, Any] = {"worker_id": worker_id, "settings": settings, "limiter": limiter, "keyring": keyring}
+    queues: list[tuple[Any, Any, Any]] = [
+        (DeliveryOperation, claim_operation_batch, partial(_process_operation, storage=storage, **common)),
+        (GreetingDelivery, claim_delivery_batch, partial(_process_delivery, storage=storage, **common)),
+        (JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),
+        (JoinRequestActivation, claim_activation_batch, partial(_process_activation, **common)),
+        (RotationRecommendation, claim_rotation_batch, partial(_process_rotation, **common)),
+    ]
     try:
         while not stopping.is_set():
-            async with session_factory() as session:
-                finalized_albums = await finalize_due_albums(session)
+            health.mark("delivery")
+            try:
+                async with session_factory() as session:
+                    finalized_albums = await finalize_due_albums(session)
+            except Exception as exc:
+                health.mark("delivery", healthy=False)
+                logger.warning("Delivery dependency unavailable class=%s", type(exc).__name__)
+                await asyncio.sleep(2)
+                continue
             for draft_id, owner_telegram_id, bot_id, version in finalized_albums:
+                health.mark("delivery")
                 try:
                     context = interface_dispatcher().fsm.get_context(
                         bot=interface_bot(),
@@ -746,77 +820,36 @@ async def serve() -> None:
                         f"✅ Альбом сохранён · версия {version}",
                         reply_markup=_one_button("⏱ Настроить задержку", f"show-wdelay:{bot_id}"),
                     )
-                except Exception:
-                    logger.exception("owner album notification failed draft_id=%s", draft_id)
+                    async with session_factory() as session:
+                        await complete_album_notification(session, draft_id)
+                except Exception as exc:
+                    logger.warning("owner album notification failed draft_id=%s class=%s", draft_id, type(exc).__name__)
                     continue
-                async with session_factory() as session:
-                    await complete_album_notification(session, draft_id)
-            async with session_factory() as session:
-                operations = await claim_operation_batch(
-                    session,
-                    worker_id=worker_id,
-                    limit=settings.worker_batch_size,
-                    lease_seconds=settings.lease_seconds,
-                )
-            async with session_factory() as session:
-                deliveries = await claim_delivery_batch(
-                    session,
-                    worker_id=worker_id,
-                    limit=settings.worker_batch_size,
-                    lease_seconds=settings.lease_seconds,
-                )
-            async with session_factory() as session:
-                join_requests = await claim_join_request_batch(
-                    session,
-                    worker_id=worker_id,
-                    limit=settings.worker_batch_size,
-                    lease_seconds=settings.lease_seconds,
-                )
-            async with session_factory() as session:
-                activations = await claim_activation_batch(
-                    session,
-                    worker_id=worker_id,
-                    limit=settings.worker_batch_size,
-                    lease_seconds=settings.lease_seconds,
-                )
-            async with session_factory() as session:
-                rotations = await claim_rotation_batch(
-                    session,
-                    worker_id=worker_id,
-                    limit=settings.worker_batch_size,
-                    lease_seconds=settings.lease_seconds,
-                )
-            if not operations and not deliveries and not join_requests and not activations and not rotations:
+            worked = False
+            for model, claim, handler in queues:
+                if stopping.is_set():
+                    break
+                health.mark("delivery")
+                try:
+                    async with session_factory() as session:
+                        items = await claim(session, worker_id=worker_id, limit=1, lease_seconds=180)
+                    for item in items:
+                        worked = True
+                        await run_leased(handler(item.id), model, item.id, worker_id)
+                    health.mark("delivery", healthy=True)
+                except Exception as exc:
+                    health.mark("delivery", healthy=False)
+                    logger.warning("Delivery queue retry class=%s", type(exc).__name__)
+                    # Failed/unacknowledged work remains leased in PostgreSQL;
+                    # it is recovered, never erased by a loop-level failure.
+                    await asyncio.sleep(1)
+            if not worked:
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=settings.worker_poll_seconds)
                 except TimeoutError:
                     pass
-                continue
-            for operation in operations:
-                if stopping.is_set():
-                    break
-                await _process_operation(operation.id, worker_id, settings, limiter, storage, keyring)
-            for delivery in deliveries:
-                if stopping.is_set():
-                    break
-                await _process_delivery(delivery.id, worker_id, settings, limiter, storage, keyring)
-            for request in join_requests:
-                if stopping.is_set():
-                    break
-                await _process_join_request(request.id, worker_id, settings, limiter, keyring)
-            for activation in activations:
-                if stopping.is_set():
-                    break
-                await _process_activation(
-                    activation.id, worker_id, settings, limiter, keyring
-                )
-            for recommendation in rotations:
-                if stopping.is_set():
-                    break
-                await _process_rotation(
-                    recommendation.id, worker_id, settings, limiter, keyring
-                )
     finally:
+        server.shutdown()
         WORKER_ACTIVE.labels("delivery").dec()
         await redis.aclose()
 
