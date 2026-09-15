@@ -612,6 +612,28 @@ class FinancialLedgerEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MessageTemplate(Base):
+    __tablename__ = "message_template"
+    __table_args__ = (
+        UniqueConstraint("slug", "revision", name="uq_message_template_revision"),
+        CheckConstraint("kind IN ('welcome','farewell')", name="ck_message_template_kind"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80))
+    revision: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(128))
+    author: Mapped[str] = mapped_column(String(80), default="Gramly")
+    description: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    screenshots: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    conversion: Mapped[str | None] = mapped_column(String(80))
+    requires_business: Mapped[bool] = mapped_column(Boolean, default=False)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ContentFlow(Base):
     __tablename__ = "content_flow"
     __table_args__ = (

@@ -48,7 +48,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (options.method && options.method !== "GET") {
     headers.set("X-CSRF-Token", csrfToken);
-    headers.set("Idempotency-Key", requestId());
+    if (!headers.has("Idempotency-Key")) headers.set("Idempotency-Key", requestId());
   }
   const response = await fetchWithTimeout(
     `/api/v1${path}`,

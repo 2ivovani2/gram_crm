@@ -82,6 +82,9 @@ class ObjectStorage:
         await asyncio.to_thread(self._upload, key, body, content_type)
 
     def _delete_many(self, keys: list[str]) -> None:
+        # Curated catalog blobs are immutable shared assets, never customer media.
+        # Removing a copied draft must not break the catalog or another copy.
+        keys = [key for key in keys if not key.startswith("catalog/")]
         if not keys:
             return
         try:
