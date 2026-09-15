@@ -69,7 +69,7 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
     ...options,
     headers,
     credentials: "same-origin",
-  });
+  }, path === "/catalog-media" && options.method === "POST" ? 120_000 : 12_000);
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(String(payload.detail || `HTTP ${response.status}`));

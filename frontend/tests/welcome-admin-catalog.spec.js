@@ -6,10 +6,13 @@ for(const width of [390,1440])test(`admin creates, publishes and archives a temp
   const items=[];
   await page.route("**/api/admin/v1/**",async route=>{
     const request=route.request(),url=new URL(request.url());
+    if(url.pathname==="/api/admin/v1/catalog-media")return route.fulfill({json:{media_type:"photo",storage_key:`catalog/uploads/${"a".repeat(64)}.png`,original_name:"media.png",mime_type:"image/png",size:70,payload:{}}});
+    if(url.pathname.startsWith("/api/admin/v1/catalog-media/"))return route.fulfill({contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1cAAAAASUVORK5CYII=","base64")});
     if(url.pathname==="/api/admin/v1/catalog"){
       if(request.method()==="POST"){
         const payload=request.postDataJSON();expect(payload.expected_revision).toBe(0);
         expect(payload.entry.spec.steps[0].payload.text).toBe("{name}, добро пожаловать!");
+        expect(payload.entry.spec.steps[0].attachments).toHaveLength(1);
         items.push({...payload.entry,id:91,is_active:false});
         return route.fulfill({json:items[0]});
       }
@@ -26,6 +29,8 @@ for(const width of [390,1440])test(`admin creates, publishes and archives a temp
   await page.getByLabel("Описание",{exact:true}).fill("Тестовый шаблон — фикстура, не production-контент.");
   await page.getByLabel("Текст · можно использовать {name}").fill("{name}, добро пожаловать!");
   await page.getByLabel("URL-кнопки").fill("Сайт - https://gramly.tech");
+  await page.getByLabel("Добавить файл к сообщению 1").setInputFiles({name:"test.png",mimeType:"image/png",buffer:Buffer.from("test")});
+  await expect(page.getByRole("img",{name:"Вложение 1"})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   if(process.env.CAPTURE_HELLO_FINISH)await page.screenshot({path:`data/ops/admin-catalog-qa/form-${width}.png`,fullPage:true,animations:"disabled"});
   await page.getByRole("button",{name:"Сохранить скрытую версию"}).click();
