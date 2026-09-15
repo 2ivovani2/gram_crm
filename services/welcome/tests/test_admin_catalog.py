@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -84,7 +85,7 @@ async def test_concurrent_catalog_save_creates_one_version() -> None:
     entry = CatalogEntry.model_validate(raw)
     admin = AdminIdentity(username="catalog-test", groups={"gramly-owners"})
 
-    async def save() -> dict:
+    async def save() -> dict[str, Any]:
         async with sessions() as session:
             return await save_template(CatalogSave(entry=entry, expected_revision=0), admin, session)
 
