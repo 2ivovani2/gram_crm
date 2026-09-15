@@ -166,7 +166,7 @@ def inline_button(
     if theme.enhanced:
         if style in {"primary", "success", "danger"} and "style" in fields:
             values["style"] = style
-        custom_emoji_id = theme.premium_emoji.get(emoji_key or "")
+        custom_emoji_id = theme.premium_emoji.get(emoji_key or "") or theme.premium_emoji.get("important")
         if custom_emoji_id and "icon_custom_emoji_id" in fields:
             values["icon_custom_emoji_id"] = custom_emoji_id
     return InlineKeyboardButton(**values)
@@ -182,6 +182,7 @@ def plain_markup(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | 
             values = button.model_dump(exclude_none=True)
             values.pop("style", None)
             values.pop("icon_custom_emoji_id", None)
+            values["text"] = _EMOJI_RE.sub("", values["text"]).strip() or "Открыть"
             plain_row.append(InlineKeyboardButton(**values))
         rows.append(plain_row)
     return InlineKeyboardMarkup(inline_keyboard=rows)

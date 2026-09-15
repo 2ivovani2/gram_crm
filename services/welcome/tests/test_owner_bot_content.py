@@ -336,6 +336,16 @@ def test_imported_url_keyboard_preserves_safe_titles_and_rows() -> None:
     assert result["rows"][0][0]["action_type"] == "url"
 
 
+def test_import_keeps_url_style_without_copying_foreign_actions() -> None:
+    message = Message(message_id=1, date=datetime.now(UTC), chat=Chat(id=7, type="private"), text="Привет",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Сайт", url="https://gramly.tech", style="success"),
+            InlineKeyboardButton(text="Удалить", callback_data="foreign:delete"),
+        ]]))
+    result = owner_bot._import_url_keyboard(message)
+    assert result and result["rows"] == [[{"text":"Сайт","action_type":"url","value":"https://gramly.tech","style":"success"}]]
+
+
 @pytest.mark.parametrize("button", [
     InlineKeyboardButton(text="Другой бот", callback_data="foreign:delete"),
     InlineKeyboardButton(text="Ссылка", url="tg://user?id=7"),
