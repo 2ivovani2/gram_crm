@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "./api";
+import { AdminCatalog } from "./admin-catalog";
 
-type Section = "Обзор" | "Пользователи" | "Инвойсы" | "Кампании" | "Контент" | "Коммуникации" | "Реклама" | "Тарифы";
+type Section = "Обзор" | "Пользователи" | "Инвойсы" | "Кампании" | "Контент" | "Коммуникации" | "Реклама" | "Тарифы" | "Шаблоны";
 type OwnerSummary = {
   id:number; telegram_id:number; username:string; first_name:string; last_name:string;
   created_at:string; last_seen_at:string; plan:"free"|"business"; plan_name:string;
@@ -18,12 +19,14 @@ const sections:Array<{name:Section;label:string;hint:string}> = [
   {name:"Инвойсы",label:"Инвойсы",hint:"Платежи, статусы и сверка"},
   {name:"Кампании",label:"Кампании",hint:"Deep links, атрибуция и выручка"},
   {name:"Контент",label:"База знаний",hint:"Инструкции и контекстная помощь"},
+  {name:"Шаблоны",label:"Шаблоны цепочек",hint:"Каталог, версии и публикация"},
   {name:"Коммуникации",label:"Коммуникации",hint:"Объявления и советы внутри бота"},
   {name:"Реклама",label:"Free-реклама",hint:"Креативы, показы и клики"},
   {name:"Тарифы",label:"Тарифы и оплата",hint:"Цены, способы оплаты и готовность"},
 ];
 
 const sectionCopy:Record<Section,{eyebrow:string;title:string;body:string;steps:string[]}> = {
+  "Шаблоны":{eyebrow:"",title:"Шаблоны цепочек",body:"Добавляйте приветствия и прощания в общий каталог. Клиент получает независимую копию: изменение или скрытие шаблона не меняет его цепочки и доставки.",steps:["Создайте скрытую версию","Проверьте тексты, задержки и ссылки","Опубликуйте или уберите из каталога без потери истории"]},
   "Обзор":{eyebrow:"PRODUCT PULSE",title:"GramlyHello под контролем",body:"Живая картина продукта: владельцы, подключённая инфраструктура, доставки и оплаченные подписки. Выберите период — все показатели ниже пересчитаются по реальным данным.",steps:["Следите за ростом активных владельцев","Проверяйте долю Business","Разбирайте ошибки доставок до обращений клиентов"]},
   "Пользователи":{eyebrow:"CUSTOMER CONTROL",title:"Пользователи и подписки",body:"Найдите владельца по имени, username или Telegram ID, откройте карточку и управляйте его доступом. Любое изменение требует причины, записывается в security-аудит и приходит пользователю в Telegram.",steps:["Подарить Business на заданный срок","Продлить текущий период","Отключить автопродление или отозвать доступ"]},
   "Инвойсы":{eyebrow:"PAYMENT OPERATIONS",title:"Инвойсы и сверка",body:"Единый журнал Crypto Pay, Telegram Stars и ручных платежей. Статусы меняются только по доверенным событиям провайдера — здесь нельзя вручную подменить оплату.",steps:["Найдите счёт или владельца","Проверьте финансовую цепочку","Запустите безопасную сверку при расхождении"]},
@@ -133,5 +136,5 @@ export function AdminApp(){
     try{await adminApi(path,{method:"POST",body:JSON.stringify(body)});target.reset();await reload()}
     catch(e){setError((e as Error).message)}
   };
-  return <div className="admin-shell control-v2"><aside><Logo/><nav>{sections.map(item=><button className={section===item.name?"active":""} onClick={()=>setSection(item.name)} key={item.name}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav><div className="secure"><i/>SSO · Authentik<br/><small>Доступ по группам</small></div></aside><main>{error&&<ErrorBox message={error} onClose={()=>setError("")}/>}<SectionIntro section={section}/>{section==="Обзор"&&<Dashboard data={dashboard} setDays={setDays}/>} {section==="Пользователи"&&<Owners refreshToken={refreshToken}/>} {section==="Инвойсы"&&<Invoices/>} {section==="Кампании"&&<Campaigns/>} {section==="Контент"&&<ContentAdmin content={content} reload={reload} submit={submit}/>} {section==="Коммуникации"&&<><RequiredChannel value={requiredChannel} reload={reload}/><Communications content={content} reload={reload} submit={submit}/></>} {section==="Реклама"&&<Advertising ads={ads} reload={reload} submit={submit}/>} {section==="Тарифы"&&<Plans plans={plans} readiness={readiness} reload={reload}/>}</main></div>
+  return <div className="admin-shell control-v2"><aside><Logo/><nav>{sections.map(item=><button className={section===item.name?"active":""} onClick={()=>setSection(item.name)} key={item.name}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav><div className="secure"><i/>SSO · Authentik<br/><small>Доступ по группам</small></div></aside><main>{error&&<ErrorBox message={error} onClose={()=>setError("")}/>}<SectionIntro section={section}/>{section==="Шаблоны"&&<AdminCatalog/>}{section==="Обзор"&&<Dashboard data={dashboard} setDays={setDays}/>} {section==="Пользователи"&&<Owners refreshToken={refreshToken}/>} {section==="Инвойсы"&&<Invoices/>} {section==="Кампании"&&<Campaigns/>} {section==="Контент"&&<ContentAdmin content={content} reload={reload} submit={submit}/>} {section==="Коммуникации"&&<><RequiredChannel value={requiredChannel} reload={reload}/><Communications content={content} reload={reload} submit={submit}/></>} {section==="Реклама"&&<Advertising ads={ads} reload={reload} submit={submit}/>} {section==="Тарифы"&&<Plans plans={plans} readiness={readiness} reload={reload}/>}</main></div>
 }
