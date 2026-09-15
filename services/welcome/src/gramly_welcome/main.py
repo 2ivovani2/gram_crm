@@ -5,8 +5,10 @@ from fastapi import FastAPI
 from prometheus_client import make_asgi_app
 
 from .admin_api import router as admin_router
+from .admin_catalog import router as admin_catalog_router
 from .api import router
 from .app_api import router as app_router
+from .catalog_media import router as catalog_media_router
 
 app = FastAPI(
     title="Gramly Welcome API",
@@ -18,6 +20,8 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(app_router)
 app.include_router(admin_router)
+app.include_router(admin_catalog_router)
+app.include_router(catalog_media_router)
 app.mount("/metrics", make_asgi_app())
 
 
