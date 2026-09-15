@@ -283,6 +283,7 @@ async def clone_bot_configuration(
                 status=source_version.status,
                 author_telegram_id=source_version.author_telegram_id,
                 first_delay_seconds=source_version.first_delay_seconds,
+                button_style=source_version.button_style,
                 legacy_version_id=None,
                 published_at=source_version.published_at,
             )
@@ -496,6 +497,7 @@ async def open_draft(
         status="draft",
         author_telegram_id=author_telegram_id,
         first_delay_seconds=published.first_delay_seconds if published else 0,
+        button_style=published.button_style if published else None,
     )
     session.add(draft)
     await session.flush()
@@ -769,6 +771,25 @@ async def set_first_delay(session: AsyncSession, owner_id: int, version_id: int,
             ),
         )
         .values(first_delay_seconds=delay_seconds)
+    )
+    if not cast(CursorResult[tuple[int]], result).rowcount:
+        raise ContentValidationError("Editable draft was not found")
+    await session.commit()
+
+
+BUTTON_STYLES = {"default", "primary", "success", "danger"}
+
+
+async def set_chain_button_style(session: AsyncSession, owner_id: int, version_id: int, style: str) -> None:
+    if style not in BUTTON_STYLES:
+        raise ContentValidationError("Неизвестный цвет кнопок")
+    result = await session.execute(
+        update(ContentFlowVersion).where(
+            ContentFlowVersion.id == version_id,
+            ContentFlowVersion.status == "draft",
+            ContentFlowVersion.flow_id.in_(select(ContentFlow.id).join(ManagedBot).where(
+                ManagedBot.owner_id == owner_id, ManagedBot.is_active.is_(True))),
+        ).values(button_style=style)
     )
     if not cast(CursorResult[tuple[int]], result).rowcount:
         raise ContentValidationError("Editable draft was not found")

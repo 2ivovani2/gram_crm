@@ -28,6 +28,7 @@ from .content_service import (
     flow_timeline_seconds,
     open_draft,
     publish_draft,
+    set_chain_button_style,
     set_first_delay,
     set_flow_assignments,
     set_step_delay,
@@ -134,6 +135,10 @@ class DraftStepRequest(BaseModel):
 
 class DraftDelayRequest(BaseModel):
     delay_seconds: int = Field(ge=0, le=MAX_DELAY_SECONDS)
+
+
+class DraftButtonStyleRequest(BaseModel):
+    style: str = Field(max_length=16)
 
 
 class DraftStepContentRequest(BaseModel):
@@ -571,6 +576,16 @@ async def bot_flows(bot_id: int, user: CurrentUserDep, session: SessionDep) -> d
     return {"flows": result}
 
 
+@router.post("/drafts/{version_id}/button-style")
+async def draft_button_style(version_id: int, payload: DraftButtonStyleRequest, user: CsrfUserDep, session: SessionDep) -> dict[str, str]:
+    try:
+        await set_chain_button_style(session, user.auth.owner.id, version_id, payload.style)
+    except ContentValidationError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    return {"style": payload.style}
+
+
 @router.get("/catalog")
 async def catalog(user: CurrentUserDep, session: SessionDep, kind: str = "welcome", tag: str = "", page: int = 1) -> dict[str, object]:
     if kind not in {"welcome", "farewell"} or page < 1 or page > 10000 or len(tag) > 80:
@@ -658,6 +673,7 @@ async def flow_draft(flow_id: int, user: CurrentUserDep, session: SessionDep) ->
     return {
         "flow": {"id": snapshot.flow.id, "name": snapshot.flow.name, "kind": snapshot.flow.kind},
         "version": {
+            "button_style": snapshot.version.button_style,
             "id": snapshot.version.id,
             "number": snapshot.version.version,
             "first_delay_seconds": snapshot.version.first_delay_seconds,

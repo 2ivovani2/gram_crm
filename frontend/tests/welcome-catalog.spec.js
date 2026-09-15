@@ -72,3 +72,22 @@ for (const theme of ["dark", "light"]) {
     });
   }
 }
+
+for (const theme of ["dark", "light"]) for (const width of [390, 1440]) {
+test(`draft color and support ${theme} ${width}`, async ({page}) => {
+  await page.setViewportSize({width,height:932});
+  await setup(page, {theme});
+  await page.getByRole("button", {name:"Посмотреть сообщения"}).first().click();
+  await page.getByRole("button", {name:"Добавить цепочку",exact:true}).click();
+  await page.getByLabel("Цвет всех кнопок этой цепочки").selectOption("success");
+  const saved=page.waitForRequest(request=>request.url().endsWith("/drafts/101/button-style")&&request.method()==="POST");
+  await page.getByRole("button", {name:"Сохранить цвет"}).click();
+  expect((await saved).postDataJSON()).toEqual({style:"success"});
+  if(process.env.CAPTURE_HELLO_FINISH)await page.screenshot({path:`data/ops/style-qa/color-${theme}-${width}.png`,fullPage:true});
+  await page.getByRole("button", {name:"Закрыть",exact:true}).click();
+  await page.getByRole("button", {name:"Ещё",exact:true}).click();
+  await expect(page.getByRole("link", {name:"Написать в поддержку"})).toHaveAttribute("href","https://t.me/gramlymanager");
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  if(process.env.CAPTURE_HELLO_FINISH)await page.screenshot({path:`data/ops/style-qa/support-${theme}-${width}.png`,fullPage:true,animations:"disabled"});
+});
+}

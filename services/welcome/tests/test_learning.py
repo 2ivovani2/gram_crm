@@ -86,6 +86,18 @@ def test_default_owner_button_uses_semantic_premium_icon_without_unicode_prefix(
     assert button.style is None
 
 
+def test_all_owner_semantic_icons_have_text_only_fallback() -> None:
+    for key, icon in DEFAULT_PREMIUM_EMOJI.items():
+        button = inline_button("✅ Раздел", callback_data="test", emoji_key=key)
+        assert button.icon_custom_emoji_id == icon
+        assert button.text == "Раздел"
+        fallback = plain_markup(InlineKeyboardMarkup(inline_keyboard=[[button]]))
+        assert fallback and fallback.inline_keyboard[0][0].text == "Раздел"
+        assert fallback.inline_keyboard[0][0].icon_custom_emoji_id is None
+    unknown = inline_button("Новый раздел", callback_data="new", emoji_key="unknown")
+    assert unknown.icon_custom_emoji_id == DEFAULT_PREMIUM_EMOJI["important"]
+
+
 def test_owner_message_replaces_decorative_unicode_with_one_custom_emoji() -> None:
     text = premium_text("✅ <b>Готово</b>\n\n⚠️ Проверьте канал.", "success")
 

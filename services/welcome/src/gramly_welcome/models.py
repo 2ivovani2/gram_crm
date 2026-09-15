@@ -659,6 +659,7 @@ class ContentFlow(Base):
 class ContentFlowVersion(Base):
     __tablename__ = "content_flow_version"
     __table_args__ = (
+        CheckConstraint("button_style IS NULL OR button_style IN ('default','primary','success','danger')", name="ck_flow_button_style"),
         UniqueConstraint("flow_id", "version", name="uq_content_flow_version"),
         CheckConstraint(
             "status IN ('draft','published','archived')",
@@ -687,6 +688,7 @@ class ContentFlowVersion(Base):
     status: Mapped[str] = mapped_column(String(16), index=True)
     author_telegram_id: Mapped[int] = mapped_column(BigInteger)
     first_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    button_style: Mapped[str | None] = mapped_column(String(16))
     legacy_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("welcome_message_version.id", ondelete="SET NULL"), unique=True
     )

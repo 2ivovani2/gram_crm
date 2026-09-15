@@ -68,6 +68,7 @@ from .content_service import (
     publish_draft,
     replace_draft_step,
     replace_step_keyboard,
+    set_chain_button_style,
     set_first_delay,
     set_flow_assignments,
     set_step_delay,
@@ -355,6 +356,7 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                 )
             ],
             [inline_button("Шаблоны сообщений", callback_data="catalog:0:welcome:0", emoji_key="copy", theme=theme)],
+            [inline_button("Поддержка и обратная связь", callback_data="menu:support", emoji_key="help", theme=theme)],
             [
                 inline_button(
                     "Подписка",
@@ -465,12 +467,17 @@ def _entity_dump(entities: list[Any] | None) -> list[dict[str, Any]]:
 def _import_url_keyboard(message: Message) -> dict[str, Any] | None:
     """Only import portable URL actions; another bot's callbacks are not ours."""
     markup = message.reply_markup
-    if markup is None or any(not button.url for row in markup.inline_keyboard for button in row):
+    if markup is None:
+        return None
+    rows = [[{"text": button.text, "action_type": "url", "value": button.url,
+              "style": button.style or "default"} for button in row if button.url]
+            for row in markup.inline_keyboard]
+    rows = [row for row in rows if row]
+    if not rows:
         return None
     return validate_step_keyboard({
         "kind": "inline",
-        "rows": [[{"text": button.text, "action_type": "url", "value": button.url,
-                   "style": "default"} for button in row] for row in markup.inline_keyboard],
+        "rows": rows,
     })
 
 
@@ -663,6 +670,20 @@ async def show_main_menu(message: Message, owner: Owner) -> None:
         "Выберите раздел ниже — я подскажу следующий шаг и сохраню все изменения:",
         reply_markup=markup,
     )
+
+
+@router.callback_query(F.data == "menu:support")
+async def support_menu(callback: CallbackQuery) -> None:
+    await owner_answer(_callback_message(callback),
+        "<b>Поддержка GramlyHello</b>\n\nЕсли что-то не работает или есть идея, напишите менеджеру. "
+        "Так мы быстрее разберёмся:\n<b>Что нажал → что ожидал → что произошло.</b>\n\n"
+        "Приложите скриншот или короткое видео, укажите username бота и примерное время ошибки. "
+        "Не отправляйте токены, пароли и коды входа.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [owner_button(text="Написать в поддержку", url="https://t.me/gramlymanager", emoji_key="help")],
+            _home_row(),
+        ]))
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("catalog:"))
@@ -1389,12 +1410,41 @@ async def send_chain_editor(
                 )
             ],
             [owner_button(text="Помощь по цепочкам", callback_data="help:flows")],
+            [owner_button(text="Цвет кнопок", callback_data=f"chain-color:{version_id}", emoji_key="settings")],
             [owner_button(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
             _home_row(),
         ]
     )
     sender = edit_with_ui_fallback if edit else owner_answer
     await sender(message, "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@router.callback_query(F.data.startswith("chain-color:"))
+async def chain_color(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) not in {2, 3} or not parts[1].isdigit():
+        await callback.answer("Некорректная цепочка", show_alert=True)
+        return
+    version_id = int(parts[1])
+    try:
+        async with session_factory() as session:
+            snapshot = await draft_snapshot(session, owner.id, version_id)
+            if len(parts) == 3:
+                await set_chain_button_style(session, owner.id, version_id, parts[2])
+    except ContentValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    if len(parts) == 3:
+        await send_chain_editor(_callback_message(callback), owner, version_id)
+        await callback.answer("Цвет сохранён в черновике")
+        return
+    labels = {"default": "Стандартный", "primary": "Синий", "success": "Зелёный", "danger": "Красный"}
+    current = labels.get(snapshot.version.button_style or "", "Индивидуальные цвета кнопок")
+    rows = [[owner_button(text=label, callback_data=f"chain-color:{version_id}:{style}", style=style, emoji_key="settings")]
+            for style, label in labels.items()]
+    rows.append([owner_button(text="Назад к цепочке", callback_data=f"chain:editor:{version_id}", emoji_key="back")])
+    await owner_answer(_callback_message(callback), f"<b>Цвет кнопок цепочки</b>\n\nСейчас: {current}.\nВыбранный цвет применяется ко всем кнопкам этой версии, включая добавленные позже. Другие цепочки не изменятся. Для реальных доставок опубликуйте черновик.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("chain:add:"))
@@ -1495,6 +1545,8 @@ async def receive_welcome(message: Message, owner: Owner, state: FSMContext) -> 
         imported_keyboard = _import_url_keyboard(message)
         if imported_keyboard:
             import_notice = "\n\nКнопки-ссылки сохранены и появятся в конце шага."
+            if message.reply_markup and any(not b.url for row in message.reply_markup.inline_keyboard for b in row):
+                import_notice += " Действия другого бота не переносятся — сохранены только URL-кнопки."
         elif message.forward_origin or message.reply_markup:
             import_notice = (
                 "\n\nTelegram не передал переносимые кнопки-ссылки. После сохранения откройте "

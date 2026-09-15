@@ -63,9 +63,13 @@ def should_reuse_recent_welcome_delivery(*, kind: str, target_chat_id: int | Non
 
 
 async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any] | None:
-    keyboard = await session.scalar(select(ContentKeyboard).where(ContentKeyboard.step_id == step_id))
-    if keyboard is None:
+    record = (await session.execute(select(ContentKeyboard, ContentFlowVersion.button_style)
+        .join(ContentStep, ContentStep.id == ContentKeyboard.step_id)
+        .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+        .where(ContentKeyboard.step_id == step_id))).one_or_none()
+    if record is None:
         return None
+    keyboard, chain_style = record
     buttons = list(
         (
             await session.scalars(
@@ -88,7 +92,7 @@ async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any
                 "text": button.text,
                 "action_type": button.action_type,
                 "value": button.value,
-                "style": button.style,
+                "style": chain_style if chain_style is not None else button.style,
             }
         )
     return {"kind": keyboard.kind, "settings": keyboard.settings, "rows": rows}
