@@ -91,7 +91,17 @@ from .learning import (
     open_help_session,
     schedule_learning_notifications,
 )
-from .models import Channel, ContentFlow, FlowChannelAssignment, ManagedBot, Owner, Payment, Plan
+from .message_catalog import install_template, template_view
+from .models import (
+    Channel,
+    ContentFlow,
+    FlowChannelAssignment,
+    ManagedBot,
+    MessageTemplate,
+    Owner,
+    Payment,
+    Plan,
+)
 from .owner_repository import (
     bot_channels,
     bot_media_keys,
@@ -344,6 +354,7 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                     theme=theme,
                 )
             ],
+            [inline_button("Шаблоны сообщений", callback_data="catalog:0:welcome:0", emoji_key="copy", theme=theme)],
             [
                 inline_button(
                     "Подписка",
@@ -576,6 +587,19 @@ async def remove_customer_webhook(managed: ManagedBot, settings: Settings) -> No
 async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     await state.clear()
     command = (message.text or "").split(maxsplit=1)
+    if len(command) == 2 and command[1].startswith("catalog_"):
+        raw_id = command[1][8:]
+        if raw_id.isdigit():
+            async with session_factory() as session:
+                template = await session.get(MessageTemplate, int(raw_id))
+            if template is not None and template.is_active:
+                await state.set_state(AddBotState.waiting_for_token)
+                await state.update_data(catalog_template_id=template.id)
+                await owner_answer(message, f"<b>Новый бот из шаблона «{html.escape(template.title)}»</b>\n\n"
+                    "Создайте нового бота в @BotFather и отправьте его токен. После подключения добавим независимый черновик. "
+                    "Каналы и действующие цепочки не меняются.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[owner_button(text="Отмена", callback_data="cancel")], _home_row()]))
+                return
     if len(command) == 2 and command[1].startswith("ref_"):
         async with session_factory() as session:
             await record_first_touch(session, owner.id, command[1][4:])
@@ -639,6 +663,129 @@ async def show_main_menu(message: Message, owner: Owner) -> None:
         "Выберите раздел ниже — я подскажу следующий шаг и сохраню все изменения:",
         reply_markup=markup,
     )
+
+
+@router.callback_query(F.data.startswith("catalog:"))
+async def catalog_menu(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) not in {4, 5} or not parts[1].isdigit() or not parts[3].isdigit() or parts[2] not in {"welcome", "farewell"} or (len(parts) == 5 and not parts[4].isdigit()):
+        await callback.answer("Некорректный экран", show_alert=True)
+        return
+    bot_id, kind, page = int(parts[1]), parts[2], int(parts[3])
+    tag_index = int(parts[4]) if len(parts) == 5 else 0
+    message = _callback_message(callback)
+    if not bot_id:
+        async with session_factory() as session:
+            bots, total = await list_owned_bots(session, owner.id, page * BOTS_PER_PAGE, BOTS_PER_PAGE)
+        rows = [[owner_button(text=f"@{b.username or b.display_name}", callback_data=f"catalog:{b.id}:{kind}:0", emoji_key="bot")] for b in bots]
+        if page:
+            rows.append([owner_button(text="Предыдущие боты", callback_data=f"catalog:0:{kind}:{page - 1}", emoji_key="back")])
+        if (page + 1) * BOTS_PER_PAGE < total:
+            rows.append([owner_button(text="Следующие боты", callback_data=f"catalog:0:{kind}:{page + 1}", emoji_key="next")])
+        rows.extend([[owner_button(text="Подключить нового бота", callback_data="bot:add", emoji_key="add")], _home_row()])
+        await owner_answer(message, "<b>Шаблоны сообщений</b>\n\nВыберите бота, для которого создадим отдельный черновик. "
+            "Действующие цепочки и назначения сохранятся.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await callback.answer()
+        return
+    if await _get_owned(owner, str(bot_id)) is None:
+        await callback.answer("Бот недоступен", show_alert=True)
+        return
+    async with session_factory() as session:
+        templates = list(await session.scalars(select(MessageTemplate).where(MessageTemplate.is_active.is_(True),
+            MessageTemplate.kind == kind).order_by(MessageTemplate.id)))
+    tags = sorted({tag for template in templates for tag in template.tags})
+    selected_tag = tags[tag_index - 1] if 0 < tag_index <= len(tags) else ""
+    if selected_tag:
+        templates = [template for template in templates if selected_tag in template.tags]
+    rows = [[owner_button(text="Приветственные", callback_data=f"catalog:{bot_id}:welcome:0", emoji_key="message"),
+             owner_button(text="Прощальные", callback_data=f"catalog:{bot_id}:farewell:0", emoji_key="message")]]
+    for item in templates[page * 5:(page + 1) * 5]:
+        rows.append([owner_button(text=item.title[:64], callback_data=f"catalog-view:{bot_id}:{item.id}:{page}:{tag_index}", emoji_key="copy")])
+    navigation = []
+    if page:
+        navigation.append(owner_button(text="Назад", callback_data=f"catalog:{bot_id}:{kind}:{page - 1}:{tag_index}", emoji_key="back"))
+    if (page + 1) * 5 < len(templates):
+        navigation.append(owner_button(text="Далее", callback_data=f"catalog:{bot_id}:{kind}:{page + 1}:{tag_index}", emoji_key="next"))
+    if navigation:
+        rows.append(navigation)
+    rows.extend([[owner_button(text=f"Категория: {selected_tag or 'Все'}", callback_data=f"catalog-filter:{bot_id}:{kind}", emoji_key="settings")],
+                 [owner_button(text="Демонстрации в кабинете", web_app=WebAppInfo(url=f"{get_settings().mini_app_url}?section=catalog&bot_id={bot_id}"), emoji_key="copy")],
+                 [owner_button(text="К боту", callback_data=f"bot:{bot_id}", emoji_key="back")], _home_row()])
+    await owner_answer(message, "<b>Шаблоны сообщений</b>\n\n" + ("Выберите шаблон, чтобы прочитать сообщения и интервалы. "
+        "После добавления проверьте черновик, опубликуйте и назначьте каналам." if templates else "Шаблоны этого типа пока не опубликованы."),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("catalog-filter:"))
+async def catalog_filter(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) != 3 or not parts[1].isdigit() or parts[2] not in {"welcome", "farewell"}:
+        await callback.answer("Некорректная категория", show_alert=True)
+        return
+    bot_id, kind = int(parts[1]), parts[2]
+    if await _get_owned(owner, str(bot_id)) is None:
+        await callback.answer("Бот недоступен", show_alert=True)
+        return
+    async with session_factory() as session:
+        raw = list(await session.scalars(select(MessageTemplate.tags).where(MessageTemplate.is_active.is_(True), MessageTemplate.kind == kind)))
+    tags = sorted({tag for values in raw for tag in values})
+    rows = [[owner_button(text="Все категории", callback_data=f"catalog:{bot_id}:{kind}:0:0", emoji_key="copy")]]
+    rows.extend([[owner_button(text=tag[:64], callback_data=f"catalog:{bot_id}:{kind}:0:{index}", emoji_key="copy")] for index, tag in enumerate(tags, 1)])
+    rows.append([owner_button(text="Назад", callback_data=f"catalog:{bot_id}:{kind}:0", emoji_key="back")])
+    await owner_answer(_callback_message(callback), "<b>Категория шаблона</b>\n\nВыберите тематику или характеристику сообщений.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("catalog-view:"))
+async def catalog_show(callback: CallbackQuery, owner: Owner) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) not in {4, 5} or not all(part.isdigit() for part in parts[1:]):
+        await callback.answer("Некорректный шаблон", show_alert=True)
+        return
+    bot_id, template_id, page = map(int, parts[1:4])
+    tag_index = int(parts[4]) if len(parts) == 5 else 0
+    if await _get_owned(owner, str(bot_id)) is None:
+        await callback.answer("Бот недоступен", show_alert=True)
+        return
+    async with session_factory() as session:
+        template = await session.get(MessageTemplate, template_id)
+    if template is None or not template.is_active:
+        await callback.answer("Шаблон недоступен", show_alert=True)
+        return
+    view = template_view(template)
+    text = f"<b>{html.escape(template.title)}</b>\nАвтор: {html.escape(template.author)}\n\n{html.escape(template.description[:600])}\n\n"
+    text += "Доступ: Business\n" if template.requires_business else "Доступ: Free и Business\n"
+    text += f"Конверсия: {html.escape(template.conversion or 'Нет данных')}\nПервое сообщение: {format_delay_clock(view['first_delay_seconds'])}\n"
+    for index, step in enumerate(view['steps'], 1):
+        text += f"\n<b>Сообщение {index}</b>\n{html.escape(step['text'][:450])}\n"
+        if len(step['text']) > 450:
+            text += "… Полный текст доступен в кабинете и созданном черновике.\n"
+        if index < view['step_count']:
+            text += f"До следующего: {format_delay_clock(step['delay_after_seconds'])}\n"
+    text += "\nСоздадим независимый неназначенный черновик. Затем — проверка, публикация и выбор каналов."
+    await owner_answer(_callback_message(callback), text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [owner_button(text="Добавить цепочку", callback_data=f"catalog-add:{bot_id}:{template_id}", emoji_key="add")],
+        [owner_button(text="Назад к шаблонам", callback_data=f"catalog:{bot_id}:{template.kind}:{page}:{tag_index}", emoji_key="back")], _home_row()]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("catalog-add:"))
+async def catalog_add(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts[1:]):
+        await callback.answer("Некорректный шаблон", show_alert=True)
+        return
+    try:
+        async with session_factory() as session:
+            result = await install_template(session, owner_id=owner.id, bot_id=int(parts[1]),
+                template_id=int(parts[2]), key=f"catalog-callback:{callback.id}")
+    except ValueError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    await state.clear()
+    await send_chain_editor(_callback_message(callback), owner, int(result["version_id"]))
+    await callback.answer("Черновик добавлен")
 
 
 @router.callback_query(F.data == "menu:bots")
@@ -706,6 +853,7 @@ async def paginate_bots(callback: CallbackQuery, owner: Owner) -> None:
 @router.callback_query(F.data == "bot:add")
 async def add_bot(callback: CallbackQuery, state: FSMContext) -> None:
     message = _callback_message(callback)
+    await state.clear()
     await state.set_state(AddBotState.waiting_for_token)
     await owner_answer(
         message,
@@ -797,6 +945,20 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[_home_row()]),
         )
         return
+    catalog_id = (await state.get_data()).get("catalog_template_id")
+    if catalog_id:
+        try:
+            async with session_factory() as session:
+                result = await install_template(session, owner_id=owner.id, bot_id=managed.id,
+                    template_id=int(catalog_id), key=f"catalog-new:{managed.id}:{catalog_id}")
+        except ValueError as exc:
+            await state.clear()
+            await owner_answer(message, f"Бот подключён, но шаблон не добавлен: {html.escape(str(exc))}. "
+                "Откройте каталог и выберите другой шаблон.", reply_markup=_connection_keyboard(managed))
+            return
+        await state.clear()
+        await send_chain_editor(message, owner, int(result["version_id"]))
+        return
     if template_bots:
         await state.set_state(AddBotState.waiting_for_template)
         await state.update_data(destination_bot_id=managed.id)
@@ -819,6 +981,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
                         emoji_key="add",
                     )
                 ],
+                [owner_button(text="Создать из шаблона GRAMLY", callback_data=f"catalog:{managed.id}:welcome:0", emoji_key="copy")],
                 [owner_button(text="❌ Отмена", callback_data="cancel")],
                 _home_row(),
             ]
@@ -993,6 +1156,7 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         inline_keyboard=[
             [owner_button(text="Обновить токен", callback_data=f"reconnect:{bot.id}", emoji_key="settings")],
             [owner_button(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
+            [owner_button(text="Шаблоны сообщений", callback_data=f"catalog:{bot.id}:welcome:0", emoji_key="copy")],
             [
                 owner_button(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
                 owner_button(text="📥 Заявки", callback_data=f"requests:{bot.id}"),

@@ -29,10 +29,17 @@ DELIVERY_METHODS = {
     "sendVoice", "sendVideoNote", "sendSticker", "sendMediaGroup", "sendContact", "sendLocation",
     "sendVenue", "sendPoll", "sendDice", "copyMessage",
 }
+OPERATION_METHODS = {
+    "text": "sendMessage", "photo": "sendPhoto", "video": "sendVideo", "animation": "sendAnimation",
+    "document": "sendDocument", "audio": "sendAudio", "voice": "sendVoice", "video_note": "sendVideoNote",
+    "sticker": "sendSticker", "media_group": "sendMediaGroup", "contact": "sendContact",
+    "location": "sendLocation", "venue": "sendVenue", "poll": "sendPoll", "dice": "sendDice",
+}
 
 
 def log_delivery_failure(*, operation_id: int, delivery_id: int, method: str, reason: str) -> None:
     known = CLIENT_FAILURES | PLATFORM_FAILURES | UNKNOWN_FAILURES
+    method = OPERATION_METHODS.get(method, method)
     logging.getLogger(__name__).warning(json.dumps({
         "event": "delivery_operation_failed", "operation_id": operation_id, "delivery_id": delivery_id,
         "method": method if method in DELIVERY_METHODS else "other",

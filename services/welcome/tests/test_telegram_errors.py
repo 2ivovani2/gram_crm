@@ -59,3 +59,9 @@ def test_delivery_evidence_does_not_echo_unknown_payload(caplog: pytest.LogCaptu
     assert '"scope": "unknown"' in caplog.text
     assert "private" not in caplog.text
     assert "secret" not in caplog.text
+
+
+@pytest.mark.parametrize(("operation", "method"), [("text", "sendMessage"), ("media_group", "sendMediaGroup"), ("photo", "sendPhoto")])
+def test_compiler_operation_is_reported_as_telegram_method(operation: str, method: str, caplog: pytest.LogCaptureFixture) -> None:
+    log_delivery_failure(operation_id=3, delivery_id=4, method=operation, reason="telegram_bad_request")
+    assert f'"method": "{method}"' in caplog.text

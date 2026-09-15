@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, api, setCsrfToken } from "./api";
 import { AdminApp } from "./admin";
+import { MessageCatalog } from "./catalog";
 import "./styles.css";
 
 declare global {
@@ -90,7 +91,7 @@ function formatCountdown(expiresAt: string, now: number): string {
   return seconds>0?`${String(minutes).padStart(2,"0")}:${String(remainder).padStart(2,"0")}`:"истёк";
 }
 
-const tabs = ["Обзор", "Боты", "Цепочки", "Аналитика", "Подписка", "Партнёры", "Ещё"] as const;
+const tabs = ["Обзор", "Боты", "Цепочки", "Шаблоны", "Аналитика", "Подписка", "Партнёры", "Ещё"] as const;
 type Tab = typeof tabs[number];
 type IconName = "home" | "bot" | "flow" | "chart" | "more" | "arrow" | "empty";
 
@@ -232,7 +233,11 @@ function MiniApp() {
         setCsrfToken(session.csrf_token);
         const [identity,summary,botList]=await Promise.all([api<any>("/me"),api<any>("/dashboard"),api<{bots:Bot[]}>("/bots")]);
         if(!active)return;
-        setMe(identity);setDashboard(summary);setBots(botList.bots);setActiveBot(botList.bots[0]?.id||null);
+        setMe(identity);setDashboard(summary);setBots(botList.bots);
+        const entry=new URLSearchParams(window.location.search);
+        const requestedBot=Number(entry.get("bot_id"));
+        setActiveBot(botList.bots.find(bot=>bot.id===requestedBot)?.id||botList.bots[0]?.id||null);
+        if(entry.get("section")==="catalog")setTab("Шаблоны");
         setReady(true);
         const optional=await Promise.allSettled([api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);
         if(!active)return;
@@ -275,6 +280,11 @@ function MiniApp() {
   return <div className="app-shell mini-app">
     <header className="topbar"><div><span className="topbar-kicker">GRAMLY HELLO</span><strong>Привет, {firstName}</strong></div><div className="account"><button className="theme-toggle" onClick={()=>setTheme(value=>value==="dark"?"light":"dark")} aria-label={theme==="dark"?"Включить светлую тему":"Включить тёмную тему"}>{theme==="dark"?"☀":"☾"}</button><span className="account-avatar">{firstName.slice(0,1).toUpperCase()}</span><Status ok={me?.access?.plan === "business"}>{me?.access?.plan_name || "Free"}</Status></div></header>
     <main className="content">{error&&<ErrorBox message={error}/>} {secondaryError&&<ErrorBox message={secondaryError}/>}
+      {(tab==="Цепочки"||tab==="Ещё")&&<button className="button ghost" onClick={()=>openTab("Шаблоны")}>Шаблоны сообщений <Icon name="arrow"/></button>}
+      {tab==="Шаблоны"&&<><button className="back-link" onClick={()=>openTab("Цепочки")}>Назад к цепочкам</button><MessageCatalog bots={bots} botId={activeBot} onBotChange={setActiveBot} onInstalled={result=>{
+        setEditor({id:result.flow_id,name:result.name,kind:result.kind,assignment_mode:"selected",versions:[{id:result.version_id,number:1,status:"draft",first_delay_seconds:0}]});
+        openTab("Цепочки");
+      }} onConnect={templateId=>{const url=`https://t.me/${botUsername}${templateId?`?start=catalog_${templateId}`:""}`;if(tg?.openTelegramLink)tg.openTelegramLink(url);else window.open(url,"_blank","noopener,noreferrer");}}/></>}
       {paymentExpiresAt&&<div className="payment-message" role="timer">Счёт действует ещё <b>{formatCountdown(paymentExpiresAt,paymentClock)}</b></div>}
       {tab==="Обзор"&&<><section className="hero-panel wet-panel"><div><span className="eyebrow">СЕЙЧАС В GRAMLY</span><h1>{bots.length?"Ваши приветствия работают.":"Начнём с первого бота."}</h1><p>{bots.length?"Мы принимаем события Telegram, выбираем сценарий и доставляем сообщение каждому новому участнику.":"Подключите Telegram-бота, добавьте его в канал и соберите первую цепочку приветствия."}</p><button className="button acid quick-action" onClick={bots.length?()=>openTab("Цепочки"):openOwnerBot}>{bots.length?"Открыть цепочки":"Подключить бота"} <Icon name="arrow"/></button></div><div className="route"><span>СОБЫТИЕ</span><i/><span>GRAMLY</span><i/><span>ДОСТАВЛЕНО</span></div></section><section className="metrics wet-panel"><Metric label="Боты" value={dashboard?.bots??0}/><Metric label="Каналы" value={dashboard?.channels??0}/><Metric label="Контакты" value={dashboard?.contacts??0}/><Metric label="Доставлено" value={dashboard?.delivered??0}/></section></>}
       {tab==="Боты"&&<section><div className="section-head"><div><span className="eyebrow">ПОДКЛЮЧЕНИЯ</span><h2>Мои боты</h2></div></div>{!bots.length?<EmptyState title="Здесь появятся ваши боты" text="Откройте GramlyHello, отправьте токен от BotFather и завершите безопасное подключение по подсказкам." action="Подключить первого бота" onAction={openOwnerBot}/>:<div className="bot-list">{bots.map(bot=><article className="wet-panel" key={bot.id}><div className="bot-id"><span className="avatar">{bot.display_name.slice(0,1)}</span><div><strong>@{bot.username||bot.display_name}</strong><small>{bot.channels} каналов · {bot.contacts} контактов</small></div></div><Status ok={bot.webhook_configured}>{bot.webhook_configured?"Webhook online":"Нужно подключить"}</Status><button className="button ghost" onClick={()=>{setActiveBot(bot.id);openTab("Цепочки")}}>Цепочки <Icon name="arrow"/></button></article>)}</div>}</section>}

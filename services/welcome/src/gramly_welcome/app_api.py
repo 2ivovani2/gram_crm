@@ -52,6 +52,7 @@ from .join_activation import (
     long_activation_enabled,
 )
 from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
+from .message_catalog import install_template, template_view
 from .metrics import JOIN_REQUEST_ACTIVATIONS
 from .models import (
     Channel,
@@ -65,6 +66,7 @@ from .models import (
     FlowChannelAssignment,
     FlowDelivery,
     ManagedBot,
+    MessageTemplate,
     Payment,
     Plan,
     ReferralAttribution,
@@ -115,6 +117,10 @@ class DraftReorderRequest(BaseModel):
 
 class FlowAssignmentRequest(BaseModel):
     channel_ids: list[int] | None = Field(default=None, max_length=500)
+
+
+class CatalogInstallRequest(BaseModel):
+    bot_id: int = Field(gt=0)
 
 
 class RotationPriorityRequest(BaseModel):
@@ -563,6 +569,42 @@ async def bot_flows(bot_id: int, user: CurrentUserDep, session: SessionDep) -> d
             }
         )
     return {"flows": result}
+
+
+@router.get("/catalog")
+async def catalog(user: CurrentUserDep, session: SessionDep, kind: str = "welcome", tag: str = "", page: int = 1) -> dict[str, object]:
+    if kind not in {"welcome", "farewell"} or page < 1 or page > 10000 or len(tag) > 80:
+        raise HTTPException(422, "Некорректный фильтр каталога")
+    query = select(MessageTemplate).where(MessageTemplate.is_active.is_(True), MessageTemplate.kind == kind)
+    all_tags = list(await session.scalars(select(MessageTemplate.tags).where(MessageTemplate.is_active.is_(True))))
+    if tag:
+        query = query.where(MessageTemplate.tags.contains([tag]))
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    rows = list(await session.scalars(query.order_by(MessageTemplate.id).offset((page - 1) * 5).limit(5)))
+    return {"items": [template_view(row) for row in rows], "page": page, "total": total,
+            "tags": sorted({item for tags in all_tags for item in tags})}
+
+
+@router.get("/catalog/{template_id}")
+async def catalog_detail(template_id: int, user: CurrentUserDep, session: SessionDep) -> dict[str, object]:
+    template = await session.get(MessageTemplate, template_id)
+    if template is None or not template.is_active:
+        raise HTTPException(404, "Шаблон недоступен")
+    return template_view(template)
+
+
+@router.post("/catalog/{template_id}/install", status_code=201)
+async def catalog_install(template_id: int, payload: CatalogInstallRequest, user: CsrfUserDep, session: SessionDep,
+                          idempotency_key: Annotated[str, Header(alias="Idempotency-Key")]) -> dict[str, object]:
+    try:
+        return await install_template(session, owner_id=user.auth.owner.id, bot_id=payload.bot_id,
+                                      template_id=template_id, key=idempotency_key)
+    except IdempotencyConflictError as exc:
+        await session.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/flows/{flow_id}/draft")
