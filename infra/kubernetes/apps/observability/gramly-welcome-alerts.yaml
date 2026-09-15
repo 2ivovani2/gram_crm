@@ -78,7 +78,14 @@ spec:
           labels: {severity: critical}
           annotations:
             summary: "Welcome has persistent platform-side delivery failures"
-            description: "Storage, token decryption or transient Telegram failures exhausted retries. Contact restrictions are excluded."
+            description: "Storage, token decryption, invalid outgoing content or transient Telegram failures require investigation. Contact restrictions are excluded."
+        - alert: GramlyWelcomeUnclassifiedDeliveryFailures
+          expr: sum(increase(welcome_delivery_failure_reasons_total{scope="unknown"}[5m])) > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome delivery failures need classification"
+            description: "Unclassified Telegram responses must not be attributed to customers without evidence. Inspect method and operation IDs, not private payloads."
         - alert: GramlyWelcomeTelegramRateLimited
           expr: sum(rate(welcome_delivery_attempts_total{result="telegram_429"}[5m])) > 0
           for: 5m

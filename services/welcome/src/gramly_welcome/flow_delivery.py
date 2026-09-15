@@ -28,7 +28,7 @@ from .models import (
     FlowDelivery,
     ManagedBot,
 )
-from .telegram_errors import CLIENT_FAILURES, count_delivery_failure
+from .telegram_errors import CLIENT_FAILURES, count_delivery_failure, log_delivery_failure
 
 
 @dataclass(frozen=True)
@@ -549,6 +549,8 @@ async def finish_operation(
     await session.commit()
     if not success:
         count_delivery_failure(error)
+        log_delivery_failure(operation_id=operation.id, delivery_id=operation.flow_delivery_id,
+                             method=operation.operation_type, reason=error)
     return final_status
 
 
