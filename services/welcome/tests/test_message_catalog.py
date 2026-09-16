@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any, cast
@@ -58,36 +56,37 @@ def test_removing_copied_media_does_not_remove_shared_catalog_asset() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bot_install_clears_old_composer_only_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    from datetime import UTC, datetime
-
-    from aiogram.types import Chat, Message
-
+@pytest.mark.parametrize("action", ["catalog:5:welcome:0", "catalog-filter:5:welcome", "catalog-view:5:6:0", "catalog-add:5:6"])
+async def test_old_catalog_buttons_open_mini_app_without_install(monkeypatch: pytest.MonkeyPatch, action: str) -> None:
     from gramly_welcome import owner_bot
 
-    @asynccontextmanager
-    async def factory() -> AsyncIterator[object]:
-        yield object()
-
-    install = AsyncMock(return_value={"version_id": 23})
-    editor = AsyncMock()
-    monkeypatch.setattr(owner_bot, "session_factory", factory)
+    install = AsyncMock()
+    answer = AsyncMock()
     monkeypatch.setattr(owner_bot, "install_template", install)
-    monkeypatch.setattr(owner_bot, "send_chain_editor", editor)
-    message = Message(message_id=99, date=datetime.now(UTC), chat=Chat(id=11, type="private"))
-    callback = SimpleNamespace(id="test-update", data="catalog-add:5:6", message=message, answer=AsyncMock())
-    owner = SimpleNamespace(id=7)
-    state = AsyncMock()
-    await owner_bot.catalog_add(callback, owner, state)
-    state.clear.assert_awaited_once()
-    editor.assert_awaited_once_with(message, owner, 23)
-    assert install.call_args.kwargs["key"] == "catalog-callback:test-update"
-    state.reset_mock()
-    editor.reset_mock()
-    install.side_effect = ValueError("Бот недоступен")
-    await owner_bot.catalog_add(callback, owner, state)
-    state.clear.assert_not_awaited()
-    editor.assert_not_awaited()
+    monkeypatch.setattr(owner_bot, "owner_answer", answer)
+    monkeypatch.setattr(owner_bot, "_get_owned", AsyncMock(return_value=SimpleNamespace(id=5)))
+    callback = SimpleNamespace(data=action, message=Mock(), answer=AsyncMock())
+    await owner_bot.catalog_menu(callback, SimpleNamespace(id=7))
+    install.assert_not_awaited()
+    markup = answer.call_args.kwargs["reply_markup"]
+    button = markup.inline_keyboard[0][0]
+    assert button.callback_data is None
+    assert button.web_app and "section=catalog" in button.web_app.url
+    assert "bot_id=5" in button.web_app.url
+    callback.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_old_catalog_button_checks_bot_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import owner_bot
+
+    answer = AsyncMock()
+    monkeypatch.setattr(owner_bot, "owner_answer", answer)
+    monkeypatch.setattr(owner_bot, "_get_owned", AsyncMock(return_value=None))
+    callback = SimpleNamespace(data="catalog-add:5:6", message=Mock(), answer=AsyncMock())
+    await owner_bot.catalog_menu(callback, SimpleNamespace(id=7))
+    answer.assert_not_awaited()
+    callback.answer.assert_awaited_once_with("Бот недоступен", show_alert=True)
 
 
 @pytest.mark.asyncio

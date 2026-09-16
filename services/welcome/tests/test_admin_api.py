@@ -75,7 +75,7 @@ def test_admin_api_rejects_non_owner_group_before_database_access(client: TestCl
     assert response.status_code == 403
 
 
-@pytest.mark.parametrize("group", ["gramly-owners", "authentik Admins", "Business", "Product"])
+@pytest.mark.parametrize("group", ["gramly-owners", "authentik Admins", "Business", "Product", "gramly-hello-admin"])
 def test_admin_api_accepts_configured_control_group(
     client: TestClient, group: str
 ) -> None:

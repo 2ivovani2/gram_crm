@@ -62,18 +62,37 @@ with transaction.atomic():
         defaults={
             'scope_name': 'email',
             'description': 'Verified email claim for provisioned GramlyHello Control accounts only.',
-            'expression': '''if not request.user.email:
+            'expression': '''from authentik.core.models import Application
+from authentik.policies.models import PolicyBinding
+if not request.user.is_active or not request.user.email:
     return {}
 allowed = {'gramly-owners', 'authentik Admins', 'Business', 'Product'}
-if not allowed.intersection(set(request.user.groups.values_list('name', flat=True))):
+app = Application.objects.get(slug='welcome-admin')
+direct = PolicyBinding.objects.filter(target=app, user=request.user, enabled=True, negate=False, policy__isnull=True, group__isnull=True).exists()
+if not direct and not allowed.intersection(set(request.user.groups.values_list('name', flat=True))):
     return {}
 return {'email': request.user.email, 'email_verified': True}''',
         },
     )
+    control_groups, _ = ScopeMapping.objects.update_or_create(
+        name='GramlyHello Control application entitlements',
+        defaults={
+            'scope_name': 'entitlements',
+            'description': 'App-scoped marker for explicit direct grants; no global group membership changes.',
+            'expression': '''from authentik.core.models import Application
+from authentik.policies.models import PolicyBinding
+groups = list(request.user.groups.values_list('name', flat=True))
+app = Application.objects.get(slug='welcome-admin')
+direct = request.user.is_active and PolicyBinding.objects.filter(target=app, user=request.user, enabled=True, negate=False, policy__isnull=True, group__isnull=True).exists()
+if direct:
+    groups.append('gramly-hello-admin')
+return {'groups': groups}''',
+        },
+    )
     mappings = list(ScopeMapping.objects.filter(
-        scope_name__in=['openid', 'profile', 'entitlements'],
+        scope_name__in=['openid', 'profile'],
     ))
-    mappings.append(verified_email)
+    mappings.extend([verified_email, control_groups])
     provider.property_mappings.set(mappings)
     application, _ = Application.objects.update_or_create(
         slug='welcome-admin',
@@ -84,7 +103,9 @@ return {'email': request.user.email, 'email_verified': True}''',
             'policy_engine_mode': 'any',
         },
     )
-    PolicyBinding.objects.filter(target=application).delete()
+    # Preserve explicit per-user grants and unrelated policy bindings.
+    PolicyBinding.objects.filter(target=application, user__isnull=True, policy__isnull=True,
+        group__name__in=('gramly-owners', 'authentik Admins', 'Business', 'Product')).delete()
     for order, group_name in enumerate(
         ('gramly-owners', 'authentik Admins', 'Business', 'Product')
     ):
@@ -107,7 +128,7 @@ client_secret = "${client_secret}"
 cookie_secret = "${cookie_secret}"
 email_domains = ["*"]
 scope = "openid profile email entitlements"
-allowed_groups = ["gramly-owners", "authentik Admins", "Business", "Product"]
+allowed_groups = ["gramly-owners", "authentik Admins", "Business", "Product", "gramly-hello-admin"]
 pass_access_token = false
 pass_authorization_header = false
 pass_user_headers = true

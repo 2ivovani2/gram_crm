@@ -105,3 +105,17 @@ def test_owner_message_replaces_decorative_unicode_with_one_custom_emoji() -> No
     assert text.count("<tg-emoji") == 1
     assert "⚠️" not in text
     assert "Проверьте канал" in text
+
+
+def test_button_labels_strip_all_decorations_including_arrows_and_keycaps() -> None:
+    for label in ("⬅️ Назад", "↩️ Назад", "← Назад", "🔘 Назад", "1️⃣ Назад", "👩🏽‍💻 Назад", "🇷🇺 Назад", "☑ Назад"):
+        button = inline_button(label, callback_data="back")
+        assert button.text == "Назад"
+        assert button.icon_custom_emoji_id
+        markup = plain_markup(InlineKeyboardMarkup(inline_keyboard=[[button]]))
+        assert markup and markup.inline_keyboard[0][0].text == "Назад"
+
+
+def test_button_label_preserves_numbers_and_has_nonempty_fallback() -> None:
+    assert inline_button("Оплатить 250 XTR · 1/3", callback_data="pay").text == "Оплатить 250 XTR · 1/3"
+    assert inline_button("✅", callback_data="test").text == "Открыть"

@@ -92,7 +92,7 @@ from .learning import (
     open_help_session,
     schedule_learning_notifications,
 )
-from .message_catalog import install_template, template_view
+from .message_catalog import install_template
 from .models import (
     Channel,
     ContentFlow,
@@ -221,6 +221,20 @@ async def owner_answer(
     """Send owner UI copy with one semantic Premium Emoji and safe fallback."""
 
     await answer_with_ui_fallback(message, text, reply_markup=reply_markup)
+
+
+def catalog_button(bot_id: int = 0, theme: Any = None) -> TelegramInlineKeyboardButton:
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    parts = urlsplit(get_settings().mini_app_url)
+    query = dict(parse_qsl(parts.query))
+    query["section"] = "catalog"
+    if bot_id:
+        query["bot_id"] = str(bot_id)
+    else:
+        query.pop("bot_id", None)
+    url = urlunsplit(parts._replace(query=urlencode(query)))
+    return owner_button(text="Шаблоны в Mini App", web_app=WebAppInfo(url=url), emoji_key="copy", theme=theme)
 
 
 def _callback_message(callback: CallbackQuery) -> Message:
@@ -355,7 +369,7 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                     theme=theme,
                 )
             ],
-            [inline_button("Шаблоны сообщений", callback_data="catalog:0:welcome:0", emoji_key="copy", theme=theme)],
+            [catalog_button(theme=theme)],
             [inline_button("Поддержка и обратная связь", callback_data="menu:support", emoji_key="help", theme=theme)],
             [
                 inline_button(
@@ -687,126 +701,27 @@ async def support_menu(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("catalog:"))
+@router.callback_query(F.data.startswith("catalog-filter:"))
+@router.callback_query(F.data.startswith("catalog-view:"))
+@router.callback_query(F.data.startswith("catalog-add:"))
 async def catalog_menu(callback: CallbackQuery, owner: Owner) -> None:
+    """Old catalog buttons only redirect; never install from a stale callback."""
     parts = (callback.data or "").split(":")
-    if len(parts) not in {4, 5} or not parts[1].isdigit() or not parts[3].isdigit() or parts[2] not in {"welcome", "farewell"} or (len(parts) == 5 and not parts[4].isdigit()):
+    if len(parts) < 2 or not parts[1].isdigit():
         await callback.answer("Некорректный экран", show_alert=True)
         return
-    bot_id, kind, page = int(parts[1]), parts[2], int(parts[3])
-    tag_index = int(parts[4]) if len(parts) == 5 else 0
-    message = _callback_message(callback)
-    if not bot_id:
-        async with session_factory() as session:
-            bots, total = await list_owned_bots(session, owner.id, page * BOTS_PER_PAGE, BOTS_PER_PAGE)
-        rows = [[owner_button(text=f"@{b.username or b.display_name}", callback_data=f"catalog:{b.id}:{kind}:0", emoji_key="bot")] for b in bots]
-        if page:
-            rows.append([owner_button(text="Предыдущие боты", callback_data=f"catalog:0:{kind}:{page - 1}", emoji_key="back")])
-        if (page + 1) * BOTS_PER_PAGE < total:
-            rows.append([owner_button(text="Следующие боты", callback_data=f"catalog:0:{kind}:{page + 1}", emoji_key="next")])
-        rows.extend([[owner_button(text="Подключить нового бота", callback_data="bot:add", emoji_key="add")], _home_row()])
-        await owner_answer(message, "<b>Шаблоны сообщений</b>\n\nВыберите бота, для которого создадим отдельный черновик. "
-            "Действующие цепочки и назначения сохранятся.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-        await callback.answer()
-        return
-    if await _get_owned(owner, str(bot_id)) is None:
+    bot_id = int(parts[1])
+    if bot_id and await _get_owned(owner, str(bot_id)) is None:
         await callback.answer("Бот недоступен", show_alert=True)
         return
-    async with session_factory() as session:
-        templates = list(await session.scalars(select(MessageTemplate).where(MessageTemplate.is_active.is_(True),
-            MessageTemplate.kind == kind).order_by(MessageTemplate.id)))
-    tags = sorted({tag for template in templates for tag in template.tags})
-    selected_tag = tags[tag_index - 1] if 0 < tag_index <= len(tags) else ""
-    if selected_tag:
-        templates = [template for template in templates if selected_tag in template.tags]
-    rows = [[owner_button(text="Приветственные", callback_data=f"catalog:{bot_id}:welcome:0", emoji_key="message"),
-             owner_button(text="Прощальные", callback_data=f"catalog:{bot_id}:farewell:0", emoji_key="message")]]
-    for item in templates[page * 5:(page + 1) * 5]:
-        rows.append([owner_button(text=item.title[:64], callback_data=f"catalog-view:{bot_id}:{item.id}:{page}:{tag_index}", emoji_key="copy")])
-    navigation = []
-    if page:
-        navigation.append(owner_button(text="Назад", callback_data=f"catalog:{bot_id}:{kind}:{page - 1}:{tag_index}", emoji_key="back"))
-    if (page + 1) * 5 < len(templates):
-        navigation.append(owner_button(text="Далее", callback_data=f"catalog:{bot_id}:{kind}:{page + 1}:{tag_index}", emoji_key="next"))
-    if navigation:
-        rows.append(navigation)
-    rows.extend([[owner_button(text=f"Категория: {selected_tag or 'Все'}", callback_data=f"catalog-filter:{bot_id}:{kind}", emoji_key="settings")],
-                 [owner_button(text="Демонстрации в кабинете", web_app=WebAppInfo(url=f"{get_settings().mini_app_url}?section=catalog&bot_id={bot_id}"), emoji_key="copy")],
-                 [owner_button(text="К боту", callback_data=f"bot:{bot_id}", emoji_key="back")], _home_row()])
-    await owner_answer(message, "<b>Шаблоны сообщений</b>\n\n" + ("Выберите шаблон, чтобы прочитать сообщения и интервалы. "
-        "После добавления проверьте черновик, опубликуйте и назначьте каналам." if templates else "Шаблоны этого типа пока не опубликованы."),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await owner_answer(_callback_message(callback),
+        "<b>Шаблоны сообщений — в Mini App</b>\n\n"
+        "Откройте каталог: там можно посмотреть шаблон и добавить независимую цепочку. "
+        "Затем её можно редактировать здесь или в Mini App. Действующие цепочки не изменятся.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [catalog_button(bot_id)], _home_row(),
+        ]))
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith("catalog-filter:"))
-async def catalog_filter(callback: CallbackQuery, owner: Owner) -> None:
-    parts = (callback.data or "").split(":")
-    if len(parts) != 3 or not parts[1].isdigit() or parts[2] not in {"welcome", "farewell"}:
-        await callback.answer("Некорректная категория", show_alert=True)
-        return
-    bot_id, kind = int(parts[1]), parts[2]
-    if await _get_owned(owner, str(bot_id)) is None:
-        await callback.answer("Бот недоступен", show_alert=True)
-        return
-    async with session_factory() as session:
-        raw = list(await session.scalars(select(MessageTemplate.tags).where(MessageTemplate.is_active.is_(True), MessageTemplate.kind == kind)))
-    tags = sorted({tag for values in raw for tag in values})
-    rows = [[owner_button(text="Все категории", callback_data=f"catalog:{bot_id}:{kind}:0:0", emoji_key="copy")]]
-    rows.extend([[owner_button(text=tag[:64], callback_data=f"catalog:{bot_id}:{kind}:0:{index}", emoji_key="copy")] for index, tag in enumerate(tags, 1)])
-    rows.append([owner_button(text="Назад", callback_data=f"catalog:{bot_id}:{kind}:0", emoji_key="back")])
-    await owner_answer(_callback_message(callback), "<b>Категория шаблона</b>\n\nВыберите тематику или характеристику сообщений.", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("catalog-view:"))
-async def catalog_show(callback: CallbackQuery, owner: Owner) -> None:
-    parts = (callback.data or "").split(":")
-    if len(parts) not in {4, 5} or not all(part.isdigit() for part in parts[1:]):
-        await callback.answer("Некорректный шаблон", show_alert=True)
-        return
-    bot_id, template_id, page = map(int, parts[1:4])
-    tag_index = int(parts[4]) if len(parts) == 5 else 0
-    if await _get_owned(owner, str(bot_id)) is None:
-        await callback.answer("Бот недоступен", show_alert=True)
-        return
-    async with session_factory() as session:
-        template = await session.get(MessageTemplate, template_id)
-    if template is None or not template.is_active:
-        await callback.answer("Шаблон недоступен", show_alert=True)
-        return
-    view = template_view(template)
-    text = f"<b>{html.escape(template.title)}</b>\nАвтор: {html.escape(template.author)}\n\n{html.escape(template.description[:600])}\n\n"
-    text += "Доступ: Business\n" if template.requires_business else "Доступ: Free и Business\n"
-    text += f"Конверсия: {html.escape(template.conversion or 'Нет данных')}\nПервое сообщение: {format_delay_clock(view['first_delay_seconds'])}\n"
-    for index, step in enumerate(view['steps'], 1):
-        text += f"\n<b>Сообщение {index}</b>\n{html.escape(step['text'][:450])}\n"
-        if len(step['text']) > 450:
-            text += "… Полный текст доступен в кабинете и созданном черновике.\n"
-        if index < view['step_count']:
-            text += f"До следующего: {format_delay_clock(step['delay_after_seconds'])}\n"
-    text += "\nСоздадим независимый неназначенный черновик. Затем — проверка, публикация и выбор каналов."
-    await owner_answer(_callback_message(callback), text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [owner_button(text="Добавить цепочку", callback_data=f"catalog-add:{bot_id}:{template_id}", emoji_key="add")],
-        [owner_button(text="Назад к шаблонам", callback_data=f"catalog:{bot_id}:{template.kind}:{page}:{tag_index}", emoji_key="back")], _home_row()]))
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("catalog-add:"))
-async def catalog_add(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
-    parts = (callback.data or "").split(":")
-    if len(parts) != 3 or not all(part.isdigit() for part in parts[1:]):
-        await callback.answer("Некорректный шаблон", show_alert=True)
-        return
-    try:
-        async with session_factory() as session:
-            result = await install_template(session, owner_id=owner.id, bot_id=int(parts[1]),
-                template_id=int(parts[2]), key=f"catalog-callback:{callback.id}")
-    except ValueError as exc:
-        await callback.answer(str(exc), show_alert=True)
-        return
-    await state.clear()
-    await send_chain_editor(_callback_message(callback), owner, int(result["version_id"]))
-    await callback.answer("Черновик добавлен")
 
 
 @router.callback_query(F.data == "menu:bots")
@@ -1002,7 +917,7 @@ async def receive_token(message: Message, owner: Owner, state: FSMContext) -> No
                         emoji_key="add",
                     )
                 ],
-                [owner_button(text="Создать из шаблона GRAMLY", callback_data=f"catalog:{managed.id}:welcome:0", emoji_key="copy")],
+                [catalog_button(managed.id)],
                 [owner_button(text="❌ Отмена", callback_data="cancel")],
                 _home_row(),
             ]
@@ -1177,7 +1092,7 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         inline_keyboard=[
             [owner_button(text="Обновить токен", callback_data=f"reconnect:{bot.id}", emoji_key="settings")],
             [owner_button(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
-            [owner_button(text="Шаблоны сообщений", callback_data=f"catalog:{bot.id}:welcome:0", emoji_key="copy")],
+            [catalog_button(bot.id)],
             [
                 owner_button(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
                 owner_button(text="📥 Заявки", callback_data=f"requests:{bot.id}"),
@@ -1804,8 +1719,8 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                owner_button(text="↑", callback_data=f"chain:move:{version_id}:{step_id}:-1"),
-                owner_button(text="↓", callback_data=f"chain:move:{version_id}:{step_id}:1"),
+                owner_button(text="Выше", callback_data=f"chain:move:{version_id}:{step_id}:-1", emoji_key="back"),
+                owner_button(text="Ниже", callback_data=f"chain:move:{version_id}:{step_id}:1", emoji_key="next"),
                 owner_button(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
             ],
             [
@@ -2267,10 +2182,10 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
     if pages > 1:
         rows.append(
             [
-                owner_button(text="←", callback_data=f"chain:assign:{version_id}:{max(0, page - 1)}"),
+                owner_button(text="Назад", callback_data=f"chain:assign:{version_id}:{max(0, page - 1)}", emoji_key="back"),
                 owner_button(text=f"{page + 1}/{pages}", callback_data="noop"),
                 owner_button(
-                    text="→",
+                    text="Далее",
                     callback_data=f"chain:assign:{version_id}:{min(pages - 1, page + 1)}",
                 ),
             ]
