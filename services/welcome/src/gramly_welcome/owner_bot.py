@@ -1721,7 +1721,7 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
             [
                 owner_button(text="Выше", callback_data=f"chain:move:{version_id}:{step_id}:-1", emoji_key="back"),
                 owner_button(text="Ниже", callback_data=f"chain:move:{version_id}:{step_id}:1", emoji_key="next"),
-                owner_button(text="⧉ Копия", callback_data=f"chain:copy:{version_id}:{step_id}"),
+                owner_button(text="Копия", callback_data=f"chain:copy:{version_id}:{step_id}", emoji_key="copy"),
             ],
             [
                 owner_button(
@@ -2163,7 +2163,8 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
     rows = [
         [
             owner_button(
-                text=("✅ Все каналы" if snapshot.flow.assignment_mode == "all" else "Все каналы"),
+                text=("Все каналы · выбрано" if snapshot.flow.assignment_mode == "all" else "Все каналы"),
+                emoji_key="success" if snapshot.flow.assignment_mode == "all" else "channel",
                 callback_data=f"chain:assign-all:{version_id}:{page}",
             )
         ]
@@ -2172,7 +2173,8 @@ async def send_assignment_screen(message: Message, owner: Owner, version_id: int
         [
             [
                 owner_button(
-                    text=f"{'✅ ' if channel.id in selected else ''}{channel.title}",
+                    text=f"{channel.title}{' · выбран' if channel.id in selected else ''}",
+                    emoji_key="success" if channel.id in selected else "channel",
                     callback_data=f"chain:assign-toggle:{version_id}:{channel.id}:{page}",
                 )
             ]
