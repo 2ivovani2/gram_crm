@@ -57,6 +57,19 @@ def keyboard(action: str = "menu:bots") -> InlineKeyboardMarkup:
 
 
 @pytest.mark.asyncio
+async def test_restored_screen_removes_legacy_unicode_icons() -> None:
+    client = bot()
+    session = OwnerUiSession(client, MemoryRedis(), 11, 11)
+    session.data.update(message_id=42, pages=["Меню"], markup={"inline_keyboard": [[
+        {"text": "↩️ Назад", "callback_data": "menu:bots", "icon_custom_emoji_id": "5974453749601537448"},
+    ]]})
+    await session.display_page(0)
+    button = client.edit_message_text.call_args.kwargs["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "Назад"
+    assert button.icon_custom_emoji_id == "5974453749601537448"
+
+
+@pytest.mark.asyncio
 async def test_anchor_survives_fsm_reset_and_new_worker() -> None:
     client, redis = bot(), MemoryRedis()
     first = OwnerUiSession(client, redis, 11, 11)

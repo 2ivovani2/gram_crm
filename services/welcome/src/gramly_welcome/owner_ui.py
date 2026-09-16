@@ -22,7 +22,14 @@ from aiogram import BaseMiddleware, Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, TelegramObject
 
-from .bot_ui import answer_with_ui_fallback, inline_button, plain_markup, plain_text, premium_text
+from .bot_ui import (
+    answer_with_ui_fallback,
+    button_label,
+    inline_button,
+    plain_markup,
+    plain_text,
+    premium_text,
+)
 from .owner_actions import stage_screen
 
 logger = logging.getLogger(__name__)
@@ -228,6 +235,8 @@ class OwnerUiSession:
         for row in rows:
             encoded = []
             for button in row:
+                # Old UI sessions can contain labels generated before this release.
+                button = button.model_copy(update={"text": button_label(button.text)})
                 if button.callback_data:
                     token = f"ui:{revision}:{len(actions)}"
                     actions[token] = button.callback_data

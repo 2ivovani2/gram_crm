@@ -76,6 +76,17 @@ _EMOJI_RE = re.compile(
     r"(?:\uFE0F|\u200D[\U0001F000-\U0001FAFF\u2600-\u27BF])*)\s*"
 )
 _TG_EMOJI_RE = re.compile(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>')
+_BUTTON_EMOJI_RE = re.compile(
+    r"[0-9#*]\ufe0f?\u20e3|"
+    r"[\U0001F000-\U0001FAFF\u2190-\u21ff\u2300-\u23ff\u2500-\u27ff"
+    r"\u2b00-\u2bff\u00a9\u00ae\u203c\u2049\u2122\u2139\u3030\u303d\u3297\u3299"
+    r"\ufe0e\ufe0f\u200d\u20e3\U000e0020-\U000e007f]"
+)
+
+
+def button_label(text: str) -> str:
+    """Owner UI decoration is exclusively icon_custom_emoji_id, never Unicode."""
+    return re.sub(r"\s{2,}", " ", _BUTTON_EMOJI_RE.sub("", text)).strip() or "Открыть"
 
 
 @dataclass(frozen=True)
@@ -154,7 +165,7 @@ def inline_button(
     theme: BotUiTheme | None = None,
 ) -> InlineKeyboardButton:
     emoji_key = emoji_key or infer_emoji_key(text, callback_data, url)
-    values: dict[str, Any] = {"text": _EMOJI_RE.sub("", text)}
+    values: dict[str, Any] = {"text": button_label(text)}
     if callback_data is not None:
         values["callback_data"] = callback_data
     if url is not None:
@@ -182,7 +193,7 @@ def plain_markup(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | 
             values = button.model_dump(exclude_none=True)
             values.pop("style", None)
             values.pop("icon_custom_emoji_id", None)
-            values["text"] = _EMOJI_RE.sub("", values["text"]).strip() or "Открыть"
+            values["text"] = button_label(values["text"])
             plain_row.append(InlineKeyboardButton(**values))
         rows.append(plain_row)
     return InlineKeyboardMarkup(inline_keyboard=rows)

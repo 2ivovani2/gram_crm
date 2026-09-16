@@ -52,7 +52,7 @@ from .models import (
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
-ADMIN_GROUPS = {"gramly-owners", "authentik Admins", "Business", "Product"}
+ADMIN_GROUPS = {"gramly-owners", "authentik Admins", "Business", "Product", "gramly-hello-admin"}
 
 
 class AdminIdentity(BaseModel):
