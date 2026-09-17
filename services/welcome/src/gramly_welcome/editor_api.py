@@ -96,12 +96,18 @@ async def owned_version(session: Any, owner_id: int, version_id: int, expected: 
 
 async def editor_document(flow_id: int, user: Any, session: Any) -> dict[str, Any]:
     # Serialize all draft writers while assembling the document.
-    await session.scalar(
+    owned_flow = await session.scalar(
         select(ContentFlow)
         .join(ManagedBot)
-        .where(ContentFlow.id == flow_id, ManagedBot.owner_id == user.auth.owner.id)
+        .where(
+            ContentFlow.id == flow_id,
+            ManagedBot.owner_id == user.auth.owner.id,
+            ManagedBot.is_active.is_(True),
+        )
         .with_for_update(of=ContentFlow)
     )
+    if owned_flow is None:
+        raise HTTPException(404, "Цепочка недоступна")
     await session.scalars(
         select(ContentFlowVersion)
         .where(ContentFlowVersion.flow_id == flow_id, ContentFlowVersion.status == "draft")

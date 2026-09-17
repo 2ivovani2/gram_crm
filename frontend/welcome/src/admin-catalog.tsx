@@ -391,7 +391,7 @@ function TemplateWizard({
           )}
           <button
             className="button ghost"
-            disabled={busy || uploading}
+            disabled={busy || uploading || (!!savedItem?.is_active && !dirty)}
             onClick={() => void save()}
           >
             Сохранить черновик шаблона

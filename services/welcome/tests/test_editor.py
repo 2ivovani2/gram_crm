@@ -230,6 +230,10 @@ async def test_foreign_media_and_arbitrary_keys_cannot_be_saved() -> None:
             session.add(EditorMedia(id=media_id, owner_id=other.auth.owner.id, descriptor={}))
             await session.commit()
             doc = await read_editor(ids.flow, user, session)
+        async with sessions() as session:
+            with pytest.raises(HTTPException) as forbidden_flow:
+                await read_editor(ids.flow, other, session)
+            assert forbidden_flow.value.status_code == 404
         for media in [{"media_id": str(media_id)}, {"storage_key": "catalog/foreign"}]:
             data = body(doc)
             data.steps[0].attachments = [media]

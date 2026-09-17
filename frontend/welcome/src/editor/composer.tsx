@@ -543,7 +543,7 @@ export function ChainComposer({
                                   Заменить
                                   <input
                                     type="file"
-                                    accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
+                                    accept=".jpg,.jpeg,.png,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
                                     onChange={(e) => {
                                       const f = e.target.files?.[0];
                                       e.target.value = "";
@@ -607,7 +607,7 @@ export function ChainComposer({
                           Добавить файл
                           <input
                             type="file"
-                            accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
+                            accept=".jpg,.jpeg,.png,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
                             onChange={(e) => {
                               const f = e.target.files?.[0];
                               e.target.value = "";
