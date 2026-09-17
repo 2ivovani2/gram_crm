@@ -5,6 +5,7 @@ import re
 import tempfile
 from collections.abc import AsyncIterator
 from typing import Any
+from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -41,6 +42,11 @@ def identify(data: bytes) -> tuple[str, str, set[str]]:
 @router.post("")
 async def upload_media(request: Request, _admin: MutationAdminDep, settings: SettingsDep,
                        media_type: str = "auto") -> dict[str, Any]:
+    return await store_media(request, settings, media_type)
+
+
+async def store_media(request: Request, settings: Any, media_type: str = "auto",
+                      prefix: str = "catalog/uploads") -> dict[str, Any]:
     limit = min(MAX_BYTES, settings.media_max_bytes)
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
@@ -61,7 +67,7 @@ async def upload_media(request: Request, _admin: MutationAdminDep, settings: Set
         selected = default if media_type == "auto" else media_type
         if selected not in kinds:
             raise HTTPException(422, "Тип сообщения не соответствует формату файла")
-        key = f"catalog/uploads/{digest.hexdigest()}.{ext}"
+        key = f"{prefix}/{digest.hexdigest()}.{ext}"
         handle.seek(0)
         storage = ObjectStorage(settings)
         try:
@@ -69,7 +75,8 @@ async def upload_media(request: Request, _admin: MutationAdminDep, settings: Set
                                     ExtraArgs={"ContentType": mime})
         except Exception:
             raise HTTPException(503, "Хранилище временно недоступно. Повторите загрузку.") from None
-    return {"media_type": selected, "storage_key": key, "original_name": f"media.{ext}",
+    original_name = re.sub(r"[\\/\x00-\x1f]", "_", unquote(request.headers.get("x-file-name", "")[:2048]))[:255]
+    return {"media_type": selected, "storage_key": key, "original_name": original_name or f"media.{ext}",
             "mime_type": mime, "size": size, "payload": {}}
 
 

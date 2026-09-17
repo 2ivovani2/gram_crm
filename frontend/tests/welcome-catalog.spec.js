@@ -9,6 +9,7 @@ const entries = Array.from({length: 6}, (_, index) => ({
 }));
 
 async function setup(page, { theme = "dark", failFirstInstall = false } = {}) {
+  await page.route("https://fonts.googleapis.com/**", route=>route.fulfill({contentType:"text/css",body:""}));
   await page.addInitScript(theme => {
     localStorage.setItem("gramly-hello-theme", theme);
     window.Telegram = {WebApp: {initData: "local-synthetic-session", ready(){}, expand(){}, openTelegramLink(){}}};
@@ -31,10 +32,10 @@ async function setup(page, { theme = "dark", failFirstInstall = false } = {}) {
       installs.push({key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON()});
       if (failFirstInstall && installs.length === 1) return route.fulfill({status: 503, json: {detail: "Временно недоступно"}});
       body = {flow_id: 100, version_id: 101, name: "Новый черновик", kind: "welcome"};
-    } else if (path === "/flows/100/draft") body = {version: {id: 101, first_delay_seconds: 0, timeline_seconds: 0, join_request_compatible: true, channels_missing_invite_rights: []}, steps: []};
+    } else if (path === "/editor/flows/100") body = {flow:{id:100,name:"Новый черновик",kind:"welcome",bot_id:8,bot_username:"selected_test",channel_ids:[]},version: {id: 101, edit_revision:1,button_style:null,first_delay_seconds:0}, steps:[{id:1,payload:{type:"text",text:"Welcome",entities:[]},attachments:[],keyboard:null,delay_after_seconds:0}],channels:[]};
     await route.fulfill({json: body});
   });
-  await page.goto(`${process.env.WELCOME_CATALOG_TEST_URL}/app.html?section=catalog&bot_id=8`);
+  await page.goto(`${process.env.WELCOME_CATALOG_TEST_URL}/app.html?section=catalog&bot_id=8`,{waitUntil:"domcontentloaded"});
   await expect(page.getByRole("heading", {name: "Шаблоны сообщений"})).toBeVisible();
   return installs;
 }
@@ -51,9 +52,9 @@ test("catalog preserves bot selection, pages five, retries with the same idempot
   await expect(page.getByRole("button", {name: "Посмотреть сообщения"})).toBeFocused();
   await page.getByRole("button", {name: "Посмотреть сообщения"}).click();
   await expect(page.getByText("Автор: Gramly · Конверсия: Нет данных")).toBeVisible();
-  await page.getByRole("button", {name: "Добавить цепочку", exact: true}).click();
+  await page.getByRole("button", {name: "Использовать шаблон", exact: true}).click();
   await expect(page.getByRole("alert")).toContainText("Временно недоступно");
-  await page.getByRole("button", {name: "Добавить цепочку", exact: true}).click();
+  await page.getByRole("button", {name: "Использовать шаблон", exact: true}).click();
   await expect(page.getByRole("heading", {name: "Новый черновик"})).toBeVisible();
   expect(installs).toHaveLength(2);
   expect(installs[0].key).toBe(installs[1].key);
@@ -66,28 +67,9 @@ for (const theme of ["dark", "light"]) {
       await page.setViewportSize({width, height: 932});
       await setup(page, {theme});
       await page.getByRole("button", {name: "Посмотреть сообщения"}).first().click();
-      await expect(page.getByRole("button", {name: "Добавить цепочку", exact: true})).toBeVisible();
+      await expect(page.getByRole("button", {name: "Использовать шаблон", exact: true})).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await expect(page.locator("html")).toHaveAttribute("data-gramly-theme", theme);
     });
   }
-}
-
-for (const theme of ["dark", "light"]) for (const width of [390, 1440]) {
-test(`draft color and support ${theme} ${width}`, async ({page}) => {
-  await page.setViewportSize({width,height:932});
-  await setup(page, {theme});
-  await page.getByRole("button", {name:"Посмотреть сообщения"}).first().click();
-  await page.getByRole("button", {name:"Добавить цепочку",exact:true}).click();
-  await page.getByLabel("Цвет всех кнопок этой цепочки").selectOption("success");
-  const saved=page.waitForRequest(request=>request.url().endsWith("/drafts/101/button-style")&&request.method()==="POST");
-  await page.getByRole("button", {name:"Сохранить цвет"}).click();
-  expect((await saved).postDataJSON()).toEqual({style:"success"});
-  if(process.env.CAPTURE_HELLO_FINISH)await page.screenshot({path:`data/ops/style-qa/color-${theme}-${width}.png`,fullPage:true});
-  await page.getByRole("button", {name:"Закрыть",exact:true}).click();
-  await page.getByRole("button", {name:"Ещё",exact:true}).click();
-  await expect(page.getByRole("link", {name:"Написать в поддержку"})).toHaveAttribute("href","https://t.me/gramlymanager");
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
-  if(process.env.CAPTURE_HELLO_FINISH)await page.screenshot({path:`data/ops/style-qa/support-${theme}-${width}.png`,fullPage:true,animations:"disabled"});
-});
 }

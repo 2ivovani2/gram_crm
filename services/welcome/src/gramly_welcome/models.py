@@ -685,6 +685,7 @@ class ContentFlowVersion(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     flow_id: Mapped[int] = mapped_column(ForeignKey("content_flow.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer)
+    edit_revision: Mapped[int] = mapped_column(BigInteger, server_default=text("1"), default=1)
     status: Mapped[str] = mapped_column(String(16), index=True)
     author_telegram_id: Mapped[int] = mapped_column(BigInteger)
     first_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
@@ -713,6 +714,14 @@ class ContentStep(Base):
     position: Mapped[int] = mapped_column(Integer)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     delay_after_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EditorMedia(Base):
+    __tablename__ = "editor_media"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    descriptor: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

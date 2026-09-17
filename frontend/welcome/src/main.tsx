@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError, api, setCsrfToken } from "./api";
-import { AdminApp } from "./admin";
+const AdminApp=lazy(()=>import("./admin").then(m=>({default:m.AdminApp})));
+const FlowEditor=lazy(()=>import("./editor/flow-editor").then(m=>({default:m.FlowEditor})));
 import { MessageCatalog } from "./catalog";
 import { loadTelegramSdk } from "./telegram-sdk";
 import "./styles.css";
@@ -15,6 +16,8 @@ declare global {
         ready(): void;
         expand(): void;
         close(): void;
+        enableClosingConfirmation?(): void;
+        disableClosingConfirmation?(): void;
         requestWriteAccess?(callback: (granted: boolean) => void): void;
         setHeaderColor?(color: string): void;
         setBackgroundColor?(color: string): void;
@@ -37,7 +40,6 @@ type Flow = {
   id: number; name: string; kind: string; assignment_mode: string;
   versions: Array<{ id: number; number: number; status: string; first_delay_seconds: number }>;
 };
-type Step = { id: number; position: number; payload: Record<string, unknown>; delay_after_seconds: number; attachments: Array<{id:number;type:string;name:string}> };
 type Plan = { slug: string; name: string; prices: { rub: string | null; xtr: number | null } };
 type Checkout = { payment_id: number; invoice_url: string; status: string; expires_at: string };
 type SubscriptionGate = { code: string; title: string; url: string; temporarily_unavailable?: boolean };
@@ -56,34 +58,6 @@ class AppErrorBoundary extends React.Component<
     if (!this.state.failed) return this.props.children;
     return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОШИБКА ИНТЕРФЕЙСА</span><h1>Кабинет не загрузился.</h1><p>Ваши настройки сохранены. Перезапустите экран — обычно этого достаточно.</p><button className="button acid" onClick={()=>location.reload()}>Повторить</button></div></main>;
   }
-}
-
-const MAX_DELAY_SECONDS = 180 * 24 * 60 * 60;
-function parseDelay(value: FormDataEntryValue | null): number {
-  const parts = String(value ?? "").trim().split(":");
-  if (!parts.length || parts.length > 4 || parts.some(part => !/^\s*\d+\s*$/.test(part))) throw new Error("Введите задержку в формате ДД:ЧЧ:ММ:СС");
-  const multipliers = [86400, 3600, 60, 1].slice(4 - parts.length);
-  const seconds = parts.reduce((total, part, index) => total + Number(part.trim()) * multipliers[index], 0);
-  if (!Number.isSafeInteger(seconds) || seconds > MAX_DELAY_SECONDS) throw new Error("Максимальная задержка — 180 дней");
-  return seconds;
-}
-function formatDelay(seconds: number): string {
-  const days=Math.floor(seconds/86400); let remainder=seconds%86400;
-  const hours=Math.floor(remainder/3600); remainder%=3600;
-  const minutes=Math.floor(remainder/60); const secs=remainder%60;
-  return [days,hours,minutes,secs].map(value=>String(value).padStart(2,"0")).join(":");
-}
-
-function stepText(step: Step): string {
-  const direct = step.payload.text || step.payload.caption;
-  if (typeof direct === "string") return direct;
-  const sequence = step.payload.sequence;
-  if (Array.isArray(sequence)) {
-    const message = sequence.find(item => typeof item === "object" && item !== null && (item as {kind?:unknown}).kind === "message") as {payload?:{text?:unknown;caption?:unknown}} | undefined;
-    const nested = message?.payload?.text || message?.payload?.caption;
-    if (typeof nested === "string") return nested;
-  }
-  return "Медиа-сообщение";
 }
 
 function formatCountdown(expiresAt: string, now: number): string {
@@ -141,76 +115,6 @@ function EmptyState({ title, text, action, onAction }: { title: string; text: st
   return <div className="empty-state wet-panel"><span className="empty-icon"><Icon name="empty"/></span><div><h3>{title}</h3><p>{text}</p></div>{action&&onAction&&<button className="button acid" onClick={onAction}>{action}<Icon name="arrow"/></button>}</div>;
 }
 
-function FlowEditor({ flow, onClose }: { flow: Flow; onClose(): void }) {
-  const [data, setData] = useState<{version:{id:number;button_style:string|null;first_delay_seconds:number;timeline_seconds:number;join_request_compatible:boolean;join_request_strategy:"direct"|"activation_required";join_request_explanation:string;auto_approve:boolean;channels_missing_invite_rights:string[]};steps:Step[]} | null>(null);
-  const [error, setError] = useState("");
-  const [dragged, setDragged] = useState<number | null>(null);
-  const [editing, setEditing] = useState<number | null>(null);
-  const load = () => api<NonNullable<typeof data>>(`/flows/${flow.id}/draft`).then(setData).catch((e) => setError(e.message));
-  useEffect(() => { void load(); }, [flow.id]);
-
-  const reorder = async (ids: number[]) => {
-    if (!data) return;
-    const optimistic = ids.map((id, position) => ({...data.steps.find((item) => item.id === id)!, position}));
-    setData({...data, steps: optimistic});
-    try { await api(`/drafts/${data.version.id}/reorder`, {method:"POST", body:JSON.stringify({step_ids:ids})}); }
-    catch (e) { setError((e as Error).message); void load(); }
-  };
-  const move = (index: number, delta: number) => {
-    if (!data) return; const next = [...data.steps]; const target = index + delta;
-    if (target < 0 || target >= next.length) return;
-    [next[index], next[target]] = [next[target], next[index]]; void reorder(next.map((item) => item.id));
-  };
-  const add = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!data) return;
-    const form = event.currentTarget; const values = new FormData(form);
-    try {
-      await api(`/drafts/${data.version.id}/steps`, {method:"POST", body:JSON.stringify({text:values.get("text"),delay_after_seconds:parseDelay(values.get("delay"))})});
-      form.reset(); await load();
-    } catch (e) { setError((e as Error).message); }
-  };
-  const save = async (event: React.FormEvent<HTMLFormElement>, step: Step) => {
-    event.preventDefault(); const values = new FormData(event.currentTarget);
-    try {
-      await Promise.all([
-        api(`/steps/${step.id}/content`, {method:"POST", body:JSON.stringify({text:values.get("text")})}),
-        api(`/steps/${step.id}/delay`, {method:"POST", body:JSON.stringify({delay_seconds:parseDelay(values.get("delay"))})}),
-      ]);
-      setEditing(null); await load();
-    } catch (e) { setError((e as Error).message); }
-  };
-  const copy = async (stepId: number) => { try { await api(`/steps/${stepId}/copy`, {method:"POST"}); await load(); } catch(e) { setError((e as Error).message); } };
-  const remove = async (stepId: number) => { if (!confirm("Удалить шаг из черновика?")) return; try { await api(`/steps/${stepId}`, {method:"DELETE"}); await load(); } catch(e) { setError((e as Error).message); } };
-  const publish = async () => {
-    if (!data || !confirm("Опубликовать эту версию цепочки?")) return;
-    try { await api(`/drafts/${data.version.id}/publish`, {method:"POST"}); onClose(); }
-    catch (e) { setError((e as Error).message); }
-  };
-  const saveFirstDelay = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!data) return;
-    try { const value=parseDelay(new FormData(event.currentTarget).get("first_delay")); await api(`/drafts/${data.version.id}/first-delay`,{method:"POST",body:JSON.stringify({delay_seconds:value})}); await load(); }
-    catch(e){setError((e as Error).message)}
-  };
-  const saveButtonStyle = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!data) return;
-    try { await api(`/drafts/${data.version.id}/button-style`, {method:"POST", body:JSON.stringify({style:new FormData(event.currentTarget).get("button_style")})}); await load(); }
-    catch(e){setError((e as Error).message)}
-  };
-  return <section className="editor">
-    <header><div><span className="eyebrow">{flow.kind === "farewell" ? "FAREWELL" : "WELCOME"}</span><h2>{flow.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Закрыть">×</button></header>
-    {error && <ErrorBox message={error}/>} {!data ? <div className="skeleton">Загружаем черновик…</div> : <>
-      <form className="wet-panel chain-color-form" onSubmit={saveButtonStyle}><label>Цвет всех кнопок этой цепочки<select name="button_style" key={data.version.button_style} defaultValue={data.version.button_style||""} required><option value="" disabled>Индивидуальные цвета</option><option value="default">Стандартный</option><option value="primary">Синий</option><option value="success">Зелёный</option><option value="danger">Красный</option></select></label><p>Другие цепочки не изменятся. Цвет вступит в силу после публикации этой версии.</p><button className="button ghost">Сохранить цвет</button></form>
-      <div className="editor-meta"><span>Версия {data.version.id}</span><form onSubmit={saveFirstDelay}><label>Старт, ДД:ЧЧ:ММ:СС <input name="first_delay" defaultValue={formatDelay(data.version.first_delay_seconds)} inputMode="numeric"/></label><button className="button ghost">Сохранить</button></form><span>Заявка: {formatDelay(data.version.timeline_seconds)} / 00:00:04:00</span><button className="button acid" onClick={publish}>Опубликовать</button></div>
-      <div className={data.version.join_request_compatible?"success":"error"} role="status"><strong>{data.version.join_request_compatible?"✅ До 4 минут — отправим до принятия заявки":"🔐 Больше 4 минут — потребуется разрешение пользователя"}</strong><span>{data.version.join_request_explanation}{!data.version.join_request_compatible&&` Служебное сообщение не является шагом цепочки. Автопринятие ${data.version.auto_approve?"включено: без подтверждения заявка будет принята у безопасной границы Telegram, но цепочка не запустится":"выключено: заявка останется ожидающей, а ссылка будет действовать 24 часа"}.`}</span>{!data.version.join_request_compatible&&<span>🧾 Пользователь увидит сообщение о полученной заявке и кнопки «Продолжить и вступить» / «Открыть бота».</span>}{!data.version.join_request_compatible&&data.version.auto_approve&&data.version.channels_missing_invite_rights.length>0&&<span>⚠️ Боту не хватает права приглашать пользователей: {data.version.channels_missing_invite_rights.join(", ")}.</span>}</div>
-      {!data.steps.length&&<EmptyState title="В цепочке пока нет шагов" text="Добавьте первое сообщение ниже — оно станет началом приветственного сценария."/>}<div className="steps">{data.steps.map((step,index)=><article key={step.id} draggable={editing!==step.id} onDragStart={()=>setDragged(step.id)} onDragOver={(event)=>event.preventDefault()} onDrop={()=>{if(dragged && dragged!==step.id){const ids=data.steps.map(i=>i.id);const from=ids.indexOf(dragged);ids.splice(from,1);ids.splice(index,0,dragged);void reorder(ids)}}}>
-        <div className="step-index">{String(index+1).padStart(2,"0")}</div>
-        {editing===step.id ? <form className="step-edit" onSubmit={event=>save(event,step)}><textarea name="text" defaultValue={stepText(step)==="Медиа-сообщение"?"":stepText(step)} required/><label>Пауза, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue={formatDelay(step.delay_after_seconds)} inputMode="numeric"/></label><div><button className="button acid">Сохранить</button><button type="button" className="button ghost" onClick={()=>setEditing(null)}>Отмена</button></div></form> : <div className="step-body"><strong>{stepText(step)}</strong><span>{step.attachments.length ? `${step.attachments.length} вложений` : "Без вложений"} · задержка {formatDelay(step.delay_after_seconds)}</span></div>}
-        <div className="step-actions"><button onClick={()=>move(index,-1)} aria-label="Выше">↑</button><button onClick={()=>move(index,1)} aria-label="Ниже">↓</button><button onClick={()=>setEditing(step.id)} aria-label="Изменить">✎</button><button onClick={()=>void copy(step.id)} aria-label="Копировать">⧉</button><button onClick={()=>void remove(step.id)} aria-label="Удалить">×</button><span className="drag">⋮⋮</span></div>
-      </article>)}</div>
-      <form className="step-form" onSubmit={add}><span className="eyebrow">НОВЫЙ ШАГ</span><textarea name="text" placeholder="Текст сообщения. Необязательно добавьте {name} — перед отправкой подставим имя участника." required/><label>Пауза после шага, ДД:ЧЧ:ММ:СС<input name="delay" defaultValue="00:00:00:01" inputMode="numeric"/></label><button className="button acid">Добавить в цепочку</button></form>
-    </>}
-  </section>;
-}
 
 function MiniApp() {
   const tg = window.Telegram?.WebApp;
@@ -303,15 +207,21 @@ function MiniApp() {
       {tab==="Ещё"&&<section className="wet-panel support-panel"><h2>Поддержка и обратная связь</h2><p>Расскажите: что нажали → что ожидали → что произошло. Приложите скриншот или видео, username бота и примерное время ошибки.</p><p>Не отправляйте токены, пароли и коды входа.</p><a className="button ghost" href="https://t.me/gramlymanager" onClick={event=>{if(tg?.openTelegramLink){event.preventDefault();tg.openTelegramLink("https://t.me/gramlymanager");}}}>Написать в поддержку</a></section>}
     </main>
     <nav className="bottom-nav" aria-label="Основные разделы">{navigation.map(item=>{const active=tab===item.tab||(item.tab==="Ещё"&&(tab==="Подписка"||tab==="Партнёры"));return <button className={active?"active":""} aria-current={active?"page":undefined} onClick={()=>openTab(item.tab)} key={item.tab}><Icon name={item.icon}/><span>{item.label}</span></button>})}</nav>
-    {editor&&<div className="modal"><FlowEditor flow={editor} onClose={()=>{setEditor(null);if(activeBot)api<{flows:Flow[]}>(`/bots/${activeBot}/flows`).then(r=>setFlows(r.flows))}}/></div>}
+    {editor&&<FlowDialog flow={editor} onClose={()=>{setEditor(null);if(activeBot)api<{flows:Flow[]}>(`/bots/${activeBot}/flows`).then(r=>setFlows(r.flows))}}/>}
   </div>;
+}
+
+function FlowDialog({flow,onClose}:{flow:Flow;onClose:()=>void}){
+  const dialog=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{const node=dialog.current;node?.showModal();return()=>node?.close()},[]);
+  return <dialog className="modal" ref={dialog} aria-label="Редактор цепочки" onCancel={event=>{if(event.target!==event.currentTarget)return;event.preventDefault();const close=dialog.current?.querySelector<HTMLButtonElement>('.workspace-heading>button');if(close)close.click();else onClose()}}><Suspense fallback={<p role="status">Загружаем редактор…</p>}><FlowEditor flow={flow} onClose={onClose}/></Suspense></dialog>;
 }
 
 const isAdmin = document.title.includes("Control");
 const rootElement=document.getElementById("root");
 if(rootElement){
   const root=createRoot(rootElement);
-  const render=()=>root.render(<React.StrictMode><AppErrorBoundary>{isAdmin?<AdminApp/>:<MiniApp/>}</AppErrorBoundary></React.StrictMode>);
+  const render=()=>root.render(<React.StrictMode><AppErrorBoundary>{isAdmin?<Suspense fallback={<p role="status">Загружаем админку…</p>}><AdminApp/></Suspense>:<MiniApp/>}</AppErrorBoundary></React.StrictMode>);
   if(isAdmin)render();
   else void loadTelegramSdk().then(render).catch(()=>root.render(<main className="outside"><Logo/><div className="outside-copy" role="alert"><h1>Telegram не отвечает.</h1><p>Не удалось загрузить подключение к Telegram. Проверьте соединение и повторите запуск. Ваши настройки сохранены.</p><button className="button acid" onClick={()=>location.reload()}>Повторить</button></div></main>));
 }

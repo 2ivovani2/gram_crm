@@ -97,6 +97,19 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npx tsc --noEmit -p frontend/welcome/tsconfig.json
+      - name: Install Chromium for Welcome editor regression tests
+        run: npx playwright install --with-deps chromium
+      - name: Welcome catalog and editor browser tests
+        run: |
+          npm run dev:welcome -- --host 127.0.0.1 --port 5187 > /tmp/welcome-vite.log 2>&1 &
+          WELCOME_VITE_PID=$!
+          trap 'kill "$WELCOME_VITE_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:5187/app.html > /dev/null; then break; fi
+            sleep 1
+          done
+          WELCOME_CATALOG_TEST_URL=http://127.0.0.1:5187 npx playwright test frontend/tests/welcome-catalog.spec.js frontend/tests/welcome-editor.spec.js frontend/tests/welcome-admin-catalog.spec.js --project=chromium --workers=2
       - run: npm audit --audit-level=high
 
   manifests:

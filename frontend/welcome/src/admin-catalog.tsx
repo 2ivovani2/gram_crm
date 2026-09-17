@@ -1,62 +1,622 @@
-import React, {useEffect,useRef,useState} from "react";
-import {adminApi,requestId} from "./api";
+import React, { useEffect, useRef, useState } from "react";
+import { adminApi, requestId } from "./api";
+import { ChainComposer, ChainPreview, validateChain } from "./editor/composer";
+import { ExitDialog } from "./editor/exit-dialog";
+import type { LeaveGuard } from "./editor/exit-dialog";
+import { blankStep, hasPremium } from "./editor/types";
+import type { Chain } from "./editor/types";
 
-type Step={payload:Record<string,any>;attachments:any[];keyboard:any;delay_after_seconds:number};
-type Entry={slug:string;revision:number;kind:"welcome"|"farewell";title:string;author:string;description:string;tags:string[];screenshots:string[];conversion:string|null;requires_business:boolean;spec:{first_delay_seconds:number;steps:Step[]}};
-type Item=Entry&{id:number;is_active:boolean};
-const blankStep=():Step=>({payload:{type:"text",text:""},attachments:[],keyboard:null,delay_after_seconds:0});
-const fresh=():Entry=>({slug:`template-${requestId()}`,revision:1,kind:"welcome",title:"",author:"Gramly",description:"",tags:[],screenshots:[],conversion:null,requires_business:false,spec:{first_delay_seconds:0,steps:[blankStep()]}});
-function delay(value:number){const days=Math.floor(value/86400),hours=Math.floor(value%86400/3600),minutes=Math.floor(value%3600/60);return [days,hours,minutes,value%60].map(v=>String(v).padStart(2,"0")).join(":")}
-function seconds(value:FormDataEntryValue|null){const text=String(value||"0").replace(/\s/g,"");if(!/^\d+(?::\d+){0,3}$/.test(text))throw new Error("Задержка: используйте ДД:ЧЧ:ММ:СС.");const parts=text.split(":").reverse();const sum=parts.reduce((s,v,i)=>s+Number(v)*[1,60,3600,86400][i],0);if(!Number.isSafeInteger(sum)||sum>15552000)throw new Error("Максимальная задержка — 180 дней.");return sum}
-function buttonText(step:Step){return step.keyboard?.rows?.map((row:any[])=>row.map(b=>`${b.text} - ${b.value}`).join(" | ")).join("\n")||""}
-function keyboard(raw:string){if(!raw.trim())return null;return {kind:"inline",rows:raw.split("\n").map(row=>row.split("|").map(button=>{const at=button.indexOf(" - ");if(at<1)throw new Error("Кнопки: Название - https://example.com. Новый ряд — с новой строки.");return {text:button.slice(0,at).trim(),action_type:"url",value:button.slice(at+3).trim(),style:"default"}}))}}
-
-export function AdminCatalog(){
-  const [items,setItems]=useState<Item[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(1);
-  const [query,setQuery]=useState(""),[kind,setKind]=useState(""),[state,setState]=useState("all");
-  const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
-  const [draft,setDraft]=useState<Entry|null>(null),[expected,setExpected]=useState(0);
-  const updateAttachments=(index:number,attachments:any[])=>setDraft(current=>current?{...current,screenshots:[],spec:{...current.spec,steps:current.spec.steps.map((step,i)=>i===index?{...step,attachments}:step)}}:current);
-  const upload=async(index:number,file:File)=>{if(!draft)return;setError("");if(draft.spec.steps.reduce((n,s)=>n+s.attachments.length,0)>=5){setError("В цепочке допускается до 5 файлов.");return}if(file.size>20*1024*1024){setError("Максимальный размер файла — 20 МБ.");return}setBusy(true);try{const attachment=await adminApi<any>("/catalog-media",{method:"POST",headers:{"Content-Type":"application/octet-stream"},body:file});updateAttachments(index,[...draft.spec.steps[index].attachments,attachment])}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
-  const requestVersion=useRef(0),filters=useRef({q:query,kind,state,page:String(page)});
-  filters.current={q:query,kind,state,page:String(page)};
-  const load=async()=>{const version=++requestVersion.current;setLoading(true);try{const result=await adminApi<{items:Item[];total:number}>(`/catalog?${new URLSearchParams(filters.current)}`);if(version!==requestVersion.current)return;setItems(result.items);setTotal(result.total);setError("")}catch(e){if(version===requestVersion.current)setError((e as Error).message)}finally{if(version===requestVersion.current)setLoading(false)}};
-  useEffect(()=>{void load();return()=>{requestVersion.current++}},[query,kind,state,page]);
-  const edit=(item:Item)=>{const {id,is_active,...entry}=item;setExpected(entry.revision);setDraft({...JSON.parse(JSON.stringify(entry)),revision:entry.revision+1});setError("");setNotice("")};
-  const save=async(event:React.FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!draft)return;setError("");setBusy(true);try{
-    const fields=new FormData(event.currentTarget);
-    const entry:Entry={...draft,title:String(fields.get("title")).trim(),author:String(fields.get("author")).trim(),description:String(fields.get("description")).trim(),tags:String(fields.get("tags")||"").split(",").map(s=>s.trim()).filter(Boolean),requires_business:fields.has("business"),spec:{first_delay_seconds:seconds(fields.get("first_delay")),steps:draft.spec.steps.map((step,index)=>{
-      const text=String(fields.get(`text-${index}`)||"");const previous=step.payload.text||step.payload.caption||"";
-      const payload=text===previous?step.payload:{...step.payload,[step.payload.caption!==undefined?"caption":"text"]:text,entities:[],caption_entities:[]};
-      return {...step,payload,delay_after_seconds:seconds(fields.get(`delay-${index}`)),keyboard:buttonText(step)===String(fields.get(`buttons-${index}`)||"")?step.keyboard:keyboard(String(fields.get(`buttons-${index}`)||""))};})}};
-    if(JSON.stringify(entry.spec)!==JSON.stringify(draft.spec))entry.screenshots=[];
-    await adminApi("/catalog",{method:"POST",body:JSON.stringify({entry,expected_revision:expected})});setDraft(null);setNotice("Новая версия сохранена и скрыта. Проверьте её и нажмите «Опубликовать».");await load();
-  }catch(e){setError((e as Error).message)}finally{setBusy(false)}};
-  const publish=async(item:Item,archive=false)=>{if(!confirm(archive?"Снять эту версию с публикации? Клиентские цепочки сохранятся.":"Опубликовать эту версию для клиентов? Предыдущая версия будет скрыта."))return;setBusy(true);setError("");try{await adminApi(`/catalog/${item.id}${archive?"":"/publish"}`,{method:archive?"DELETE":"POST"});setNotice(archive?"Шаблон скрыт из каталога. Клиентские копии сохранены.":"Шаблон опубликован.");await load()}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
-  if(draft)return <form className="catalog-admin-form" onSubmit={save}>
-    <button type="button" className="button ghost" disabled={busy} onClick={()=>setDraft(null)}>Отмена · к каталогу</button><h2>{expected?"Новая версия шаблона":"Добавить шаблон"}</h2>
-    <p>Сохранение не меняет опубликованную версию и клиентские цепочки. Публикация выполняется отдельно.</p>{error&&<p role="alert">{error}</p>}
-    <label>Название<input name="title" required maxLength={128} defaultValue={draft.title}/></label>
-    <label>Тип<select value={draft.kind} disabled={expected>0} onChange={e=>setDraft({...draft,kind:e.target.value as Entry["kind"]})}><option value="welcome">Приветствие</option><option value="farewell">Прощание</option></select></label>
-    <label>Автор<input name="author" required maxLength={80} defaultValue={draft.author}/></label>
-    <label>Описание<textarea name="description" required maxLength={4000} defaultValue={draft.description}/></label>
-    <label>Теги через запятую<input name="tags" defaultValue={draft.tags.join(", ")}/></label>
-    <label><input type="checkbox" name="business" defaultChecked={draft.requires_business}/> Только Business</label>
-    <label>Первая задержка · ДД:ЧЧ:ММ:СС<input name="first_delay" defaultValue={delay(draft.spec.first_delay_seconds)}/></label>
-    {draft.spec.steps.map((step,index)=><fieldset key={index}><legend>Сообщение {index+1}</legend><label>Текст · можно использовать {'{name}'}<textarea name={`text-${index}`} required={!step.attachments.length} defaultValue={step.payload.text||step.payload.caption||""}/></label><small>При изменении текста его Telegram-форматирование сбрасывается. Неизменённые entities и вложения сохраняются.</small>{step.attachments.length>0&&<p>Сохранено вложений: {step.attachments.length}. Этот редактор сохраняет их без замены.</p>}<label>URL-кнопки<textarea name={`buttons-${index}`} defaultValue={buttonText(step)} placeholder="Открыть сайт - https://example.com"/></label><small>До 3 кнопок через | в строке, до 15 строк. Ссылки должны быть настоящими.</small><label>Задержка после сообщения · ДД:ЧЧ:ММ:СС<input name={`delay-${index}`} defaultValue={delay(step.delay_after_seconds)}/></label></fieldset>)}
-    <h3>Медиа сообщений</h3><p>До 5 файлов на цепочку, до 20 МБ каждый. JPG/PNG — фото, WEBP — стикер, GIF — анимация, MP4 — видео, MP3 — аудио, OGG — голосовое, PDF/ZIP — документ. Удаление убирает вложение только из новой версии.</p>
-    {draft.spec.steps.map((step,index)=><fieldset key={`media-${index}`}><legend>Вложения сообщения {index+1}</legend>{step.attachments.map((attachment,position)=>{const preview=attachment.storage_key.startsWith("catalog/uploads/")?`/api/admin/v1/catalog-media/${attachment.storage_key.split("/").pop()}`:null;return <div className="catalog-media" key={`${attachment.storage_key}-${position}`}>
-      {preview&&attachment.mime_type.startsWith("image/")&&<img className="catalog-media-preview" src={preview} alt={`Вложение ${position+1}`}/>}
-      {preview&&attachment.mime_type.startsWith("video/")&&<video className="catalog-media-preview" src={preview} controls preload="metadata"/>}
-      {preview&&attachment.mime_type.startsWith("audio/")&&<audio className="catalog-media-preview" src={preview} controls preload="metadata"/>}
-      <p>{position+1}. {attachment.original_name} · {Math.ceil(attachment.size/1024)} КБ · {attachment.media_type}</p>
-      {preview&&attachment.media_type==="document"&&<a href={preview}>Скачать для проверки</a>}
-      <div className="catalog-admin-actions"><button className="button ghost" type="button" disabled={busy||position===0} onClick={()=>{const list=[...step.attachments];[list[position-1],list[position]]=[list[position],list[position-1]];updateAttachments(index,list)}}>Выше</button><button className="button ghost" type="button" disabled={busy||position===step.attachments.length-1} onClick={()=>{const list=[...step.attachments];[list[position+1],list[position]]=[list[position],list[position+1]];updateAttachments(index,list)}}>Ниже</button><button className="button ghost" type="button" disabled={busy} onClick={()=>updateAttachments(index,step.attachments.filter((_,i)=>i!==position))}>Убрать вложение</button></div>
-    </div>})}<label>Добавить файл к сообщению {index+1}<input type="file" disabled={busy} accept=".jpg,.jpeg,.png,.webp,.gif,.mp4,.mp3,.ogg,.pdf,.zip" onChange={e=>{const file=e.target.files?.[0];e.target.value="";if(file)void upload(index,file)}}/></label>{busy&&<p role="status">Дождитесь завершения операции…</p>}</fieldset>)}
-    <div className="catalog-admin-actions"><button type="button" className="button ghost" disabled={busy||draft.spec.steps.length>=5} onClick={()=>setDraft({...draft,spec:{...draft.spec,steps:[...draft.spec.steps,blankStep()]}})}>Добавить сообщение</button><button type="button" className="button ghost" disabled={busy||draft.spec.steps.length<=1} onClick={()=>setDraft({...draft,spec:{...draft.spec,steps:draft.spec.steps.slice(0,-1)}})}>Убрать последнее сообщение</button><button className="button acid" disabled={busy}>{busy?"Сохраняем…":"Сохранить скрытую версию"}</button></div>
-  </form>;
-  return <section className="catalog-admin"><div className="catalog-admin-actions"><button className="button acid" onClick={()=>{setExpected(0);setDraft(fresh());setError("")}}>Добавить шаблон</button><button className="button ghost" onClick={()=>void load()}>Обновить</button></div>
-    <div className="catalog-admin-filters"><label>Поиск<input value={query} onChange={e=>{setQuery(e.target.value);setPage(1)}} placeholder="Название или ключ"/></label><label>Тип<select value={kind} onChange={e=>{setKind(e.target.value);setPage(1)}}><option value="">Все</option><option value="welcome">Приветствия</option><option value="farewell">Прощания</option></select></label><label>Публикация<select value={state} onChange={e=>{setState(e.target.value);setPage(1)}}><option value="all">Все версии</option><option value="published">Опубликованные</option><option value="hidden">Скрытые</option></select></label></div>
-    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}{loading?<p>Загружаем каталог…</p>:!items.length?<p>Шаблонов по выбранным фильтрам нет. Измените фильтры или добавьте первый шаблон.</p>:items.map(item=><article className="catalog-admin-row" key={item.id}><div><h3>{item.title}</h3><p>{item.kind==="welcome"?"Приветствие":"Прощание"} · версия {item.revision} · {item.is_active?"Опубликован":"Скрыт"} · {item.spec.steps.length} сообщ.</p><p>{item.description}</p></div><div className="catalog-admin-actions"><button className="button ghost" disabled={busy} onClick={()=>edit(item)}>Редактировать новую версию</button>{item.is_active?<button className="button ghost" disabled={busy} onClick={()=>void publish(item,true)}>Убрать из каталога</button>:<button className="button acid" disabled={busy} onClick={()=>void publish(item)}>Опубликовать</button>}</div></article>)}
-    <div className="catalog-admin-actions"><button className="button ghost" disabled={page===1||loading} onClick={()=>setPage(page-1)}>Назад</button><span>Страница {page} · всего {total}</span><button className="button ghost" disabled={page*20>=total||loading} onClick={()=>setPage(page+1)}>Далее</button></div></section>;
+type Entry = {
+  slug: string;
+  revision: number;
+  kind: "welcome" | "farewell";
+  title: string;
+  author: string;
+  description: string;
+  tags: string[];
+  screenshots: string[];
+  conversion: string | null;
+  requires_business: boolean;
+  spec: Chain;
+};
+type Item = Entry & { id: number; is_active: boolean };
+const fresh = (): Entry => ({
+  slug: `template-${requestId()}`,
+  revision: 1,
+  kind: "welcome",
+  title: "",
+  author: "Gramly",
+  description: "",
+  tags: [],
+  screenshots: [],
+  conversion: null,
+  requires_business: false,
+  spec: { first_delay_seconds: 0, steps: [blankStep()] },
+});
+const cleanEntry = (entry: Entry) => ({
+  ...entry,
+  tags: entry.tags.map((t) => t.trim()).filter(Boolean),
+  spec: {
+    ...entry.spec,
+    steps: entry.spec.steps.map(
+      ({ localId, id, editor_read_only, ...s }, i, steps) => ({
+        ...s,
+        delay_after_seconds: i === steps.length - 1 ? 0 : s.delay_after_seconds,
+        attachments: s.attachments.map(
+          ({ preview_url, media_id, id, ...m }) => m,
+        ),
+      }),
+    ),
+  },
+});
+function TemplateWizard({
+  initial,
+  expectedRevision,
+  onBack,
+  onChanged,
+  onLeaveGuard,
+}: {
+  onLeaveGuard?: (guard: LeaveGuard | null) => void;
+  initial: Entry;
+  expectedRevision: number;
+  onBack: () => void;
+  onChanged: () => void;
+}) {
+  const [entry, setEntry] = useState(initial),
+    [expected, setExpected] = useState(expectedRevision),
+    [stage, setStage] = useState(0),
+    [busy, setBusy] = useState(false),
+    [uploading, setUploading] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [savedItem, setSavedItem] = useState<Item | null>(null),
+    [exit, setExit] = useState(false);
+  const baseline = useRef(JSON.stringify(initial));
+  const dirty = JSON.stringify(entry) !== baseline.current;
+  useEffect(() => {
+    if (!dirty) return;
+    const f = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", f);
+    return () => window.removeEventListener("beforeunload", f);
+  }, [dirty]);
+  const leave = useRef(onBack);
+  useEffect(() => {
+    onLeaveGuard?.((next) => {
+      if (busy || uploading) return;
+      if (dirty) {
+        leave.current = next;
+        setExit(true);
+      } else next();
+    });
+    return () => onLeaveGuard?.(null);
+  }, [dirty, busy, uploading, onLeaveGuard]);
+  useEffect(() => {
+    if (error && stage === 0)
+      document
+        .querySelector<HTMLElement>('.template-workspace [aria-invalid="true"]')
+        ?.focus();
+  }, [error, stage]);
+  const metadataError = () =>
+    !entry.title.trim()
+      ? "Укажите название шаблона."
+      : !entry.description.trim()
+        ? "Добавьте описание: кому и для чего подходит шаблон."
+        : !entry.author.trim()
+          ? "Укажите автора."
+          : null;
+  const go = (next: number) => {
+    setError("");
+    if (next > 0) {
+      const problem = metadataError();
+      if (problem) {
+        setError(problem);
+        setStage(0);
+        return;
+      }
+    }
+    if (next > 1) {
+      const problem = validateChain(entry.spec);
+      if (problem) {
+        setError(problem);
+        setStage(1);
+        return;
+      }
+    }
+    setStage(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const save = async (publish = false): Promise<boolean> => {
+    const problem = metadataError() || validateChain(entry.spec);
+    if (problem) {
+      setError(problem);
+      setStage(metadataError() ? 0 : 1);
+      return false;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      let item = savedItem;
+      if (!item || dirty) {
+        const cleaned = cleanEntry({ ...entry, revision: expected + 1 });
+        item = await adminApi<Item>("/catalog", {
+          method: "POST",
+          body: JSON.stringify({ entry: cleaned, expected_revision: expected }),
+        });
+        const { id, is_active, ...next } = item;
+        setEntry(next);
+        baseline.current = JSON.stringify(next);
+        setExpected(item.revision);
+        setSavedItem(item);
+        onChanged();
+      }
+      if (publish && !item.is_active) {
+        item = await adminApi<Item>(`/catalog/${item.id}/publish`, {
+          method: "POST",
+        });
+        setSavedItem(item);
+        onChanged();
+      }
+      setNotice(
+        publish
+          ? "Шаблон опубликован и доступен в Mini App."
+          : "Черновик шаблона сохранён. Клиенты пока его не видят.",
+      );
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const update = (patch: Partial<Entry>) => {
+    setEntry((e) => ({ ...e, ...patch }));
+    setNotice("");
+  };
+  return (
+    <section className="template-workspace">
+      <header className="workspace-heading">
+        <div>
+          <p className="editor-status">
+            {savedItem?.is_active && !dirty
+              ? "Опубликован"
+              : dirty
+                ? "Есть несохранённые изменения"
+                : "Черновик шаблона"}
+          </p>
+          <h2>
+            {expectedRevision ? "Редактирование шаблона" : "Новый шаблон"}
+          </h2>
+          <p>Соберите цепочку, проверьте её и добавьте в каталог.</p>
+        </div>
+        <button
+          disabled={busy || uploading}
+          onClick={() => {
+            leave.current = onBack;
+            dirty ? setExit(true) : onBack();
+          }}
+        >
+          К каталогу
+        </button>
+      </header>
+      <nav className="editor-stages" aria-label="Создание шаблона">
+        {["О шаблоне", "Сообщения", "Проверка"].map((s, i) => (
+          <button
+            key={s}
+            disabled={busy || uploading}
+            aria-current={stage === i ? "step" : undefined}
+            onClick={() => go(i)}
+          >
+            {i + 1}. {s}
+          </button>
+        ))}
+      </nav>
+      {error && (
+        <p role="alert" className="composer-error">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="composer-notice">
+          {notice}
+        </p>
+      )}
+      {exit && (
+        <ExitDialog
+          title="Сохранить шаблон перед выходом?"
+          busy={busy}
+          onSave={async () => {
+            if (await save()) leave.current();
+          }}
+          onDiscard={() => leave.current()}
+          onCancel={() => setExit(false)}
+        />
+      )}
+      <fieldset
+        disabled={busy || uploading}
+        inert={busy || uploading}
+        className="workspace-fields"
+      >
+        {stage === 0 && (
+          <div className="template-details">
+            <label>
+              Название
+              <input
+                name="template-title"
+                aria-invalid={!!error && !entry.title.trim()}
+                value={entry.title}
+                maxLength={128}
+                onChange={(e) => update({ title: e.target.value })}
+                placeholder="Например, знакомство с сообществом"
+              />
+            </label>
+            <label>
+              Когда отправлять
+              <select
+                value={entry.kind}
+                disabled={expectedRevision > 0 || !!savedItem}
+                onChange={(e) =>
+                  update({ kind: e.target.value as Entry["kind"] })
+                }
+              >
+                <option value="welcome">При вступлении — приветствие</option>
+                <option value="farewell">При выходе — прощание</option>
+              </select>
+            </label>
+            <label>
+              Описание для каталога
+              <textarea
+                name="template-description"
+                aria-invalid={!!error && !entry.description.trim()}
+                value={entry.description}
+                maxLength={4000}
+                onChange={(e) => update({ description: e.target.value })}
+                placeholder="Кому подойдёт шаблон и что получит участник"
+              />
+            </label>
+            <label>
+              Категории
+              <input
+                value={entry.tags.join(", ")}
+                onChange={(e) =>
+                  update({
+                    tags: e.target.value.split(",").map((s) => s.trim()),
+                  })
+                }
+                placeholder="Сообщество, обучение"
+              />
+              <small>Несколько категорий можно разделить запятой.</small>
+            </label>
+            <label>
+              Доступность
+              <select
+                value={entry.requires_business ? "business" : "all"}
+                onChange={(e) =>
+                  update({ requires_business: e.target.value === "business" })
+                }
+              >
+                <option value="all">Free и Business</option>
+                <option value="business">Только Business</option>
+              </select>
+            </label>
+            <details className="editor-settings">
+              <summary>Автор и дополнительные сведения</summary>
+              <label>
+                Автор
+                <input
+                  value={entry.author}
+                  maxLength={80}
+                  onChange={(e) => update({ author: e.target.value })}
+                />
+              </label>
+              {entry.conversion && (
+                <p>Сохранённые сведения о конверсии: {entry.conversion}</p>
+              )}
+            </details>
+          </div>
+        )}
+        {stage === 1 && (
+          <div className="composer-layout">
+            <ChainComposer
+              problem={error}
+              value={entry.spec}
+              onChange={(spec) => update({ spec, screenshots: [] })}
+              scope="admin"
+              onBusyChange={setUploading}
+            />
+            <div className="desktop-preview">
+              <h3>Предпросмотр</h3>
+              <ChainPreview chain={entry.spec} scope="admin" />
+            </div>
+          </div>
+        )}
+        {stage === 2 && (
+          <div className="composer-layout">
+            <div>
+              <h3>Карточка в каталоге</h3>
+              <article className="template-summary">
+                <h4>{entry.title}</h4>
+                <p>{entry.description}</p>
+                <p>
+                  {entry.kind === "welcome" ? "Приветствие" : "Прощание"} ·{" "}
+                  {entry.spec.steps.length} сообщ. ·{" "}
+                  {entry.requires_business ? "Business" : "Free и Business"}
+                </p>
+                <p>Автор: {entry.author}</p>
+                {hasPremium(entry.spec) && <p>Содержит Premium-эмодзи</p>}
+              </article>
+              <p className="composer-notice">
+                Сохранение оставляет версию скрытой. Публикация заменит текущую
+                версию в каталоге. Уже созданные клиентские цепочки сохранятся.
+              </p>
+              <button type="button" onClick={() => go(0)}>
+                Изменить описание
+              </button>
+              <button type="button" onClick={() => go(1)}>
+                Изменить сообщения
+              </button>
+            </div>
+            <div>
+              <h3>Сообщения участнику</h3>
+              <ChainPreview chain={entry.spec} scope="admin" />
+            </div>
+          </div>
+        )}
+      </fieldset>
+      <footer className="editor-footer">
+        <span>
+          {busy
+            ? "Сохраняем…"
+            : uploading
+              ? "Загружаем файл…"
+              : dirty
+                ? "Не сохранено"
+                : savedItem?.is_active
+                  ? "Опубликовано"
+                  : "Черновик"}
+        </span>
+        <div className="composer-actions">
+          {stage > 0 && (
+            <button
+              className="button ghost"
+              disabled={busy || uploading}
+              onClick={() => go(stage - 1)}
+            >
+              Назад
+            </button>
+          )}
+          <button
+            className="button ghost"
+            disabled={busy || uploading}
+            onClick={() => void save()}
+          >
+            Сохранить черновик шаблона
+          </button>
+          {stage < 2 ? (
+            <button
+              className="button acid"
+              disabled={busy || uploading}
+              onClick={() => go(stage + 1)}
+            >
+              {stage === 0 ? "Далее: сообщения" : "Далее: проверка"}
+            </button>
+          ) : (
+            <button
+              className="button acid"
+              disabled={busy || uploading || (!!savedItem?.is_active && !dirty)}
+              onClick={() => void save(true)}
+            >
+              Опубликовать
+            </button>
+          )}
+        </div>
+      </footer>
+    </section>
+  );
+}
+export function AdminCatalog({
+  onLeaveGuard,
+}: {
+  onLeaveGuard?: (guard: LeaveGuard | null) => void;
+}) {
+  const [items, setItems] = useState<Item[]>([]),
+    [total, setTotal] = useState(0),
+    [page, setPage] = useState(1),
+    [query, setQuery] = useState(""),
+    [kind, setKind] = useState(""),
+    [state, setState] = useState("all"),
+    [loading, setLoading] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState("");
+  const [draft, setDraft] = useState<Entry | null>(null),
+    [expected, setExpected] = useState(0);
+  const version = useRef(0);
+  const load = async () => {
+    const current = ++version.current;
+    setLoading(true);
+    try {
+      const result = await adminApi<{ items: Item[]; total: number }>(
+        `/catalog?${new URLSearchParams({ q: query, kind, state, page: String(page) })}`,
+      );
+      if (current === version.current) {
+        setItems(result.items);
+        setTotal(result.total);
+        setError("");
+      }
+    } catch (e) {
+      if (current === version.current) setError((e as Error).message);
+    } finally {
+      if (current === version.current) setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load();
+    return () => {
+      version.current++;
+    };
+  }, [query, kind, state, page]);
+  const publish = async (item: Item, archive = false) => {
+    if (
+      !confirm(
+        archive
+          ? "Убрать шаблон из каталога? Клиентские цепочки сохранятся."
+          : "Опубликовать шаблон для клиентов?",
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await adminApi(`/catalog/${item.id}${archive ? "" : "/publish"}`, {
+        method: archive ? "DELETE" : "POST",
+      });
+      setNotice(
+        archive
+          ? "Шаблон скрыт. Клиентские копии сохранены."
+          : "Шаблон опубликован.",
+      );
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (draft)
+    return (
+      <TemplateWizard
+        onLeaveGuard={onLeaveGuard}
+        initial={draft}
+        expectedRevision={expected}
+        onChanged={() => void load()}
+        onBack={() => {
+          setDraft(null);
+          void load();
+        }}
+      />
+    );
+  return (
+    <section className="catalog-admin">
+      <div className="catalog-admin-actions">
+        <button
+          className="button acid"
+          onClick={() => {
+            setDraft(fresh());
+            setExpected(0);
+          }}
+        >
+          Добавить шаблон
+        </button>
+        <button className="button ghost" onClick={() => void load()}>
+          Обновить
+        </button>
+      </div>
+      <div className="catalog-admin-filters">
+        <label>
+          Поиск
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Название шаблона"
+          />
+        </label>
+        <label>
+          Тип
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">Все</option>
+            <option value="welcome">Приветствия</option>
+            <option value="farewell">Прощания</option>
+          </select>
+        </label>
+        <label>
+          Публикация
+          <select
+            value={state}
+            onChange={(e) => {
+              setState(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="all">Все версии</option>
+            <option value="published">Опубликованные</option>
+            <option value="hidden">Черновики и скрытые</option>
+          </select>
+        </label>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {notice && <p role="status">{notice}</p>}
+      {loading ? (
+        <p>Загружаем каталог…</p>
+      ) : !items.length ? (
+        <p>Шаблонов пока нет. Добавьте первый или измените фильтры.</p>
+      ) : (
+        items.map((item) => (
+          <article className="catalog-admin-row" key={item.id}>
+            <div>
+              <h3>{item.title}</h3>
+              <p>
+                {item.kind === "welcome" ? "Приветствие" : "Прощание"} ·{" "}
+                {item.is_active ? "Опубликован" : "Скрыт"} ·{" "}
+                {item.spec.steps.length} сообщ.
+              </p>
+              <p>{item.description}</p>
+              {hasPremium(item.spec) && <small>Содержит Premium-эмодзи</small>}
+            </div>
+            <div className="catalog-admin-actions">
+              <button
+                className="button ghost"
+                disabled={busy}
+                onClick={() => {
+                  const { id, is_active, ...entry } = item;
+                  setExpected(item.revision);
+                  setDraft(structuredClone(entry));
+                }}
+              >
+                Редактировать
+              </button>
+              <button
+                className={`button ${item.is_active ? "ghost" : "acid"}`}
+                disabled={busy}
+                onClick={() => void publish(item, item.is_active)}
+              >
+                {item.is_active ? "Убрать из каталога" : "Опубликовать"}
+              </button>
+            </div>
+          </article>
+        ))
+      )}
+      <div className="catalog-admin-actions">
+        <button
+          className="button ghost"
+          disabled={page === 1 || loading}
+          onClick={() => setPage(page - 1)}
+        >
+          Назад
+        </button>
+        <span>
+          Страница {page} · всего {total}
+        </span>
+        <button
+          className="button ghost"
+          disabled={page * 20 >= total || loading}
+          onClick={() => setPage(page + 1)}
+        >
+          Далее
+        </button>
+      </div>
+    </section>
+  );
 }
