@@ -596,6 +596,11 @@ async def add_draft_step(
 async def set_step_delay(session: AsyncSession, owner_id: int, step_id: int, delay_seconds: int) -> None:
     if not 0 <= delay_seconds <= MAX_DELAY_SECONDS:
         raise ContentValidationError("Step delay must be between 0 and 180 days")
+    await session.scalar(select(ContentFlowVersion).join(ContentStep)
+        .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+        .join(ManagedBot, ManagedBot.id == ContentFlow.bot_id)
+        .where(ContentStep.id == step_id, ContentFlowVersion.status == "draft", ManagedBot.owner_id == owner_id)
+        .with_for_update(of=ContentFlowVersion))
     result = await session.execute(
         update(ContentStep)
         .where(

@@ -9,6 +9,9 @@ from .admin_catalog import router as admin_catalog_router
 from .api import router
 from .app_api import router as app_router
 from .catalog_media import router as catalog_media_router
+from .editor_api import router as editor_router
+from .editor_assets import admin_router as emoji_admin_router
+from .editor_assets import router as editor_assets_router
 
 app = FastAPI(
     title="Gramly Welcome API",
@@ -22,6 +25,9 @@ app.include_router(app_router)
 app.include_router(admin_router)
 app.include_router(admin_catalog_router)
 app.include_router(catalog_media_router)
+app.include_router(editor_router)
+app.include_router(editor_assets_router)
+app.include_router(emoji_admin_router)
 app.mount("/metrics", make_asgi_app())
 
 

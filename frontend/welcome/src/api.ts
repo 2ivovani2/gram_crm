@@ -53,6 +53,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const response = await fetchWithTimeout(
     `/api/v1${path}`,
     { ...options, headers, credentials: "same-origin" },
+    path === "/editor/media" && options.method === "POST" ? 120_000 : 12_000,
   );
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));

@@ -31,6 +31,7 @@ from .models import (
     MessageTemplate,
     Owner,
 )
+from .rich_text import validate_rich_text
 
 
 class CatalogAttachment(BaseModel):
@@ -69,9 +70,15 @@ class CatalogStep(BaseModel):
 
     @model_validator(mode="after")
     def compilable(self) -> CatalogStep:
+        validate_rich_text(self.payload)
+        for media in self.attachments:
+            validate_rich_text(media.payload)
         if not self.attachments and not (self.payload.get("text") or self.payload.get("caption")):
             raise ValueError("Template step needs content")
-        compile_step(self.payload, [AttachmentSpec(**item.model_dump()) for item in self.attachments], self.keyboard)
+        for operation in compile_step(self.payload, [AttachmentSpec(**item.model_dump()) for item in self.attachments], self.keyboard):
+            validate_rich_text(operation.payload)
+            for item in operation.media:
+                validate_rich_text(item.get("payload") or {})
         return self
 
 
@@ -122,6 +129,7 @@ def template_view(row: MessageTemplate) -> dict[str, Any]:
     return {
         "id": row.id, "slug": row.slug, "revision": row.revision, "kind": row.kind, "title": row.title,
         "author": row.author, "description": row.description, "tags": row.tags, "screenshots": row.screenshots,
+        "contains_premium_emoji": '"custom_emoji"' in json.dumps(row.spec),
         "conversion": row.conversion, "requires_business": row.requires_business, "step_count": len(spec.steps),
         "first_delay_seconds": spec.first_delay_seconds,
         "steps": [{"text": s.payload.get("text") or s.payload.get("caption") or "Медиа-сообщение",

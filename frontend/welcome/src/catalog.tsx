@@ -5,6 +5,7 @@ import "./catalog.css";
 type CatalogBot = { id: number; username: string; display_name: string };
 export type InstalledTemplate = { flow_id: number; version_id: number; name: string; kind: string };
 type Template = {
+  contains_premium_emoji?: boolean;
   id: number; title: string; kind: string; author: string; description: string;
   tags: string[]; screenshots: string[]; conversion: string | null; requires_business: boolean;
   step_count: number; first_delay_seconds: number;
@@ -88,6 +89,7 @@ export function MessageCatalog({ bots, botId, onBotChange, onInstalled, onConnec
       <h3 ref={detailHeading} tabIndex={-1}>{selected.title}</h3><p>{selected.description}</p>
       <p className="muted">Автор: {selected.author} · Конверсия: {selected.conversion || "Нет данных"}</p>
       {selected.requires_business && <p>Для этого шаблона необходим Business.</p>}
+      {selected.contains_premium_emoji && <p>Содержит Premium-эмодзи</p>}
       <p>Первое сообщение через {interval(selected.first_delay_seconds)} <small>(дни:часы:минуты:секунды)</small></p>
       <ol className="catalog-messages">{selected.steps.map((step, index) => <li key={index}>
         <div className="catalog-message">{step.text}</div>
@@ -95,8 +97,8 @@ export function MessageCatalog({ bots, botId, onBotChange, onInstalled, onConnec
         {index < selected.steps.length - 1 && <small>До следующего сообщения: {interval(step.delay_after_seconds)}</small>}
       </li>)}</ol>
       {selected.screenshots.map((url, index) => <img className="catalog-screenshot" loading="lazy" key={url} src={url} alt={`Демонстрация шаблона ${selected.title}, ${index + 1}`} />)}
-      <p className="muted">Создадим неназначенный черновик. Проверьте текст, опубликуйте цепочку и выберите каналы в редакторе.</p>
-      {botId ? <button className="button primary" disabled={busy} onClick={install}>{busy ? "Создаём черновик…" : "Добавить цепочку"}</button>
+      <p className="muted">Создадим неназначенный черновик. Настройте сообщения, посмотрите предпросмотр и выберите каналы для запуска.</p>
+      {botId ? <button className="button primary" disabled={busy} onClick={install}>{busy ? "Создаём черновик…" : "Использовать шаблон"}</button>
         : <button className="button primary" onClick={() => onConnect(selected.id)}>Подключить бота с этим шаблоном</button>}
       {bots.length > 0 && <button className="button ghost" disabled={busy} onClick={() => onConnect(selected.id)}>Новый бот из этого шаблона</button>}
     </article> : <>
