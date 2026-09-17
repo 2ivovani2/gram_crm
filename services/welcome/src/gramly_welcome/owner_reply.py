@@ -24,6 +24,7 @@ from .db import engine
 from .metrics import OWNER_REPLIES
 from .models import OwnerControlState, OwnerReply
 from .owner_actions import ACTOR_LOCK
+from .owner_ui import cleanup_owner_inputs
 
 
 async def _persist(session: AsyncSession, reply: OwnerReply, **values: Any) -> None:
@@ -197,6 +198,18 @@ async def deliver_next_reply(bot: Bot) -> bool:
                             values[key] = json.dumps(screen)
                             state.storage = values
                 OWNER_REPLIES.labels(status).inc()
+                if status == "delivered" and not payload.get("notification"):
+                    key = payload["storage_key"]
+                    screen = json.loads(state.storage.get(key) or "{}")
+                    pending_inputs = [
+                        item for item in screen.get("input_ids", [])
+                        if isinstance(item, int) and item != anchor
+                    ]
+                    if pending_inputs:
+                        remaining = await cleanup_owner_inputs(bot, payload["chat_id"], pending_inputs)
+                        async with session.begin():
+                            screen["input_ids"] = remaining
+                            state.storage = {**state.storage, key: json.dumps(screen)}
                 return True
         finally:
             if actor is not None:

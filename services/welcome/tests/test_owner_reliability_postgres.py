@@ -332,3 +332,89 @@ async def test_claim_serializes_actor_and_recovers_expired_lease(
         async with store() as session, session.begin():
             await session.execute(delete(InboxEvent).where(InboxEvent.source_key == key))
             await session.execute(delete(InboxSource).where(InboxSource.source_key == key))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["none", "edit_timeout", "delete_timeout"])
+async def test_input_cleanup_after_durable_reply_does_not_replay_action(
+    store: async_sessionmaker[db.ApplicationSession], failure: str,
+) -> None:
+    await seed(store)
+    async with store() as session, session.begin():
+        state = await session.get(OwnerControlState, 333)
+        assert state
+        state.storage = {"ui": json.dumps({"message_id": 44, "input_ids": [70, 71, 44]})}
+    bot = AsyncMock()
+    if failure == "edit_timeout":
+        bot.edit_message_text.side_effect = TimeoutError()
+
+    async def delete_after_commit(*args: Any, **kwargs: Any) -> None:
+        async with store() as session:
+            reply = await session.get(OwnerReply, 333)
+            assert reply and reply.status == "delivered"
+            assert await session.get(OwnerAction, 333) is not None
+        if failure == "delete_timeout":
+            raise TimeoutError()
+
+    bot.delete_message.side_effect = delete_after_commit
+    assert await owner_reply.deliver_next_reply(bot)
+    async with store() as session:
+        state = await session.get(OwnerControlState, 333)
+        reply = await session.get(OwnerReply, 333)
+        assert state and reply
+        pending = json.loads(state.storage["ui"])["input_ids"]
+        if failure == "edit_timeout":
+            assert reply.status == "retry"
+            assert pending == [70, 71, 44]
+            bot.delete_message.assert_not_awaited()
+        else:
+            assert reply.status == "delivered"
+            assert pending == ([70, 71] if failure == "delete_timeout" else [])
+            assert [call.args[1] for call in bot.delete_message.call_args_list] == [70, 71]
+    if failure != "edit_timeout":
+        assert not await owner_reply.deliver_next_reply(bot)
+        bot.edit_message_text.assert_awaited_once()
+    bot.send_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_intent_commits_with_fsm_and_never_deletes_on_rollback(
+    store: async_sessionmaker[db.ApplicationSession], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aiogram.types import Update
+
+    from gramly_welcome.owner_ui import OwnerUiMiddleware, render_owner_ui
+
+    client = AsyncMock()
+    client.id = 100
+    redis = owner_actions.TransactionalRedis(SimpleNamespace(get=AsyncMock(return_value=None)))
+    state = SimpleNamespace(storage=SimpleNamespace(redis=redis))
+    fail = False
+
+    async def handler(event: Any, data: Any) -> None:
+        await render_owner_ui(event, "Сохранено")
+        await redis.set("fsm", "saved")
+
+    async def feed(_bot: Any, update: Update) -> None:
+        assert update.message is not None
+        await OwnerUiMiddleware()(handler, update.message, {"bot": client, "state": state})
+        client.delete_message.assert_not_awaited()
+        if fail:
+            raise RuntimeError("database action interrupted")
+
+    monkeypatch.setattr(owner_bot, "interface_bot", lambda: client)
+    monkeypatch.setattr(owner_bot, "interface_dispatcher", lambda: SimpleNamespace(feed_update=feed, storage=None))
+    assert await owner_actions.run_owner_action(payload(70)) == "applied"
+    async with store() as session:
+        saved = await session.get(OwnerControlState, 333)
+        assert saved and saved.storage["fsm"] == "saved"
+        key = "welcome:owner-ui:100:333:333"
+        assert json.loads(saved.storage[key])["input_ids"] == [70]
+    # A separate actor avoids cleaning the previous actor's committed input.
+    fail = True
+    with pytest.raises(RuntimeError):
+        await owner_actions.run_owner_action(payload(71, 444))
+    async with store() as session:
+        assert await session.get(OwnerControlState, 444) is None
+        assert await session.get(OwnerReply, 71) is None
+    client.delete_message.assert_not_awaited()
