@@ -346,6 +346,17 @@ async def telegram_session(
         samesite="strict",
         path="/",
     )
+    # Readable by same-origin clients so every open Mini App uses the token
+    # paired with the shared session cookie. Authentication stays HttpOnly.
+    response.set_cookie(
+        "gramly_hello_csrf",
+        created.csrf_token,
+        max_age=settings.mini_app_session_seconds,
+        secure=settings.mini_app_cookie_secure,
+        httponly=False,
+        samesite="strict",
+        path="/",
+    )
     return TelegramSessionResponse(csrf_token=created.csrf_token, expires_at=created.expires_at)
 
 
@@ -1257,5 +1268,6 @@ async def logout(
 ) -> Response:
     await revoke_web_session(session, user.auth.session_id)
     response.delete_cookie(settings.mini_app_cookie_name, path="/")
+    response.delete_cookie("gramly_hello_csrf", path="/")
     response.status_code = status.HTTP_204_NO_CONTENT
     return response

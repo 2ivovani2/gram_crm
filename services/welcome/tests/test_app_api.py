@@ -17,7 +17,7 @@ from gramly_welcome.telegram_auth import (
     TelegramMiniAppUser,
     VerifiedInitData,
 )
-from gramly_welcome.web_sessions import CreatedWebSession
+from gramly_welcome.web_sessions import AuthenticatedWebSession, CreatedWebSession
 
 
 class FakeSession:
@@ -70,11 +70,54 @@ def test_telegram_session_sets_configured_httponly_cookie(
 
     assert response.status_code == 200
     assert response.json()["csrf_token"] == "csrf-secret"
-    cookie = response.headers["set-cookie"]
+    cookie, csrf_cookie = response.headers.get_list("set-cookie")
     assert "custom_welcome_cookie=browser-secret" in cookie
     assert "HttpOnly" in cookie
     assert "Secure" in cookie
     assert "SameSite=strict" in cookie
+    assert "gramly_hello_csrf=csrf-secret" in csrf_cookie
+    assert "HttpOnly" not in csrf_cookie
+    assert "Secure" in csrf_cookie
+    assert "SameSite=strict" in csrf_cookie
+    assert "Path=/" in csrf_cookie
+    assert "Max-Age=" in csrf_cookie
+
+
+def test_logout_validates_session_csrf_and_clears_both_cookies(
+    app_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = AuthenticatedWebSession(
+        session_id=uuid.uuid4(),
+        owner=Owner(id=7, telegram_id=42, first_name="Alex"),
+        expires_at=datetime.now(UTC) + timedelta(hours=12),
+    )
+    revoked: list[uuid.UUID] = []
+
+    async def valid_csrf(_session: object, session_id: uuid.UUID, token: str) -> bool:
+        return session_id == auth.session_id and token == "current-session-csrf"
+
+    async def revoke(_session: object, session_id: uuid.UUID) -> None:
+        revoked.append(session_id)
+
+    app.dependency_overrides[app_api.required_channel_user] = lambda: app_api.CurrentWebUser(auth)
+    monkeypatch.setattr(app_api, "csrf_token_valid", valid_csrf)
+    monkeypatch.setattr(app_api, "revoke_web_session", revoke)
+    # Merely sending the readable cookie cannot authorize a mutation.
+    app_client.cookies.set("gramly_hello_csrf", "current-session-csrf")
+    missing = app_client.post("/api/v1/session/logout")
+    assert missing.status_code == 422
+    stale = app_client.post("/api/v1/session/logout", headers={"X-CSRF-Token": "old-session-csrf"})
+    assert stale.status_code == 403
+    assert stale.json()["detail"] == "Invalid CSRF token"
+    assert revoked == []
+    response = app_client.post("/api/v1/session/logout", headers={"X-CSRF-Token": "current-session-csrf"})
+    assert response.status_code == 204
+    assert revoked == [auth.session_id]
+    cookies = response.headers.get_list("set-cookie")
+    assert len(cookies) == 2
+    assert any(cookie.startswith("custom_welcome_cookie=") for cookie in cookies)
+    assert any(cookie.startswith("gramly_hello_csrf=") for cookie in cookies)
+    assert all("Max-Age=0" in cookie for cookie in cookies)
 
 
 def test_logout_requires_an_authenticated_session(app_client: TestClient) -> None:

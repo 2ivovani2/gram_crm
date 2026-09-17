@@ -5,6 +5,48 @@ test.skip(
   "Local Welcome server required",
 );
 
+test("another Mini App session does not break template installation, uploads, saving or launch", async ({
+  page,
+}) => {
+  const { saves, launches, mutations, rotateSession } = await ownerSetup(page, {
+    rotateSessionBeforeInstall: true,
+  });
+  await expect(
+    page.getByText("Настройте сообщения под свой канал."),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Текст сообщения" })
+    .fill("Мой независимый черновик");
+  await rotateSession();
+  await page
+    .getByLabel("Добавить файл", { exact: true })
+    .setInputFiles({ name: "test.png", mimeType: "image/png", buffer: png });
+  await expect(page.locator(".media-item")).toHaveCount(1);
+  await rotateSession();
+  await page
+    .getByRole("button", { name: "Сохранить черновик", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Далее: предпросмотр" }),
+  ).toBeEnabled();
+  expect(saves).toHaveLength(1);
+  expect(saves[0].data.steps[0].payload.text).toBe("Мой независимый черновик");
+  await page.getByRole("button", { name: "Далее: предпросмотр" }).click();
+  await page.getByLabel("Тестовый канал").check();
+  await rotateSession();
+  await page
+    .getByRole("button", { name: "Запустить на выбранных каналах" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Цепочка запущена" }),
+  ).toBeVisible();
+  expect(launches).toHaveLength(1);
+  expect(mutations.length).toBeGreaterThanOrEqual(4);
+  expect(mutations.every(({ token, expected }) => token === expected)).toBe(
+    true,
+  );
+});
+
 test("user edits a copy, adds media and emoji, saves explicitly and launches on selected channels", async ({
   page,
 }) => {
