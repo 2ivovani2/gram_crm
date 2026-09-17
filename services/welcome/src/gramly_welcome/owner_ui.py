@@ -19,6 +19,7 @@ from html.parser import HTMLParser
 from typing import Any, cast
 
 from aiogram import BaseMiddleware, Bot
+from aiogram.dispatcher.event.bases import UNHANDLED
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message, TelegramObject
 
@@ -30,10 +31,30 @@ from .bot_ui import (
     plain_text,
     premium_text,
 )
-from .owner_actions import stage_screen
+from .owner_actions import current_action, stage_screen
 
 logger = logging.getLogger(__name__)
 _current: ContextVar[OwnerUiSession | None] = ContextVar("owner_ui", default=None)
+
+
+async def cleanup_owner_inputs(bot: Bot, chat_id: int, message_ids: list[int]) -> list[int]:
+    """Best-effort cleanup of already processed private input, with a bounded retry list."""
+    remaining = []
+    deadline = asyncio.get_running_loop().time() + 3
+    for message_id in dict.fromkeys(message_ids):
+        if asyncio.get_running_loop().time() >= deadline:
+            remaining.append(message_id)
+            continue
+        try:
+            async with asyncio.timeout(1):
+                await bot.delete_message(chat_id, message_id, request_timeout=1)
+        except TelegramBadRequest:
+            # Already deleted (including tokens), or outside Telegram's deletion window.
+            continue
+        except Exception:
+            remaining.append(message_id)
+            logger.warning("Processed owner input cleanup deferred")
+    return remaining
 
 
 def _navigation(raw: str) -> bool:
@@ -121,7 +142,7 @@ class OwnerUiSession:
         for key in ("actions",):
             if not isinstance(self.data.get(key, {}), dict):
                 self.data.pop(key, None)
-        for key in ("history", "pages", "preview_ids", "retired_control_ids"):
+        for key in ("history", "pages", "preview_ids", "retired_control_ids", "input_ids"):
             if not isinstance(self.data.get(key, []), list):
                 self.data.pop(key, None)
         if not isinstance(self.data.get("message_id", 0), int):
@@ -388,8 +409,34 @@ class OwnerUiMiddleware(BaseMiddleware):
             session.navigate(route)
             data["owner_ui_leave_form"] = route != "input"
         await session.cleanup_preview()
+        pending_inputs = [
+            item for item in session.data.get("input_ids", [])
+            if isinstance(item, int) and item != session.data.get("message_id")
+        ]
+        if pending_inputs:
+            session.data["input_ids"] = await cleanup_owner_inputs(session.bot, message.chat.id, pending_inputs)
+            await session.save()
         token = _current.set(session)
         try:
-            return await handler(event, data)
+            result = await handler(event, data)
+            if (
+                isinstance(event, Message)
+                and event.chat.type == "private"
+                and event.from_user is not None
+                and not event.from_user.is_bot
+                and result is not UNHANDLED
+            ):
+                session.data["input_ids"] = list(dict.fromkeys([
+                    *session.data.get("input_ids", []), event.message_id,
+                ]))
+                await session.save()
+                # Production actions persist FSM, content and this cleanup intent
+                # together. The reply worker deletes only after that commit.
+                if current_action.get() is None:
+                    session.data["input_ids"] = await cleanup_owner_inputs(
+                        session.bot, message.chat.id, session.data["input_ids"],
+                    )
+                    await session.save()
+            return result
         finally:
             _current.reset(token)

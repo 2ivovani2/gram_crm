@@ -177,6 +177,7 @@ async def test_middleware_context_turns_text_input_reply_into_anchor_edit() -> N
     )
     assert client.send_message.await_count == 1
     assert client.edit_message_text.call_args.kwargs["message_id"] == 42
+    client.delete_message.assert_awaited_once_with(11, 70, request_timeout=1)
 
 
 @pytest.mark.asyncio
@@ -198,7 +199,7 @@ async def test_start_replaces_old_anchor_only_after_success_then_buttons_keep_it
     await OwnerUiMiddleware()(handler, incoming, {
         "bot": client, "state": SimpleNamespace(storage=SimpleNamespace(redis=redis)),
     })
-    client.delete_message.assert_awaited_once_with(11, 42)
+    assert [call.args[1] for call in client.delete_message.call_args_list] == [42, 70]
     assert client.send_message.await_count == 2
     latest = OwnerUiSession(client, redis, 11, 11)
     await latest.load()
@@ -342,3 +343,63 @@ async def test_navigation_state_persists_even_if_handler_has_no_ui_response() ->
     assert restored.data["route"] == "menu:bots"
     assert restored.data["history"] == ["menu:home"]
     assert handler.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["text", "photo", "document"])
+async def test_input_cleanup_waits_for_handler_and_retries_without_reprocessing(kind: str) -> None:
+    client, redis = bot(), MemoryRedis()
+    user = User(id=11, is_bot=False, first_name="Owner")
+    content: dict[str, Any] = {"text": "invalid delay"}
+    if kind == "photo":
+        content = {"photo": [{"file_id": "f", "file_unique_id": "u", "width": 10, "height": 10}]}
+    elif kind == "document":
+        content = {"document": {"file_id": "f", "file_unique_id": "u"}}
+    incoming = Message(message_id=70, date=datetime.now(UTC), chat=Chat(id=11, type="private"),
+                       from_user=user, **content)
+    data = {"bot": client, "state": SimpleNamespace(storage=SimpleNamespace(redis=redis))}
+
+    async def handler(event: TelegramObject, _data: dict[str, Any]) -> None:
+        client.delete_message.assert_not_awaited()
+        assert isinstance(event, Message)
+        await render_owner_ui(event, "Получено", reply_markup=keyboard())
+
+    client.delete_message.side_effect = TimeoutError()
+    await OwnerUiMiddleware()(handler, incoming, data)
+    restored = OwnerUiSession(client, redis, 11, 11)
+    await restored.load()
+    assert restored.data["input_ids"] == [70]
+    client.delete_message.side_effect = None
+    callback = CallbackQuery(id="q", chat_instance="chat", from_user=user, message=message(), data="menu:bots")
+    await OwnerUiMiddleware()(AsyncMock(), callback, data)
+    await restored.load()
+    assert restored.data["input_ids"] == []
+    assert [call.args[1] for call in client.delete_message.call_args_list] == [70, 70]
+    assert client.send_message.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["failure", "unhandled", "group"])
+async def test_unprocessed_or_nonprivate_input_is_not_deleted(outcome: str) -> None:
+    from aiogram.dispatcher.event.bases import UNHANDLED
+
+    client, redis = bot(), MemoryRedis()
+    incoming = message().model_copy(update={
+        "message_id": 70, "from_user": User(id=11, is_bot=False, first_name="Owner"),
+        "chat": Chat(id=11, type="group" if outcome == "group" else "private"),
+    })
+
+    async def handler(*_: Any) -> Any:
+        if outcome == "failure":
+            raise RuntimeError("download failed")
+        return UNHANDLED if outcome == "unhandled" else None
+
+    operation = OwnerUiMiddleware()(handler, incoming, {
+        "bot": client, "state": SimpleNamespace(storage=SimpleNamespace(redis=redis)),
+    })
+    if outcome == "failure":
+        with pytest.raises(RuntimeError):
+            await operation
+    else:
+        await operation
+    client.delete_message.assert_not_awaited()
