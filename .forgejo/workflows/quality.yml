@@ -109,7 +109,7 @@ jobs:
             if curl --silent --fail http://127.0.0.1:5187/app.html > /dev/null; then break; fi
             sleep 1
           done
-          WELCOME_CATALOG_TEST_URL=http://127.0.0.1:5187 npx playwright test frontend/tests/welcome-catalog.spec.js frontend/tests/welcome-editor.spec.js frontend/tests/welcome-admin-catalog.spec.js --project=chromium --workers=2
+          WELCOME_CATALOG_TEST_URL=http://127.0.0.1:5187 npx playwright test frontend/tests/welcome-catalog.spec.js frontend/tests/welcome-editor.spec.js frontend/tests/welcome-csrf.spec.js frontend/tests/welcome-admin-catalog.spec.js --project=chromium --workers=2
       - run: npm audit --audit-level=high
 
   manifests:

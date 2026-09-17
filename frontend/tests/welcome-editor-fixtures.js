@@ -20,6 +20,7 @@ export async function ownerSetup(
     conflict = false,
     failFirstSave = false,
     noChannels = false,
+    rotateSessionBeforeInstall = false,
   } = {},
 ) {
   await page.route("https://fonts.googleapis.com/**", (route) =>
@@ -27,6 +28,27 @@ export async function ownerSetup(
   );
   const saves = [],
     launches = [];
+  const mutations = [];
+  let sessionNumber = 0;
+  async function rotateSession() {
+    const value = `session-${++sessionNumber}`;
+    await page.context().addCookies([
+      {
+        name: "gramly_hello_csrf",
+        value,
+        url: process.env.WELCOME_CATALOG_TEST_URL,
+        sameSite: "Strict",
+      },
+      {
+        name: "test_session",
+        value,
+        url: process.env.WELCOME_CATALOG_TEST_URL,
+        httpOnly: true,
+        sameSite: "Strict",
+      },
+    ]);
+    return value;
+  }
   let doc = {
     flow: {
       id: 100,
@@ -68,7 +90,18 @@ export async function ownerSetup(
       url = new URL(request.url()),
       path = url.pathname.replace("/api/v1", "");
     let body = {};
-    if (path === "/session/telegram") body = { csrf_token: "test" };
+    if (path !== "/session/telegram" && request.method() !== "GET") {
+      const headers = await request.allHeaders();
+      const expected = `session-${sessionNumber}`;
+      mutations.push({ path, token: headers["x-csrf-token"], expected });
+      if (headers["x-csrf-token"] !== expected)
+        return route.fulfill({
+          status: 403,
+          json: { detail: "Invalid CSRF token" },
+        });
+    }
+    if (path === "/session/telegram")
+      body = { csrf_token: await rotateSession() };
     else if (path === "/me")
       body = { owner: { first_name: "Тест" }, access: { plan_name: "Free" } };
     else if (path === "/bots")
@@ -175,10 +208,11 @@ export async function ownerSetup(
     { waitUntil: "domcontentloaded" },
   );
   await page.getByRole("button", { name: "Посмотреть сообщения" }).click();
+  if (rotateSessionBeforeInstall) await rotateSession();
   await page
     .getByRole("button", { name: "Использовать шаблон", exact: true })
     .click();
-  return { saves, launches };
+  return { saves, launches, mutations, rotateSession };
 }
 export async function addEmoji(page) {
   await page.getByRole("textbox", { name: "Текст сообщения" }).press("End");
