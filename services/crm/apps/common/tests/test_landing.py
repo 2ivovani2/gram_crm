@@ -14,22 +14,17 @@ def test_landing_promotes_welcome_bot(client):
     assert response.context["bot_username"] == "gramly_crm_bot"
     assert response.context["welcome_bot_username"] == "gramly_welcome_bot"
     assert b"https://t.me/gramly_welcome_bot" in response.content
-    assert "Gramly Welcome" in response.content.decode()
+    assert "Gramly — персональные приветствия в Telegram" in response.content.decode()
 
 
-def test_landing_describes_independent_products_and_sso_access(client):
+def test_landing_focuses_on_welcome_without_public_crm_access(client):
     content = client.get(reverse("landing")).content.decode()
 
-    assert "Два независимых продукта" in content
-    assert "Контакты, история и финансы между ними автоматически не передаются." in content
-    assert "Защищено · SSO" in content
-    assert "SSO + VPN" not in content
-    assert "CRM synced" not in content
-    assert "CRM handoff" not in content
-    assert "источник в CRM" not in content
-    assert "Синхронизирован" not in content
-    assert "Контакт и источник переходят" not in content
-    assert "На модерации" in content
+    assert "Каждого нового участника" in content
+    assert "Создать приветствие" in content
+    assert "БАЗА И РАССЫЛКИ" in content
+    assert "CRM" not in content
+    assert "Защищено · SSO" not in content
 
 
 def test_crm_shell_describes_sso_instead_of_vpn_access():
@@ -110,7 +105,7 @@ def test_private_access_gate_is_disabled_for_crm_runtime(client):
     response = client.get("/", HTTP_HOST="crm.gramly.tech")
 
     assert response.status_code == 200
-    assert "Gramly Welcome" in response.content.decode()
+    assert "Gramly — персональные приветствия в Telegram" in response.content.decode()
 
 
 @override_settings(DEBUG=False, ALLOWED_HOSTS=["gramly.tech"])
@@ -134,4 +129,4 @@ def test_public_surface_keeps_landing_available(client):
     response = client.get("/", HTTP_HOST="gramly.tech")
 
     assert response.status_code == 200
-    assert "Gramly Welcome" in response.content.decode()
+    assert "Gramly — персональные приветствия в Telegram" in response.content.decode()
