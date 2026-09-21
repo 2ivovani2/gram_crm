@@ -8,6 +8,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .audience import answer_challenge, create_challenge, unsubscribe, verify_subscribe_token
 from .bot_diagnostics import record_incident, resolve_incident
 from .flow_delivery import assigned_content_flow_timeline, close_temporary_delivery, schedule_content_flow
 from .join_activation import (
@@ -27,7 +28,11 @@ from .metrics import JOIN_REQUEST_ACTIVATIONS
 from .models import (
     Channel,
     ChannelMembership,
+    ClientMessage,
     Contact,
+    ContentFlow,
+    ContentFlowVersion,
+    ContentStep,
     DepartureEvent,
     EventLog,
     FeatureFlag,
@@ -51,6 +56,7 @@ ACTIONABLE_UPDATE_KEYS = (
     "chat_join_request",
     "chat_member",
     "pre_checkout_query",
+    "callback_query",
 )
 
 async def _join_request_greetings_enabled(session: AsyncSession, bot_id: int) -> bool:
@@ -148,6 +154,9 @@ def _telegram_user(payload: dict[str, Any]) -> dict[str, Any] | None:
             return user
     message = payload.get("message")
     user = message.get("from") if isinstance(message, dict) else None
+    if not isinstance(user, dict):
+        callback = payload.get("callback_query")
+        user = callback.get("from") if isinstance(callback, dict) else None
     return user if isinstance(user, dict) else None
 
 
@@ -416,6 +425,32 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
     if user is None or "id" not in user:
         return
 
+    callback = payload.get("callback_query")
+    if isinstance(callback, dict):
+        contact_id = await _upsert_contact(session, bot.id, user, bot_started=True)
+        data = str(callback.get("data") or "")
+        if data == "consent:stop":
+            await unsubscribe(session, bot_id=bot.id, contact_id=contact_id)
+        elif data.startswith("consent:"):
+            try:
+                _, public_token, answer = data.split(":", 2)
+            except ValueError:
+                return
+            result = await answer_challenge(
+                session,
+                bot_id=bot.id,
+                contact_id=contact_id,
+                public_token=public_token,
+                answer=answer,
+            )
+            if result in {"wrong", "expired"}:
+                session.add(ClientMessage(
+                    bot_id=bot.id,
+                    contact_id=contact_id,
+                    payload={"kind": f"challenge_{result}"},
+                ))
+        return
+
     message = payload.get("message")
     if isinstance(message, dict) and isinstance(message.get("chat"), dict):
         chat = message["chat"]
@@ -423,6 +458,35 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
             contact_id = await _upsert_contact(session, bot.id, user, bot_started=True)
             text = str(message.get("text") or "").strip()
             parts = text.split(maxsplit=1)
+            if parts and parts[0].split("@", 1)[0].lower() == "/stop":
+                await unsubscribe(session, bot_id=bot.id, contact_id=contact_id)
+                return
+            if len(parts) == 2 and parts[0].split("@", 1)[0] == "/start" and parts[1].startswith("sub_"):
+                subscribe_context = verify_subscribe_token(parts[1], bot.path_secret)
+                if subscribe_context is None:
+                    return
+                step_id, channel_id = subscribe_context
+                owned_step = await session.scalar(
+                    select(ContentStep.id)
+                    .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+                    .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+                    .join(Channel, Channel.id == channel_id)
+                    .where(
+                        ContentStep.id == step_id,
+                        ContentFlow.bot_id == bot.id,
+                        Channel.bot_id == bot.id,
+                        Channel.is_active.is_(True),
+                    )
+                )
+                if owned_step is not None:
+                    await create_challenge(
+                        session,
+                        bot_id=bot.id,
+                        contact_id=contact_id,
+                        step_id=step_id,
+                        channel_id=channel_id,
+                    )
+                return
             if len(parts) == 2 and parts[0].split("@", 1)[0] == "/start" and parts[1].startswith("gramly_"):
                 token = parts[1][len("gramly_") :]
                 public_hex = token.split("_", 1)[0]

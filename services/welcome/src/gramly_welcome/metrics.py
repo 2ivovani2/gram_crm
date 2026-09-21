@@ -88,3 +88,18 @@ CUSTOM_EMOJI_TELEGRAM_ERROR = Counter(
     "welcome_custom_emoji_telegram_error_total",
     "Telegram API errors while sending messages containing custom emoji",
 )
+TEMPLATE_INSTALLS = Counter(
+    "welcome_template_installs_total",
+    "Template installation requests by result",
+    ("result",),
+)
+AUDIENCE_CONSENTS = Counter(
+    "welcome_audience_consents_total",
+    "Audience captcha and consent outcomes",
+    ("result",),
+)
+BROADCAST_RECIPIENTS = Counter(
+    "welcome_broadcast_recipients_total",
+    "Broadcast recipient terminal outcomes",
+    ("result",),
+)

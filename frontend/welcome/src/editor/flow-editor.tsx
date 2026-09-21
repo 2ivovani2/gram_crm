@@ -41,7 +41,6 @@ export function FlowEditor({
   const workspace = useRef<HTMLElement>(null);
   const [doc, setDoc] = useState<Document | null>(null),
     [chain, setChain] = useState<Chain | null>(null),
-    [style, setStyle] = useState<string | null>(null),
     [channels, setChannels] = useState<number[]>([]),
     [page, setPage] = useState<"edit" | "review">("edit");
   const [busy, setBusy] = useState(false),
@@ -57,15 +56,13 @@ export function FlowEditor({
   const saved = useRef(""),
     retry = useRef<{ body: string; key: string } | null>(null),
     launchKey = useRef<{ body: string; key: string } | null>(null);
-  const content = JSON.stringify({ chain, style });
+  const content = JSON.stringify({ chain });
   const dirty = !!doc && content !== saved.current;
   const apply = (next: Document) => {
     setDoc(next);
     setChain(chainOf(next));
-    setStyle(next.version.button_style);
     saved.current = JSON.stringify({
       chain: chainOf(next),
-      style: next.version.button_style,
     });
     setLoaded((n) => n + 1);
     setConflict(false);
@@ -112,7 +109,7 @@ export function FlowEditor({
     setNotice("");
     const body = JSON.stringify({
       ...chain,
-      button_style: style,
+      button_style: null,
       expected_revision: doc.version.edit_revision,
     });
     if (retry.current?.body !== body)
@@ -291,29 +288,12 @@ export function FlowEditor({
                     scope="owner"
                     onBusyChange={setUploading}
                   />
-                  <details className="editor-settings">
-                    <summary>Оформление кнопок всей цепочки</summary>
-                    <label>
-                      Цвет всех кнопок этой цепочки
-                      <select
-                        value={style || ""}
-                        onChange={(e) => setStyle(e.target.value || null)}
-                      >
-                        <option value="">Сохранить индивидуальные цвета</option>
-                        <option value="default">Стандартный</option>
-                        <option value="primary">Синий</option>
-                        <option value="success">Зелёный</option>
-                        <option value="danger">Красный</option>
-                      </select>
-                    </label>
-                  </details>
                 </div>
                 <div className="desktop-preview">
                   <h3>Как выглядит цепочка</h3>
                   <ChainPreview
                     chain={chain}
                     scope="owner"
-                    buttonStyle={style}
                   />
                 </div>
               </div>
@@ -403,7 +383,7 @@ export function FlowEditor({
               </div>
               <div>
                 <h3>Предпросмотр</h3>
-                <ChainPreview chain={chain} scope="owner" buttonStyle={style} />
+                <ChainPreview chain={chain} scope="owner" />
               </div>
             </div>
           )}

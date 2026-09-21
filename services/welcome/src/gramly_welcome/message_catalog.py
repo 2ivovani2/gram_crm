@@ -64,8 +64,8 @@ class CatalogStep(BaseModel):
         if not value:
             return None
         normalized = validate_step_keyboard(value)
-        if normalized["kind"] != "inline" or any(b["action_type"] != "url" for row in normalized["rows"] for b in row):
-            raise ValueError("Catalog supports portable URL buttons only")
+        if normalized["kind"] != "inline" or any(b["action_type"] not in {"url", "subscribe"} for row in normalized["rows"] for b in row):
+            raise ValueError("Catalog supports portable URL and subscriber buttons only")
         return normalized
 
     @model_validator(mode="after")

@@ -3,8 +3,8 @@ export type Json = Record<string, unknown>;
 let csrfToken = "";
 
 export class ApiError extends Error {
-  constructor(public status: number, public detail: unknown) {
-    super(typeof detail === "string" ? detail : `HTTP ${status}`);
+  constructor(public status: number, public detail: unknown, public requestId = "") {
+    super(`${typeof detail === "string" ? detail : `HTTP ${status}`}${requestId ? ` Код ошибки: ${requestId}` : ""}`);
   }
 }
 
@@ -80,7 +80,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, payload.detail || `HTTP ${response.status}`);
+    throw new ApiError(
+      response.status,
+      payload.detail || `HTTP ${response.status}`,
+      payload.request_id || response.headers.get("X-Request-ID") || "",
+    );
   }
   return response.status === 204 ? ({} as T) : response.json();
 }

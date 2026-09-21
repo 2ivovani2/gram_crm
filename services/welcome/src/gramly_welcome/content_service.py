@@ -151,7 +151,7 @@ def validate_step_keyboard(keyboard: dict[str, Any]) -> dict[str, Any]:
                 raise ContentValidationError(
                     f"{location}: название длиннее {MAX_KEYBOARD_BUTTON_TEXT_LENGTH} символов"
                 )
-            if action not in {"url", "callback", "text"}:
+            if action not in {"url", "callback", "text", "subscribe"}:
                 raise ContentValidationError(f"{location}: неподдерживаемое действие")
             if kind == "reply" and action != "text":
                 raise ContentValidationError(f"{location}: reply-кнопка поддерживает только текст")
@@ -161,6 +161,10 @@ def validate_step_keyboard(keyboard: dict[str, Any]) -> dict[str, Any]:
                 raise ContentValidationError(f"{location}: callback должен занимать от 1 до 64 байт")
             if action == "url":
                 _validate_button_url(value, row=row_index, button=button_index)
+            if action == "subscribe":
+                if kind != "inline":
+                    raise ContentValidationError(f"{location}: подписка доступна только inline-кнопке")
+                value = ""
             if style not in {"default", "primary", "success", "danger"}:
                 raise ContentValidationError(f"{location}: неподдерживаемый стиль")
             normalized_row.append(
@@ -788,16 +792,28 @@ BUTTON_STYLES = {"default", "primary", "success", "danger"}
 async def set_chain_button_style(session: AsyncSession, owner_id: int, version_id: int, style: str) -> None:
     if style not in BUTTON_STYLES:
         raise ContentValidationError("Неизвестный цвет кнопок")
-    result = await session.execute(
-        update(ContentFlowVersion).where(
+    version = await session.scalar(
+        select(ContentFlowVersion).where(
             ContentFlowVersion.id == version_id,
             ContentFlowVersion.status == "draft",
             ContentFlowVersion.flow_id.in_(select(ContentFlow.id).join(ManagedBot).where(
                 ManagedBot.owner_id == owner_id, ManagedBot.is_active.is_(True))),
-        ).values(button_style=style)
+        ).with_for_update()
     )
-    if not cast(CursorResult[tuple[int]], result).rowcount:
+    if version is None:
         raise ContentValidationError("Editable draft was not found")
+    await session.execute(
+        update(ContentKeyboardButton)
+        .where(
+            ContentKeyboardButton.keyboard_id.in_(
+                select(ContentKeyboard.id)
+                .join(ContentStep, ContentStep.id == ContentKeyboard.step_id)
+                .where(ContentStep.version_id == version_id)
+            )
+        )
+        .values(style=style)
+    )
+    version.button_style = None
     await session.commit()
 
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import csv
+import io
+import logging
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 
@@ -16,6 +19,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .billing import create_crypto_checkout, create_stars_checkout
+from .broadcasts import cancel_broadcast, launch_broadcast, save_broadcast
 from .campaigns import record_campaign_touch
 from .commercial import access_for_owner, list_sellable_plans
 from .config import Settings, get_settings
@@ -54,8 +58,10 @@ from .join_activation import (
 )
 from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
 from .message_catalog import install_template, template_view
-from .metrics import JOIN_REQUEST_ACTIVATIONS
+from .metrics import JOIN_REQUEST_ACTIVATIONS, TEMPLATE_INSTALLS
 from .models import (
+    Broadcast,
+    BroadcastRecipient,
     Channel,
     Contact,
     ContentAttachment,
@@ -66,6 +72,7 @@ from .models import (
     FinancialLedgerEntry,
     FlowChannelAssignment,
     FlowDelivery,
+    LearningVideo,
     ManagedBot,
     MessageTemplate,
     Payment,
@@ -89,6 +96,7 @@ from .web_sessions import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["mini-app"])
+logger = logging.getLogger(__name__)
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -143,6 +151,17 @@ class DraftButtonStyleRequest(BaseModel):
 
 class DraftStepContentRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
+
+
+class BroadcastSaveRequest(BaseModel):
+    bot_id: int = Field(gt=0)
+    source_channel_id: int | None = Field(default=None, gt=0)
+    name: str = Field(min_length=1, max_length=128)
+    content: dict[str, object]
+
+
+class BroadcastLaunchRequest(BaseModel):
+    scheduled_at: datetime | None = None
 
 
 @router.get("/public-config")
@@ -620,17 +639,256 @@ async def catalog_detail(template_id: int, user: CurrentUserDep, session: Sessio
 
 
 @router.post("/catalog/{template_id}/install", status_code=201)
-async def catalog_install(template_id: int, payload: CatalogInstallRequest, user: CsrfUserDep, session: SessionDep,
-                          idempotency_key: Annotated[str, Header(alias="Idempotency-Key")]) -> dict[str, object]:
+async def catalog_install(
+    template_id: int,
+    payload: CatalogInstallRequest,
+    request: Request,
+    user: CsrfUserDep,
+    session: SessionDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, object]:
     try:
-        return await install_template(session, owner_id=user.auth.owner.id, bot_id=payload.bot_id,
-                                      template_id=template_id, key=idempotency_key)
+        result = await install_template(session, owner_id=user.auth.owner.id, bot_id=payload.bot_id,
+                                        template_id=template_id, key=idempotency_key)
+        TEMPLATE_INSTALLS.labels("installed").inc()
+        return result
     except IdempotencyConflictError as exc:
         await session.rollback()
+        TEMPLATE_INSTALLS.labels("conflict").inc()
         raise HTTPException(409, str(exc)) from exc
     except ValueError as exc:
         await session.rollback()
+        TEMPLATE_INSTALLS.labels("invalid").inc()
         raise HTTPException(422, str(exc)) from exc
+    except Exception:
+        await session.rollback()
+        TEMPLATE_INSTALLS.labels("failed").inc()
+        logger.exception(
+            "catalog_install_failed request_id=%s owner_id=%s bot_id=%s template_id=%s",
+            getattr(request.state, "request_id", ""),
+            user.auth.owner.id,
+            payload.bot_id,
+            template_id,
+        )
+        raise
+
+
+@router.get("/learning")
+async def learning_resources(user: CurrentUserDep, session: SessionDep) -> dict[str, object]:
+    videos = list(
+        await session.scalars(
+            select(LearningVideo)
+            .where(LearningVideo.is_active.is_(True))
+            .order_by(LearningVideo.sort_order, LearningVideo.id)
+        )
+    )
+    return {
+        "guide": {
+            "completed": user.auth.owner.guide_completed,
+            "step": user.auth.owner.guide_step,
+        },
+        "videos": [
+            {
+                "id": row.id,
+                "slug": row.slug,
+                "title": row.title,
+                "description": row.description,
+                "video_url": row.video_url,
+                "poster_url": row.poster_url,
+                "duration_seconds": row.duration_seconds,
+                "feature_key": row.feature_key,
+            }
+            for row in videos
+        ],
+    }
+
+
+def _safe_csv(value: object) -> str:
+    text_value = str(value or "")
+    return f"'{text_value}" if text_value.startswith(("=", "+", "-", "@")) else text_value
+
+
+@router.get("/audience")
+async def audience(
+    user: CurrentUserDep,
+    session: SessionDep,
+    bot_id: int | None = None,
+    source_channel_id: int | None = None,
+    status_filter: str = "active",
+    q: str = "",
+    page: int = 1,
+) -> dict[str, object]:
+    if status_filter not in {"all", "none", "active", "unsubscribed", "blocked"} or page < 1:
+        raise HTTPException(422, "Некорректный фильтр базы")
+    query = select(Contact).join(ManagedBot, ManagedBot.id == Contact.bot_id).where(
+        ManagedBot.owner_id == user.auth.owner.id
+    )
+    if bot_id:
+        query = query.where(Contact.bot_id == bot_id)
+    if source_channel_id:
+        query = query.where(Contact.source_channel_id == source_channel_id)
+    if status_filter != "all":
+        query = query.where(Contact.consent_status == status_filter)
+    if q.strip():
+        term = f"%{q.strip()[:80]}%"
+        query = query.where(
+            Contact.username.ilike(term)
+            | Contact.first_name.ilike(term)
+            | Contact.last_name.ilike(term)
+        )
+    total = int(await session.scalar(select(func.count()).select_from(query.subquery())) or 0)
+    rows = list(await session.scalars(query.order_by(Contact.id.desc()).offset((page - 1) * 50).limit(50)))
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "bot_id": row.bot_id,
+                "username": row.username,
+                "first_name": row.first_name,
+                "last_name": row.last_name,
+                "status": row.consent_status,
+                "consented_at": row.consented_at,
+                "unsubscribed_at": row.unsubscribed_at,
+                "source_channel_id": row.source_channel_id,
+            }
+            for row in rows
+        ],
+        "total": total,
+        "page": page,
+    }
+
+
+@router.get("/audience.csv")
+async def audience_export(
+    user: CurrentUserDep,
+    session: SessionDep,
+    bot_id: int | None = None,
+    source_channel_id: int | None = None,
+) -> Response:
+    query = select(Contact).join(ManagedBot, ManagedBot.id == Contact.bot_id).where(
+        ManagedBot.owner_id == user.auth.owner.id,
+        Contact.consent_status == "active",
+    )
+    if bot_id:
+        query = query.where(Contact.bot_id == bot_id)
+    if source_channel_id:
+        query = query.where(Contact.source_channel_id == source_channel_id)
+    rows = list(await session.scalars(query.order_by(Contact.id)))
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(("telegram_id", "username", "first_name", "last_name", "consented_at", "consent_version", "source_channel_id"))
+    for row in rows:
+        writer.writerow(
+            (
+                row.telegram_id,
+                _safe_csv(row.username),
+                _safe_csv(row.first_name),
+                _safe_csv(row.last_name),
+                row.consented_at.isoformat() if row.consented_at else "",
+                row.consent_version,
+                row.source_channel_id or "",
+            )
+        )
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="gramly-audience.csv"'},
+    )
+
+
+@router.get("/broadcasts")
+async def broadcasts(user: CurrentUserDep, session: SessionDep) -> dict[str, object]:
+    rows = list(
+        await session.scalars(
+            select(Broadcast)
+            .where(Broadcast.owner_id == user.auth.owner.id)
+            .order_by(Broadcast.id.desc())
+            .limit(100)
+        )
+    )
+    result = []
+    for row in rows:
+        status_rows = (
+            await session.execute(
+                select(BroadcastRecipient.status, func.count())
+                .where(BroadcastRecipient.broadcast_id == row.id)
+                .group_by(BroadcastRecipient.status)
+            )
+        ).all()
+        stats: dict[str, int] = {
+            recipient_status: int(count) for recipient_status, count in status_rows
+        }
+        result.append(
+            {
+                "id": row.id,
+                "bot_id": row.bot_id,
+                "source_channel_id": row.source_channel_id,
+                "name": row.name,
+                "content": row.content,
+                "status": row.status,
+                "scheduled_at": row.scheduled_at,
+                "created_at": row.created_at,
+                "stats": stats,
+            }
+        )
+    return {"items": result}
+
+
+@router.post("/broadcasts", status_code=201)
+async def create_broadcast(
+    payload: BroadcastSaveRequest,
+    user: CsrfUserDep,
+    session: SessionDep,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> dict[str, object]:
+    try:
+        row = await save_broadcast(
+            session,
+            owner_id=user.auth.owner.id,
+            bot_id=payload.bot_id,
+            name=payload.name,
+            content=payload.content,
+            source_channel_id=payload.source_channel_id,
+            idempotency_key=idempotency_key,
+        )
+    except (ContentValidationError, ValueError) as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    return {"id": row.id, "status": row.status}
+
+
+@router.post("/broadcasts/{broadcast_id}/launch")
+async def start_broadcast(
+    broadcast_id: int,
+    payload: BroadcastLaunchRequest,
+    user: CsrfUserDep,
+    session: SessionDep,
+) -> dict[str, object]:
+    if payload.scheduled_at and payload.scheduled_at <= datetime.now(UTC) - timedelta(minutes=1):
+        raise HTTPException(422, "Время отправки уже прошло")
+    try:
+        row, recipients = await launch_broadcast(
+            session,
+            owner_id=user.auth.owner.id,
+            broadcast_id=broadcast_id,
+            scheduled_at=payload.scheduled_at,
+        )
+    except ContentValidationError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    return {"id": row.id, "status": row.status, "recipients": recipients}
+
+
+@router.post("/broadcasts/{broadcast_id}/cancel")
+async def stop_broadcast(
+    broadcast_id: int, user: CsrfUserDep, session: SessionDep
+) -> dict[str, object]:
+    try:
+        await cancel_broadcast(session, owner_id=user.auth.owner.id, broadcast_id=broadcast_id)
+    except ContentValidationError as exc:
+        await session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    return {"id": broadcast_id, "status": "cancelled"}
 
 
 @router.get("/flows/{flow_id}/draft")

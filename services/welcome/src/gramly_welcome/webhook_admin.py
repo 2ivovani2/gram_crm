@@ -39,16 +39,16 @@ async def reconcile() -> None:
     if not settings.interface_bot_token or not settings.interface_webhook_secret:
         raise RuntimeError("Interface bot token and webhook secret are required")
     async with Bot(settings.interface_bot_token) as bot:
-        await bot.set_my_name(name="GramlyHello")
+        await bot.set_my_name(name="Gramly")
         await bot.set_my_short_description(
-            short_description="Умные приветствия, цепочки и автоматизация для Telegram-сообществ."
+            short_description="Персональные приветствия новым участникам Telegram-канала."
         )
         await bot.set_my_description(
             description=(
-                "GramlyHello встречает новых участников от имени вашего бота: отправляет "
-                "персональные цепочки с медиа и кнопками, принимает заявки, показывает "
-                "честную статистику и помогает развивать Telegram-сообщество.\n\n"
-                "Нажмите «Запустить», чтобы подключить первого бота."
+                "Gramly встречает новых участников от имени вашего бота: принимает заявки "
+                "и отправляет персональные сообщения с медиа, кнопками и задержками.\n\n"
+                "Сайт — https://gramly.tech\n"
+                "Нажмите «Запустить», чтобы создать первое приветствие."
             )
         )
         await bot.set_my_commands(
@@ -73,7 +73,7 @@ async def reconcile() -> None:
         )
         await bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
-                text="Кабинет",
+                text="Открыть Gramly",
                 web_app=WebAppInfo(url=settings.mini_app_url),
             )
         )

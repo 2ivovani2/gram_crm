@@ -36,6 +36,7 @@ from .models import (
     FeatureFlag,
     FinancialLedgerEntry,
     FlowDelivery,
+    LearningVideo,
     ManagedBot,
     Manual,
     MarketingCampaign,
@@ -107,6 +108,18 @@ class ManualInput(BaseModel):
     is_onboarding: bool = False
     is_active: bool = True
     sort_order: int = Field(default=0, ge=-10_000, le=10_000)
+
+
+class LearningVideoInput(BaseModel):
+    slug: str = Field(pattern=r"^[a-z0-9_-]{2,64}$")
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=4000)
+    video_url: str = Field(min_length=1, max_length=2048)
+    poster_url: str = Field(default="", max_length=2048)
+    duration_seconds: int = Field(default=0, ge=0, le=86_400)
+    feature_key: str = Field(default="home", pattern=r"^[a-z0-9_-]{2,64}$")
+    sort_order: int = Field(default=0, ge=-10_000, le=10_000)
+    is_active: bool = True
 
 
 class AnnouncementInput(BaseModel):
@@ -1272,7 +1285,20 @@ async def content(_admin: AdminDep, session: SessionDep) -> dict[str, object]:
     help_items = list(
         (await session.scalars(select(ContextualHelp).order_by(ContextualHelp.feature_key))).all()
     )
+    videos = list(
+        (await session.scalars(select(LearningVideo).order_by(LearningVideo.sort_order, LearningVideo.id))).all()
+    )
     return {
+        "videos": [
+            {
+                "id": row.id, "slug": row.slug, "title": row.title,
+                "description": row.description, "video_url": row.video_url,
+                "poster_url": row.poster_url, "duration_seconds": row.duration_seconds,
+                "feature_key": row.feature_key, "sort_order": row.sort_order,
+                "is_active": row.is_active,
+            }
+            for row in videos
+        ],
         "manuals": [
             {
                 "id": row.id,
@@ -1337,6 +1363,27 @@ async def create_manual(
     row = Manual(**payload.model_dump(exclude={"telegraph_url"}), telegraph_url=url)
     session.add(row)
     await _audit(session, _admin, "manual_created", {"slug": row.slug})
+    await session.commit()
+    return {"id": row.id, "slug": row.slug}
+
+
+@router.post("/learning-videos", status_code=status.HTTP_201_CREATED)
+async def create_learning_video(
+    payload: LearningVideoInput, _admin: MutationAdminDep, session: SessionDep
+) -> dict[str, object]:
+    try:
+        video_url = _safe_url(payload.video_url)
+        poster_url = _safe_url(payload.poster_url) if payload.poster_url else ""
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    row = LearningVideo(
+        **payload.model_dump(exclude={"video_url", "poster_url"}),
+        video_url=video_url,
+        poster_url=poster_url,
+    )
+    session.add(row)
+    await session.flush()
+    await _audit(session, _admin, "learning_video_created", {"video_id": row.id, "slug": row.slug})
     await session.commit()
     return {"id": row.id, "slug": row.slug}
 
@@ -1500,6 +1547,7 @@ async def set_resource_active(
         "announcement": Announcement,
         "tip": Tip,
         "advertising": AdCreative,
+        "learning-video": LearningVideo,
     }
     model = models.get(resource)
     if model is None:

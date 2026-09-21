@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
+from aiogram import Bot
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import (
     TelegramAPIError,
     TelegramBadRequest,
@@ -21,7 +23,19 @@ from prometheus_client import start_http_server
 from redis.asyncio import Redis
 from sqlalchemy import select, update
 
+from ..audience import (
+    claim_client_messages,
+    defer_client_message,
+    finish_client_message,
+    load_client_message,
+)
 from ..bot_diagnostics import record_incident
+from ..broadcasts import (
+    claim_broadcast_recipients,
+    defer_broadcast_recipient,
+    finish_broadcast_recipient,
+    load_broadcast_context,
+)
 from ..commercial import access_for_owner
 from ..config import Settings, get_settings
 from ..crypto import TokenDecryptionError, TokenKeyring
@@ -48,6 +62,9 @@ from ..metrics import (
     WORKER_ACTIVE,
 )
 from ..models import (
+    BroadcastRecipient,
+    ClientMessage,
+    Contact,
     DeliveryOperation,
     FlowDelivery,
     GreetingDelivery,
@@ -83,6 +100,8 @@ from ..storage import MediaTooLargeError, ObjectStorage, ObjectStorageError
 from ..telegram_delivery import (
     approve_join_request,
     create_rotation_invite_link,
+    send_client_notice,
+    send_compiled_operation,
     send_delivery_operation,
     send_greeting,
     send_join_activation,
@@ -97,6 +116,145 @@ logger = logging.getLogger(__name__)
 
 def _retry_delay(attempts: int) -> int:
     return int(min(300, 2 ** min(attempts, 8)))
+
+
+async def _process_client_message(
+    message_id: int,
+    worker_id: str,
+    settings: Settings,
+    limiter: TelegramRateLimiter,
+    keyring: TokenKeyring,
+) -> None:
+    async with session_factory() as session:
+        context = await load_client_message(session, message_id)
+    if context is None:
+        async with session_factory() as session:
+            await finish_client_message(
+                session, message_id, worker_id, success=False, error="context_missing"
+            )
+        return
+    try:
+        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id)
+    except RateLimitUnavailable:
+        allowed = False
+    if not allowed:
+        async with session_factory() as session:
+            await defer_client_message(
+                session, message_id, worker_id, delay_seconds=5, error="rate_limited"
+            )
+        return
+    try:
+        await send_client_notice(context, keyring)
+    except TelegramRetryAfter as exc:
+        async with session_factory() as session:
+            await defer_client_message(
+                session, message_id, worker_id,
+                delay_seconds=max(1, int(exc.retry_after)), error="telegram_429",
+            )
+    except (TelegramForbiddenError, TelegramBadRequest, TelegramUnauthorizedError, TokenDecryptionError) as exc:
+        async with session_factory() as session:
+            if isinstance(exc, TelegramForbiddenError):
+                await session.execute(
+                    update(Contact).where(Contact.id == context.contact.id).values(
+                        consent_status="blocked", delivery_status="dead", last_error="bot_blocked_by_user"
+                    )
+                )
+            await finish_client_message(
+                session, message_id, worker_id, success=False, error=normalize_delivery_error(exc)
+            )
+    except (TelegramAPIError, OSError) as exc:
+        if context.message.attempts >= settings.max_attempts:
+            async with session_factory() as session:
+                await finish_client_message(
+                    session, message_id, worker_id, success=False, error=normalize_delivery_error(exc)
+                )
+        else:
+            async with session_factory() as session:
+                await defer_client_message(
+                    session, message_id, worker_id,
+                    delay_seconds=_retry_delay(context.message.attempts), error=normalize_delivery_error(exc),
+                )
+    else:
+        async with session_factory() as session:
+            await finish_client_message(session, message_id, worker_id, success=True)
+
+
+async def _process_broadcast_recipient(
+    recipient_id: int,
+    worker_id: str,
+    settings: Settings,
+    limiter: TelegramRateLimiter,
+    keyring: TokenKeyring,
+    storage: ObjectStorage,
+) -> None:
+    async with session_factory() as session:
+        context = await load_broadcast_context(session, recipient_id)
+    if context is None:
+        async with session_factory() as session:
+            await finish_broadcast_recipient(
+                session, recipient_id, worker_id, status="failed", error="context_missing"
+            )
+        return
+    if context.contact.consent_status != "active":
+        async with session_factory() as session:
+            await finish_broadcast_recipient(
+                session, recipient_id, worker_id, status="unsubscribed"
+            )
+        return
+    try:
+        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id)
+    except RateLimitUnavailable:
+        allowed = False
+    if not allowed:
+        async with session_factory() as session:
+            await defer_broadcast_recipient(
+                session, recipient_id, worker_id, delay_seconds=5, error="rate_limited"
+            )
+        return
+    try:
+        token = keyring.decrypt(context.bot.token_ciphertext)
+        async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+            for operation in context.operations:
+                await send_compiled_operation(
+                    bot,
+                    context.contact.telegram_id,
+                    operation.operation_type,
+                    operation.payload,
+                    operation.media,
+                    storage,
+                    first_name=context.contact.first_name,
+                )
+    except TelegramRetryAfter as exc:
+        async with session_factory() as session:
+            await defer_broadcast_recipient(
+                session, recipient_id, worker_id,
+                delay_seconds=max(1, int(exc.retry_after)), error="telegram_429",
+            )
+    except TelegramForbiddenError:
+        async with session_factory() as session:
+            await finish_broadcast_recipient(
+                session, recipient_id, worker_id, status="blocked", error="bot_blocked_by_user"
+            )
+    except (TelegramBadRequest, TelegramUnauthorizedError, TokenDecryptionError) as exc:
+        async with session_factory() as session:
+            await finish_broadcast_recipient(
+                session, recipient_id, worker_id, status="failed", error=normalize_delivery_error(exc)
+            )
+    except (TelegramAPIError, ObjectStorageError, OSError) as exc:
+        if context.recipient.attempts >= settings.max_attempts:
+            async with session_factory() as session:
+                await finish_broadcast_recipient(
+                    session, recipient_id, worker_id, status="failed", error=normalize_delivery_error(exc)
+                )
+        else:
+            async with session_factory() as session:
+                await defer_broadcast_recipient(
+                    session, recipient_id, worker_id,
+                    delay_seconds=_retry_delay(context.recipient.attempts), error=normalize_delivery_error(exc),
+                )
+    else:
+        async with session_factory() as session:
+            await finish_broadcast_recipient(session, recipient_id, worker_id, status="sent")
 
 
 async def _process_activation(
@@ -786,6 +944,12 @@ async def serve() -> None:
     server = health.start()
     common: dict[str, Any] = {"worker_id": worker_id, "settings": settings, "limiter": limiter, "keyring": keyring}
     queues: list[tuple[Any, Any, Any]] = [
+        (ClientMessage, claim_client_messages, partial(_process_client_message, **common)),
+        (
+            BroadcastRecipient,
+            claim_broadcast_recipients,
+            partial(_process_broadcast_recipient, storage=storage, **common),
+        ),
         (DeliveryOperation, claim_operation_batch, partial(_process_operation, storage=storage, **common)),
         (GreetingDelivery, claim_delivery_batch, partial(_process_delivery, storage=storage, **common)),
         (JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),

@@ -354,10 +354,18 @@ async def main_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 inline_button(
-                    "Открыть кабинет",
+                    "Открыть Gramly",
                     web_app=WebAppInfo(url=settings.mini_app_url),
                     style="primary",
                     emoji_key="important",
+                    theme=theme,
+                )
+            ],
+            [
+                inline_button(
+                    "Сайт Gramly",
+                    url="https://gramly.tech",
+                    emoji_key="link",
                     theme=theme,
                 )
             ],
@@ -592,7 +600,7 @@ async def configure_customer_webhook(managed: ManagedBot, token: str, settings: 
             url,
             ip_address=settings.webhook_ip_address or None,
             secret_token=managed.webhook_secret,
-            allowed_updates=["message", "my_chat_member", "chat_member", "chat_join_request"],
+            allowed_updates=["message", "callback_query", "my_chat_member", "chat_member", "chat_join_request"],
             drop_pending_updates=False,
             max_connections=20,
         )
@@ -678,10 +686,10 @@ async def show_main_menu(message: Message, owner: Owner) -> None:
     markup = await main_keyboard()
     await answer_with_ui_fallback(
         message,
-        f"🏠 <b>{_owner_display_name(owner)}, добро пожаловать в GramlyHello</b>\n\n"
-        "Здесь вы управляете всей механикой приветствий: подключаете ботов и каналы, "
-        "собираете цепочки сообщений, следите за доставками и развиваете аудиторию.\n\n"
-        "Выберите раздел ниже — я подскажу следующий шаг и сохраню все изменения:",
+        f"🏠 <b>{_owner_display_name(owner)}, добро пожаловать в Gramly</b>\n\n"
+        "Здесь вы подключаете бота и канал, создаёте личное приветствие и следите за "
+        "доставкой. Основная настройка открывается в Mini App.\n\n"
+        "Выберите следующий шаг:",
         reply_markup=markup,
     )
 
@@ -1325,7 +1333,6 @@ async def send_chain_editor(
                 )
             ],
             [owner_button(text="Помощь по цепочкам", callback_data="help:flows")],
-            [owner_button(text="Цвет кнопок", callback_data=f"chain-color:{version_id}", emoji_key="settings")],
             [owner_button(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
             _home_row(),
         ]
@@ -1420,14 +1427,43 @@ def _composer_markup() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 owner_button(
-                    text="✅ Готово",
+                    text="👁 Предпросмотр",
                     callback_data="chain:compose-done",
-                    style="success",
                 )
             ],
+            [
+                owner_button(text="🔘 Добавить кнопки", callback_data="chain:compose-buttons"),
+                owner_button(text="➕ Ещё сообщение", callback_data="chain:compose-more"),
+            ],
+            [owner_button(text="✅ Сохранить", callback_data="chain:compose-save", style="success")],
             [owner_button(text="❌ Отмена", callback_data="chain:compose-cancel")],
         ]
     )
+
+
+@router.callback_query(F.data == "chain:compose-more")
+async def continue_composer(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(WelcomeMessageState.waiting_for_message)
+    await callback.answer("Отправьте следующий текст или файл")
+
+
+@router.callback_query(F.data == "chain:compose-buttons")
+async def configure_staged_buttons(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not data.get("composer_items"):
+        await callback.answer("Сначала отправьте текст или файл", show_alert=True)
+        return
+    await state.set_state(WelcomeButtonState.waiting_for_buttons)
+    await state.update_data(step_id=0, return_to_composer=True)
+    await owner_answer(
+        _callback_message(callback),
+        "🔘 <b>Кнопки этого сообщения</b>\n\n"
+        "Каждый ряд — с новой строки, соседние кнопки разделяйте символом <code>|</code>.\n"
+        "Формат: <code>Название - https://example.com</code>.\n"
+        "Цвет можно дописать последним: <code>- синий</code>, <code>- зелёный</code> или <code>- красный</code>.",
+        reply_markup=_one_button("Назад", "chain:compose-back"),
+    )
+    await callback.answer()
 
 
 def _merge_attachment_payload(media: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -1695,6 +1731,15 @@ async def confirm_composer(callback: CallbackQuery, owner: Owner, state: FSMCont
     )
     await send_chain_editor(_callback_message(callback), owner, version_id)
     await callback.answer("Сохранено")
+
+
+@router.callback_query(F.data == "chain:compose-save")
+async def save_composer(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not data.get("composer_items"):
+        await callback.answer("Сначала добавьте текст или файл", show_alert=True)
+        return
+    await confirm_composer(callback, owner, state)
 
 
 @router.callback_query(F.data.startswith("chain:step:"))
@@ -2327,8 +2372,18 @@ def _parse_keyboard_definition(raw: str) -> dict[str, Any] | None:
             location = f"Ряд {row_index}, кнопка {button_index}"
             if not definition:
                 raise ContentValidationError(f"{location}: уберите лишний символ |")
-            text_value, separator, url = definition.rpartition(" - ")
-            if not separator:
+            parts = definition.rsplit(" - ", 2)
+            color_names = {
+                "стандартный": "default", "синий": "primary",
+                "зелёный": "success", "зеленый": "success", "красный": "danger",
+            }
+            style = "default"
+            if len(parts) == 3 and parts[2].strip().lower() in color_names:
+                text_value, url, color = parts
+                style = color_names[color.strip().lower()]
+            elif len(parts) >= 2:
+                text_value, url = " - ".join(parts[:-1]), parts[-1]
+            else:
                 raise ContentValidationError(
                     f"{location}: используйте формат «Название - https://example.com»"
                 )
@@ -2337,7 +2392,7 @@ def _parse_keyboard_definition(raw: str) -> dict[str, Any] | None:
                     "text": text_value.strip(),
                     "action_type": "url",
                     "value": url.strip(),
-                    "style": "default",
+                    "style": style,
                 }
             )
         rows.append(row)
@@ -2371,10 +2426,18 @@ async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContex
         return
     try:
         keyboard = _parse_keyboard_definition(message.text)
-        async with session_factory() as session:
-            await replace_step_keyboard(session, owner.id, step_id, keyboard)
+        if data.get("return_to_composer"):
+            await state.update_data(composer_keyboard=keyboard, return_to_composer=False)
+        else:
+            async with session_factory() as session:
+                await replace_step_keyboard(session, owner.id, step_id, keyboard)
     except ContentValidationError as exc:
         await owner_answer(message, f"⚠️ {exc}")
+        return
+    if data.get("return_to_composer"):
+        await state.set_state(WelcomeMessageState.waiting_for_message)
+        result = "✅ Кнопки добавлены. Отправьте следующий элемент или сохраните сообщение."
+        await owner_answer(message, result, reply_markup=_composer_markup())
         return
     await state.clear()
     if keyboard is None:
