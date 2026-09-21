@@ -47,7 +47,7 @@ export function mediaUrl(media: Media, scope: Scope) {
 export function blankStep(): Step {
   return {
     localId: crypto.randomUUID(),
-    payload: { type: "text", text: "", entities: [] },
+    payload: { type: "text", text: "", entities: [], link_preview_enabled: true },
     attachments: [],
     keyboard: null,
     delay_after_seconds: 0,

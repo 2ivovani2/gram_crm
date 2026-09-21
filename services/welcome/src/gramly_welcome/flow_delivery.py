@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from .advertising import choose_free_ad, mark_ad_operation
+from .audience import build_subscribe_token
 from .config import get_settings
 from .content_compiler import AttachmentSpec, CompiledOperation, compile_step
 from .content_service import flow_timeline_seconds
@@ -63,13 +64,17 @@ def should_reuse_recent_welcome_delivery(*, kind: str, target_chat_id: int | Non
 
 
 async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any] | None:
-    record = (await session.execute(select(ContentKeyboard, ContentFlowVersion.button_style)
+    record = (await session.execute(select(
+        ContentKeyboard, ContentFlowVersion.button_style, ManagedBot.username, ManagedBot.path_secret
+    )
         .join(ContentStep, ContentStep.id == ContentKeyboard.step_id)
         .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+        .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+        .join(ManagedBot, ManagedBot.id == ContentFlow.bot_id)
         .where(ContentKeyboard.step_id == step_id))).one_or_none()
     if record is None:
         return None
-    keyboard, chain_style = record
+    keyboard, _chain_style, bot_username, path_secret = record
     buttons = list(
         (
             await session.scalars(
@@ -90,9 +95,12 @@ async def keyboard_payload(session: AsyncSession, step_id: int) -> dict[str, Any
         rows[button.row].append(
             {
                 "text": button.text,
-                "action_type": button.action_type,
-                "value": button.value,
-                "style": chain_style if chain_style is not None else button.style,
+                "action_type": "url" if button.action_type == "subscribe" else button.action_type,
+                "value": (
+                    f"https://t.me/{bot_username}?start={build_subscribe_token(step_id, 0, path_secret)}"
+                    if button.action_type == "subscribe" else button.value
+                ),
+                "style": button.style,
             }
         )
     return {"kind": keyboard.kind, "settings": keyboard.settings, "rows": rows}

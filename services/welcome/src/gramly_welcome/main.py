@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import logging
+import uuid
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from .admin_api import router as admin_router
@@ -29,6 +33,33 @@ app.include_router(editor_router)
 app.include_router(editor_assets_router)
 app.include_router(emoji_admin_router)
 app.mount("/metrics", make_asgi_app())
+
+logger = logging.getLogger(__name__)
+
+
+@app.middleware("http")
+async def request_correlation(request: Request, call_next):  # type: ignore[no-untyped-def]
+    supplied = request.headers.get("x-request-id", "")
+    request_id = supplied if 1 <= len(supplied) <= 64 and supplied.isascii() else uuid.uuid4().hex
+    request.state.request_id = request_id
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
+        response = JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Не удалось выполнить запрос. Повторите попытку.",
+                "request_id": request_id,
+            },
+        )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 def run() -> None:

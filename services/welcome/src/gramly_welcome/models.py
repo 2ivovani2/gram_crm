@@ -209,6 +209,25 @@ class Manual(Base):
     )
 
 
+class LearningVideo(Base):
+    __tablename__ = "learning_video"
+    __table_args__ = (UniqueConstraint("slug", name="learning_video_slug_key"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    video_url: Mapped[str] = mapped_column(String(2048))
+    poster_url: Mapped[str] = mapped_column(String(2048), default="")
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    feature_key: Mapped[str] = mapped_column(String(64), default="home", index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ManualSection(Base):
     __tablename__ = "manual_section"
     __table_args__ = (
@@ -760,7 +779,7 @@ class ContentKeyboardButton(Base):
         UniqueConstraint("keyboard_id", "row", "position", name="uq_content_keyboard_button_position"),
         CheckConstraint("row >= 0 AND position >= 0", name="ck_content_keyboard_button_position"),
         CheckConstraint(
-            "action_type IN ('url','callback','text')",
+            "action_type IN ('url','callback','text','subscribe')",
             name="ck_content_keyboard_button_action",
         ),
         CheckConstraint(
@@ -1011,7 +1030,13 @@ class WelcomeDraftMedia(Base):
 
 class Contact(Base):
     __tablename__ = "contact"
-    __table_args__ = (UniqueConstraint("bot_id", "telegram_id", name="uq_contact_bot_telegram"),)
+    __table_args__ = (
+        UniqueConstraint("bot_id", "telegram_id", name="uq_contact_bot_telegram"),
+        CheckConstraint(
+            "consent_status IN ('none','active','unsubscribed','blocked')",
+            name="ck_contact_consent_status",
+        ),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger)
@@ -1022,12 +1047,122 @@ class Contact(Base):
     gender: Mapped[str] = mapped_column(String(16), default="unknown", index=True)
     delivery_status: Mapped[str] = mapped_column(String(16), default="unknown", index=True)
     bot_started: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_status: Mapped[str] = mapped_column(String(16), default="none", index=True)
+    consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    consent_version: Mapped[str] = mapped_column(String(32), default="")
+    consent_source: Mapped[str] = mapped_column(String(128), default="")
+    source_channel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("channel.id", ondelete="SET NULL"), index=True
+    )
+    unsubscribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     last_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str] = mapped_column(String(500), default="")
+
+
+class SubscriberChallenge(Base):
+    __tablename__ = "subscriber_challenge"
+    __table_args__ = (
+        UniqueConstraint("public_token", name="subscriber_challenge_public_token_key"),
+        CheckConstraint(
+            "status IN ('pending','passed','expired','failed')",
+            name="ck_subscriber_challenge_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    public_token: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, index=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    step_id: Mapped[int | None] = mapped_column(
+        ForeignKey("content_step.id", ondelete="SET NULL"), index=True
+    )
+    source_channel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("channel.id", ondelete="SET NULL"), index=True
+    )
+    answer: Mapped[str] = mapped_column(String(16))
+    options: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ClientMessage(Base):
+    __tablename__ = "client_message"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('scheduled','processing','retry','sent','failed','cancelled')",
+            name="ck_client_message_status",
+        ),
+        Index("ix_client_message_claim", "status", "due_at", "lease_expires_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(64), default="")
+
+
+class Broadcast(Base):
+    __tablename__ = "broadcast"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "idempotency_key", name="uq_broadcast_owner_key"),
+        CheckConstraint(
+            "status IN ('draft','scheduled','running','completed','cancelled','failed')",
+            name="ck_broadcast_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("managed_bot.id", ondelete="CASCADE"), index=True)
+    source_channel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("channel.id", ondelete="SET NULL"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(128))
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class BroadcastRecipient(Base):
+    __tablename__ = "broadcast_recipient"
+    __table_args__ = (
+        UniqueConstraint("broadcast_id", "contact_id", name="uq_broadcast_recipient_contact"),
+        CheckConstraint(
+            "status IN ('scheduled','processing','retry','sent','failed','blocked','unsubscribed','cancelled')",
+            name="ck_broadcast_recipient_status",
+        ),
+        Index("ix_broadcast_recipient_claim", "status", "due_at", "lease_expires_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    broadcast_id: Mapped[int] = mapped_column(
+        ForeignKey("broadcast.id", ondelete="CASCADE"), index=True
+    )
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contact.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(64), default="")
 
 
 class ChannelMembership(Base):

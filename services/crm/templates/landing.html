@@ -5,123 +5,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#070908">
-  <meta name="description" content="Gramly Welcome принимает заявки и отправляет персональные приветствия новым участникам Telegram-канала.">
-  <title>Gramly Welcome — автоматические приветствия в Telegram</title>
+  <meta name="description" content="Gramly автоматически встречает новых участников Telegram персональным сообщением с медиа и кнопками.">
+  <title>Gramly — персональные приветствия в Telegram</title>
   {% include "ui/favicon.html" %}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'dist/assets/landing.css' %}">
 </head>
-<body class="landing-page">
-  <header class="landing-header" data-landing-nav>
-    <nav class="g-container landing-header__inner" aria-label="Основная навигация">
-      <a class="landing-brand" href="#top" aria-label="Gramly Welcome, на главную"><span aria-hidden="true">G/</span><strong>gramly</strong></a>
-      <div class="landing-header__links" data-nav-links>
-        <a href="#flow">Как работает</a><a href="#features">Подключение</a><a href="#security">Безопасность</a><a href="#crm">CRM</a>
-        <a class="landing-button landing-button--acid landing-header__mobile-cta" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}{% else %}#flow{% endif %}">Открыть в Telegram</a>
-      </div>
-      <div class="landing-header__actions">
-        <a class="landing-button landing-button--quiet" href="https://crm.gramly.tech/crm/login/">Войти в CRM</a>
-        <a class="landing-button landing-button--acid" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}{% else %}#flow{% endif %}">Открыть в Telegram</a>
-        <button class="landing-header__toggle" data-nav-toggle type="button" aria-label="Открыть меню" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      </div>
-    </nav>
-  </header>
+<body class="landing-page welcome-landing">
+  <header class="landing-header" data-landing-nav><nav class="g-container landing-header__inner" aria-label="Основная навигация">
+    <a class="landing-brand" href="#top" aria-label="Gramly, на главную"><span aria-hidden="true">G/</span><strong>gramly</strong></a>
+    <div class="landing-header__links" data-nav-links><a href="#how">Как работает</a><a href="#message">Сообщение</a><a href="#templates">Шаблоны</a><a href="#audience">База</a><a href="#learn">Обучение</a><a class="landing-button landing-button--acid landing-header__mobile-cta" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}?startapp=dashboard{% else %}#how{% endif %}">Открыть Gramly</a></div>
+    <div class="landing-header__actions"><a class="landing-button landing-button--acid" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}?startapp=dashboard{% else %}#how{% endif %}">Открыть Gramly</a><button class="landing-header__toggle" data-nav-toggle type="button" aria-label="Открыть меню" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button></div>
+  </nav></header>
 
   <main id="top">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="g-container hero__grid">
-        <div class="hero__copy">
-          <p class="editorial-label">Gramly Welcome · Telegram automation</p>
-          <h1 id="hero-title" data-reveal><span>Вступил человек.</span><span>Gramly уже встретил.</span></h1>
-          <p class="hero__lead">Принимает заявку, выбирает сценарий, персонализирует приветствие и фиксирует доставку — без ручной работы.</p>
-          <div class="hero__actions">
-            <a class="landing-button landing-button--acid" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}{% else %}#flow{% endif %}">Запустить Gramly Welcome <span aria-hidden="true">↗</span></a>
-            <a class="landing-button landing-button--line" href="#flow">Посмотреть сценарий <span aria-hidden="true">↓</span></a>
-          </div>
-        </div>
+    <section class="welcome-hero"><div class="g-container welcome-hero__grid">
+      <div class="welcome-hero__copy"><p class="editorial-label">GRAMLY · ПРИВЕТСТВИЯ В TELEGRAM</p><h1 data-reveal>Каждого нового участника встречает <mark>личное сообщение.</mark></h1><p>Gramly принимает заявку в канал и автоматически отправляет приветствие от вашего бота — с именем, медиа, кнопками и нужной задержкой.</p><div class="hero__actions"><a class="landing-button landing-button--acid" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}?startapp=dashboard{% else %}#how{% endif %}">Создать приветствие <span>↗</span></a><a class="landing-button landing-button--line" href="#learn">Смотреть короткий гайд <span>▶</span></a></div><ul class="welcome-proof"><li>Без кода</li><li>Первый запуск за несколько минут</li><li>Внутри Telegram</li></ul></div>
+      <div class="welcome-phone" data-story-visual aria-label="Пример персонального приветствия"><div class="welcome-phone__top"><span>Telegram</span><b>Gramly Community</b><i></i></div><div class="welcome-join"><span>М</span><p><b>Мария вступила в канал</b><small>заявка принята автоматически</small></p><em>сейчас</em></div><article class="welcome-bubble"><div class="welcome-bubble__media"><span>G/</span><small>WELCOME, МАРИЯ</small><b>Начнём знакомство?</b></div><p><strong>Мария</strong>, рады видеть вас в Gramly Community! Мы собрали главное, чтобы вы быстро освоились.</p><div class="welcome-bubble__buttons"><span>Начать знакомство</span><span>Полезные материалы</span></div><time>12:41 ✓✓</time></article><div class="welcome-delivered"><i></i><span><b>Приветствие доставлено</b><small>через 2 секунды после вступления</small></span></div></div>
+    </div></section>
 
-        <div class="hero-product" data-hero-product aria-label="Путь нового участника от заявки до приветствия в Telegram">
-          <header class="hero-product__bar"><span>Live welcome workflow</span><span>Gramly / Community</span><button type="button" data-hero-replay aria-label="Повторить сценарий"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.3-2L20 9M4 15l2.6 2a7 7 0 0 0 11.3-2"/></svg><span>Повторить</span></button></header>
-          <div class="hero-product__body">
-            <section class="hero-event" data-hero-step="event">
-              <div class="product-caption"><span>01</span><b>Telegram event</b><time>12:41</time></div>
-              <div class="hero-event__person"><span class="hero-avatar">МВ</span><span><strong>Мария вступила в канал</strong><small>@maria_gramly · Gramly Community</small></span></div>
-              <dl><div><dt>Event type</dt><dd>chat_member.updated</dd></div><div><dt>Source</dt><dd><i></i> Telegram</dd></div></dl>
-            </section>
+    <section class="welcome-steps" id="how"><div class="g-container"><p class="editorial-label">ТРИ ШАГА ДО ЗАПУСКА</p><div class="section-title"><h2 data-reveal>Подключили. Собрали. Запустили.</h2><p>Главная Mini App всегда показывает готовые шаги и следующее действие.</p></div><div class="step-grid"><article><b>01</b><span class="step-icon">BOT</span><h3>Подключите бота и канал</h3><p>Gramly проверит права и безопасно удалит сообщение с токеном.</p></article><article><b>02</b><span class="step-icon">TXT</span><h3>Соберите приветствие</h3><p>Добавьте текст, медиа, Premium-эмодзи, кнопки и задержки.</p></article><article><b>03</b><span class="step-icon">GO</span><h3>Проверьте и запустите</h3><p>Выберите канал. Следующего участника Gramly встретит автоматически.</p></article></div></div></section>
 
-            <section class="hero-engine" data-hero-step="engine">
-              <div class="product-caption"><span>02</span><b>Gramly processing</b><em data-engine-state>Ready</em></div>
-              <div class="hero-route" aria-hidden="true"><span data-hero-route></span><i data-hero-signal></i></div>
-              <ol class="hero-engine__states">
-                <li data-engine-item><span>Trigger detected</span><b>join request</b></li>
-                <li data-engine-item><span>Scenario selected</span><b>Community welcome</b></li>
-                <li data-engine-item><span>Message personalized</span><b>{first_name} → Мария</b></li>
-                <li data-engine-item><span>Webhook</span><b class="functional">200 OK</b></li>
-              </ol>
-            </section>
+    <section class="message-lab" id="message"><div class="g-container message-lab__grid"><div class="section-copy"><p class="editorial-label">РЕДАКТОР СООБЩЕНИЯ</p><h2 data-reveal>Выглядит как настоящий Telegram-пост.</h2><p>Каждое сообщение редактируется отдельно. Результат сразу виден рядом.</p><ul><li>Текст, альбомы и видео</li><li>Premium-эмодзи и форматирование</li><li>Разные цвета кнопок</li><li>Отдельный переключатель превью ссылки</li><li>До пяти сообщений в цепочке</li></ul></div><div class="editor-demo" data-story-visual><header><span>Приветствие / Сообщение 1</span><b>Сохранено</b></header><div class="editor-demo__body"><aside><button class="is-active">Текст</button><button>Медиа</button><button>Кнопки</button><button>Задержка</button></aside><main><label>Текст приветствия</label><div class="fake-input">Привет, <mark>{name}</mark>! Рады видеть вас с нами.</div><label class="fake-toggle"><i></i> Показывать превью ссылки</label><div class="button-palette"><span class="lime">Начать</span><span class="cyan">О канале</span><span class="red">Правила</span><span class="blue">Поддержка</span></div></main></div></div></div></section>
 
-            <section class="hero-message" data-hero-step="message">
-              <div class="product-caption"><span>03</span><b>Telegram preview</b><em class="is-delivered" data-delivery-state>Delivered</em></div>
-              <div class="telegram-preview">
-                <div class="telegram-preview__channel"><span class="hero-avatar hero-avatar--small">G</span><span><strong>Gramly Community</strong><small>сейчас</small></span></div>
-                <div class="telegram-preview__media"><small>WELCOME TO</small><strong>GRAMLY</strong></div>
-                <p><span data-person-name>Мария</span>, рады видеть тебя в Gramly Community. Начни со знакомства с командой и закреплённого сообщения.</p>
-                <time>12:41 <b>✓✓</b></time>
-              </div>
-            </section>
-          </div>
-          <footer class="hero-product__result" data-hero-step="crm"><span class="hero-product__result-line" aria-hidden="true"></span><span><b>04</b> Welcome result</span><strong><i></i> Delivered</strong><small>Результат сохранён в GramlyHello</small></footer>
-        </div>
-      </div>
-    </section>
+    <section class="template-section" id="templates"><div class="g-container"><div class="section-title"><div><p class="editorial-label">ГОТОВЫЕ ШАБЛОНЫ</p><h2 data-reveal>Не начинайте с пустого экрана.</h2></div><p>Выберите основу. Gramly создаст независимый черновик, который можно менять без влияния на шаблон.</p></div><div class="template-grid"><article><span>ОНБОРДИНГ</span><h3>Первое знакомство</h3><p>Приветствие, правила и быстрые ссылки.</p><b>3 сообщения · 2 мин.</b></article><article><span>ЭКСПЕРТНЫЙ КАНАЛ</span><h3>Навигация по контенту</h3><p>Рубрики, архив и полезные материалы.</p><b>2 сообщения · Premium emoji</b></article><article><span>СООБЩЕСТВО</span><h3>Старт участника</h3><p>Правила и осознанная подписка на сообщения.</p><b>4 сообщения · сбор базы</b></article></div></div></section>
 
-    <section class="welcome-flow" id="flow" data-welcome-flow aria-labelledby="flow-title">
-      <div class="flow-intro g-container">
-        <p class="editorial-label">Telegram Welcome Flow</p>
-        <div class="flow-intro__grid"><h2 id="flow-title" data-reveal><span>Шесть действий.</span><span>Один цельный сценарий.</span></h2><p>От события Telegram до подтверждённой доставки — каждый этап виден и связан с предыдущим.</p></div>
-      </div>
-      <div class="flow-sequence">
-        <div class="flow-pin g-container" data-flow-pin>
-          <div class="flow-layout">
-            <aside class="flow-index" aria-label="Этапы сценария">
-              <p><span data-flow-current>01</span> / 06</p>
-              <ol>
-                <li data-flow-step><b>01</b><span>Новая заявка</span></li><li data-flow-step><b>02</b><span>Trigger</span></li><li data-flow-step><b>03</b><span>Принятие</span></li><li data-flow-step><b>04</b><span>Персонализация</span></li><li data-flow-step><b>05</b><span>Доставка</span></li><li data-flow-step><b>06</b><span>Результат</span></li>
-              </ol>
-            </aside>
-            <div class="flow-workspace">
-              <header><span>Gramly workflow / Community</span><strong data-flow-status>Delivered</strong></header>
-              <div class="flow-panels">
-                <article class="flow-panel" data-flow-panel><div class="flow-panel__copy"><span>01 · Event received</span><h3>Новый человек ждёт решения.</h3><p>Telegram передал заявку в отдельный защищённый webhook.</p></div><div class="flow-ui flow-ui--event"><div class="flow-person"><span class="hero-avatar">МВ</span><span><b>Мария Волкова</b><small>@maria_gramly</small></span><time>12:41</time></div><dl><div><dt>Канал</dt><dd>Gramly Community</dd></div><div><dt>Событие</dt><dd>join_request</dd></div><div><dt>Webhook</dt><dd class="functional">received</dd></div></dl></div></article>
-                <article class="flow-panel" data-flow-panel><div class="flow-panel__copy"><span>02 · Trigger detected</span><h3>Gramly узнаёт контекст.</h3><p>Бот, канал и событие сопоставляются с нужным сценарием.</p></div><div class="flow-ui flow-ui--logic"><p>IF <b>channel</b> is <strong>Gramly Community</strong></p><p>AND <b>event</b> is <strong>join_request</strong></p><p>RUN <b>scenario</b> <strong>Community welcome</strong></p><footer><span>2 conditions matched</span><b>Scenario selected</b></footer></div></article>
-                <article class="flow-panel" data-flow-panel><div class="flow-panel__copy"><span>03 · Access granted</span><h3>Участник принят в канал.</h3><p>Gramly выполняет действие от имени подключённого бота.</p></div><div class="flow-ui flow-ui--access"><span class="hero-avatar">МВ</span><h4>Мария принята</h4><p>Gramly Community</p><div><span>Telegram API</span><b class="functional">approveChatJoinRequest</b><em>200 OK</em></div></div></article>
-                <article class="flow-panel" data-flow-panel><div class="flow-panel__copy"><span>04 · Personalized</span><h3>Сообщение знает, кому отправляется.</h3><p>Переменная заменяется реальным именем перед отправкой.</p></div><div class="flow-ui flow-ui--personalize"><code>Привет, <mark>{first_name}</mark>!</code><span aria-hidden="true">→</span><code>Привет, <mark>Мария</mark>!</code><footer><b>Текст</b><b>Медиа</b><b>Задержка 10 сек.</b></footer></div></article>
-                <article class="flow-panel" data-flow-panel><div class="flow-panel__copy"><span>05 · Message delivered</span><h3>Welcome приходит вовремя.</h3><p>Текст и медиа отправлены после настроенной задержки.</p></div><div class="flow-ui flow-ui--delivery"><div class="telegram-preview"><div class="telegram-preview__channel"><span class="hero-avatar hero-avatar--small">G</span><span><strong>Gramly Community</strong><small>сейчас</small></span></div><p>Мария, рады видеть тебя в Gramly Community.</p><time>12:41 <b>✓✓</b></time></div><strong>Delivered</strong></div></article>
-                <article class="flow-panel is-active" data-flow-panel><div class="flow-panel__copy"><span>06 · Result recorded</span><h3>Результат сохраняется в GramlyHello.</h3><p>Владелец видит статус доставки и статистику своего бота.</p></div><div class="flow-ui flow-ui--result"><div><span>Welcome status</span><b>Delivered</b><small>12:41:08</small></div><div><span>Webhook</span><b>200 OK</b><small>128 ms</small></div><div><span>GramlyHello</span><b>Recorded</b><small>Telegram · Community</small></div><footer><i></i> Workflow completed</footer></div></article>
-              </div>
-              <div class="flow-progress" aria-hidden="true"><i data-flow-progress></i></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+    <section class="audience-section" id="audience"><div class="g-container audience-section__grid"><div class="section-copy"><p class="editorial-label">БАЗА И РАССЫЛКИ</p><h2 data-reveal>Продолжайте разговор только с теми, кто согласился.</h2><p>Человек видит условия, проходит короткую emoji-проверку и в любой момент может отписаться.</p><ul><li>Согласие и источник</li><li>Фильтры по боту и каналу</li><li>CSV своей аудитории</li><li>Немедленная или отложенная отправка</li><li>Статусы и обязательная отписка</li></ul></div><div class="audience-console" data-story-visual><header><span>БАЗА ПОДПИСЧИКОВ</span><b>1 248 активных</b></header><div class="audience-console__filters"><span>Все каналы</span><span>Активные</span><span>Поиск</span></div><div class="audience-row"><i>АК</i><span><b>Анна Котова</b><small>@annak · Приветствие канала</small></span><em>активен</em></div><div class="audience-row"><i>МИ</i><span><b>Максим Ильин</b><small>@maxim · Шаблон «Старт»</small></span><em>активен</em></div><footer><div><small>ОЖИДАЕТ</small><b>86</b></div><div><small>ОТПРАВЛЕНО</small><b>1 121</b></div><div><small>ОШИБКА</small><b>7</b></div></footer></div></div></section>
 
-    <section class="connection-scene" id="features"><div class="g-container scene-grid"><div class="scene-copy"><p class="editorial-label">01 · Подключение</p><h2 data-reveal><span>От BotFather</span><span>до рабочего webhook.</span></h2><p>Gramly ведёт по реальной последовательности, проверяет канал и права и подтверждает готовность.</p></div><div class="connection-console" data-story-visual><header><span>Connect Telegram bot</span><b>4 / 4</b></header><ol><li><b>01</b><span><strong>Бот создан в @BotFather</strong><small>@gramly_community_bot</small></span><em>готово</em></li><li><b>02</b><span><strong>Токен безопасно получен</strong><small>Исходное сообщение удалено</small></span><em>защищён</em></li><li><b>03</b><span><strong>Канал и права проверены</strong><small>Gramly Community · administrator</small></span><em>готово</em></li><li><b>04</b><span><strong>Webhook подключён</strong><small>/welcome/•••••••• · HTTPS</small></span><em>200 OK</em></li></ol><footer><i></i><span><b>Community bot работает</b><small>Можно создавать welcome-сценарий</small></span></footer></div></div></section>
+    <section class="learning-section" id="learn"><div class="g-container"><div class="section-title"><div><p class="editorial-label">ОБУЧЕНИЕ ВНУТРИ GRAMLY</p><h2 data-reveal>Один урок — одно готовое действие.</h2></div><p>Быстрый старт отмечает прогресс, а подсказки появляются на нужном экране.</p></div><ol class="lesson-grid"><li><b>01</b><span>Подключение бота и канала</span><em>2 мин.</em></li><li><b>02</b><span>Первое приветствие</span><em>3 мин.</em></li><li><b>03</b><span>Медиа, кнопки и ссылки</span><em>3 мин.</em></li><li><b>04</b><span>Готовый шаблон</span><em>2 мин.</em></li><li><b>05</b><span>База и первая рассылка</span><em>4 мин.</em></li></ol></div></section>
 
-    <section class="composer-scene"><div class="g-container"><div class="composer-heading"><p class="editorial-label">02 · Приветствие</p><h2 data-reveal><span>Сообщение уже выглядит</span><span>живым до отправки.</span></h2><p>Редактор и preview показывают один и тот же сценарий — с текстом, медиа и задержкой.</p></div><div class="composer-workspace" data-story-visual><div class="composer-editor"><header><span>Community welcome</span><b>Сохранено</b></header><label>Текст приветствия</label><div class="composer-editor__text">Привет, <mark>{first_name}</mark>!<br><br>Рады видеть тебя в Gramly Community. Начни со знакомства с командой и закреплённого сообщения.</div><dl><div><dt>Медиа</dt><dd>welcome-cover.jpg</dd></div><div><dt>Задержка</dt><dd>10 секунд</dd></div></dl><button type="button">Сохранить сценарий</button></div><div class="composer-transfer"><span>EDITOR</span><i></i><span>PREVIEW</span></div><div class="composer-preview"><header>Gramly Community <span>сейчас</span></header><div class="composer-preview__media"><small>WELCOME TO</small><strong>GRAMLY</strong></div><p>Мария, рады видеть тебя в Gramly Community. Начни со знакомства с командой и закреплённого сообщения.</p><footer><span>Отправка через 10 секунд</span><b>Preview</b></footer></div></div></div></section>
+    <section class="landing-faq"><div class="g-container faq__grid"><div><p class="editorial-label">КОРОТКО О ГЛАВНОМ</p><h2>Частые вопросы.</h2></div><div class="faq__list"><article data-ui="faq"><button aria-expanded="false"><span><b>01</b> Где настраивается приветствие?</span><i>+</i></button><div><p>В Mini App внутри Telegram. Owner-бот открывает сразу нужный экран.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>02</b> Можно использовать своего бота?</span><i>+</i></button><div><p>Да. Вы подключаете собственного бота и выбираете его каналы.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>03</b> Как люди попадают в базу?</span><i>+</i></button><div><p>Только после показа условий и успешной emoji-проверки. Заявка в канал согласием не считается.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>04</b> Можно ли отписаться?</span><i>+</i></button><div><p>Да. /stop и кнопка в рассылке сразу исключают человека из аудитории.</p></div></article></div></div></section>
 
-    <section class="operations-scene" id="security"><div class="g-container"><div class="operations-heading"><p class="editorial-label">03 · Управление и безопасность</p><h2 data-reveal><span>Каждый бот на своей линии.</span><span>Весь процесс под контролем.</span></h2></div><div class="operations-console" data-story-visual><aside><header>Боты и каналы <b>3 online</b></header><button class="is-active"><i>GC</i><span><b>Community bot</b><small>2 канала</small></span></button><button><i>GP</i><span><b>Product bot</b><small>1 канал</small></span></button><button><i>GT</i><span><b>Team bot</b><small>3 канала</small></span></button></aside><main><header><span><small>Выбранный сценарий</small><b>Community welcome</b></span><em>активен</em></header><div class="operations-timeline"><div><time>12:41:01</time><span><b>Join request</b><small>@maria_gramly · Gramly Community</small></span><em>received</em></div><div><time>12:41:02</time><span><b>Scenario selected</b><small>Community welcome</small></span><em>ready</em></div><div><time>12:41:08</time><span><b>Welcome delivered</b><small>Telegram message #1842</small></span><em>delivered</em></div></div><footer><span><b>Encrypted secrets</b><small>Токены недоступны в интерфейсе и логах</small></span><span><b>Isolated endpoints</b><small>Отдельный webhook для каждого бота</small></span></footer></main></div></div></section>
-
-    <section class="crm-bridge" id="crm"><div class="g-container"><div class="crm-heading"><p class="editorial-label">Gramly ecosystem</p><h2 data-reveal><span>GramlyHello встречает.</span><span>CRM управляет командой.</span></h2><p>Два независимых продукта: GramlyHello автоматизирует сообщения в Telegram, а CRM помогает работать с отчётами и финансами команды. Контакты, история и финансы между ними автоматически не передаются.</p></div><div class="crm-handoff" data-story-visual><div class="crm-handoff__event"><small>WELCOME EVENT</small><span class="hero-avatar">МВ</span><h3>Мария Волкова</h3><p>@maria_gramly · Gramly Community</p><dl><div><dt>Welcome</dt><dd>Delivered</dd></div><div><dt>Source</dt><dd>Telegram</dd></div></dl></div><div class="crm-handoff__route"><span>Два продукта</span><i></i></div><div class="crm-interface"><aside><strong>G/</strong><span>Обзор</span><span>Cash Flow</span><span>История</span><b>HR Контроль</b><span>Аналитика</span></aside><main><header><span><small>Рабочее пространство</small><b>Обзор бизнеса</b></span><em>Защищено · SSO</em></header><section><div><small>Рабочий день</small><b>В работе</b></div><div><small>Отчёты команды</small><b>Собираются</b></div><div><small>Рабочий контур</small><b>Команда</b></div></section><div class="crm-interface__table"><header><span>Сотрудник</span><span>Отчёт</span><span>Срок</span><span>Статус</span></header><p><span>Алексей Миронов</span><span>Ежедневный</span><span>23:00</span><b>На модерации</b></p></div></main></div></div><a class="landing-button landing-button--line" href="https://crm.gramly.tech/crm/login/">Войти в CRM <span aria-hidden="true">↗</span></a></div></section>
-
-    <section class="faq"><div class="g-container faq__grid"><div><p class="editorial-label">Коротко о главном</p><h2>Вопросы без мелкого шрифта.</h2></div><div class="faq__list"><article data-ui="faq"><button aria-expanded="false"><span><b>01</b> Нужен ли отдельный кабинет?</span><i>+</i></button><div><p>Нет. Подключение ботов, каналов и welcome-сценариев выполняется в интерфейсном Telegram-боте Gramly.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>02</b> Какие права нужны боту в канале?</span><i>+</i></button><div><p>Боту нужны права администратора для обработки заявок и принятия новых участников. Gramly проверит их при подключении.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>03</b> Можно использовать фото и видео?</span><i>+</i></button><div><p>Да. Welcome-сценарий поддерживает текст и настроенное медиа в пределах ограничений Telegram.</p></div></article><article data-ui="faq"><button aria-expanded="false"><span><b>04</b> Что происходит с токеном бота?</span><i>+</i></button><div><p>Сообщение с токеном удаляется после подключения, а значение хранится зашифрованным и используется только серверной частью Gramly.</p></div></article></div></div></section>
-
-    <section class="final-cta"><div class="g-container final-cta__grid"><p class="editorial-label">Готово к первому welcome</p><h2 data-reveal><span>Встречайте людей так,</span><span>будто ждали именно их.</span></h2><div><p>Подключите собственного Telegram-бота и соберите первый сценарий за несколько понятных шагов.</p><a class="landing-button landing-button--dark" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}{% else %}#flow{% endif %}">Открыть Gramly Welcome <span aria-hidden="true">↗</span></a></div></div></section>
+    <section class="final-cta"><div class="g-container final-cta__grid"><p class="editorial-label">ПЕРВОЕ ПРИВЕТСТВИЕ</p><h2>Встретьте следующего участника лично.</h2><div><p>Откройте Gramly в Telegram и соберите сообщение по шагам.</p><a class="landing-button landing-button--dark" href="{% if welcome_bot_username %}https://t.me/{{ welcome_bot_username }}?startapp=dashboard{% else %}#how{% endif %}">Открыть Gramly <span>↗</span></a></div></div></section>
   </main>
-
-  <footer class="landing-footer"><div class="g-container"><a class="landing-brand" href="#top"><span aria-hidden="true">G/</span><strong>gramly</strong></a><span>© 2026 Gramly. Telegram automation & business intelligence.</span><nav><a href="#security">Безопасность</a><a href="https://crm.gramly.tech/crm/login/">CRM</a></nav></div></footer>
+  <footer class="landing-footer"><div class="g-container"><a class="landing-brand" href="#top"><span>G/</span><strong>gramly</strong></a><span>© 2026 Gramly. Персональные приветствия в Telegram.</span><nav><a href="#how">Как работает</a><a href="https://t.me/gramlymanager">Поддержка</a></nav></div></footer>
   <script type="module" src="{% static 'dist/assets/landing.js' %}"></script>
 </body>
 </html>

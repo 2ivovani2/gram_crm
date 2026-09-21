@@ -41,6 +41,7 @@ welcome-worker-billing = "gramly_welcome.workers.billing:run"
 welcome-worker-notifications = "gramly_welcome.workers.notifications:run"
 welcome-maintenance = "gramly_welcome.maintenance:run"
 welcome-reconcile-interface-webhook = "gramly_welcome.webhook_admin:run"
+welcome-reconcile-client-webhooks = "gramly_welcome.reconcile_client_webhooks:run"
 welcome-reconcile-join-requests = "gramly_welcome.reconcile_join_requests:run"
 
 [tool.setuptools.packages.find]

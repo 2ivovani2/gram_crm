@@ -4,6 +4,7 @@ import hashlib
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
+from copy import deepcopy
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any, cast
@@ -20,12 +21,20 @@ from aiogram.types import (
     InputMediaPhoto,
     InputMediaVideo,
     KeyboardButton,
+    LinkPreviewOptions,
     Message,
     MessageEntity,
     ReplyKeyboardMarkup,
     WebAppInfo,
 )
 
+from .audience import (
+    ClientMessageContext,
+    build_subscribe_token,
+    captcha_callback,
+    client_message_text,
+    verify_subscribe_token,
+)
 from .crypto import TokenKeyring
 from .flow_delivery import OperationContext
 from .join_activation import ActivationContext, build_activation_token
@@ -132,6 +141,46 @@ async def probe_persistent_write(context: ActivationContext, keyring: TokenKeyri
     bot_token = keyring.decrypt(context.bot.token_ciphertext)
     async with Bot(token=bot_token, session=AiohttpSession(timeout=30)) as bot:
         await bot.send_chat_action(context.contact.telegram_id, "typing")
+
+
+async def send_client_notice(context: ClientMessageContext, keyring: TokenKeyring) -> None:
+    token = keyring.decrypt(context.bot.token_ciphertext)
+    payload = context.message.payload
+    kind = str(payload.get("kind") or "")
+    markup = None
+    if kind == "captcha":
+        challenge = str(payload.get("challenge") or "")
+        answer = str(payload.get("answer") or "")
+        options = [str(item) for item in payload.get("options", [])]
+        text = (
+            "<b>Подписка на сообщения</b>\n\n"
+            "После подтверждения этот бот сможет присылать вам информационные и рекламные "
+            "сообщения. Частоту и содержание определяет владелец бота. Отписаться можно в "
+            "любой момент командой /stop или кнопкой в рассылке.\n\n"
+            f"Чтобы подтвердить согласие, выберите символ <b>{answer}</b>."
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=item,
+                        callback_data=captcha_callback(challenge, item),
+                    )
+                    for item in options
+                ]
+            ]
+        )
+    else:
+        text = client_message_text(payload)
+    if not text:
+        raise ValueError("Unsupported client notice")
+    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+        await bot.send_message(
+            context.contact.telegram_id,
+            text,
+            parse_mode="HTML" if kind == "captcha" else None,
+            reply_markup=markup,
+        )
 
 
 def _entities(raw: list[dict[str, Any]] | None) -> list[MessageEntity] | None:
@@ -311,16 +360,51 @@ async def send_delivery_operation(
     context: OperationContext, storage: ObjectStorage, keyring: TokenKeyring
 ) -> None:
     token = keyring.decrypt(context.bot.token_ciphertext)
+    payload = bind_subscribe_links(
+        context.operation.payload,
+        bot_username=context.bot.username,
+        path_secret=context.bot.path_secret,
+        channel_id=context.channel.id,
+    )
     async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
         await send_compiled_operation(
             bot,
             context.target_chat_id,
             context.operation.operation_type,
-            context.operation.payload,
+            payload,
             context.operation.media,
             storage,
             first_name=context.contact.first_name,
         )
+
+
+def bind_subscribe_links(
+    payload: dict[str, Any], *, bot_username: str, path_secret: str, channel_id: int
+) -> dict[str, Any]:
+    """Bind portable subscribe buttons to the actual delivery channel."""
+    result = deepcopy(payload)
+    keyboard = result.get("keyboard")
+    if not isinstance(keyboard, dict):
+        return result
+    for row in keyboard.get("rows") or []:
+        if not isinstance(row, list):
+            continue
+        for button in row:
+            if not isinstance(button, dict):
+                continue
+            value = str(button.get("value") or "")
+            marker = "?start="
+            if marker not in value:
+                continue
+            subscribe_token = value.split(marker, 1)[1]
+            verified = verify_subscribe_token(subscribe_token, path_secret)
+            if verified is None or verified[1] != 0:
+                continue
+            button["value"] = (
+                f"https://t.me/{bot_username}?start="
+                f"{build_subscribe_token(verified[0], channel_id, path_secret)}"
+            )
+    return result
 
 
 async def send_compiled_operation(
@@ -416,6 +500,9 @@ async def send_compiled_operation(
                     entities=_entities(payload.get("entities")),
                     parse_mode=None,
                     reply_markup=markup,
+                    link_preview_options=LinkPreviewOptions(
+                        is_disabled=not bool(payload.get("link_preview_enabled", True))
+                    ),
                 )
             except TelegramAPIError:
                 if requested:

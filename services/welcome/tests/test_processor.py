@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gramly_welcome import processor
 from gramly_welcome.join_request_policy import temporary_chat_available
 from gramly_welcome.models import FeatureFlag, InboxEvent, ManagedBot
 from gramly_welcome.processor import (
@@ -108,3 +109,32 @@ def test_join_request_upsert_refreshes_an_existing_open_request() -> None:
     assert "user_chat_id = excluded.user_chat_id" in sql
     assert "welcome_delivery_id = %(param_1)s" in sql
     assert "processed_at = %(param_" in sql
+
+
+@pytest.mark.asyncio
+async def test_broadcast_unsubscribe_callback_is_handled_before_captcha(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = AsyncMock(spec=AsyncSession)
+    session.get.return_value = ManagedBot(id=8, is_active=True, path_secret="secret")
+    monkeypatch.setattr(processor, "_upsert_contact", AsyncMock(return_value=17))
+    unsubscribe = AsyncMock()
+    answer_challenge = AsyncMock()
+    monkeypatch.setattr(processor, "unsubscribe", unsubscribe)
+    monkeypatch.setattr(processor, "answer_challenge", answer_challenge)
+    event = cast(
+        InboxEvent,
+        SimpleNamespace(
+            bot_id=8,
+            update_id=1003,
+            payload={
+                "callback_query": {
+                    "data": "consent:stop",
+                    "from": {"id": 9001, "first_name": "Анна"},
+                }
+            },
+        ),
+    )
+
+    await process_event(session, event)
+
+    unsubscribe.assert_awaited_once_with(session, bot_id=8, contact_id=17)
+    answer_challenge.assert_not_awaited()

@@ -107,15 +107,17 @@ export function MediaPreview({ media, scope }: { media: Media; scope: Scope }) {
 function KeyboardEditor({
   value,
   onChange,
+  allowSubscribe,
 }: {
   value: Keyboard | null;
   onChange: (v: Keyboard | null) => void;
+  allowSubscribe: boolean;
 }) {
   const rows = value?.rows || [];
   if (
     value &&
     (value.kind !== "inline" ||
-      rows.some((row) => row.some((b) => b.action_type !== "url")))
+      rows.some((row) => row.some((b) => !["url", "subscribe"].includes(b.action_type))))
   )
     return (
       <p className="composer-notice">
@@ -159,24 +161,17 @@ function KeyboardEditor({
                 />
               </label>
               <label>
-                Ссылка
-                <input
-                  type="url"
-                  value={button.value}
-                  placeholder="https://example.com"
-                  onChange={(e) =>
-                    update(
-                      rows.map((a, i) =>
-                        i === r
-                          ? a.map((b, j) =>
-                              j === c ? { ...b, value: e.target.value } : b,
-                            )
-                          : a,
-                      ),
-                    )
-                  }
-                />
+                Действие
+                <select value={button.action_type} onChange={(e) => update(rows.map((a, i) => i === r ? a.map((b, j) => j === c ? {...b, action_type:e.target.value, value:""} : b) : a))}>
+                  <option value="url">Открыть ссылку</option>
+                  {allowSubscribe&&<option value="subscribe">Добавить в базу</option>}
+                </select>
               </label>
+              {button.action_type === "url" && <label>
+                Ссылка
+                <input type="url" value={button.value} placeholder="https://example.com"
+                  onChange={(e) => update(rows.map((a, i) => i === r ? a.map((b, j) => j === c ? {...b, value:e.target.value} : b) : a))}/>
+              </label>}
               <label>
                 Цвет
                 <select
@@ -371,8 +366,12 @@ export function ChainComposer({
   scope,
   onBusyChange,
   problem,
+  maxSteps = 5,
+  allowSubscribe = true,
 }: {
   problem?: string;
+  maxSteps?: number;
+  allowSubscribe?: boolean;
   value: Chain;
   onChange: (v: Chain) => void;
   scope: Scope;
@@ -620,10 +619,18 @@ export function ChainComposer({
                     </section>
                     <KeyboardEditor
                       value={step.keyboard}
+                      allowSubscribe={allowSubscribe}
                       onChange={(keyboard) =>
                         update(index, { ...step, keyboard })
                       }
                     />
+                    {!complex && step.payload.type === "text" && (
+                      <label className="link-preview-toggle">
+                        <input type="checkbox" checked={step.payload.link_preview_enabled !== false}
+                          onChange={(e) => update(index, {...step, payload:{...step.payload, link_preview_enabled:e.target.checked}})}/>
+                        Показывать предпросмотр ссылки
+                      </label>
+                    )}
                     {index < value.steps.length - 1 && (
                       <DelayField
                         label="Пауза до следующего сообщения"
@@ -637,7 +644,7 @@ export function ChainComposer({
                       <button
                         type="button"
                         disabled={
-                          value.steps.length >= 5 ||
+                          value.steps.length >= maxSteps ||
                           value.steps.reduce(
                             (n, s) => n + s.attachments.length,
                             0,
@@ -694,17 +701,17 @@ export function ChainComposer({
           );
         })}
       </div>
-      <button
+      {maxSteps > 1 && <button
         className="button ghost"
         type="button"
-        disabled={uploading || value.steps.length >= 5}
+        disabled={uploading || value.steps.length >= maxSteps}
         onClick={() => {
           onChange({ ...value, steps: [...value.steps, blankStep()] });
           setActive(value.steps.length);
         }}
       >
-        Добавить сообщение · {value.steps.length}/5
-      </button>
+        Добавить сообщение · {value.steps.length}/{maxSteps}
+      </button>}
     </div>
   );
 }
