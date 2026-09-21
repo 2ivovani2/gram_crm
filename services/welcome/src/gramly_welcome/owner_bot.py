@@ -371,6 +371,14 @@ async def main_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 inline_button(
+                    "Видеообучение",
+                    web_app=WebAppInfo(url=f"{settings.mini_app_url}?section=learning"),
+                    emoji_key="help",
+                    theme=theme,
+                )
+            ],
+            [
+                inline_button(
                     "Мои боты",
                     callback_data="menu:bots",
                     emoji_key="bot",

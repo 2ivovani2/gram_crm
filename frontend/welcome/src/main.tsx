@@ -149,7 +149,9 @@ function MiniApp() {
         const entry=new URLSearchParams(window.location.search);
         const requestedBot=Number(entry.get("bot_id"));
         setActiveBot(botList.bots.find(bot=>bot.id===requestedBot)?.id||botList.bots[0]?.id||null);
-        if(entry.get("section")==="catalog")setTab("Шаблоны");
+        const requestedSection=entry.get("section");
+        if(requestedSection==="catalog")setTab("Шаблоны");
+        else if(requestedSection==="learning")setTab("Обучение");
         setReady(true);
         const optional=await Promise.allSettled([api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);
         if(!active)return;

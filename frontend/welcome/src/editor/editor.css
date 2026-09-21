@@ -305,9 +305,21 @@
   border-radius: 3px;
 }
 .telegram-quote {
-  display: inline;
-  background: var(--ed-surface);
-  font-style: italic;
+  padding: 0.14em 0.38em;
+  border-left: 3px solid var(--ed-accent);
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--ed-accent) 9%, var(--ed-surface));
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.telegram-quote--expandable {
+  border-left-style: dashed;
+  background: color-mix(in srgb, var(--ed-accent) 5%, var(--ed-surface));
+}
+.telegram-quote--expandable::after {
+  content: " ···";
+  color: var(--ed-accent);
+  font-weight: 800;
 }
 .telegram-pre,
 .telegram-code {
