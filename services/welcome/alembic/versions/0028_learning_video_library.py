@@ -4,7 +4,6 @@ import sqlalchemy as sa
 
 from alembic import op
 
-
 revision = "0028"
 down_revision = "0027"
 branch_labels = None
@@ -29,7 +28,7 @@ def upgrade() -> None:
              duration_seconds, feature_key, sort_order, is_active)
         SELECT :slug, :title, :description, :video_url, :poster_url,
                :duration, :feature, :sort_order, true
-        WHERE NOT EXISTS (SELECT 1 FROM learning_video WHERE slug = :slug)
+        ON CONFLICT (slug) DO NOTHING
         """
     )
     for slug, title, description, duration, feature, sort_order in VIDEOS:
