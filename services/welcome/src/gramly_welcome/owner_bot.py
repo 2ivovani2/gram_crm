@@ -86,12 +86,7 @@ from .finance import (
 )
 from .flow_delivery import compile_preview_operations
 from .join_request_policy import JOIN_REQUEST_MAX_TIMELINE_SECONDS
-from .learning import (
-    HelpSnapshot,
-    navigate_tip_session,
-    open_help_session,
-    schedule_learning_notifications,
-)
+from .learning import schedule_learning_notifications
 from .message_catalog import install_template
 from .models import (
     Channel,
@@ -363,30 +358,18 @@ async def main_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 inline_button(
-                    "Сайт Gramly",
-                    url="https://gramly.tech",
-                    emoji_key="link",
-                    theme=theme,
-                )
-            ],
-            [
-                inline_button(
-                    "Видеообучение",
-                    web_app=WebAppInfo(url=f"{settings.mini_app_url}?section=learning"),
-                    emoji_key="help",
-                    theme=theme,
-                )
-            ],
-            [
-                inline_button(
                     "Мои боты",
                     callback_data="menu:bots",
                     emoji_key="bot",
                     theme=theme,
-                )
+                ),
+                inline_button(
+                    "Видеообучение",
+                    web_app=WebAppInfo(url=f"{settings.mini_app_url}?section=learning"),
+                    emoji_key="guide",
+                    theme=theme,
+                ),
             ],
-            [catalog_button(theme=theme)],
-            [inline_button("Поддержка и обратная связь", callback_data="menu:support", emoji_key="help", theme=theme)],
             [
                 inline_button(
                     "Подписка",
@@ -395,25 +378,17 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                     theme=theme,
                 ),
                 inline_button(
-                    "Аналитика",
-                    callback_data="menu:analytics",
-                    emoji_key="analytics",
+                    "Поддержка",
+                    callback_data="menu:support",
+                    emoji_key="help",
                     theme=theme,
                 ),
             ],
             [
                 inline_button(
-                    "Партнёрская программа",
-                    callback_data="menu:referrals",
-                    emoji_key="referral",
-                    theme=theme,
-                )
-            ],
-            [
-                inline_button(
-                    "Помощь и советы",
-                    callback_data="help:home",
-                    emoji_key="help",
+                    "Сайт Gramly",
+                    url="https://gramly.tech",
+                    emoji_key="next",
                     theme=theme,
                 )
             ],
@@ -644,19 +619,18 @@ async def start(message: Message, owner: Owner, state: FSMContext) -> None:
 
 
 @router.message(Command("help"))
-async def help_command(message: Message, owner: Owner) -> None:
-    try:
-        async with session_factory() as session:
-            snapshot = await open_help_session(session, owner.id, "home")
-            theme = await load_bot_ui_theme(session)
-    except Exception:
-        logger.exception("Contextual help command failed owner_id=%s", owner.id)
-        await owner_answer(message, "⚠️ Справка временно недоступна. Попробуйте чуть позже.")
-        return
-    await answer_with_ui_fallback(
+async def help_command(message: Message, _owner: Owner) -> None:
+    settings = get_settings()
+    await owner_answer(
         message,
-        _help_text(snapshot),
-        reply_markup=_help_markup(snapshot, theme),
+        "<b>Видеообучение и поддержка</b>\n\nКороткие уроки показывают реальные действия внутри Gramly. Если вопрос останется, напишите команде поддержки.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [owner_button(text="Видеообучение", web_app=WebAppInfo(url=f"{settings.mini_app_url}?section=learning"), emoji_key="guide", style="primary")],
+                [owner_button(text="Написать в поддержку", url="https://t.me/gramlymanager", emoji_key="help")],
+                _home_row(),
+            ]
+        ),
     )
 
 
@@ -1106,23 +1080,19 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [owner_button(text="Обновить токен", callback_data=f"reconnect:{bot.id}", emoji_key="settings")],
-            [owner_button(text="➕ Подключить канал", callback_data=f"connect:{bot.id}")],
-            [catalog_button(bot.id)],
+            [owner_button(text="Открыть в Gramly", web_app=WebAppInfo(url=f"{get_settings().mini_app_url}?section=bots&bot={bot.id}"), style="primary", emoji_key="important")],
             [
-                owner_button(text="💬 Сообщения", callback_data=f"msg:{bot.id}"),
-                owner_button(text="📥 Заявки", callback_data=f"requests:{bot.id}"),
+                owner_button(text="Подключить канал", callback_data=f"connect:{bot.id}", emoji_key="channel"),
+                owner_button(text="Приветствие", callback_data=f"msg:{bot.id}", emoji_key="message"),
             ],
             [
-                owner_button(text="👋 Прощание", callback_data=f"farewell:{bot.id}"),
-                owner_button(text="🔄 Ротация", callback_data=f"rotation:{bot.id}"),
+                owner_button(text="Заявки", callback_data=f"requests:{bot.id}", emoji_key="requests"),
+                owner_button(text="Обновить токен", callback_data=f"reconnect:{bot.id}", emoji_key="settings"),
             ],
             [
-                owner_button(text="📊 Статистика", callback_data=f"stats:{bot.id}"),
-                owner_button(text="🗑 Удалить бота", callback_data=f"delete:{bot.id}"),
+                owner_button(text="Дополнительные настройки", callback_data=f"bot-more:{bot.id}", emoji_key="settings"),
             ],
-            [owner_button(text="Помощь по управлению", callback_data="help:bots")],
-            [owner_button(text="⬅️ К списку ботов", callback_data="menu:bots")],
+            [owner_button(text="К списку ботов", callback_data="menu:bots", emoji_key="back")],
             _home_row(),
         ]
     )
@@ -1134,6 +1104,31 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         + (f"\n\n<b>Диагностика</b>\n{html.escape(diagnostics_text(bot))}" if diagnostics_text(bot) else ""),
         reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data.startswith("bot-more:"))
+async def bot_more(callback: CallbackQuery, owner: Owner) -> None:
+    bot = await _get_owned(owner, (callback.data or "").split(":", 1)[1])
+    if bot is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await owner_answer(
+        _callback_message(callback),
+        f"<b>Дополнительные настройки · @{html.escape(bot.username or bot.display_name)}</b>\n\n"
+        "Редкие действия собраны отдельно, чтобы основной экран оставался коротким.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    owner_button(text="Прощание", callback_data=f"farewell:{bot.id}", emoji_key="message"),
+                    owner_button(text="Ротация", callback_data=f"rotation:{bot.id}", emoji_key="rotation"),
+                ],
+                [owner_button(text="Статистика", callback_data=f"stats:{bot.id}", emoji_key="analytics")],
+                [owner_button(text="Удалить бота", callback_data=f"delete:{bot.id}", emoji_key="delete", style="danger")],
+                [owner_button(text="К боту", callback_data=f"bot:{bot.id}", emoji_key="back")],
+            ]
+        ),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("reconnect:"))
@@ -1340,7 +1335,6 @@ async def send_chain_editor(
                     style="primary",
                 )
             ],
-            [owner_button(text="Помощь по цепочкам", callback_data="help:flows")],
             [owner_button(text="← К боту", callback_data=f"bot:{snapshot.flow.bot_id}")],
             _home_row(),
         ]
@@ -2001,7 +1995,6 @@ async def send_rotation_screen(message: Message, owner: Owner, bot_id: int) -> N
         for rotation, channel in channels
     ]
     rows.append([owner_button(text="← К боту", callback_data=f"bot:{bot_id}")])
-    rows.insert(-1, [owner_button(text="Помощь по ротации", callback_data="help:rotation")])
     await owner_answer(
         message,
         "🔄 <b>Ротация каналов</b>\n\n"
@@ -2581,7 +2574,6 @@ async def requests_screen(callback: CallbackQuery, owner: Owner) -> None:
                 )
             ],
             [owner_button(text="⬅️ К боту", callback_data=f"bot:{bot.id}")],
-            [owner_button(text="Помощь по заявкам", callback_data="help:auto_approve")],
         ]
     )
     await owner_answer(
@@ -3014,102 +3006,9 @@ async def analytics_placeholder_callback(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-def _help_markup(snapshot: HelpSnapshot, theme: Any) -> InlineKeyboardMarkup:
-    rows: list[list[TelegramInlineKeyboardButton]] = []
-    if snapshot.manual_url:
-        rows.append(
-            [
-                inline_button(
-                    "Открыть подробную инструкцию",
-                    url=snapshot.manual_url,
-                    style="primary",
-                    emoji_key="guide",
-                    theme=theme,
-                )
-            ]
-        )
-    if snapshot.session_id is not None and snapshot.tip_count > 1:
-        token = snapshot.session_id.hex
-        rows.append(
-            [
-                inline_button("Назад", callback_data=f"tip:{token}:-1", theme=theme),
-                inline_button(
-                    f"{snapshot.tip_index + 1}/{snapshot.tip_count}",
-                    callback_data="noop",
-                    theme=theme,
-                ),
-                inline_button("Дальше", callback_data=f"tip:{token}:1", theme=theme),
-            ]
-        )
-    rows.append([inline_button("Главное меню", callback_data="menu:home", theme=theme)])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def _help_text(snapshot: HelpSnapshot) -> str:
-    parts = [f"<b>{html.escape(snapshot.title)}</b>"]
-    if snapshot.body:
-        parts.append(html.escape(snapshot.body))
-    if snapshot.tip is not None:
-        parts.append(
-            "<b>Практический совет</b>\n"
-            + html.escape(snapshot.tip.text)
-            + f"\n\n<i>{snapshot.tip_index + 1} из {snapshot.tip_count}</i>"
-        )
-    return "\n\n".join(parts)
-
-
 @router.callback_query(F.data == "menu:home")
 async def main_menu_callback(callback: CallbackQuery, owner: Owner) -> None:
     await show_main_menu(_callback_message(callback), owner)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("help:"))
-async def contextual_help_screen(callback: CallbackQuery, owner: Owner) -> None:
-    feature_key = (callback.data or "help:home").split(":", 1)[1][:64]
-    try:
-        async with session_factory() as session:
-            snapshot = await open_help_session(session, owner.id, feature_key)
-            theme = await load_bot_ui_theme(session)
-    except Exception:
-        logger.exception("Contextual help failed owner_id=%s feature=%s", owner.id, feature_key)
-        await callback.answer("Подсказка временно недоступна. Настройки продолжат работать.", show_alert=True)
-        return
-    await answer_with_ui_fallback(
-        _callback_message(callback),
-        _help_text(snapshot),
-        reply_markup=_help_markup(snapshot, theme),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("tip:"))
-async def tip_navigation(callback: CallbackQuery, owner: Owner) -> None:
-    try:
-        _, raw_session, raw_delta = (callback.data or "").split(":")
-        async with session_factory() as session:
-            snapshot = await navigate_tip_session(
-                session,
-                owner.id,
-                uuid.UUID(hex=raw_session),
-                int(raw_delta),
-            )
-            theme = await load_bot_ui_theme(session)
-    except (ValueError, TypeError):
-        snapshot = None
-        theme = None
-    except Exception:
-        logger.exception("Tip navigation failed owner_id=%s", owner.id)
-        snapshot = None
-        theme = None
-    if snapshot is None:
-        await callback.answer("Сессия советов закончилась. Откройте справку ещё раз.", show_alert=True)
-        return
-    await edit_with_ui_fallback(
-        _callback_message(callback),
-        _help_text(snapshot),
-        reply_markup=_help_markup(snapshot, theme),
-    )
     await callback.answer()
 
 

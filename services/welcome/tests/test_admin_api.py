@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gramly_welcome.admin_api import (
+    BotTransferInput,
     SubscriptionActionInput,
     _payment_filters,
     _payment_row,
@@ -203,6 +204,14 @@ def test_subscription_admin_action_rejects_short_reason_and_unknown_action() -> 
         SubscriptionActionInput(action="grant_business", days=30, reason="gift")
     with pytest.raises(ValueError):
         SubscriptionActionInput(action="delete_history", days=30, reason="Requested by owner")
+
+
+def test_bot_transfer_requires_a_target_and_audit_reason() -> None:
+    assert BotTransferInput(target_owner_id=42, reason="Requested by the product owner").target_owner_id == 42
+    with pytest.raises(ValueError):
+        BotTransferInput(target_owner_id=0, reason="Requested by the product owner")
+    with pytest.raises(ValueError):
+        BotTransferInput(target_owner_id=42, reason="move")
 
 
 def test_business_access_summary_requires_active_unexpired_business() -> None:

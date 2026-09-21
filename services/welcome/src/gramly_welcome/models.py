@@ -289,7 +289,7 @@ class OwnerNotification(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "dedupe_key", name="uq_owner_notification_dedupe"),
         CheckConstraint(
-            "kind IN ('onboarding','announcement','subscription_change','delivery_incident')",
+            "kind IN ('onboarding','announcement','subscription_change','delivery_incident','bot_transfer')",
             name="ck_owner_notification_kind",
         ),
         CheckConstraint(
