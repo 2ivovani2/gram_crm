@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useRef, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
+import { Alert, Badge, Button, Card, Empty, Spinner } from "@santi020k/lumen-react";
+import "@santi020k/lumen-react/styles/critical.css";
 import { ApiError, api, setCsrfToken } from "./api";
 const AdminApp=lazy(()=>import("./admin").then(m=>({default:m.AdminApp})));
 const FlowEditor=lazy(()=>import("./editor/flow-editor").then(m=>({default:m.FlowEditor})));
@@ -57,7 +59,7 @@ class AppErrorBoundary extends React.Component<
   }
   render() {
     if (!this.state.failed) return this.props.children;
-    return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОШИБКА ИНТЕРФЕЙСА</span><h1>Кабинет не загрузился.</h1><p>Ваши настройки сохранены. Перезапустите экран — обычно этого достаточно.</p><button className="button acid" onClick={()=>location.reload()}>Повторить</button></div></main>;
+    return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОШИБКА ИНТЕРФЕЙСА</span><h1>Кабинет не загрузился.</h1><p>Ваши настройки сохранены. Перезапустите экран — обычно этого достаточно.</p><Button className="button acid" onClick={()=>location.reload()}>Повторить</Button></div></main>;
   }
 }
 
@@ -97,11 +99,11 @@ function Logo({ control = false }: { control?: boolean }) {
 }
 
 function Status({ ok, children }: { ok: boolean; children: React.ReactNode }) {
-  return <span className={`status ${ok ? "ok" : "warn"}`}><i />{children}</span>;
+  return <Badge className={`status ${ok ? "ok" : "warn"}`} variant={ok?"success":"warning"}><i />{children}</Badge>;
 }
 
 function ErrorBox({ message }: { message: string }) {
-  return <div className="error" role="alert"><strong>Что-то пошло не так</strong><span>{message}</span></div>;
+  return <Alert className="error" role="alert" variant="destructive"><strong>Что-то пошло не так</strong><span>{message}</span></Alert>;
 }
 
 function OutsideTelegram({ username }: { username: string }) {
@@ -113,7 +115,7 @@ function Metric({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function EmptyState({ title, text, action, onAction }: { title: string; text: string; action?: string; onAction?: () => void }) {
-  return <div className="empty-state wet-panel"><span className="empty-icon"><Icon name="empty"/></span><div><h3>{title}</h3><p>{text}</p></div>{action&&onAction&&<button className="button acid" onClick={onAction}>{action}<Icon name="arrow"/></button>}</div>;
+  return <Empty className="empty-state wet-panel"><span className="empty-icon"><Icon name="empty"/></span><div><h3>{title}</h3><p>{text}</p></div>{action&&onAction&&<Button className="button acid" onClick={onAction}>{action}<Icon name="arrow"/></Button>}</Empty>;
 }
 
 
@@ -147,11 +149,12 @@ function MiniApp() {
         if(!active)return;
         setMe(identity);setDashboard(summary);setBots(botList.bots);
         const entry=new URLSearchParams(window.location.search);
-        const requestedBot=Number(entry.get("bot_id"));
+        const requestedBot=Number(entry.get("bot_id")||entry.get("bot"));
         setActiveBot(botList.bots.find(bot=>bot.id===requestedBot)?.id||botList.bots[0]?.id||null);
         const requestedSection=entry.get("section");
         if(requestedSection==="catalog")setTab("Шаблоны");
         else if(requestedSection==="learning")setTab("Обучение");
+        else if(requestedSection==="bots")setTab("Боты");
         setReady(true);
         const optional=await Promise.allSettled([api<{plans:Plan[]}>("/plans"),api<any>("/analytics"),api<any>("/referrals")]);
         if(!active)return;
@@ -172,6 +175,7 @@ function MiniApp() {
   },[]);
   useEffect(()=>{
     document.documentElement.dataset.gramlyTheme=theme;
+    document.documentElement.dataset.theme=theme;
     try { localStorage.setItem("gramly-hello-theme",theme); } catch { /* Private storage mode. */ }
     const dark=theme==="dark";
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content",dark?"#090c0a":"#dcded5");
@@ -186,7 +190,7 @@ function MiniApp() {
   const refreshAccess=async()=>{for(let attempt=0;attempt<6;attempt+=1){const identity=await api<any>("/me");setMe(identity);if(identity?.access?.plan==="business")return;await new Promise(resolve=>setTimeout(resolve,1500));}};
   const payCrypto=async()=>{setError("");setPaymentMessage("");setPaymentBusy("crypto");try{const checkout=await api<Checkout>("/payments/crypto",{method:"POST"});setPaymentExpiresAt(checkout.expires_at);setPaymentClock(Date.now());setPaymentMessage("Счёт создан. После оплаты Business включится автоматически.");if(tg?.openTelegramLink)tg.openTelegramLink(checkout.invoice_url);else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
   const payStars=async()=>{setError("");setPaymentMessage("");setPaymentBusy("stars");try{const checkout=await api<Checkout>("/payments/stars",{method:"POST"});setPaymentExpiresAt(checkout.expires_at);setPaymentClock(Date.now());if(tg?.openInvoice){tg.openInvoice(checkout.invoice_url,status=>{if(status==="paid"){setPaymentExpiresAt("");setPaymentMessage("Оплата получена. Активируем Business…");void refreshAccess().then(()=>setPaymentMessage("Business активирован."));}else if(status==="pending")setPaymentMessage("Платёж обрабатывается Telegram.");else if(status==="failed")setError("Telegram не смог провести платёж. Попробуйте ещё раз.");});}else location.href=checkout.invoice_url;}catch(e){setError((e as Error).message);}finally{setPaymentBusy(null)}};
-  if(!ready) return <div className="loading"><Logo/><div className="loader"/><span>Синхронизируем кабинет…</span></div>;
+  if(!ready) return <div className="loading"><Logo/><Spinner className="loader" aria-label="Синхронизируем кабинет"/><span>Синхронизируем кабинет…</span></div>;
   if(!tg?.initData) return <OutsideTelegram username={botUsername}/>;
   if(subscriptionGate) return <main className="outside"><Logo/><div className="outside-copy"><span className="eyebrow">ОБЯЗАТЕЛЬНАЯ ПОДПИСКА</span><h1>Оставайтесь в курсе обновлений Gramly.</h1><p>Подпишитесь на «{subscriptionGate.title}», затем вернитесь сюда и проверьте подписку. Статус сверяется напрямую с Telegram.</p><a className="button acid" href={subscriptionGate.url}>📣 Подписаться</a><button className="button" onClick={()=>api<{allowed:boolean}>("/news-subscription/check",{method:"POST"}).then(result=>{if(result.allowed)location.reload();else setError("Telegram пока не видит подписку. Подпишитесь и попробуйте снова.")}).catch(e=>setError(e.message))}>🔄 Проверить подписку</button>{error&&<ErrorBox message={error}/>}</div></main>;
   if(error && !me) return <main className="outside"><Logo/><ErrorBox message={error}/><button className="button" onClick={()=>location.reload()}>Повторить</button></main>;
@@ -200,8 +204,8 @@ function MiniApp() {
         openTab("Приветствие");
       }} onConnect={templateId=>{const url=`https://t.me/${botUsername}${templateId?`?start=catalog_${templateId}`:""}`;if(tg?.openTelegramLink)tg.openTelegramLink(url);else window.open(url,"_blank","noopener,noreferrer");}}/></>}
       {paymentExpiresAt&&<div className="payment-message" role="timer">Счёт действует ещё <b>{formatCountdown(paymentExpiresAt,paymentClock)}</b></div>}
-      {tab==="Главная"&&<><section className="hero-panel wet-panel"><div><span className="eyebrow">ПЕРВЫЙ ЗАПУСК</span><h1>{bots.length?"Приветствие под контролем.":"Встретьте нового участника автоматически."}</h1><p>{bots.length?"Проверьте готовность подключения и откройте активное приветствие.":"Подключите бота и канал, выберите сообщение и запустите его без сложной настройки."}</p><button className="button acid quick-action" onClick={bots.length?()=>openTab("Приветствие"):openOwnerBot}>{bots.length?"Настроить приветствие":"Подключить бота"} <Icon name="arrow"/></button></div><div className="launch-checklist"><span className={bots.length?"done":""}>1. Бот</span><span className={(dashboard?.channels||0)>0?"done":""}>2. Канал</span><span className={flows.length?"done":""}>3. Приветствие</span><span className={flows.some(f=>f.versions.some(v=>v.status==="published"))?"done":""}>4. Запуск</span></div></section><section className="metrics wet-panel"><Metric label="Боты" value={dashboard?.bots??0}/><Metric label="Каналы" value={dashboard?.channels??0}/><Metric label="Подписчики" value={dashboard?.contacts??0}/><Metric label="Доставлено" value={dashboard?.delivered??0}/></section></>}
-      {tab==="Боты"&&<section><div className="section-head"><div><span className="eyebrow">ПОДКЛЮЧЕНИЯ</span><h2>Мои боты</h2></div></div>{!bots.length?<EmptyState title="Здесь появятся ваши боты" text="Откройте GramlyHello, отправьте токен от BotFather и завершите безопасное подключение по подсказкам." action="Подключить первого бота" onAction={openOwnerBot}/>:<div className="bot-list">{bots.map(bot=><article className="wet-panel" key={bot.id}><div className="bot-id"><span className="avatar">{bot.display_name.slice(0,1)}</span><div><strong>@{bot.username||bot.display_name}</strong><small>{bot.channels} каналов · {bot.contacts} контактов</small></div></div><Status ok={bot.webhook_configured}>{bot.webhook_configured?"Webhook online":"Нужно подключить"}</Status><button className="button ghost" onClick={()=>{setActiveBot(bot.id);openTab("Приветствие")}}>Приветствие <Icon name="arrow"/></button></article>)}</div>}</section>}
+      {tab==="Главная"&&<><Card as="section" variant="glass" className="hero-panel wet-panel"><div><span className="eyebrow">СЛЕДУЮЩИЙ ШАГ</span><h1>{!bots.length?"Подключите первого бота.":!(dashboard?.channels||0)?"Добавьте канал.":!flows.length?"Создайте приветствие.":"Приветствие под контролем."}</h1><p>{!bots.length?"Безопасно добавьте токен от BotFather — он хранится только в зашифрованном виде.":!(dashboard?.channels||0)?"Назначьте бота администратором канала и подтвердите подключение.":!flows.length?"Выберите шаблон или соберите сообщение с нуля.":"Проверьте активную цепочку и результаты последних доставок."}</p><Button className="button acid quick-action" onClick={!bots.length?openOwnerBot:()=>openTab((dashboard?.channels||0)?"Приветствие":"Боты")}>{!bots.length?"Подключить бота":!(dashboard?.channels||0)?"Открыть бота":"Настроить приветствие"} <Icon name="arrow"/></Button></div><div className="launch-checklist"><span className={bots.length?"done":""}>1. Бот</span><span className={(dashboard?.channels||0)>0?"done":""}>2. Канал</span><span className={flows.length?"done":""}>3. Приветствие</span><span className={flows.some(f=>f.versions.some(v=>v.status==="published"))?"done":""}>4. Запуск</span></div></Card><Card as="section" variant="glass" className="metrics wet-panel"><Metric label="Боты" value={dashboard?.bots??0}/><Metric label="Каналы" value={dashboard?.channels??0}/><Metric label="Подписчики" value={dashboard?.contacts??0}/><Metric label="Доставлено" value={dashboard?.delivered??0}/></Card></>}
+      {tab==="Боты"&&<section><div className="section-head"><div><span className="eyebrow">ПОДКЛЮЧЕНИЯ</span><h2>Мои боты</h2></div></div>{!bots.length?<EmptyState title="Здесь появятся ваши боты" text="Откройте GramlyHello, отправьте токен от BotFather и завершите безопасное подключение по подсказкам." action="Подключить первого бота" onAction={openOwnerBot}/>:<div className="bot-list">{bots.map(bot=><Card as="article" variant="glass" className="wet-panel" key={bot.id}><div className="bot-id"><span className="avatar">{bot.display_name.slice(0,1)}</span><div><strong>@{bot.username||bot.display_name}</strong><small>{bot.channels} каналов · {bot.contacts} контактов</small></div></div><Status ok={bot.webhook_configured}>{bot.webhook_configured?"Webhook online":"Нужно подключить"}</Status><Button className="button ghost" onClick={()=>{setActiveBot(bot.id);openTab("Приветствие")}}>Приветствие <Icon name="arrow"/></Button></Card>)}</div>}</section>}
       {tab==="Приветствие"&&<section><div className="section-head"><div><span className="eyebrow">ГЛАВНЫЙ СЦЕНАРИЙ</span><h2>Приветствие</h2></div>{bots.length>0&&<select value={activeBot||""} onChange={e=>setActiveBot(Number(e.target.value))}>{bots.map(bot=><option key={bot.id} value={bot.id}>@{bot.username}</option>)}</select>}</div>{!bots.length?<EmptyState title="Сначала подключите бота" text="Приветствие принадлежит конкретному Telegram-боту. Подключение займёт пару минут." action="Перейти к подключению" onAction={openOwnerBot}/>:!flows.length?<EmptyState title="Создайте первое приветствие" text="Начните с готового шаблона или соберите своё сообщение в owner-боте." action="Выбрать шаблон" onAction={()=>openTab("Шаблоны")}/>:<div className="flow-list">{flows.map(flow=><button className="wet-panel" key={flow.id} onClick={()=>setEditor(flow)}><div><span>{flow.kind==="farewell"?"ПРОЩАНИЕ":"ПРИВЕТСТВИЕ"}</span><strong>{flow.name}</strong></div><div><small>{flow.versions.find(v=>v.status==="published")?"Опубликовано":"Черновик"}</small><Icon name="arrow"/></div></button>)}</div>}</section>}
       {tab==="База"&&<AudiencePage bots={bots} activeBot={activeBot} onBotChange={setActiveBot}/>}
       {tab==="Рассылки"&&<BroadcastsPage bots={bots} activeBot={activeBot} onBotChange={setActiveBot}/>}

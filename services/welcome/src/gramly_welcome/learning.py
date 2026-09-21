@@ -4,7 +4,6 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import and_, delete, exists, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -65,51 +64,13 @@ async def _owner_plan_slug(session: AsyncSession, owner_id: int, now: datetime) 
 async def schedule_learning_notifications(
     session: AsyncSession, owner_id: int, *, now: datetime | None = None
 ) -> int:
-    """Create durable post-response notifications without ever sending Telegram I/O."""
+    """Queue product announcements without reviving the retired help/onboarding UI."""
     now = now or datetime.now(UTC)
     owner = await session.get(Owner, owner_id)
     if owner is None:
         return 0
     queued = 0
     sequence = 0
-    if not owner.guide_completed:
-        manual = await session.scalar(
-            select(Manual)
-            .where(Manual.is_onboarding.is_(True), Manual.is_active.is_(True))
-            .order_by(Manual.sort_order, Manual.id)
-            .limit(1)
-        )
-        payload: dict[str, Any] = {
-            "title": "Быстрый старт GramlyHello",
-            "body": (
-                "Подключите бота, добавьте его администратором в канал и опубликуйте "
-                "первую цепочку. Настройки всегда доступны из главного меню."
-            ),
-        }
-        if manual is not None:
-            payload.update(
-                title=manual.title,
-                body=manual.description,
-                button_text="Открыть обучение",
-                button_url=manual.telegraph_url,
-            )
-        result = await session.execute(
-            insert(OwnerNotification)
-            .values(
-                owner_id=owner_id,
-                kind="onboarding",
-                dedupe_key="onboarding:v1",
-                sequence=sequence,
-                payload=payload,
-                status="pending",
-                due_at=now,
-            )
-            .on_conflict_do_nothing(constraint="uq_owner_notification_dedupe")
-            .returning(OwnerNotification.id)
-        )
-        queued += int(result.scalar_one_or_none() is not None)
-        sequence += 1
-
     plan_slug = await _owner_plan_slug(session, owner_id, now)
     announcements = list(
         (

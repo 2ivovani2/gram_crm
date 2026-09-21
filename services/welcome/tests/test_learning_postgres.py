@@ -21,7 +21,7 @@ pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="WELCOME_TEST_DATABASE_
 
 
 @pytest.mark.asyncio
-async def test_onboarding_precedes_announcement_and_retries_are_durable() -> None:
+async def test_announcements_are_durable_without_legacy_onboarding() -> None:
     assert DATABASE_URL is not None
     engine = create_async_engine(DATABASE_URL)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -39,24 +39,18 @@ async def test_onboarding_precedes_announcement_and_retries_are_durable() -> Non
         session.add_all([owner, announcement])
         await session.commit()
 
-        assert await schedule_learning_notifications(session, owner.id, now=now) == 2
+        assert await schedule_learning_notifications(session, owner.id, now=now) == 1
         assert await schedule_learning_notifications(session, owner.id, now=now) == 0
 
         first = await claim_notification(session, "test-worker", now=now)
         assert first is not None
-        onboarding, telegram_id = first
+        notification, telegram_id = first
         assert telegram_id == owner.telegram_id
-        assert onboarding.kind == "onboarding"
-        await finish_notification(session, onboarding.id, now=now)
-        await session.refresh(owner)
-        assert owner.guide_completed
-
-        second = await claim_notification(session, "test-worker", now=now)
-        assert second is not None
-        notification, _ = second
         assert notification.kind == "announcement"
         await finish_notification(session, notification.id, error="temporary", now=now)
+        await session.refresh(owner)
         await session.refresh(notification)
+        assert not owner.guide_completed
         assert notification.status == "retry"
         assert notification.due_at > now
 

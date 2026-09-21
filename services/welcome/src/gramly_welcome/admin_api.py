@@ -17,6 +17,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Select
 
 from .billing import safe_invoice_snapshot, verify_and_settle_crypto_invoice
+from .bot_transfer import BotTransferError, transfer_bot
 from .business_metrics import live_business_metrics
 from .config import Settings, get_settings
 from .crypto_pay import CryptoPayClient, CryptoPayError
@@ -218,6 +219,11 @@ class CreativeInput(BaseModel):
 class SubscriptionActionInput(BaseModel):
     action: str = Field(pattern=r"^(grant_business|extend_business|cancel_renewal|revoke_now)$")
     days: int | None = Field(default=None, ge=1, le=3650)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class BotTransferInput(BaseModel):
+    target_owner_id: int = Field(gt=0)
     reason: str = Field(min_length=5, max_length=500)
 
 
@@ -1153,6 +1159,35 @@ async def owner_detail(owner_id: int, _admin: AdminDep, session: SessionDep) -> 
             {"message": event.message, "context": event.context, "created_at": _iso(event.created_at)}
             for event in events
         ],
+    }
+
+
+@router.post("/bots/{bot_id}/transfer")
+async def transfer_managed_bot(
+    bot_id: int,
+    payload: BotTransferInput,
+    admin: MutationAdminDep,
+    session: SessionDep,
+) -> dict[str, object]:
+    try:
+        result = await transfer_bot(
+            session,
+            bot_id=bot_id,
+            target_owner_id=payload.target_owner_id,
+            admin_username=admin.username,
+            reason=payload.reason,
+        )
+        await session.commit()
+    except BotTransferError as exc:
+        await session.rollback()
+        message = str(exc)
+        code = status.HTTP_404_NOT_FOUND if message == "Bot not found" else status.HTTP_409_CONFLICT
+        raise HTTPException(code, message) from exc
+    return {
+        "bot_id": result.bot_id,
+        "source_owner_id": result.source_owner_id,
+        "target_owner_id": result.target_owner_id,
+        "moved": result.moved,
     }
 
 
