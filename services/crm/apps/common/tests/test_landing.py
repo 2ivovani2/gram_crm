@@ -27,6 +27,21 @@ def test_landing_focuses_on_welcome_without_public_crm_access(client):
     assert "Защищено · SSO" not in content
 
 
+def test_landing_embeds_all_welcome_video_lessons(client):
+    content = client.get(reverse("landing")).content.decode()
+
+    assert content.count('<video controls playsinline preload="metadata"') == 5
+    for slug in (
+        "connect-bot-channel",
+        "first-welcome",
+        "media-buttons-links",
+        "use-template",
+        "audience-broadcast",
+    ):
+        assert f"learning/{slug}.mp4" in content
+        assert f"learning/{slug}.jpg" in content
+
+
 def test_crm_shell_describes_sso_instead_of_vpn_access():
     source = get_template("crm/base.html").template.source
 

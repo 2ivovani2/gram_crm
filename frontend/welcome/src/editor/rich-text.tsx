@@ -128,10 +128,10 @@ const TelegramEmoji = Node.create({
       </NodeViewWrapper>
     )),
 });
-const makeMark = (name: string, cls: string) =>
+const makeMark = (name: string, cls: string, selector = `span.${cls}`) =>
   Mark.create({
     name,
-    parseHTML: () => [{ tag: `span.${cls}` }],
+    parseHTML: () => [{ tag: selector }],
     renderHTML: ({ HTMLAttributes }) => [
       "span",
       mergeAttributes(HTMLAttributes, { class: cls }),
@@ -165,7 +165,11 @@ const extensions = [
   TelegramEmoji,
   makeMark("spoiler", "telegram-spoiler"),
   makeMark("telegramQuote", "telegram-quote"),
-  makeMark("telegramExpandableQuote", "telegram-quote"),
+  makeMark(
+    "telegramExpandableQuote",
+    "telegram-quote telegram-quote--expandable",
+    "span.telegram-quote--expandable",
+  ),
   Pre,
 ];
 type Pack = {
@@ -288,8 +292,25 @@ export function RichEditor({
         )}
         {toolbar(
           "Цитата",
-          () => editor.chain().focus().toggleMark("telegramQuote").run(),
+          () =>
+            editor
+              .chain()
+              .focus()
+              .unsetMark("telegramExpandableQuote")
+              .toggleMark("telegramQuote")
+              .run(),
           editor.isActive("telegramQuote"),
+        )}
+        {toolbar(
+          "Сворачиваемая цитата",
+          () =>
+            editor
+              .chain()
+              .focus()
+              .unsetMark("telegramQuote")
+              .toggleMark("telegramExpandableQuote")
+              .run(),
+          editor.isActive("telegramExpandableQuote"),
         )}
         {toolbar(
           "Код",

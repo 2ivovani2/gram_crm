@@ -65,16 +65,15 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
   await page.getByRole("button", { name: "Добавить ряд кнопок" }).click();
   await page.getByLabel("Название кнопки").fill("Подробнее");
   await page.getByLabel("Ссылка", { exact: true }).fill("https://gramly.tech");
+  await page
+    .getByRole("combobox", { name: "Цвет", exact: true })
+    .selectOption("success");
   await page.getByRole("button", { name: "Копировать сообщение" }).click();
   await page.getByRole("button", { name: "Выше", exact: true }).nth(1).click();
   await page
     .getByRole("group", { name: "Пауза до следующего сообщения" })
     .getByLabel("Минуты")
     .fill("15");
-  await page.getByText("Оформление кнопок всей цепочки").click();
-  await page
-    .getByLabel("Цвет всех кнопок этой цепочки")
-    .selectOption("success");
   expect(saves).toHaveLength(0);
   expect(launches).toHaveLength(0);
   await page
@@ -94,7 +93,7 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
   const saved = saves[1].data;
   expect(saved.steps).toHaveLength(2);
   expect(saved.steps[0].delay_after_seconds).toBe(900);
-  expect(saved.button_style).toBe("success");
+  expect(saved.button_style).toBeNull();
   for (const step of saved.steps) {
     expect(
       step.payload.entities.some((e) => e.custom_emoji_id === "123456789"),
@@ -102,6 +101,7 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
     expect(step.payload.entities.some((e) => e.type === "bold")).toBe(true);
     expect(step.attachments).toHaveLength(1);
     expect(step.keyboard.rows[0][0].value).toBe("https://gramly.tech");
+    expect(step.keyboard.rows[0][0].style).toBe("success");
   }
   await page.getByRole("button", { name: "Далее: предпросмотр" }).click();
   await expect(
@@ -172,6 +172,39 @@ test("UTF16 adapter preserves multiline marks, quotes, code, links, emoji and em
   }, value);
   expect(result.text).toBe(value.text);
   expect(result.entities).toEqual(expect.arrayContaining(value.entities));
+});
+
+test("quote toolbar saves a Telegram expandable quote without overlapping quote entities", async ({
+  page,
+}) => {
+  const { saves } = await ownerSetup(page);
+  const input = page.getByRole("textbox", { name: "Текст сообщения" });
+  await input.fill("Важная цитата");
+  await input.selectText();
+  await page.getByRole("button", { name: "Цитата", exact: true }).click();
+  await expect(input.locator(".telegram-quote")).toHaveText("Важная цитата");
+
+  await input.selectText();
+  await page
+    .getByRole("button", { name: "Сворачиваемая цитата", exact: true })
+    .click();
+  await expect(input.locator(".telegram-quote--expandable")).toHaveText(
+    "Важная цитата",
+  );
+  await expect(
+    page.getByRole("button", { name: "Цитата", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  await page
+    .getByRole("button", { name: "Сохранить черновик", exact: true })
+    .click();
+  const entities = saves[0].data.steps[0].payload.entities;
+  expect(entities).toEqual(
+    expect.arrayContaining([
+      { type: "expandable_blockquote", offset: 0, length: 13 },
+    ]),
+  );
+  expect(entities.some(({ type }) => type === "blockquote")).toBe(false);
 });
 
 for (const theme of ["dark", "light"])
