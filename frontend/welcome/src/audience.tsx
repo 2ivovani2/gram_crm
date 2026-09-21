@@ -85,7 +85,7 @@ export function BroadcastsPage({ bots, activeBot, onBotChange }: { bots: Bot[]; 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const load = () => api<{items: Broadcast[]}>("/broadcasts").then(v=>setItems(v.items)).catch(e=>setError((e as Error).message));
-  useEffect(load, []);
+  useEffect(()=>{void load();}, []);
   useEffect(()=>{
     setSourceChannel(""); setAudienceTotal(0);
     if(!activeBot){setChannels([]);return;}
