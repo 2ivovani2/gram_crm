@@ -72,6 +72,29 @@ spec:
           annotations:
             summary: "Welcome delivery failure rate is over 2%"
             description: "Some deliveries are unavailable, including permanent recipient restrictions. Inspect reason/scope metrics; this is not by itself a platform outage."
+        - alert: GramlyWelcomeDeliveryScheduleLag
+          expr: >-
+            histogram_quantile(0.95,
+              sum by (le) (rate(welcome_delivery_schedule_lag_seconds_bucket[5m]))) > 30
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome delivery p95 is over 30 seconds late"
+            description: "Delivery capacity is below incoming traffic or a Telegram dependency is slow. Inspect delivery_operation queue age and KEDA replicas."
+        - alert: GramlyWelcomeDeliveryBacklogAtCapacity
+          expr: max(welcome_queue_depth{queue="delivery_operation",status="actionable"}) > 500
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome delivery backlog exceeds autoscaling capacity"
+            description: "More than 25 actionable operations per each of the 20 configured worker pods have remained queued for five minutes."
+        - alert: GramlyWelcomeJoinRequestWindowExpired
+          expr: sum(increase(welcome_join_request_greetings_total{result="expired"}[5m])) > 0
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "A join-request welcome expired before completion"
+            description: "At least one greeting reached Telegram's temporary delivery deadline. Inspect schedule lag and autoscaling immediately."
         - alert: GramlyWelcomePlatformDeliveryFailures
           expr: sum(increase(welcome_delivery_failure_reasons_total{scope="platform"}[5m])) > 3
           for: 5m

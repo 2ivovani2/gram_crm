@@ -42,12 +42,37 @@ spec:
         query: >-
           SELECT CEIL(SUM(pending)::numeric / 25)
           FROM (
+            SELECT COUNT(*) AS pending FROM client_message
+            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+            UNION ALL
+            SELECT COUNT(*) AS pending FROM broadcast_recipient
+            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+            UNION ALL
+            SELECT COUNT(*) AS pending
+            FROM delivery_operation operation
+            LEFT JOIN delivery_operation dependency
+              ON dependency.id = operation.depends_on_operation_id
+            WHERE (operation.status IN ('scheduled', 'retry')
+                   AND operation.due_at <= NOW()
+                   AND (operation.depends_on_operation_id IS NULL OR dependency.status = 'sent'))
+               OR (operation.status = 'processing' AND operation.lease_expires_at <= NOW())
+            UNION ALL
             SELECT COUNT(*) AS pending FROM greeting_delivery
             WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
                OR (status = 'processing' AND lease_expires_at <= NOW())
             UNION ALL
             SELECT COUNT(*) AS pending FROM join_request
             WHERE (status = 'scheduled' AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+            UNION ALL
+            SELECT COUNT(*) AS pending FROM join_request_activation
+            WHERE (status = 'pending' AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+            UNION ALL
+            SELECT COUNT(*) AS pending FROM rotation_recommendation
+            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
                OR (status = 'processing' AND lease_expires_at <= NOW())
           ) queues
         targetQueryValue: "1"

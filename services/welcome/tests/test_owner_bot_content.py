@@ -143,20 +143,24 @@ async def test_button_handler_keeps_state_for_non_text_message(
 
 
 @pytest.mark.asyncio
-async def test_button_handler_reports_saved_row_and_button_counts(
+async def test_button_handler_opens_color_wizard_before_saving(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers: list[str] = []
     saved: list[dict[str, Any] | None] = []
 
     class FakeState:
-        cleared = False
+        selected_state: Any = None
+        data: dict[str, Any] = {"version_id": 10, "step_id": 20}
 
-        async def get_data(self) -> dict[str, int]:
-            return {"version_id": 10, "step_id": 20}
+        async def get_data(self) -> dict[str, Any]:
+            return self.data
 
-        async def clear(self) -> None:
-            self.cleared = True
+        async def update_data(self, **values: Any) -> None:
+            self.data.update(values)
+
+        async def set_state(self, value: Any) -> None:
+            self.selected_state = value
 
     class FakeSessionContext:
         async def __aenter__(self) -> object:
@@ -173,14 +177,10 @@ async def test_button_handler_reports_saved_row_and_button_counts(
     async def fake_answer(_message: Any, text: str, **_kwargs: Any) -> None:
         answers.append(text)
 
-    async def fake_editor(_message: Any, _owner: Any, _version_id: int) -> None:
-        return None
-
     state = FakeState()
     monkeypatch.setattr(owner_bot, "session_factory", lambda: FakeSessionContext())
     monkeypatch.setattr(owner_bot, "replace_step_keyboard", fake_replace)
     monkeypatch.setattr(owner_bot, "owner_answer", fake_answer)
-    monkeypatch.setattr(owner_bot, "send_chain_editor", fake_editor)
 
     await owner_bot.receive_chain_buttons(
         SimpleNamespace(
@@ -190,9 +190,54 @@ async def test_button_handler_reports_saved_row_and_button_counts(
         state,
     )
 
-    assert state.cleared is True
-    assert saved and saved[0] is not None
-    assert "Сохранено: 3 кнопки в 2 рядах" in answers[0]
+    assert state.selected_state == owner_bot.WelcomeButtonState.choosing_colors
+    assert saved == []
+    assert state.data["button_color_index"] == 0
+    assert len(state.data["pending_keyboard"]["rows"]) == 2
+    assert "Цвет кнопки 1 из 3" in answers[0]
+
+
+def test_button_color_picker_exposes_four_styles_and_navigation() -> None:
+    keyboard = _parse_keyboard_definition(
+        "Сайт - https://example.com | Telegram - https://t.me/gramly"
+    )
+    assert keyboard is not None
+
+    text, markup = owner_bot._button_color_picker(keyboard, 0)
+    callbacks = [
+        button.callback_data
+        for row in markup.inline_keyboard
+        for button in row
+        if button.callback_data is not None
+    ]
+
+    assert "Цвет кнопки 1 из 2" in text
+    for style in ("default", "primary", "success", "danger"):
+        assert f"chain:button-style:{style}" in callbacks
+    assert "chain:button-style-next" in callbacks
+    assert "chain:button-style-save" in callbacks
+    assert "chain:button-style-cancel" in callbacks
+
+    final_text, _final_markup = owner_bot._button_color_picker(keyboard, 1)
+    assert "Итоговый предпросмотр" in final_text
+    assert "Сайт" in final_text and "Telegram" in final_text
+
+
+def test_legacy_button_color_suffixes_keep_individual_styles() -> None:
+    keyboard = _parse_keyboard_definition(
+        "Обычная - https://example.com - стандартный | "
+        "Основная - https://example.com/blue - синий | "
+        "Готово - https://example.com/green - зелёный\n"
+        "Удалить - https://example.com/red - красный"
+    )
+
+    assert keyboard is not None
+    assert [button["style"] for row in keyboard["rows"] for button in row] == [
+        "default",
+        "primary",
+        "success",
+        "danger",
+    ]
 
 
 def test_reply_markup_keeps_functionality_when_button_styles_are_unsupported() -> None:

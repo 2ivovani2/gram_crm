@@ -38,3 +38,16 @@ def test_mini_app_bootstrap_has_timeout_uuid_fallback_and_error_boundary() -> No
     assert "fetchWithTimeout" in api and "AbortController" in api
     assert "crypto.randomUUID()" not in api
     assert "getRandomValues" in api
+
+
+def test_editor_exposes_four_per_button_styles_and_learning_uses_one_player() -> None:
+    composer = (REPO_ROOT / "frontend/welcome/src/editor/composer.tsx").read_text(encoding="utf-8")
+    learning = (REPO_ROOT / "frontend/welcome/src/audience.tsx").read_text(encoding="utf-8")
+
+    for style in ("default", "primary", "success", "danger"):
+        assert f'["{style}",' in composer
+    assert 'role="radiogroup"' in composer
+    assert 'role="radio"' in composer
+    assert learning.count("<video key={active.id}") == 1
+    assert 'onPause={event=>void saveProgress(active,event.currentTarget.currentTime,"progress",true)}' in learning
+    assert 'value.progress.next_video_id' in learning

@@ -65,9 +65,7 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
   await page.getByRole("button", { name: "Добавить ряд кнопок" }).click();
   await page.getByLabel("Название кнопки").fill("Подробнее");
   await page.getByLabel("Ссылка", { exact: true }).fill("https://gramly.tech");
-  await page
-    .getByRole("combobox", { name: "Цвет", exact: true })
-    .selectOption("success");
+  await page.getByRole("radio", { name: /Зелёная/ }).click();
   await page.getByRole("button", { name: "Копировать сообщение" }).click();
   await page.getByRole("button", { name: "Выше", exact: true }).nth(1).click();
   await page
@@ -121,6 +119,37 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
   expect(launches[0].data.channel_ids).toEqual([10]);
   expect(launches[0].data.expected_revision).toBe(2);
 });
+
+for (const theme of ["dark", "light"])
+  for (const width of [390, 430, 1440])
+    test(`four buttons keep individual colors · ${theme} · ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 932 });
+      const { saves } = await ownerSetup(page, { theme });
+      await page.getByRole("button", { name: "Добавить ряд кнопок" }).click();
+      await page.getByRole("button", { name: "Добавить рядом" }).click();
+      await page.getByRole("button", { name: "Добавить рядом" }).click();
+      await page.getByRole("button", { name: "Добавить ряд кнопок" }).click();
+
+      const cards = page.locator(".link-button-fields");
+      const styles = ["Стандартная", "Синяя", "Зелёная", "Красная"];
+      for (let index = 0; index < styles.length; index += 1) {
+        const card = cards.nth(index);
+        await card.getByLabel("Название кнопки").fill(`Кнопка ${index + 1}`);
+        await card.getByLabel("Ссылка", { exact: true }).fill(`https://gramly.tech/${index + 1}`);
+        await card.getByRole("radio", { name: new RegExp(styles[index]) }).click();
+      }
+
+      for (const style of ["default", "primary", "success", "danger"])
+        await expect(page.locator(`[data-color="${style}"]`)).toHaveCount(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+      expect(saves[0].data.steps[0].keyboard.rows.flat().map(button => button.style)).toEqual([
+        "default",
+        "primary",
+        "success",
+        "danger",
+      ]);
+    });
 
 test("conflict preserves local text, and leaving uses a keyboard accessible save/discard dialog", async ({
   page,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, requestId } from "./api";
 import { ChainComposer, ChainPreview, validateChain } from "./editor/composer";
 import { blankStep } from "./editor/types";
@@ -126,8 +126,60 @@ export function BroadcastsPage({ bots, activeBot, onBotChange }: { bots: Bot[]; 
 }
 
 export function LearningPage() {
-  const [data,setData]=useState<any>(null);
+  type LearningVideo = {id:number;slug:string;title:string;description:string;video_url:string;poster_url:string;duration_seconds:number;chapter_key:string;position_seconds:number;completed_at:string|null};
+  type LearningData = {chapters:Array<{key:string;title:string}>;videos:LearningVideo[];progress:{completed:number;total:number;next_video_id:number|null}};
+  const [data,setData]=useState<LearningData|null>(null);
+  const [activeId,setActiveId]=useState<number|null>(null);
   const [error,setError]=useState("");
-  useEffect(()=>{api("/learning").then(setData).catch(e=>setError((e as Error).message))},[]);
-  return <section><div className="section-head"><div><span className="eyebrow">БЫСТРЫЙ СТАРТ</span><h2>Видеообучение</h2></div></div><p className="section-lead">14 коротких уроков по всем основным сценариям Gramly. Видео открываются прямо внутри Telegram.</p>{error&&<p className="composer-error">{error}</p>}<div className="learning-list">{data?.videos?.length?data.videos.map((video:any)=><article className="wet-panel" key={video.id}><video controls playsInline preload="none" poster={video.poster_url||undefined} aria-label={video.title}><source src={video.video_url} type="video/mp4"/>Ваш Telegram не поддерживает встроенное видео. <a href={video.video_url} target="_blank" rel="noreferrer">Открыть урок</a>.</video><span><b>{video.title}</b><small>{video.description}</small><em>{video.duration_seconds} сек.</em></span></article>):<div className="empty-state wet-panel"><div><h3>Видео временно недоступны</h3><p>Повторите открытие экрана позже.</p></div></div>}</div></section>;
+  const lastSent=useRef<Record<number,number>>({});
+  useEffect(()=>{
+    api<LearningData>("/learning").then(value=>{
+      setData(value);
+      const requested=new URLSearchParams(window.location.search).get("lesson");
+      const selected=value.videos.find(video=>video.slug===requested)?.id||value.progress.next_video_id||value.videos[0]?.id||null;
+      setActiveId(selected);
+    }).catch(e=>setError((e as Error).message));
+  },[]);
+  const saveProgress=async(video:LearningVideo,position:number,event:"progress"|"ended"="progress",force=false)=>{
+    const seconds=Math.max(0,Math.floor(position));
+    if(!force&&event==="progress"&&lastSent.current[video.id]!==undefined&&Math.abs(seconds-lastSent.current[video.id])<10)return;
+    lastSent.current[video.id]=seconds;
+    try{
+      const saved=await api<{position_seconds:number;completed_at:string|null}>(`/learning/${video.id}/progress`,{method:"PATCH",body:JSON.stringify({position_seconds:seconds,event})});
+      setData(current=>{
+        if(!current)return current;
+        const videos=current.videos.map(item=>item.id===video.id?{...item,...saved}:item);
+        const completed=videos.filter(item=>item.completed_at).length;
+        const next=videos.find(item=>!item.completed_at)?.id||videos[0]?.id||null;
+        return {...current,videos,progress:{...current.progress,completed,next_video_id:next}};
+      });
+    }catch(e){setError((e as Error).message)}
+  };
+  const active=data?.videos.find(video=>video.id===activeId)||data?.videos[0];
+  const activeIndex=active&&data?data.videos.findIndex(video=>video.id===active.id):-1;
+  const nextVideo=data&&activeIndex>=0?data.videos[activeIndex+1]:undefined;
+  const percent=data?.progress.total?Math.round(data.progress.completed/data.progress.total*100):0;
+  if(!data&&!error)return <section><div className="learning-skeleton wet-panel">Готовим маршрут обучения…</div></section>;
+  return <section className="learning-page">
+    <div className="section-head"><div><span className="eyebrow">БЫСТРЫЙ СТАРТ</span><h2>Видеообучение</h2></div><b>{data?.progress.completed||0} из {data?.progress.total||0}</b></div>
+    <p className="section-lead">Идите по маршруту или откройте нужный урок. Gramly запомнит прогресс на всех устройствах.</p>
+    {error&&<p className="composer-error" role="alert">{error}</p>}
+    {active&&data?<div className="learning-workspace">
+      <article className="learning-player wet-panel">
+        <div className="learning-player-copy"><span>УРОК {activeIndex+1} ИЗ {data.videos.length}</span><h3>{active.title}</h3><p>{active.description}</p><em>{active.duration_seconds} сек.</em></div>
+        <video key={active.id} controls playsInline preload="metadata" poster={active.poster_url||undefined} aria-label={active.title}
+          onLoadedMetadata={event=>{const video=event.currentTarget;if(active.position_seconds>0&&active.position_seconds<video.duration-2)video.currentTime=active.position_seconds}}
+          onTimeUpdate={event=>void saveProgress(active,event.currentTarget.currentTime)}
+          onPause={event=>void saveProgress(active,event.currentTarget.currentTime,"progress",true)}
+          onEnded={event=>void saveProgress(active,event.currentTarget.duration,"ended",true)}>
+          <source src={active.video_url} type="video/mp4"/>Ваш Telegram не поддерживает встроенное видео. <a href={active.video_url} target="_blank" rel="noreferrer">Открыть урок</a>.
+        </video>
+        <footer><span>{active.completed_at?"✓ Урок просмотрен":active.position_seconds?`Продолжить с ${active.position_seconds} сек.`:"Можно начинать"}</span>{nextVideo&&<button className="button acid" onClick={()=>setActiveId(nextVideo.id)}>Следующий урок →</button>}</footer>
+      </article>
+      <aside className="learning-route wet-panel">
+        <header><div><span>ВАШ ПРОГРЕСС</span><b>{percent}%</b></div><progress max="100" value={percent}>{percent}%</progress></header>
+        {data.chapters.map(chapter=><section key={chapter.key}><h3>{chapter.title}</h3>{data.videos.filter(video=>video.chapter_key===chapter.key).map(video=><button className={video.id===active.id?"active":""} key={video.id} onClick={()=>setActiveId(video.id)}><i>{video.completed_at?"✓":String(data.videos.indexOf(video)+1).padStart(2,"0")}</i><span><b>{video.title}</b><small>{video.duration_seconds} сек.</small></span></button>)}</section>)}
+      </aside>
+    </div>:<div className="empty-state wet-panel"><div><h3>Видео временно недоступны</h3><p>Повторите открытие экрана позже.</p></div></div>}
+  </section>;
 }

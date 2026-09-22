@@ -8,6 +8,7 @@ import socket
 import uuid
 from datetime import UTC, datetime
 from functools import partial
+from time import monotonic
 from typing import Any
 
 from aiogram import Bot
@@ -21,7 +22,7 @@ from aiogram.exceptions import (
 )
 from prometheus_client import start_http_server
 from redis.asyncio import Redis
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, or_, select, update
 
 from ..audience import (
     claim_client_messages,
@@ -56,8 +57,11 @@ from ..join_activation import (
 from ..join_request_policy import approval_action, safe_approval_deadline
 from ..metrics import (
     DELIVERY_ATTEMPTS,
+    DELIVERY_SCHEDULE_LAG,
     DEPENDENCY_ERRORS,
     JOIN_REQUEST_ACTIVATIONS,
+    OLDEST_PENDING_AGE,
+    QUEUE_DEPTH,
     ROTATION_RECOMMENDATIONS,
     WORKER_ACTIVE,
 )
@@ -112,6 +116,31 @@ from .health import WorkerHealth
 from .leased import run_leased
 
 logger = logging.getLogger(__name__)
+
+
+async def refresh_delivery_metrics() -> None:
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        actionable = or_(
+            and_(
+                DeliveryOperation.status.in_(("scheduled", "retry")),
+                DeliveryOperation.due_at <= now,
+            ),
+            and_(
+                DeliveryOperation.status == "processing",
+                DeliveryOperation.lease_expires_at < now,
+            ),
+        )
+        size, oldest = (
+            await session.execute(
+                select(func.count(DeliveryOperation.id), func.min(DeliveryOperation.due_at)).where(
+                    actionable
+                )
+            )
+        ).one()
+    QUEUE_DEPTH.labels("delivery_operation", "actionable").set(int(size or 0))
+    age = max(0.0, (now - oldest).total_seconds()) if oldest is not None else 0.0
+    OLDEST_PENDING_AGE.labels("delivery_operation").set(age)
 
 
 def _retry_delay(attempts: int) -> int:
@@ -530,6 +559,9 @@ async def _process_operation(
     else:
         async with session_factory() as session:
             await finish_operation(session, operation_id, worker_id, success=True)
+        DELIVERY_SCHEDULE_LAG.observe(
+            max(0.0, (datetime.now(UTC) - context.operation.due_at).total_seconds())
+        )
         DELIVERY_ATTEMPTS.labels("operation_sent").inc()
 
 
@@ -942,23 +974,32 @@ async def serve() -> None:
     WORKER_ACTIVE.labels("delivery").inc()
     health = WorkerHealth({"delivery": 150})
     server = health.start()
+    next_metrics_refresh = 0.0
     common: dict[str, Any] = {"worker_id": worker_id, "settings": settings, "limiter": limiter, "keyring": keyring}
+    # Short-lived join-request targets go first. Broadcast recipients have no
+    # Telegram delivery window and are deliberately handled after greetings.
     queues: list[tuple[Any, Any, Any]] = [
+        (DeliveryOperation, claim_operation_batch, partial(_process_operation, storage=storage, **common)),
+        (GreetingDelivery, claim_delivery_batch, partial(_process_delivery, storage=storage, **common)),
+        (JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),
         (ClientMessage, claim_client_messages, partial(_process_client_message, **common)),
+        (JoinRequestActivation, claim_activation_batch, partial(_process_activation, **common)),
         (
             BroadcastRecipient,
             claim_broadcast_recipients,
             partial(_process_broadcast_recipient, storage=storage, **common),
         ),
-        (DeliveryOperation, claim_operation_batch, partial(_process_operation, storage=storage, **common)),
-        (GreetingDelivery, claim_delivery_batch, partial(_process_delivery, storage=storage, **common)),
-        (JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),
-        (JoinRequestActivation, claim_activation_batch, partial(_process_activation, **common)),
         (RotationRecommendation, claim_rotation_batch, partial(_process_rotation, **common)),
     ]
     try:
         while not stopping.is_set():
             health.mark("delivery")
+            if monotonic() >= next_metrics_refresh:
+                try:
+                    await refresh_delivery_metrics()
+                except Exception as exc:
+                    logger.warning("Delivery metrics refresh failed class=%s", type(exc).__name__)
+                next_metrics_refresh = monotonic() + 10
             try:
                 async with session_factory() as session:
                     finalized_albums = await finalize_due_albums(session)

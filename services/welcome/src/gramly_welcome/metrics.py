@@ -16,6 +16,11 @@ WEBHOOK_LATENCY = Histogram(
 WORKER_EVENTS = Counter("welcome_worker_events_total", "Processed inbox events", ("result",))
 WORKER_ACTIVE = Gauge("welcome_worker_active", "Active Gramly Welcome worker processes", ("kind",))
 DELIVERY_ATTEMPTS = Counter("welcome_delivery_attempts_total", "Telegram delivery attempts", ("result",))
+DELIVERY_SCHEDULE_LAG = Histogram(
+    "welcome_delivery_schedule_lag_seconds",
+    "Delay between the planned and successful Telegram send of a delivery operation",
+    buckets=(0.5, 1, 2, 5, 10, 15, 30, 60, 120, 240, 300, 600),
+)
 DELIVERY_FAILURE_REASONS = Counter(
     "welcome_delivery_failure_reasons_total", "Bounded delivery failure reasons", ("reason", "scope")
 )
