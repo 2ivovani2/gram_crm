@@ -233,7 +233,7 @@ def upgrade() -> None:
     active_statuses = {
         "delivery_operation": "'scheduled','retry','processing'",
         "greeting_delivery": "'scheduled','retry','processing'",
-        "join_request": "'scheduled','processing'",
+        "join_request": "'pending','scheduled','processing'",
         "join_request_activation": "'pending','processing'",
         "client_message": "'scheduled','retry','processing'",
         "broadcast_recipient": "'scheduled','retry','processing'",

@@ -39,8 +39,11 @@ async def process_one_payment_event(worker_id: str) -> bool:
         return False
     client = CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url)
     try:
+        invoice = await client.get_invoice(event.provider_reference)
         async with session_factory() as session:
-            await verify_and_settle_crypto_invoice(session, client, event.provider_reference)
+            await verify_and_settle_crypto_invoice(
+                session, client, event.provider_reference, invoice=invoice
+            )
             await complete_payment_event(
                 session, provider=event.provider, event_key=event.event_key
             )
