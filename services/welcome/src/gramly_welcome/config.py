@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     lease_seconds: int = Field(default=60, ge=15, le=600)
     worker_batch_size: int = Field(default=50, ge=1, le=500)
     worker_concurrency: int = Field(default=8, ge=1, le=64)
+    delivery_concurrency: int = Field(default=16, ge=1, le=64)
+    delivery_lanes: str = "urgent,interactive,standard,bulk"
+    delivery_streams_enabled: bool = False
+    delivery_stream_prefix: str = "welcome:delivery"
+    delivery_relay_batch_size: int = Field(default=500, ge=1, le=2000)
     worker_poll_seconds: float = Field(default=0.25, ge=0.05, le=10)
     max_attempts: int = Field(default=12, ge=1, le=100)
     separate_owner_worker: bool = False
@@ -38,6 +43,7 @@ class Settings(BaseSettings):
     valkey_url: str = "redis://redis:6379/1"
     bot_rate_limit_per_second: int = Field(default=25, ge=1, le=30)
     chat_rate_limit_per_second: int = Field(default=1, ge=1, le=5)
+    urgent_rate_reserve_per_second: int = Field(default=8, ge=1, le=20)
     s3_endpoint_url: str = "http://minio:9000"
     s3_region_name: str = "auto"
     s3_bucket_name: str = "gramly-welcome-media"

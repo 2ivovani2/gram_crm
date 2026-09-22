@@ -15,11 +15,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .advertising import record_ad_click
-from .billing import complete_payment_event, register_payment_event, verify_and_settle_crypto_invoice
+from .billing import register_payment_event
 from .config import Settings, get_settings
-from .crypto_pay import CryptoPayClient, CryptoPayError, webhook_signature_valid
+from .crypto_pay import webhook_signature_valid
 from .db import session_dependency
-from .finance import FinanceError
 from .metrics import PAYMENT_EVENTS, WEBHOOK_LATENCY, WEBHOOK_REQUESTS
 from .repository import find_active_bot, insert_inbox_event
 from .schemas import AcceptedResponse, TelegramUpdate
@@ -101,17 +100,14 @@ async def crypto_pay_webhook(
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         PAYMENT_EVENTS.labels("crypto_pay", "rejected").inc()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Crypto Pay webhook") from exc
-    await register_payment_event(
-        session, provider="crypto_pay", event_key=event_key, raw_body=body
+    created = await register_payment_event(
+        session,
+        provider="crypto_pay",
+        event_key=event_key,
+        provider_reference=invoice_id,
+        raw_body=body,
     )
-    try:
-        client = CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url)
-        await verify_and_settle_crypto_invoice(session, client, invoice_id)
-        await complete_payment_event(session, provider="crypto_pay", event_key=event_key)
-    except (CryptoPayError, FinanceError) as exc:
-        PAYMENT_EVENTS.labels("crypto_pay", "failed").inc()
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Payment verification failed") from exc
-    PAYMENT_EVENTS.labels("crypto_pay", "settled").inc()
+    PAYMENT_EVENTS.labels("crypto_pay", "accepted" if created else "duplicate").inc()
     return {"ok": True}
 
 

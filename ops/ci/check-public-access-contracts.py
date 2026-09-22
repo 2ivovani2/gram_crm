@@ -102,7 +102,9 @@ def pull_secrets(resource):
 expected_consumers = {
     "gramly-welcome-api", "gramly-welcome-web", "gramly-welcome-worker-events",
     "gramly-welcome-worker-owner",
-    "gramly-welcome-worker-delivery", "gramly-welcome-worker-billing",
+    "gramly-welcome-worker-delivery", "gramly-welcome-worker-delivery-relay",
+    "gramly-welcome-worker-interactive", "gramly-welcome-worker-bulk",
+    "gramly-welcome-worker-billing",
     "gramly-welcome-worker-notifications", "gramly-welcome-maintenance",
     "gramly-welcome-migrate",
 }

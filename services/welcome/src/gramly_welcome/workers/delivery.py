@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import signal
 import socket
 import uuid
@@ -11,8 +12,6 @@ from functools import partial
 from time import monotonic
 from typing import Any
 
-from aiogram import Bot
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import (
     TelegramAPIError,
     TelegramBadRequest,
@@ -57,6 +56,7 @@ from ..join_activation import (
 from ..join_request_policy import approval_action, safe_approval_deadline
 from ..metrics import (
     DELIVERY_ATTEMPTS,
+    DELIVERY_INFLIGHT,
     DELIVERY_SCHEDULE_LAG,
     DEPENDENCY_ERRORS,
     JOIN_REQUEST_ACTIVATIONS,
@@ -101,6 +101,7 @@ from ..rotation import (
     store_rotation_invite_link,
 )
 from ..storage import MediaTooLargeError, ObjectStorage, ObjectStorageError
+from ..telegram_client import bot_client, telegram_clients
 from ..telegram_delivery import (
     approve_join_request,
     create_rotation_invite_link,
@@ -144,7 +145,19 @@ async def refresh_delivery_metrics() -> None:
 
 
 def _retry_delay(attempts: int) -> int:
-    return int(min(300, 2 ** min(attempts, 8)))
+    cap = int(min(300, 2 ** min(attempts, 8)))
+    return random.randint(1, max(1, cap))
+
+
+async def _record_telegram_cooldown(
+    limiter: TelegramRateLimiter, bot_id: int, retry_after: int
+) -> None:
+    try:
+        await limiter.block_bot(bot_id, max(1, retry_after))
+    except RateLimitUnavailable:
+        # The Telegram retry_after remains authoritative for the current job;
+        # a missing distributed cooldown must not strand its database lease.
+        DEPENDENCY_ERRORS.labels("valkey").inc()
 
 
 async def _process_client_message(
@@ -163,7 +176,9 @@ async def _process_client_message(
             )
         return
     try:
-        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id)
+        allowed = await limiter.acquire(
+            context.bot.id, context.contact.telegram_id, lane="interactive"
+        )
     except RateLimitUnavailable:
         allowed = False
     if not allowed:
@@ -175,6 +190,7 @@ async def _process_client_message(
     try:
         await send_client_notice(context, keyring)
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_client_message(
                 session, message_id, worker_id,
@@ -231,7 +247,7 @@ async def _process_broadcast_recipient(
             )
         return
     try:
-        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id)
+        allowed = await limiter.acquire(context.bot.id, context.contact.telegram_id, lane="bulk")
     except RateLimitUnavailable:
         allowed = False
     if not allowed:
@@ -242,7 +258,7 @@ async def _process_broadcast_recipient(
         return
     try:
         token = keyring.decrypt(context.bot.token_ciphertext)
-        async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+        async with bot_client(token) as bot:
             for operation in context.operations:
                 await send_compiled_operation(
                     bot,
@@ -254,6 +270,7 @@ async def _process_broadcast_recipient(
                     first_name=context.contact.first_name,
                 )
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_broadcast_recipient(
                 session, recipient_id, worker_id,
@@ -341,6 +358,7 @@ async def _process_activation(
             context, keyring, activation_base_url=settings.activation_base_url
         )
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_activation(
                 session,
@@ -452,6 +470,7 @@ async def _process_operation(
     try:
         await send_delivery_operation(context, storage, keyring)
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_operation(
                 session,
@@ -604,6 +623,7 @@ async def _process_delivery(
     try:
         await send_greeting(context, storage, keyring)
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_delivery(
                 session,
@@ -753,6 +773,7 @@ async def _process_join_request(
     try:
         await approve_join_request(context, keyring)
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(limiter, context.bot.id, int(exc.retry_after))
         async with session_factory() as session:
             await defer_join_request(
                 session,
@@ -870,7 +891,9 @@ async def _process_rotation(
         ROTATION_RECOMMENDATIONS.labels("ineligible").inc()
         return
     try:
-        allowed = await limiter.acquire(context.source_bot.id, context.contact.telegram_id)
+        allowed = await limiter.acquire(
+            context.source_bot.id, context.contact.telegram_id, lane="bulk"
+        )
     except RateLimitUnavailable:
         DEPENDENCY_ERRORS.labels("valkey").inc()
         allowed, delay, reason = False, 5, "valkey_unavailable"
@@ -914,6 +937,9 @@ async def _process_rotation(
             return
         await send_rotation_recommendation(context, usable, keyring)
     except TelegramRetryAfter as exc:
+        await _record_telegram_cooldown(
+            limiter, context.source_bot.id, int(exc.retry_after)
+        )
         async with session_factory() as session:
             await defer_rotation(
                 session,
@@ -963,11 +989,18 @@ async def serve() -> None:
     loop = asyncio.get_running_loop()
     for event_signal in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(event_signal, stopping.set)
-    redis = Redis.from_url(settings.valkey_url, decode_responses=False, socket_timeout=5, socket_connect_timeout=3)
+    redis = Redis.from_url(
+        settings.valkey_url,
+        decode_responses=False,
+        socket_timeout=0.2,
+        socket_connect_timeout=0.2,
+        health_check_interval=15,
+    )
     limiter = TelegramRateLimiter(
         redis,
         bot_limit=settings.bot_rate_limit_per_second,
         chat_limit=settings.chat_rate_limit_per_second,
+        urgent_reserve=settings.urgent_rate_reserve_per_second,
     )
     storage = ObjectStorage(settings)
     keyring = TokenKeyring.parse(settings.token_encryption_keys)
@@ -978,36 +1011,56 @@ async def serve() -> None:
     common: dict[str, Any] = {"worker_id": worker_id, "settings": settings, "limiter": limiter, "keyring": keyring}
     # Short-lived join-request targets go first. Broadcast recipients have no
     # Telegram delivery window and are deliberately handled after greetings.
-    queues: list[tuple[Any, Any, Any]] = [
-        (DeliveryOperation, claim_operation_batch, partial(_process_operation, storage=storage, **common)),
-        (GreetingDelivery, claim_delivery_batch, partial(_process_delivery, storage=storage, **common)),
-        (JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),
-        (ClientMessage, claim_client_messages, partial(_process_client_message, **common)),
-        (JoinRequestActivation, claim_activation_batch, partial(_process_activation, **common)),
+    enabled_lanes = {lane.strip() for lane in settings.delivery_lanes.split(",") if lane.strip()}
+    queues: list[tuple[str, Any, Any, Any]] = [
         (
-            BroadcastRecipient,
+            "urgent", DeliveryOperation, claim_operation_batch,
+            partial(_process_operation, storage=storage, **common),
+        ),
+        (
+            "urgent", GreetingDelivery, claim_delivery_batch,
+            partial(_process_delivery, storage=storage, **common),
+        ),
+        ("urgent", JoinRequest, claim_join_request_batch, partial(_process_join_request, **common)),
+        (
+            "interactive", ClientMessage, claim_client_messages,
+            partial(_process_client_message, **common),
+        ),
+        (
+            "urgent", JoinRequestActivation, claim_activation_batch,
+            partial(_process_activation, **common),
+        ),
+        (
+            "bulk", BroadcastRecipient,
             claim_broadcast_recipients,
             partial(_process_broadcast_recipient, storage=storage, **common),
         ),
-        (RotationRecommendation, claim_rotation_batch, partial(_process_rotation, **common)),
+        (
+            "bulk", RotationRecommendation, claim_rotation_batch,
+            partial(_process_rotation, **common),
+        ),
     ]
+    queues = [queue for queue in queues if queue[0] in enabled_lanes]
+    in_flight: set[asyncio.Task[None]] = set()
     try:
         while not stopping.is_set():
             health.mark("delivery")
-            if monotonic() >= next_metrics_refresh:
+            if "urgent" in enabled_lanes and monotonic() >= next_metrics_refresh:
                 try:
                     await refresh_delivery_metrics()
                 except Exception as exc:
                     logger.warning("Delivery metrics refresh failed class=%s", type(exc).__name__)
                 next_metrics_refresh = monotonic() + 10
-            try:
-                async with session_factory() as session:
-                    finalized_albums = await finalize_due_albums(session)
-            except Exception as exc:
-                health.mark("delivery", healthy=False)
-                logger.warning("Delivery dependency unavailable class=%s", type(exc).__name__)
-                await asyncio.sleep(2)
-                continue
+            finalized_albums: list[tuple[int, int, int, int]] = []
+            if "urgent" in enabled_lanes:
+                try:
+                    async with session_factory() as session:
+                        finalized_albums = await finalize_due_albums(session)
+                except Exception as exc:
+                    health.mark("delivery", healthy=False)
+                    logger.warning("Delivery dependency unavailable class=%s", type(exc).__name__)
+                    await asyncio.sleep(2)
+                    continue
             for draft_id, owner_telegram_id, bot_id, version in finalized_albums:
                 health.mark("delivery")
                 try:
@@ -1030,17 +1083,40 @@ async def serve() -> None:
                 except Exception as exc:
                     logger.warning("owner album notification failed draft_id=%s class=%s", draft_id, type(exc).__name__)
                     continue
-            worked = False
-            for model, claim, handler in queues:
+            completed = {task for task in in_flight if task.done()}
+            in_flight.difference_update(completed)
+            for task in completed:
+                try:
+                    task.result()
+                except Exception as exc:
+                    health.mark("delivery", healthy=False)
+                    logger.warning("Delivery task retry class=%s", type(exc).__name__)
+            worked = bool(in_flight)
+            DELIVERY_INFLIGHT.labels(",".join(sorted(enabled_lanes))).set(len(in_flight))
+            available = settings.delivery_concurrency - len(in_flight)
+            per_queue_quota = max(1, settings.delivery_concurrency // max(1, len(queues)))
+            for _lane, model, claim, handler in queues:
                 if stopping.is_set():
+                    break
+                if available <= 0:
                     break
                 health.mark("delivery")
                 try:
                     async with session_factory() as session:
-                        items = await claim(session, worker_id=worker_id, limit=1, lease_seconds=180)
+                        items = await claim(
+                            session,
+                            worker_id=worker_id,
+                            limit=min(available, settings.worker_batch_size, per_queue_quota),
+                            lease_seconds=settings.lease_seconds,
+                        )
                     for item in items:
                         worked = True
-                        await run_leased(handler(item.id), model, item.id, worker_id)
+                        in_flight.add(
+                            asyncio.create_task(
+                                run_leased(handler(item.id), model, item.id, worker_id)
+                            )
+                        )
+                        available -= 1
                     health.mark("delivery", healthy=True)
                 except Exception as exc:
                     health.mark("delivery", healthy=False)
@@ -1048,14 +1124,20 @@ async def serve() -> None:
                     # Failed/unacknowledged work remains leased in PostgreSQL;
                     # it is recovered, never erased by a loop-level failure.
                     await asyncio.sleep(1)
-            if not worked:
+            if in_flight:
+                await asyncio.wait(in_flight, timeout=0.1, return_when=asyncio.FIRST_COMPLETED)
+            elif not worked:
                 try:
                     await asyncio.wait_for(stopping.wait(), timeout=settings.worker_poll_seconds)
                 except TimeoutError:
                     pass
     finally:
+        if in_flight:
+            await asyncio.gather(*in_flight, return_exceptions=True)
+        DELIVERY_INFLIGHT.labels(",".join(sorted(enabled_lanes))).set(0)
         server.shutdown()
         WORKER_ACTIVE.labels("delivery").dec()
+        await telegram_clients.close()
         await redis.aclose()
 
 

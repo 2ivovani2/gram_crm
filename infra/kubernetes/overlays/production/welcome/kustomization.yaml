@@ -28,7 +28,7 @@ patches:
       group: apps
       version: v1
       kind: Deployment
-      name: gramly-welcome-worker-delivery
+      name: gramly-welcome-worker-(delivery|interactive|bulk)
     patch: |-
       - op: replace
         path: /spec/replicas
@@ -66,7 +66,7 @@ patches:
       group: keda.sh
       version: v1alpha1
       kind: ScaledObject
-      name: gramly-welcome-worker-delivery
+      name: gramly-welcome-worker-(delivery|interactive|bulk)
     patch: |-
       - op: add
         path: /metadata/annotations

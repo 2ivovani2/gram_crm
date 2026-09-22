@@ -75,6 +75,67 @@ async def maintain() -> None:
                 )
                 .values(status="expired", error="activation_expired")
             )
+            # Keep the active scheduler compact. Partitions are created before
+            # copying so dropping old history is a metadata-only operation.
+            await session.execute(
+                text(
+                    """
+                    DO $$
+                    DECLARE previous_month date := (date_trunc('month', now()) - interval '1 month')::date;
+                    DECLARE start_month date := date_trunc('month', now())::date;
+                    DECLARE next_month date := (start_month + interval '1 month')::date;
+                    DECLARE after_next date := (start_month + interval '2 months')::date;
+                    DECLARE expired_partition text :=
+                      'delivery_job_history_' || to_char(start_month - interval '7 months', 'YYYYMM');
+                    BEGIN
+                      EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS %I PARTITION OF delivery_job_history '
+                        'FOR VALUES FROM (%L) TO (%L)',
+                        'delivery_job_history_' || to_char(previous_month, 'YYYYMM'),
+                        previous_month, start_month
+                      );
+                      EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS %I PARTITION OF delivery_job_history '
+                        'FOR VALUES FROM (%L) TO (%L)',
+                        'delivery_job_history_' || to_char(start_month, 'YYYYMM'),
+                        start_month, next_month
+                      );
+                      EXECUTE format(
+                        'CREATE TABLE IF NOT EXISTS %I PARTITION OF delivery_job_history '
+                        'FOR VALUES FROM (%L) TO (%L)',
+                        'delivery_job_history_' || to_char(next_month, 'YYYYMM'),
+                        next_month, after_next
+                      );
+                      EXECUTE format('DROP TABLE IF EXISTS %I', expired_partition);
+                    END $$
+                    """
+                )
+            )
+            await session.execute(
+                text(
+                    """
+                    WITH archived AS (
+                      DELETE FROM delivery_job
+                      WHERE id IN (
+                        SELECT id FROM delivery_job
+                        WHERE status IN ('completed','failed','cancelled')
+                          AND updated_at < now() - interval '7 days'
+                        ORDER BY id
+                        LIMIT 10000
+                        FOR UPDATE SKIP LOCKED
+                      )
+                      RETURNING *
+                    )
+                    INSERT INTO delivery_job_history
+                      (id, source_kind, source_id, bot_id, lane, status, due_at,
+                       deadline_at, attempts, error_code, created_at, finished_at)
+                    SELECT id, source_kind, source_id, bot_id, lane, status, due_at,
+                           deadline_at, attempts, error_code, created_at, updated_at
+                    FROM archived
+                    ON CONFLICT DO NOTHING
+                    """
+                )
+            )
     async with session_factory() as session:
         await purge_expired_tip_sessions(session, now=now)
     async with session_factory() as session:

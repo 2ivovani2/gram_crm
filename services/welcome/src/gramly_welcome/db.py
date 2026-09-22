@@ -18,7 +18,7 @@ def build_engine(settings: Settings) -> AsyncEngine:
         max_overflow=settings.database_max_overflow,
         pool_recycle=1800,
         pool_timeout=5,
-        connect_args={"timeout": 5, "command_timeout": 30},
+        connect_args={"timeout": 5, "command_timeout": 30, "prepared_statement_cache_size": 0},
     )
 
 

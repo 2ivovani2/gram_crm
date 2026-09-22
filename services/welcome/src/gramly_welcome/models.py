@@ -493,7 +493,13 @@ class PaymentEvent(Base):
     provider: Mapped[str] = mapped_column(String(24), index=True)
     event_key: Mapped[str] = mapped_column(String(128))
     payload_hash: Mapped[str] = mapped_column(String(64))
+    provider_reference: Mapped[str] = mapped_column(String(128), default="")
     status: Mapped[str] = mapped_column(String(16), default="received")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -892,6 +898,64 @@ class DeliveryOperation(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DeliveryJob(Base):
+    """Durable scheduling record; Streams only carry this row's identifier."""
+
+    __tablename__ = "delivery_job"
+    __table_args__ = (
+        UniqueConstraint("source_kind", "source_id", name="uq_delivery_job_source"),
+        UniqueConstraint("dedupe_key", name="uq_delivery_job_dedupe_key"),
+        Index(
+            "ix_delivery_job_ready",
+            "lane",
+            "status",
+            "next_attempt_at",
+            "deadline_at",
+            postgresql_where=text("status IN ('pending','retry')"),
+        ),
+        Index(
+            "ix_delivery_job_relay",
+            "status",
+            "signaled_at",
+            "next_attempt_at",
+            postgresql_where=text("status IN ('pending','retry','signaled')"),
+        ),
+        CheckConstraint(
+            "lane IN ('urgent','interactive','standard','bulk')",
+            name="ck_delivery_job_lane",
+        ),
+        CheckConstraint(
+            "status IN ('pending','signaled','processing','retry','completed','failed','cancelled')",
+            name="ck_delivery_job_status",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    source_kind: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[int] = mapped_column(BigInteger)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("owner.id", ondelete="SET NULL"), index=True)
+    bot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("managed_bot.id", ondelete="SET NULL"), index=True
+    )
+    chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    lane: Mapped[str] = mapped_column(String(16), default="standard")
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(96))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signaled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stream_id: Mapped[str | None] = mapped_column(String(64))
+    dedupe_key: Mapped[str] = mapped_column(String(128))
+    error_code: Mapped[str] = mapped_column(String(96), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class AdCreative(Base):

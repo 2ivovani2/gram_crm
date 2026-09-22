@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -332,7 +333,12 @@ async def settle_stars_payment(
 
 
 async def register_payment_event(
-    session: AsyncSession, *, provider: str, event_key: str, raw_body: bytes
+    session: AsyncSession,
+    *,
+    provider: str,
+    event_key: str,
+    provider_reference: str,
+    raw_body: bytes,
 ) -> bool:
     event_id = await session.scalar(
         insert(PaymentEvent)
@@ -340,6 +346,7 @@ async def register_payment_event(
             provider=provider,
             event_key=event_key,
             payload_hash=hashlib.sha256(raw_body).hexdigest(),
+            provider_reference=provider_reference,
             status="received",
         )
         .on_conflict_do_nothing(constraint="uq_payment_event_provider_key")
@@ -360,7 +367,61 @@ async def complete_payment_event(
     if event is not None:
         event.status = "processed"
         event.processed_at = datetime.now(UTC)
+        event.lease_owner = None
+        event.lease_expires_at = None
+        event.error = ""
         await session.commit()
+
+
+async def claim_payment_event(
+    session: AsyncSession, *, worker_id: str, lease_seconds: int = 60
+) -> PaymentEvent | None:
+    now = datetime.now(UTC)
+    event = await session.scalar(
+        select(PaymentEvent)
+        .where(
+            PaymentEvent.provider == "crypto_pay",
+            or_(
+                (PaymentEvent.status.in_(("received", "retry")) & (PaymentEvent.available_at <= now)),
+                (PaymentEvent.status == "processing") & (PaymentEvent.lease_expires_at < now),
+            ),
+        )
+        .order_by(PaymentEvent.available_at, PaymentEvent.id)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if event is None:
+        return None
+    event.status = "processing"
+    event.attempts += 1
+    event.lease_owner = worker_id
+    event.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    await session.commit()
+    return event
+
+
+async def retry_payment_event(
+    session: AsyncSession, event_id: int, *, worker_id: str, error: str, max_attempts: int = 8
+) -> None:
+    event = await session.scalar(
+        select(PaymentEvent).where(
+            PaymentEvent.id == event_id,
+            PaymentEvent.status == "processing",
+            PaymentEvent.lease_owner == worker_id,
+        )
+    )
+    if event is None:
+        return
+    if event.attempts >= max_attempts:
+        event.status = "failed"
+    else:
+        cap = min(900, 2 ** min(event.attempts, 9))
+        event.status = "retry"
+        event.available_at = datetime.now(UTC) + timedelta(seconds=random.randint(1, cap))
+    event.error = error[:500]
+    event.lease_owner = None
+    event.lease_expires_at = None
+    await session.commit()
 
 
 def safe_invoice_snapshot(invoice: CryptoInvoice) -> dict[str, object]:
