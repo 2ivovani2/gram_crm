@@ -5,20 +5,26 @@ from django.db import connection
 
 
 LEARNING_VIDEOS = (
-    ("01-podklyuchenie-bota-i-kanala", "Подключение бота и канала", 24),
-    ("02-gotovyy-shablon", "Готовый шаблон", 26),
-    ("03-privetstvie-s-nulya", "Приветствие с нуля", 23),
-    ("04-oformlenie-soobshcheniya", "Оформление сообщения", 23),
-    ("05-tsepochka-i-zaderzhki", "Цепочка и задержки", 27),
-    ("06-proverka-i-zapusk", "Проверка и запуск", 25),
-    ("07-proshchalnoe-soobshchenie", "Прощальное сообщение", 28),
-    ("08-zayavki-na-vstuplenie", "Заявки на вступление", 23),
-    ("09-baza-podpischikov", "База подписчиков", 25),
-    ("10-rassylka", "Рассылка", 24),
-    ("11-rotatsiya-kanalov", "Ротация каналов", 23),
-    ("12-analitika", "Аналитика", 23),
-    ("13-tarif-business", "Тариф «Бизнес»", 24),
-    ("14-partnerskaya-programma", "Партнёрская программа", 24),
+    ("01-podklyuchenie-bota-i-kanala", "Подключение бота и канала", 24, "first_launch"),
+    ("02-gotovyy-shablon", "Готовый шаблон", 26, "first_launch"),
+    ("03-privetstvie-s-nulya", "Приветствие с нуля", 23, "first_launch"),
+    ("04-oformlenie-soobshcheniya", "Оформление сообщения", 23, "first_launch"),
+    ("05-tsepochka-i-zaderzhki", "Цепочка и задержки", 27, "first_launch"),
+    ("06-proverka-i-zapusk", "Проверка и запуск", 25, "first_launch"),
+    ("07-proshchalnoe-soobshchenie", "Прощальное сообщение", 28, "automation"),
+    ("08-zayavki-na-vstuplenie", "Заявки на вступление", 23, "automation"),
+    ("09-baza-podpischikov", "База подписчиков", 25, "automation"),
+    ("10-rassylka", "Рассылка", 24, "automation"),
+    ("11-rotatsiya-kanalov", "Ротация каналов", 23, "automation"),
+    ("12-analitika", "Аналитика", 23, "automation"),
+    ("13-tarif-business", "Тариф «Бизнес»", 24, "account"),
+    ("14-partnerskaya-programma", "Партнёрская программа", 24, "account"),
+)
+
+LEARNING_CHAPTERS = (
+    ("first_launch", "Первый запуск"),
+    ("automation", "Автоматизация и рост"),
+    ("account", "Аккаунт"),
 )
 
 
@@ -27,17 +33,23 @@ class LandingView(View):
         from django.conf import settings
         bot_username = getattr(settings, "TELEGRAM_BOT_USERNAME", "").lstrip("@")
         welcome_bot_username = getattr(settings, "GRAMLY_HELLO_BOT_USERNAME", "").lstrip("@")
+        videos = [
+            {
+                "number": f"{index:02d}",
+                "slug": slug,
+                "title": title,
+                "duration_seconds": duration,
+                "chapter_key": chapter,
+            }
+            for index, (slug, title, duration, chapter) in enumerate(LEARNING_VIDEOS, 1)
+        ]
         return render(request, "landing.html", {
             "bot_username": bot_username,
             "welcome_bot_username": welcome_bot_username,
-            "learning_videos": [
-                {
-                    "number": f"{index:02d}",
-                    "slug": slug,
-                    "title": title,
-                    "duration_seconds": duration,
-                }
-                for index, (slug, title, duration) in enumerate(LEARNING_VIDEOS, 1)
+            "learning_videos": videos,
+            "learning_chapters": [
+                {"key": key, "title": title, "videos": [v for v in videos if v["chapter_key"] == key]}
+                for key, title in LEARNING_CHAPTERS
             ],
         })
 

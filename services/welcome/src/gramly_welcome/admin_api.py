@@ -119,6 +119,7 @@ class LearningVideoInput(BaseModel):
     poster_url: str = Field(default="", max_length=2048)
     duration_seconds: int = Field(default=0, ge=0, le=86_400)
     feature_key: str = Field(default="home", pattern=r"^[a-z0-9_-]{2,64}$")
+    chapter_key: str = Field(pattern=r"^(first_launch|automation|account)$")
     sort_order: int = Field(default=0, ge=-10_000, le=10_000)
     is_active: bool = True
 
@@ -1329,7 +1330,8 @@ async def content(_admin: AdminDep, session: SessionDep) -> dict[str, object]:
                 "id": row.id, "slug": row.slug, "title": row.title,
                 "description": row.description, "video_url": row.video_url,
                 "poster_url": row.poster_url, "duration_seconds": row.duration_seconds,
-                "feature_key": row.feature_key, "sort_order": row.sort_order,
+                "feature_key": row.feature_key, "chapter_key": row.chapter_key,
+                "sort_order": row.sort_order,
                 "is_active": row.is_active,
             }
             for row in videos

@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from gramly_welcome.app_api import (
+    CurrentWebUser,
+    LearningProgressRequest,
+    learning_resources,
+    update_learning_progress,
+)
 from gramly_welcome.learning import (
     claim_notification,
     finish_notification,
@@ -14,10 +22,101 @@ from gramly_welcome.learning import (
     open_help_session,
     schedule_learning_notifications,
 )
-from gramly_welcome.models import Announcement, ContextualHelp, Owner, OwnerNotification, Tip
+from gramly_welcome.models import (
+    Announcement,
+    ContextualHelp,
+    LearningVideo,
+    Owner,
+    OwnerNotification,
+    Tip,
+)
+from gramly_welcome.web_sessions import AuthenticatedWebSession
 
 DATABASE_URL = os.getenv("WELCOME_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="WELCOME_TEST_DATABASE_URL is not set")
+
+
+def _web_user(owner: Owner) -> CurrentWebUser:
+    return CurrentWebUser(
+        AuthenticatedWebSession(
+            session_id=uuid.uuid4(),
+            owner=owner,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_learning_progress_is_clamped_idempotent_and_private() -> None:
+    assert DATABASE_URL is not None
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    slug = f"learning-progress-{uuid.uuid4().hex}"
+    first_owner_id: int | None = None
+    second_owner_id: int | None = None
+    video_id: int | None = None
+    try:
+        async with sessions() as session:
+            first = Owner(telegram_id=-(uuid.uuid4().int % 1_000_000_000))
+            second = Owner(telegram_id=-(uuid.uuid4().int % 1_000_000_000))
+            video = LearningVideo(
+                slug=slug,
+                title="Progress test",
+                video_url="https://example.com/progress.mp4",
+                duration_seconds=100,
+                chapter_key="first_launch",
+                sort_order=99_999,
+            )
+            session.add_all([first, second, video])
+            await session.commit()
+            first_owner_id, second_owner_id, video_id = first.id, second.id, video.id
+
+            first_user, second_user = _web_user(first), _web_user(second)
+            halfway = await update_learning_progress(
+                video.id,
+                LearningProgressRequest(position_seconds=50),
+                first_user,
+                session,
+            )
+            assert halfway["position_seconds"] == 50
+            assert halfway["completed_at"] is None
+
+            completed = await update_learning_progress(
+                video.id,
+                LearningProgressRequest(position_seconds=90),
+                first_user,
+                session,
+            )
+            assert completed["position_seconds"] == 90
+            assert completed["completed_at"] is not None
+
+            repeated = await update_learning_progress(
+                video.id,
+                LearningProgressRequest(position_seconds=20),
+                first_user,
+                session,
+            )
+            assert repeated["position_seconds"] == 90
+            assert repeated["completed_at"] == completed["completed_at"]
+
+            own_catalog = await learning_resources(first_user, session)
+            foreign_catalog = await learning_resources(second_user, session)
+            own_videos = cast(list[dict[str, object]], own_catalog["videos"])
+            foreign_videos = cast(list[dict[str, object]], foreign_catalog["videos"])
+            own_video = next(item for item in own_videos if item["id"] == video.id)
+            foreign_video = next(item for item in foreign_videos if item["id"] == video.id)
+            assert own_video["position_seconds"] == 90
+            assert own_video["completed_at"] is not None
+            assert foreign_video["position_seconds"] == 0
+            assert foreign_video["completed_at"] is None
+    finally:
+        async with sessions() as session, session.begin():
+            if video_id is not None:
+                await session.execute(delete(LearningVideo).where(LearningVideo.id == video_id))
+            for owner_id in (first_owner_id, second_owner_id):
+                if owner_id is not None:
+                    await session.execute(delete(Owner).where(Owner.id == owner_id))
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

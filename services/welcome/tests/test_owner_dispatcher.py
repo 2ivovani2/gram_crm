@@ -116,7 +116,10 @@ async def test_real_owner_dispatcher_routes_encoded_callbacks_and_preserves_fsm(
     step = ContentStep(
         id=10, version_id=9, position=0, payload={"type": "text", "text": "Preview"}, delay_after_seconds=10
     )
-    snapshot = SimpleNamespace(flow=flow, version=version, steps=[step])
+    final_step = ContentStep(
+        id=12, version_id=9, position=1, payload={"type": "text", "text": "Final"}, delay_after_seconds=0
+    )
+    snapshot = SimpleNamespace(flow=flow, version=version, steps=[step, final_step])
 
     class Database:
         async def __aenter__(self) -> Database:

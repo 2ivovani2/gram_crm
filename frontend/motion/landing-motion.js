@@ -42,7 +42,7 @@ export function initLandingMotion() {
       y: 38, autoAlpha: 0, duration: .72, ease: "power3.out",
       scrollTrigger: { trigger: visual, start: "top 86%", once: true },
     }));
-    [".launch-grid", ".template-cards", ".lesson-grid"].forEach((selector) => {
+    [".launch-grid", ".template-cards", ".lesson-library"].forEach((selector) => {
       const group = document.querySelector(selector);
       if (!group) return;
       gsap.from(group.children, { y: 28, autoAlpha: 0, stagger: .09, duration: .55, ease: "power2.out", scrollTrigger: { trigger: group, start: "top 88%", once: true } });

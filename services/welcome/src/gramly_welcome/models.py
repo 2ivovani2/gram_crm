@@ -211,7 +211,13 @@ class Manual(Base):
 
 class LearningVideo(Base):
     __tablename__ = "learning_video"
-    __table_args__ = (UniqueConstraint("slug", name="learning_video_slug_key"),)
+    __table_args__ = (
+        UniqueConstraint("slug", name="learning_video_slug_key"),
+        CheckConstraint(
+            "chapter_key IN ('first_launch','automation','account')",
+            name="ck_learning_video_chapter",
+        ),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     slug: Mapped[str] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(160))
@@ -220,9 +226,30 @@ class LearningVideo(Base):
     poster_url: Mapped[str] = mapped_column(String(2048), default="")
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
     feature_key: Mapped[str] = mapped_column(String(64), default="home", index=True)
+    chapter_key: Mapped[str] = mapped_column(String(32), default="first_launch", index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LearningVideoProgress(Base):
+    __tablename__ = "learning_video_progress"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "video_id", name="uq_learning_video_progress_owner_video"),
+        CheckConstraint("position_seconds >= 0", name="ck_learning_video_progress_position"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("owner.id", ondelete="CASCADE"), index=True
+    )
+    video_id: Mapped[int] = mapped_column(
+        ForeignKey("learning_video.id", ondelete="CASCADE"), index=True
+    )
+    position_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

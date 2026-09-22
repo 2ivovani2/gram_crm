@@ -229,6 +229,7 @@ class WelcomeMessageState(StatesGroup):
 
 class WelcomeButtonState(StatesGroup):
     waiting_for_buttons = State()
+    choosing_colors = State()
 
 
 class ChainDelayState(StatesGroup):
@@ -1261,10 +1262,11 @@ async def send_chain_editor(
     rows: list[list[TelegramInlineKeyboardButton]] = []
     if snapshot.steps:
         lines.append("")
+        elapsed = snapshot.version.first_delay_seconds
         for index, step in enumerate(snapshot.steps, start=1):
             kind = str(step.payload.get("type") or "message")
-            after = _format_delay(step.delay_after_seconds) if index < len(snapshot.steps) else "финал"
-            lines.append(f"{index}. <b>{kind}</b> · после: {after}")
+            moment = "Сразу" if elapsed == 0 else f"Через {_format_delay(elapsed)}"
+            lines.append(f"{index}. <b>{kind}</b> · {moment}")
             rows.append(
                 [
                     owner_button(
@@ -1273,6 +1275,8 @@ async def send_chain_editor(
                     )
                 ]
             )
+            if index < len(snapshot.steps):
+                elapsed += step.delay_after_seconds
     else:
         lines.append("\nПока нет шагов. Добавьте первое сообщение.")
     rows.extend(
@@ -1427,7 +1431,7 @@ async def configure_staged_buttons(callback: CallbackQuery, state: FSMContext) -
         "🔘 <b>Кнопки этого сообщения</b>\n\n"
         "Каждый ряд — с новой строки, соседние кнопки разделяйте символом <code>|</code>.\n"
         "Формат: <code>Название - https://example.com</code>.\n"
-        "Цвет можно дописать последним: <code>- синий</code>, <code>- зелёный</code> или <code>- красный</code>.",
+        "После ссылок Gramly покажет понятный выбор цвета для каждой кнопки.",
         reply_markup=_one_button("Назад", "chain:compose-back"),
     )
     await callback.answer()
@@ -1728,19 +1732,25 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
     if step is None:
         await callback.answer("Шаг не найден.", show_alert=True)
         return
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
+    is_final_step = step.position == max(item.position for item in snapshot.steps)
+    action_rows: list[list[TelegramInlineKeyboardButton]] = [
             [
                 owner_button(text="Выше", callback_data=f"chain:move:{version_id}:{step_id}:-1", emoji_key="back"),
                 owner_button(text="Ниже", callback_data=f"chain:move:{version_id}:{step_id}:1", emoji_key="next"),
                 owner_button(text="Копия", callback_data=f"chain:copy:{version_id}:{step_id}", emoji_key="copy"),
             ],
+    ]
+    if not is_final_step:
+        action_rows.append(
             [
                 owner_button(
                     text="⏱ Изменить задержку",
                     callback_data=f"chain:delay-input:{version_id}:{step_id}",
                 ),
-            ],
+            ]
+        )
+    action_rows.extend(
+        [
             [
                 owner_button(
                     text="✏️ Изменить содержимое",
@@ -1752,6 +1762,7 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
             [owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
         ]
     )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=action_rows)
     await callback.answer("Показываю шаг…")
     storage = ObjectStorage(get_settings())
     try:
@@ -1775,7 +1786,11 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
     await owner_answer(
         message,
         f"<b>Шаг {step.position + 1}</b> · {step.payload.get('type', 'message')}\n"
-        f"Задержка до следующего: <b>{_format_delay(step.delay_after_seconds)}</b>",
+        + (
+            "Финальное сообщение · задержка после него не нужна."
+            if is_final_step
+            else f"Задержка до следующего: <b>{_format_delay(step.delay_after_seconds)}</b>"
+        ),
         reply_markup=keyboard,
     )
 
@@ -2318,6 +2333,7 @@ async def configure_chain_buttons(callback: CallbackQuery, owner: Owner, state: 
         "Поддержка - https://example.com/help</code>\n\n"
         "Можно добавить до <b>3 кнопок в ряд</b> и до <b>15 рядов</b>. "
         "Ссылка должна начинаться с <code>http://</code> или <code>https://</code>.\n\n"
+        "Цвет каждой кнопки выберете на следующем экране.\n\n"
         "Отправьте <code>удалить</code>, чтобы убрать все кнопки.",
         reply_markup=_one_button("❌ Отмена", f"chain:editor:{version_id}"),
     )
@@ -2379,6 +2395,184 @@ def _ru_count(value: int, one: str, few: str, many: str) -> str:
     return f"{value} {word}"
 
 
+def _keyboard_button_locations(keyboard: dict[str, Any]) -> list[tuple[int, int]]:
+    return [
+        (row_index, button_index)
+        for row_index, row in enumerate(keyboard.get("rows") or [])
+        for button_index, _button in enumerate(row)
+    ]
+
+
+def _button_color_picker(
+    keyboard: dict[str, Any], index: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    locations = _keyboard_button_locations(keyboard)
+    row_index, button_index = locations[index]
+    button = keyboard["rows"][row_index][button_index]
+    labels = {
+        "default": "Стандартная",
+        "primary": "Синяя",
+        "success": "Зелёная",
+        "danger": "Красная",
+    }
+    color_rows = [
+        [
+            owner_button(
+                text=label,
+                callback_data=f"chain:button-style:{style}",
+                style=style,
+            )
+        ]
+        for style, label in labels.items()
+    ]
+    navigation: list[TelegramInlineKeyboardButton] = []
+    if index > 0:
+        navigation.append(owner_button(text="Назад", callback_data="chain:button-style-prev"))
+    if index + 1 < len(locations):
+        navigation.append(owner_button(text="Дальше", callback_data="chain:button-style-next"))
+    if navigation:
+        color_rows.append(navigation)
+    color_rows.append(
+        [owner_button(text="Сохранить кнопки", callback_data="chain:button-style-save", style="success")]
+    )
+    color_rows.append(
+        [owner_button(text="Отмена", callback_data="chain:button-style-cancel")]
+    )
+    current = labels.get(str(button.get("style") or "default"), "Стандартная")
+    preview = ""
+    if index + 1 == len(locations):
+        preview_rows = []
+        for row in keyboard["rows"]:
+            preview_rows.append(
+                " · ".join(
+                    f"[{labels.get(str(item.get('style') or 'default'), 'Стандартная')}] "
+                    f"{html.escape(str(item.get('text') or 'Без названия'))}"
+                    for item in row
+                )
+            )
+        preview = "\n\n<b>Итоговый предпросмотр</b>\n" + "\n".join(preview_rows)
+    text = (
+        f"🎨 <b>Цвет кнопки {index + 1} из {len(locations)}</b>\n\n"
+        f"Кнопка: <b>{html.escape(str(button.get('text') or 'Без названия'))}</b>\n"
+        f"Сейчас: <b>{current}</b>\n\n"
+        "Выберите цвет. После выбора Gramly автоматически откроет следующую кнопку. "
+        "Telegram адаптирует оттенок к теме пользователя."
+        f"{preview}"
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=color_rows)
+
+
+async def _show_button_color_picker(message: Message, state: FSMContext, *, edit: bool) -> None:
+    data = await state.get_data()
+    keyboard = cast(dict[str, Any], data.get("pending_keyboard") or {})
+    locations = _keyboard_button_locations(keyboard)
+    if not locations:
+        await owner_answer(message, "⚠️ Кнопки не найдены. Введите их ещё раз.")
+        await state.set_state(WelcomeButtonState.waiting_for_buttons)
+        return
+    index = min(max(int(data.get("button_color_index") or 0), 0), len(locations) - 1)
+    await state.update_data(button_color_index=index)
+    text, markup = _button_color_picker(keyboard, index)
+    sender = edit_with_ui_fallback if edit else owner_answer
+    await sender(message, text, reply_markup=markup)
+
+
+@router.callback_query(
+    WelcomeButtonState.choosing_colors,
+    F.data.startswith("chain:button-style:"),
+)
+async def choose_button_color(callback: CallbackQuery, state: FSMContext) -> None:
+    style = (callback.data or "").rsplit(":", 1)[-1]
+    if style not in {"default", "primary", "success", "danger"}:
+        await callback.answer("Неизвестный цвет", show_alert=True)
+        return
+    data = await state.get_data()
+    keyboard = cast(dict[str, Any], data.get("pending_keyboard") or {})
+    locations = _keyboard_button_locations(keyboard)
+    index = int(data.get("button_color_index") or 0)
+    if not locations or index >= len(locations):
+        await callback.answer("Кнопки устарели, введите их заново", show_alert=True)
+        return
+    row_index, button_index = locations[index]
+    keyboard["rows"][row_index][button_index]["style"] = style
+    await state.update_data(
+        pending_keyboard=keyboard,
+        button_color_index=min(index + 1, len(locations) - 1),
+    )
+    await _show_button_color_picker(_callback_message(callback), state, edit=True)
+    await callback.answer("Цвет выбран")
+
+
+@router.callback_query(
+    WelcomeButtonState.choosing_colors,
+    F.data.in_({"chain:button-style-prev", "chain:button-style-next"}),
+)
+async def move_button_color_picker(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    index = int(data.get("button_color_index") or 0)
+    index += -1 if (callback.data or "").endswith("prev") else 1
+    await state.update_data(button_color_index=index)
+    await _show_button_color_picker(_callback_message(callback), state, edit=True)
+    await callback.answer()
+
+
+@router.callback_query(
+    WelcomeButtonState.choosing_colors,
+    F.data == "chain:button-style-save",
+)
+async def save_button_colors(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    keyboard = cast(dict[str, Any] | None, data.get("pending_keyboard"))
+    if keyboard is None:
+        await callback.answer("Кнопки не найдены", show_alert=True)
+        return
+    version_id = int(data.get("version_id") or 0)
+    step_id = int(data.get("step_id") or 0)
+    if data.get("return_to_composer"):
+        await state.update_data(
+            composer_keyboard=keyboard,
+            pending_keyboard=None,
+            return_to_composer=False,
+        )
+        await state.set_state(WelcomeMessageState.waiting_for_message)
+        await edit_with_ui_fallback(
+            _callback_message(callback),
+            "✅ Кнопки и цвета добавлены. Отправьте следующий элемент или сохраните сообщение.",
+            reply_markup=_composer_markup(),
+        )
+    else:
+        try:
+            async with session_factory() as session:
+                await replace_step_keyboard(session, owner.id, step_id, keyboard)
+        except ContentValidationError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        await state.clear()
+        await send_chain_editor(_callback_message(callback), owner, version_id)
+    await callback.answer("Кнопки сохранены")
+
+
+@router.callback_query(
+    WelcomeButtonState.choosing_colors,
+    F.data == "chain:button-style-cancel",
+)
+async def cancel_button_colors(callback: CallbackQuery, owner: Owner, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("return_to_composer"):
+        await state.update_data(pending_keyboard=None, return_to_composer=False)
+        await state.set_state(WelcomeMessageState.waiting_for_message)
+        await edit_with_ui_fallback(
+            _callback_message(callback),
+            "Оформление кнопок отменено. Продолжайте собирать сообщение.",
+            reply_markup=_composer_markup(),
+        )
+    else:
+        version_id = int(data.get("version_id") or 0)
+        await state.clear()
+        await send_chain_editor(_callback_message(callback), owner, version_id, edit=True)
+    await callback.answer("Без изменений")
+
+
 @router.message(WelcomeButtonState.waiting_for_buttons, ~F.successful_payment)
 async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContext) -> None:
     data = await state.get_data()
@@ -2392,11 +2586,16 @@ async def receive_chain_buttons(message: Message, owner: Owner, state: FSMContex
         return
     try:
         keyboard = _parse_keyboard_definition(message.text)
+        if keyboard is not None:
+            await state.update_data(pending_keyboard=keyboard, button_color_index=0)
+            await state.set_state(WelcomeButtonState.choosing_colors)
+            await _show_button_color_picker(message, state, edit=False)
+            return
         if data.get("return_to_composer"):
-            await state.update_data(composer_keyboard=keyboard, return_to_composer=False)
+            await state.update_data(composer_keyboard=None, return_to_composer=False)
         else:
             async with session_factory() as session:
-                await replace_step_keyboard(session, owner.id, step_id, keyboard)
+                await replace_step_keyboard(session, owner.id, step_id, None)
     except ContentValidationError as exc:
         await owner_answer(message, f"⚠️ {exc}")
         return

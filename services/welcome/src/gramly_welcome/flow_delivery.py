@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -376,14 +376,22 @@ async def claim_operation_batch(
     now = datetime.now(UTC)
     dependency = aliased(DeliveryOperation)
     async with session.begin():
+        expiring_priority = case((FlowDelivery.target_expires_at.is_not(None), 0), else_=1)
         runnable = (
             select(
                 DeliveryOperation.id,
                 FlowDelivery.bot_id,
+                expiring_priority.label("expiring_priority"),
+                FlowDelivery.target_expires_at.label("target_expires_at"),
                 func.row_number()
                 .over(
                     partition_by=FlowDelivery.bot_id,
-                    order_by=(DeliveryOperation.due_at, DeliveryOperation.id),
+                    order_by=(
+                        expiring_priority,
+                        FlowDelivery.target_expires_at.asc().nulls_last(),
+                        DeliveryOperation.due_at,
+                        DeliveryOperation.id,
+                    ),
                 )
                 .label("bot_rank"),
             )
@@ -413,7 +421,12 @@ async def claim_operation_batch(
                     select(DeliveryOperation)
                     .join(runnable, runnable.c.id == DeliveryOperation.id)
                     .where(runnable.c.bot_rank <= 3)
-                    .order_by(DeliveryOperation.due_at, DeliveryOperation.id)
+                    .order_by(
+                        runnable.c.expiring_priority,
+                        runnable.c.target_expires_at.asc().nulls_last(),
+                        DeliveryOperation.due_at,
+                        DeliveryOperation.id,
+                    )
                     .limit(limit)
                     .with_for_update(of=DeliveryOperation, skip_locked=True)
                 )

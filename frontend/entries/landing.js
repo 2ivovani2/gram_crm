@@ -18,12 +18,22 @@ links?.querySelectorAll("a").forEach((link) => link.addEventListener("click", ()
   toggle?.setAttribute("aria-expanded", "false");
 }));
 
-const lessons = [...document.querySelectorAll(".lesson-grid video")];
-lessons.forEach((lesson) => lesson.addEventListener("play", () => {
-  lessons.forEach((other) => {
-    if (other !== lesson && !other.paused) other.pause();
+const library = document.querySelector("[data-learning-library]");
+const player = library?.querySelector("[data-learning-player]");
+library?.querySelectorAll("[data-learning-lesson]").forEach((lesson) => {
+  lesson.addEventListener("click", () => {
+    if (!player || lesson.classList.contains("is-active")) return;
+    player.pause();
+    player.querySelector("source").src = lesson.dataset.src;
+    player.poster = lesson.dataset.poster;
+    player.setAttribute("aria-label", lesson.dataset.title);
+    library.querySelector("[data-learning-number]").textContent = `${lesson.dataset.number} · УРОК`;
+    library.querySelector("[data-learning-title]").textContent = lesson.dataset.title;
+    library.querySelector("[data-learning-duration]").textContent = `${lesson.dataset.duration} сек.`;
+    library.querySelectorAll("[data-learning-lesson]").forEach(item => item.classList.toggle("is-active", item === lesson));
+    player.load();
   });
-}));
+});
 
 const cleanupMotion = initLandingMotion();
 addEventListener("pagehide", () => {

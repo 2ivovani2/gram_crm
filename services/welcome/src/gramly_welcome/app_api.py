@@ -16,6 +16,7 @@ from aiogram.types import LabeledPrice
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .billing import create_crypto_checkout, create_stars_checkout
@@ -73,6 +74,7 @@ from .models import (
     FlowChannelAssignment,
     FlowDelivery,
     LearningVideo,
+    LearningVideoProgress,
     ManagedBot,
     MessageTemplate,
     Payment,
@@ -162,6 +164,18 @@ class BroadcastSaveRequest(BaseModel):
 
 class BroadcastLaunchRequest(BaseModel):
     scheduled_at: datetime | None = None
+
+
+class LearningProgressRequest(BaseModel):
+    position_seconds: int = Field(ge=0, le=86_400)
+    event: str = Field(default="progress", pattern=r"^(progress|ended)$")
+
+
+LEARNING_CHAPTERS = (
+    ("first_launch", "Первый запуск"),
+    ("automation", "Автоматизация и рост"),
+    ("account", "Аккаунт"),
+)
 
 
 @router.get("/public-config")
@@ -682,11 +696,42 @@ async def learning_resources(user: CurrentUserDep, session: SessionDep) -> dict[
             .order_by(LearningVideo.sort_order, LearningVideo.id)
         )
     )
+    progress_rows = list(
+        await session.scalars(
+            select(LearningVideoProgress).where(
+                LearningVideoProgress.owner_id == user.auth.owner.id
+            )
+        )
+    )
+    progress_by_video = {row.video_id: row for row in progress_rows}
+    completed = sum(
+        1
+        for video in videos
+        if (row := progress_by_video.get(video.id)) is not None and row.completed_at is not None
+    )
+    next_video = next(
+        (
+            video
+            for video in videos
+            if (row := progress_by_video.get(video.id)) is None or row.completed_at is None
+        ),
+        videos[0] if videos else None,
+    )
     return {
         "guide": {
             "completed": user.auth.owner.guide_completed,
             "step": user.auth.owner.guide_step,
         },
+        "progress": {
+            "completed": completed,
+            "total": len(videos),
+            "next_video_id": next_video.id if next_video is not None else None,
+        },
+        "chapters": [
+            {"key": key, "title": title}
+            for key, title in LEARNING_CHAPTERS
+            if any(video.chapter_key == key for video in videos)
+        ],
         "videos": [
             {
                 "id": row.id,
@@ -697,9 +742,74 @@ async def learning_resources(user: CurrentUserDep, session: SessionDep) -> dict[
                 "poster_url": row.poster_url,
                 "duration_seconds": row.duration_seconds,
                 "feature_key": row.feature_key,
+                "chapter_key": row.chapter_key,
+                "position_seconds": progress_by_video[row.id].position_seconds
+                if row.id in progress_by_video
+                else 0,
+                "completed_at": progress_by_video[row.id].completed_at
+                if row.id in progress_by_video
+                else None,
             }
             for row in videos
         ],
+    }
+
+
+@router.patch("/learning/{video_id}/progress")
+async def update_learning_progress(
+    video_id: int,
+    payload: LearningProgressRequest,
+    user: CsrfUserDep,
+    session: SessionDep,
+) -> dict[str, object]:
+    video = await session.scalar(
+        select(LearningVideo).where(
+            LearningVideo.id == video_id,
+            LearningVideo.is_active.is_(True),
+        )
+    )
+    if video is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Урок не найден")
+    duration = max(0, int(video.duration_seconds))
+    position = min(payload.position_seconds, duration) if duration else payload.position_seconds
+    completion_threshold = max(1, (duration * 9 + 9) // 10) if duration else None
+    completed_now = payload.event == "ended" or (
+        completion_threshold is not None and position >= completion_threshold
+    )
+    completed_at = datetime.now(UTC) if completed_now else None
+    statement = (
+        pg_insert(LearningVideoProgress)
+        .values(
+            owner_id=user.auth.owner.id,
+            video_id=video.id,
+            position_seconds=position,
+            completed_at=completed_at,
+        )
+        .on_conflict_do_update(
+            constraint="uq_learning_video_progress_owner_video",
+            set_={
+                "position_seconds": func.greatest(
+                    LearningVideoProgress.position_seconds,
+                    position,
+                ),
+                "completed_at": func.coalesce(
+                    LearningVideoProgress.completed_at,
+                    completed_at,
+                ),
+                "updated_at": func.now(),
+            },
+        )
+        .returning(
+            LearningVideoProgress.position_seconds,
+            LearningVideoProgress.completed_at,
+        )
+    )
+    saved = (await session.execute(statement)).one()
+    await session.commit()
+    return {
+        "video_id": video.id,
+        "position_seconds": saved.position_seconds,
+        "completed_at": saved.completed_at,
     }
 
 

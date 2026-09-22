@@ -172,28 +172,40 @@ function KeyboardEditor({
                 <input type="url" value={button.value} placeholder="https://example.com"
                   onChange={(e) => update(rows.map((a, i) => i === r ? a.map((b, j) => j === c ? {...b, value:e.target.value} : b) : a))}/>
               </label>}
-              <label>
-                Цвет
-                <select
-                  value={button.style}
-                  onChange={(e) =>
-                    update(
-                      rows.map((a, i) =>
-                        i === r
-                          ? a.map((b, j) =>
-                              j === c ? { ...b, style: e.target.value } : b,
-                            )
-                          : a,
-                      ),
-                    )
-                  }
-                >
-                  <option value="default">Стандартный</option>
-                  <option value="primary">Синий</option>
-                  <option value="success">Зелёный</option>
-                  <option value="danger">Красный</option>
-                </select>
-              </label>
+              <fieldset className="button-style-picker">
+                <legend>Цвет кнопки</legend>
+                <div role="radiogroup" aria-label={`Цвет кнопки ${button.text || c + 1}`}>
+                  {[
+                    ["default", "Стандартная", "Нейтральное действие"],
+                    ["primary", "Синяя", "Главное действие"],
+                    ["success", "Зелёная", "Положительное действие"],
+                    ["danger", "Красная", "Важное предупреждение"],
+                  ].map(([style, label, hint]) => (
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={button.style === style}
+                      className={`telegram-style-choice ${style} ${button.style === style ? "selected" : ""}`}
+                      key={style}
+                      onClick={() =>
+                        update(
+                          rows.map((a, i) =>
+                            i === r
+                              ? a.map((b, j) =>
+                                  j === c ? { ...b, style } : b,
+                                )
+                              : a,
+                          ),
+                        )
+                      }
+                    >
+                      <b>{label}</b>
+                      <small>{hint}</small>
+                    </button>
+                  ))}
+                </div>
+                <small className="button-style-help">Telegram адаптирует оттенок к светлой или тёмной теме.</small>
+              </fieldset>
               <button
                 type="button"
                 onClick={() =>

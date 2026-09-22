@@ -30,7 +30,11 @@ def test_landing_focuses_on_welcome_without_public_crm_access(client):
 def test_landing_embeds_all_welcome_video_lessons(client):
     content = client.get(reverse("landing")).content.decode()
 
-    assert content.count('<video controls playsinline preload="none"') == 14
+    assert content.count("<video controls playsinline") == 1
+    assert content.count("data-learning-lesson") == 14
+    assert "Первый запуск" in content
+    assert "Автоматизация и рост" in content
+    assert "Аккаунт" in content
     for slug in (
         "01-podklyuchenie-bota-i-kanala",
         "02-gotovyy-shablon",
