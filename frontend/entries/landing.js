@@ -18,6 +18,13 @@ links?.querySelectorAll("a").forEach((link) => link.addEventListener("click", ()
   toggle?.setAttribute("aria-expanded", "false");
 }));
 
+const lessons = [...document.querySelectorAll(".lesson-grid video")];
+lessons.forEach((lesson) => lesson.addEventListener("play", () => {
+  lessons.forEach((other) => {
+    if (other !== lesson && !other.paused) other.pause();
+  });
+}));
+
 const cleanupMotion = initLandingMotion();
 addEventListener("pagehide", () => {
   cleanupMotion();

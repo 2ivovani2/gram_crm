@@ -30,16 +30,28 @@ def test_landing_focuses_on_welcome_without_public_crm_access(client):
 def test_landing_embeds_all_welcome_video_lessons(client):
     content = client.get(reverse("landing")).content.decode()
 
-    assert content.count('<video controls playsinline preload="metadata"') == 5
+    assert content.count('<video controls playsinline preload="none"') == 14
     for slug in (
-        "connect-bot-channel",
-        "first-welcome",
-        "media-buttons-links",
-        "use-template",
-        "audience-broadcast",
+        "01-podklyuchenie-bota-i-kanala",
+        "02-gotovyy-shablon",
+        "03-privetstvie-s-nulya",
+        "04-oformlenie-soobshcheniya",
+        "05-tsepochka-i-zaderzhki",
+        "06-proverka-i-zapusk",
+        "07-proshchalnoe-soobshchenie",
+        "08-zayavki-na-vstuplenie",
+        "09-baza-podpischikov",
+        "10-rassylka",
+        "11-rotatsiya-kanalov",
+        "12-analitika",
+        "13-tarif-business",
+        "14-partnerskaya-programma",
     ):
         assert f"learning/{slug}.mp4" in content
         assert f"learning/{slug}.jpg" in content
+
+    assert "connect-bot-channel.mp4" not in content
+    assert "Смотреть короткий гайд" not in content
 
 
 def test_crm_shell_describes_sso_instead_of_vpn_access():
