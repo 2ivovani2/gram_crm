@@ -81,9 +81,20 @@ fi
 [[ -n "${crypto_webhook_secret}" ]] || crypto_webhook_secret="$(openssl rand -hex 32)"
 crypto_pay_token="${WELCOME_CRYPTO_PAY_API_TOKEN:-${existing_crypto_token}}"
 
-database_host=gramly-crm-postgres-rw.gramly-crm.svc.cluster.local
+if [[ "${target_namespace}" == "gramly-welcome" ]]; then
+  [[ "${WELCOME_VALKEY_URL}" == rediss://* ]] || {
+    echo "Production WELCOME_VALKEY_URL must use rediss://" >&2
+    exit 1
+  }
+  [[ "${WELCOME_S3_ENDPOINT_URL}" == https://* ]] || {
+    echo "Production WELCOME_S3_ENDPOINT_URL must use https://" >&2
+    exit 1
+  }
+fi
+
+database_host=gramly-welcome-pooler.gramly-crm.svc.cluster.local
 runtime_args=(
-  "--from-literal=WELCOME_DATABASE_URL=postgresql+asyncpg://${database_user}:${database_password}@${database_host}:5432/${database_name}"
+  "--from-literal=WELCOME_DATABASE_URL=postgresql+asyncpg://${database_user}:${database_password}@${database_host}:5432/${database_name}?ssl=require&prepared_statement_cache_size=0"
   "--from-literal=WELCOME_KEDA_DATABASE_URL=postgresql://${database_user}:${database_password}@${database_host}:5432/${database_name}?sslmode=require"
   "--from-literal=WELCOME_INTERFACE_BOT_TOKEN=${WELCOME_INTERFACE_BOT_TOKEN:-}"
   "--from-literal=WELCOME_INTERFACE_BOT_USERNAME=${WELCOME_INTERFACE_BOT_USERNAME:-}"

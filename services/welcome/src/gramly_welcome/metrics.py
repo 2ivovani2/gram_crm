@@ -15,6 +15,15 @@ WEBHOOK_LATENCY = Histogram(
 )
 WORKER_EVENTS = Counter("welcome_worker_events_total", "Processed inbox events", ("result",))
 WORKER_ACTIVE = Gauge("welcome_worker_active", "Active Gramly Welcome worker processes", ("kind",))
+DELIVERY_INFLIGHT = Gauge(
+    "welcome_delivery_inflight", "Concurrent delivery actions in this process", ("lanes",)
+)
+CIRCUIT_STATE = Gauge(
+    "welcome_dependency_circuit_open", "Whether an external dependency circuit is open", ("dependency",)
+)
+TELEGRAM_CLIENT_CACHE = Counter(
+    "welcome_telegram_client_cache_total", "Telegram client pool lookup results", ("result",)
+)
 DELIVERY_ATTEMPTS = Counter("welcome_delivery_attempts_total", "Telegram delivery attempts", ("result",))
 DELIVERY_SCHEDULE_LAG = Histogram(
     "welcome_delivery_schedule_lag_seconds",

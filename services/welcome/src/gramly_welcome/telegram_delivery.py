@@ -10,7 +10,6 @@ from time import monotonic
 from typing import Any, cast
 
 from aiogram import Bot
-from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import (
     FSInputFile,
@@ -48,13 +47,14 @@ from .personalization import personalize_operation
 from .repository import DeliveryContext, JoinRequestContext
 from .rotation import RotationContext, RotationDestination
 from .storage import ObjectStorage
+from .telegram_client import bot_client
 
 
 async def create_rotation_invite_link(
     destination: RotationDestination, keyring: TokenKeyring
 ) -> str:
     token = keyring.decrypt(destination.bot.token_ciphertext)
-    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(token, bot_factory=Bot) as bot:
         result = await bot.create_chat_invite_link(
             destination.channel.telegram_id,
             name=destination.rotation.invite_link_name,
@@ -75,7 +75,7 @@ async def send_rotation_recommendation(
             for destination in destinations
         ]
     )
-    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(token, bot_factory=Bot) as bot:
         await bot.send_message(
             context.contact.telegram_id,
             "Возможно, Вам будут интересны эти каналы:",
@@ -113,7 +113,7 @@ async def send_join_activation(
         "отправлять сообщения. Это займёт несколько секунд."
     )
     bot_token = keyring.decrypt(context.bot.token_ciphertext)
-    async with Bot(token=bot_token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(bot_token, bot_factory=Bot) as bot:
         try:
             await bot.send_message(
                 context.request.user_chat_id,
@@ -139,7 +139,7 @@ async def send_join_activation(
 
 async def probe_persistent_write(context: ActivationContext, keyring: TokenKeyring) -> None:
     bot_token = keyring.decrypt(context.bot.token_ciphertext)
-    async with Bot(token=bot_token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(bot_token, bot_factory=Bot) as bot:
         await bot.send_chat_action(context.contact.telegram_id, "typing")
 
 
@@ -174,7 +174,7 @@ async def send_client_notice(context: ClientMessageContext, keyring: TokenKeyrin
         text = client_message_text(payload)
     if not text:
         raise ValueError("Unsupported client notice")
-    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(token, bot_factory=Bot) as bot:
         await bot.send_message(
             context.contact.telegram_id,
             text,
@@ -366,7 +366,7 @@ async def send_delivery_operation(
         path_secret=context.bot.path_secret,
         channel_id=context.channel.id,
     )
-    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(token, bot_factory=Bot) as bot:
         await send_compiled_operation(
             bot,
             context.target_chat_id,
@@ -628,7 +628,7 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
             FSInputFile(path, filename=media.original_name or "media.bin")
             for path, media in zip(paths, context.media, strict=True)
         ]
-        async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+        async with bot_client(token, bot_factory=Bot) as bot:
             if kind == "media_group":
                 item_payloads = sorted(
                     payload.get("items", []), key=lambda item: item.get("telegram_message_id", 0)
@@ -736,5 +736,5 @@ async def send_greeting(context: DeliveryContext, storage: ObjectStorage, keyrin
 
 async def approve_join_request(context: JoinRequestContext, keyring: TokenKeyring) -> None:
     token = keyring.decrypt(context.bot.token_ciphertext)
-    async with Bot(token=token, session=AiohttpSession(timeout=30)) as bot:
+    async with bot_client(token, bot_factory=Bot) as bot:
         await bot.approve_chat_join_request(context.channel.telegram_id, context.contact.telegram_id)

@@ -44,6 +44,9 @@ spec:
           - gramly-welcome-worker-events
           - gramly-welcome-worker-owner
           - gramly-welcome-worker-delivery
+          - gramly-welcome-worker-interactive
+          - gramly-welcome-worker-bulk
+          - gramly-welcome-worker-delivery-relay
           - gramly-welcome-worker-billing
           - gramly-welcome-worker-notifications
   policyTypes: [Ingress]

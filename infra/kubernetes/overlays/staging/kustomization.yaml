@@ -38,6 +38,24 @@ patches:
       - op: replace
         path: /spec/scaleTargetRef/name
         value: gramly-welcome-worker-delivery-staging
+  - target:
+      group: keda.sh
+      version: v1alpha1
+      kind: ScaledObject
+      name: gramly-welcome-worker-interactive
+    patch: |-
+      - op: replace
+        path: /spec/scaleTargetRef/name
+        value: gramly-welcome-worker-interactive-staging
+  - target:
+      group: keda.sh
+      version: v1alpha1
+      kind: ScaledObject
+      name: gramly-welcome-worker-bulk
+    patch: |-
+      - op: replace
+        path: /spec/scaleTargetRef/name
+        value: gramly-welcome-worker-bulk-staging
   # Gateway API backendRefs are custom-resource fields, so Kustomize cannot
   # infer nameSuffix references without an OpenAPI schema. Patch them
   # explicitly to keep the staging routes internally consistent.

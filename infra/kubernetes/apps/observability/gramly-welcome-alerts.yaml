@@ -43,12 +43,21 @@ spec:
         - alert: GramlyWelcomeWebhookP95Slow
           expr: >-
             histogram_quantile(0.95,
-              sum by (le) (rate(welcome_webhook_duration_seconds_bucket[5m]))) > 0.25
+              sum by (le) (rate(welcome_webhook_duration_seconds_bucket[5m]))) > 0.10
           for: 10m
           labels: {severity: warning}
           annotations:
-            summary: "Welcome webhook p95 latency is over 250 ms"
+            summary: "Welcome webhook p95 latency is over 100 ms"
             description: "Webhook acknowledgement latency has exceeded the target for ten minutes."
+        - alert: GramlyWelcomeWebhookP99Slow
+          expr: >-
+            histogram_quantile(0.99,
+              sum by (le) (rate(welcome_webhook_duration_seconds_bucket[5m]))) > 0.25
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome webhook p99 latency is over 250 ms"
+            description: "Webhook acknowledgement latency has exceeded the hard SLO for ten minutes."
         - alert: GramlyWelcomeOldestPending
           expr: max(welcome_oldest_pending_age_seconds) > 30
           for: 5m
@@ -75,11 +84,11 @@ spec:
         - alert: GramlyWelcomeDeliveryScheduleLag
           expr: >-
             histogram_quantile(0.95,
-              sum by (le) (rate(welcome_delivery_schedule_lag_seconds_bucket[5m]))) > 30
+              sum by (le) (rate(welcome_delivery_schedule_lag_seconds_bucket[5m]))) > 15
           for: 5m
           labels: {severity: critical}
           annotations:
-            summary: "Welcome delivery p95 is over 30 seconds late"
+            summary: "Welcome delivery p95 is over 15 seconds late"
             description: "Delivery capacity is below incoming traffic or a Telegram dependency is slow. Inspect delivery_operation queue age and KEDA replicas."
         - alert: GramlyWelcomeDeliveryBacklogAtCapacity
           expr: max(welcome_queue_depth{queue="delivery_operation",status="actionable"}) > 500
@@ -87,7 +96,21 @@ spec:
           labels: {severity: critical}
           annotations:
             summary: "Welcome delivery backlog exceeds autoscaling capacity"
-            description: "More than 25 actionable operations per each of the 20 configured worker pods have remained queued for five minutes."
+            description: "The urgent pool has sustained more work than its 40-pod capacity target."
+        - alert: GramlyWelcomeDependencyCircuitOpen
+          expr: max by (dependency) (welcome_dependency_circuit_open) > 0
+          for: 30s
+          labels: {severity: critical}
+          annotations:
+            summary: "Welcome dependency circuit is open for {{ $labels.dependency }}"
+            description: "Transient dependency failures crossed the circuit-breaker threshold; retries are being shed."
+        - alert: GramlyWelcomeDeliveryConcurrencySaturated
+          expr: max by (lanes) (welcome_delivery_inflight) >= 16
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "Welcome delivery concurrency is saturated"
+            description: "A delivery lane has used every local execution slot for five minutes."
         - alert: GramlyWelcomeJoinRequestWindowExpired
           expr: sum(increase(welcome_join_request_greetings_total{result="expired"}[5m])) > 0
           for: 1m

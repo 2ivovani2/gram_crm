@@ -30,11 +30,16 @@ spec:
   pollingInterval: 10
   cooldownPeriod: 300
   minReplicaCount: 2
-  maxReplicaCount: 20
+  maxReplicaCount: 40
+  fallback: {failureThreshold: 3, replicas: 4}
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
         scaleDown: {stabilizationWindowSeconds: 300}
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies: [{type: Percent, value: 100, periodSeconds: 15}, {type: Pods, value: 8, periodSeconds: 15}]
+          selectPolicy: Max
   triggers:
     - type: postgresql
       metadata:
@@ -42,14 +47,6 @@ spec:
         query: >-
           SELECT CEIL(SUM(pending)::numeric / 25)
           FROM (
-            SELECT COUNT(*) AS pending FROM client_message
-            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
-               OR (status = 'processing' AND lease_expires_at <= NOW())
-            UNION ALL
-            SELECT COUNT(*) AS pending FROM broadcast_recipient
-            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
-               OR (status = 'processing' AND lease_expires_at <= NOW())
-            UNION ALL
             SELECT COUNT(*) AS pending
             FROM delivery_operation operation
             WHERE (operation.status IN ('scheduled', 'retry')
@@ -66,6 +63,56 @@ spec:
             UNION ALL
             SELECT COUNT(*) AS pending FROM join_request_activation
             WHERE (status = 'pending' AND due_at <= NOW())
+               OR (status = 'processing' AND lease_expires_at <= NOW())
+          ) queues
+        targetQueryValue: "1"
+        activationTargetQueryValue: "0"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: {name: gramly-welcome-worker-interactive, namespace: gramly-welcome}
+spec:
+  scaleTargetRef: {name: gramly-welcome-worker-interactive, envSourceContainerName: worker}
+  pollingInterval: 10
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  fallback: {failureThreshold: 3, replicas: 2}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior: {scaleDown: {stabilizationWindowSeconds: 300}}
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: WELCOME_KEDA_DATABASE_URL
+        query: >-
+          SELECT CEIL(COUNT(*)::numeric / 25) FROM client_message
+          WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
+             OR (status = 'processing' AND lease_expires_at <= NOW())
+        targetQueryValue: "1"
+        activationTargetQueryValue: "0"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: {name: gramly-welcome-worker-bulk, namespace: gramly-welcome}
+spec:
+  scaleTargetRef: {name: gramly-welcome-worker-bulk, envSourceContainerName: worker}
+  pollingInterval: 10
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 20
+  fallback: {failureThreshold: 3, replicas: 1}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior: {scaleDown: {stabilizationWindowSeconds: 300}}
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: WELCOME_KEDA_DATABASE_URL
+        query: >-
+          SELECT CEIL(SUM(pending)::numeric / 25) FROM (
+            SELECT COUNT(*) AS pending FROM broadcast_recipient
+            WHERE (status IN ('scheduled', 'retry') AND due_at <= NOW())
                OR (status = 'processing' AND lease_expires_at <= NOW())
             UNION ALL
             SELECT COUNT(*) AS pending FROM rotation_recommendation

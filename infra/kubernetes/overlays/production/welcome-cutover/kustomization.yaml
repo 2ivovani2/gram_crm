@@ -12,7 +12,7 @@ patches:
       group: apps
       version: v1
       kind: Deployment
-      name: gramly-welcome-(api|web|worker-owner|worker-events|worker-delivery|worker-billing|worker-notifications)
+      name: gramly-welcome-(api|web|worker-owner|worker-events|worker-delivery|worker-delivery-relay|worker-interactive|worker-bulk|worker-billing|worker-notifications)
     patch: |-
       - op: add
         path: /spec/template/spec/imagePullSecrets/-
@@ -69,7 +69,7 @@ patches:
       group: apps
       version: v1
       kind: Deployment
-      name: gramly-welcome-worker-delivery
+      name: gramly-welcome-worker-(delivery|interactive|bulk)
     patch: |-
       - op: replace
         path: /spec/replicas
@@ -109,7 +109,7 @@ patches:
       group: keda.sh
       version: v1alpha1
       kind: ScaledObject
-      name: gramly-welcome-worker-delivery
+      name: gramly-welcome-worker-(delivery|interactive|bulk)
     patch: |-
       - op: remove
         path: /metadata/annotations/autoscaling.keda.sh~1paused

@@ -14,6 +14,9 @@ from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .config import Settings
+from .resilience import s3_circuit
+
+_storage_bulkhead = asyncio.Semaphore(4)
 
 
 class StoredMedia(Protocol):
@@ -79,7 +82,18 @@ class ObjectStorage:
             raise ObjectStorageError("Object Storage upload failed") from exc
 
     async def upload(self, key: str, body: bytes, content_type: str) -> None:
-        await asyncio.to_thread(self._upload, key, body, content_type)
+        probe = await s3_circuit.enter()
+        try:
+            async with _storage_bulkhead:
+                await asyncio.to_thread(self._upload, key, body, content_type)
+        except ObjectStorageError:
+            await s3_circuit.failure(probe)
+            raise
+        except Exception:
+            await s3_circuit.success(probe)
+            raise
+        else:
+            await s3_circuit.success(probe)
 
     def _delete_many(self, keys: list[str]) -> None:
         # Curated catalog blobs are immutable shared assets, never customer media.
@@ -104,7 +118,18 @@ class ObjectStorage:
             raise ObjectStorageError("Object Storage delete failed") from exc
 
     async def delete_many(self, keys: list[str]) -> None:
-        await asyncio.to_thread(self._delete_many, keys)
+        probe = await s3_circuit.enter()
+        try:
+            async with _storage_bulkhead:
+                await asyncio.to_thread(self._delete_many, keys)
+        except ObjectStorageError:
+            await s3_circuit.failure(probe)
+            raise
+        except Exception:
+            await s3_circuit.success(probe)
+            raise
+        else:
+            await s3_circuit.success(probe)
 
     @asynccontextmanager
     async def materialize(self, media: StoredMedia) -> AsyncIterator[Path]:
@@ -112,8 +137,19 @@ class ObjectStorage:
         descriptor, raw_path = tempfile.mkstemp(prefix="welcome-", suffix=suffix, dir="/tmp")
         os.close(descriptor)
         path = Path(raw_path)
+        probe = await s3_circuit.enter()
         try:
-            await asyncio.to_thread(self._download, media, path)
+            try:
+                async with _storage_bulkhead:
+                    await asyncio.to_thread(self._download, media, path)
+            except ObjectStorageError:
+                await s3_circuit.failure(probe)
+                raise
+            except Exception:
+                await s3_circuit.success(probe)
+                raise
+            else:
+                await s3_circuit.success(probe)
             yield path
         finally:
             path.unlink(missing_ok=True)

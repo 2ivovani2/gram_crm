@@ -36,7 +36,9 @@ metadata:
   name: gramly-crm-postgres
   namespace: gramly-crm
 spec:
-  instances: 2
+  instances: 3
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:17.10-standard-trixie@sha256:78c4fdf165e8ffb1b5b7a7fc6b22b3cf37890a338b4c1c8c4d913896129a86da
   primaryUpdateStrategy: unsupervised
   bootstrap:
@@ -48,18 +50,19 @@ spec:
       encoding: UTF8
   storage:
     storageClass: vultr-block-storage-retain
-    size: 10Gi
+    size: 50Gi
   resources:
-    requests: {cpu: 150m, memory: 256Mi}
-    limits: {cpu: "1", memory: 1Gi}
+    requests: {cpu: "1", memory: 4Gi}
+    limits: {cpu: "4", memory: 8Gi}
   affinity:
     enablePodAntiAffinity: true
     topologyKey: kubernetes.io/hostname
     podAntiAffinityType: required
   postgresql:
     parameters:
-      max_connections: "150"
-      shared_buffers: 256MB
+      max_connections: "200"
+      shared_buffers: 2GB
+      synchronous_commit: "on"
       log_min_duration_statement: "1000"
   monitoring:
     enablePodMonitor: true
@@ -85,6 +88,32 @@ spec:
         createdb: false
         createrole: false
         passwordSecret: {name: gramly-welcome-staging-postgres-role}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: gramly-welcome-pooler
+  namespace: gramly-crm
+spec:
+  cluster: {name: gramly-crm-postgres}
+  instances: 3
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "30"
+      reserve_pool_size: "10"
+      reserve_pool_timeout: "2"
+      max_prepared_statements: "100"
+    paused: false
+  template:
+    spec:
+      containers:
+        - name: pgbouncer
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup

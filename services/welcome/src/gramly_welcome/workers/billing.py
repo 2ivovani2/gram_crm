@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import socket
+import uuid
 from decimal import ROUND_DOWN, Decimal
 
 from aiogram.exceptions import TelegramAPIError
@@ -10,19 +12,47 @@ from prometheus_client import start_http_server
 
 from ..billing import (
     claim_due_reminder,
+    claim_payment_event,
+    complete_payment_event,
     expire_one_business_subscription,
     finish_reminder,
     purge_one_terminal_payment,
     reconcile_one_expired_payment,
+    retry_payment_event,
+    verify_and_settle_crypto_invoice,
 )
 from ..config import get_settings
 from ..crypto_pay import CryptoPayClient, CryptoPayError
 from ..db import session_factory
-from ..finance import claim_withdrawal, complete_withdrawal, retry_withdrawal
-from ..metrics import BILLING_OPERATIONS, WORKER_ACTIVE
+from ..finance import FinanceError, claim_withdrawal, complete_withdrawal, retry_withdrawal
+from ..metrics import BILLING_OPERATIONS, PAYMENT_EVENTS, WORKER_ACTIVE
 from ..owner_bot import interface_bot
 
 logger = logging.getLogger(__name__)
+
+
+async def process_one_payment_event(worker_id: str) -> bool:
+    settings = get_settings()
+    async with session_factory() as session:
+        event = await claim_payment_event(session, worker_id=worker_id)
+    if event is None:
+        return False
+    client = CryptoPayClient(settings.crypto_pay_api_token, settings.crypto_pay_api_base_url)
+    try:
+        async with session_factory() as session:
+            await verify_and_settle_crypto_invoice(session, client, event.provider_reference)
+            await complete_payment_event(
+                session, provider=event.provider, event_key=event.event_key
+            )
+    except (CryptoPayError, FinanceError) as exc:
+        async with session_factory() as session:
+            await retry_payment_event(
+                session, event.id, worker_id=worker_id, error=type(exc).__name__
+            )
+        PAYMENT_EVENTS.labels("crypto_pay", "retry").inc()
+    else:
+        PAYMENT_EVENTS.labels("crypto_pay", "settled").inc()
+    return True
 
 
 async def process_one() -> bool:
@@ -138,6 +168,7 @@ async def process_one_expired_subscription() -> bool:
 async def worker_loop() -> None:
     logging.basicConfig(level=logging.INFO)
     logger.info("Starting Gramly Welcome billing worker")
+    worker_id = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
     stopping = asyncio.Event()
     loop = asyncio.get_running_loop()
     for event_signal in (signal.SIGTERM, signal.SIGINT):
@@ -145,12 +176,13 @@ async def worker_loop() -> None:
     WORKER_ACTIVE.labels("billing").inc()
     try:
         while not stopping.is_set():
+            payment_event = await process_one_payment_event(worker_id)
             handled = await process_one()
             reminded = await process_one_reminder()
             expired = await process_one_expired_payment()
             purged = await purge_one_expired_payment()
             downgraded = await process_one_expired_subscription()
-            if handled or reminded or expired or purged or downgraded:
+            if payment_event or handled or reminded or expired or purged or downgraded:
                 continue
             try:
                 await asyncio.wait_for(stopping.wait(), timeout=1)

@@ -70,8 +70,9 @@ spec:
           command: [welcome-worker-delivery]
           envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
           env:
-            # Delivery processing is sequential inside each pod.
-            - {name: WELCOME_DATABASE_POOL_SIZE, value: "1"}
+            - {name: WELCOME_DELIVERY_LANES, value: "urgent,standard"}
+            - {name: WELCOME_DELIVERY_CONCURRENCY, value: "16"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "4"}
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
           startupProbe:
@@ -92,6 +93,116 @@ spec:
             requests: {cpu: 200m, memory: 256Mi}
             limits: {cpu: "2", memory: 1Gi}
       volumes: [{name: temporary-media, emptyDir: {sizeLimit: 256Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-worker-interactive, namespace: gramly-welcome}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-interactive}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-welcome-worker-interactive}}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-interactive}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: worker
+          image: WELCOME_IMAGE_PLACEHOLDER
+          command: [welcome-worker-delivery]
+          envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          env:
+            - {name: WELCOME_DELIVERY_LANES, value: "interactive"}
+            - {name: WELCOME_DELIVERY_CONCURRENCY, value: "8"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "3"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
+          ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
+          startupProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 5, failureThreshold: 24}
+          livenessProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 10, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /health/ready, port: health}, periodSeconds: 10, failureThreshold: 2}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          volumeMounts: [{name: temporary-media, mountPath: /tmp}]
+          resources:
+            requests: {cpu: 150m, memory: 192Mi}
+            limits: {cpu: "1", memory: 768Mi}
+      volumes: [{name: temporary-media, emptyDir: {sizeLimit: 128Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-worker-bulk, namespace: gramly-welcome}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-bulk}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-welcome-worker-bulk}}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      terminationGracePeriodSeconds: 180
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-bulk}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: worker
+          image: WELCOME_IMAGE_PLACEHOLDER
+          command: [welcome-worker-delivery]
+          envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          env:
+            - {name: WELCOME_DELIVERY_LANES, value: "bulk"}
+            - {name: WELCOME_DELIVERY_CONCURRENCY, value: "8"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "3"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
+          ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
+          startupProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 5, failureThreshold: 24}
+          livenessProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 10, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /health/ready, port: health}, periodSeconds: 10, failureThreshold: 2}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          volumeMounts: [{name: temporary-media, mountPath: /tmp}]
+          resources:
+            requests: {cpu: 150m, memory: 192Mi}
+            limits: {cpu: "1", memory: 768Mi}
+      volumes: [{name: temporary-media, emptyDir: {sizeLimit: 256Mi}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: gramly-welcome-worker-delivery-relay, namespace: gramly-welcome}
+spec:
+  # Enabled explicitly during the Streams shadow/canary stage.
+  replicas: 0
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery-relay}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: gramly-welcome-worker-delivery-relay}}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gramly-welcome-registry}]
+      terminationGracePeriodSeconds: 60
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: worker
+          image: WELCOME_IMAGE_PLACEHOLDER
+          command: [welcome-worker-delivery-relay]
+          envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          env:
+            - {name: WELCOME_DELIVERY_STREAMS_ENABLED, value: "true"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "2"}
+            - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
+          ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
+          startupProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 5, failureThreshold: 24}
+          livenessProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 10, failureThreshold: 3}
+          readinessProbe: {httpGet: {path: /health/ready, port: health}, periodSeconds: 10, failureThreshold: 2}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -173,6 +284,13 @@ spec:
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
+metadata: {name: gramly-welcome-worker-interactive, namespace: gramly-welcome}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-interactive}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
 metadata: {name: gramly-welcome-worker-billing, namespace: gramly-welcome}
 spec:
   minAvailable: 1
@@ -203,6 +321,36 @@ metadata:
   labels: {release: kube-prometheus-stack}
 spec:
   selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery}}
+  podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gramly-welcome-worker-interactive
+  namespace: gramly-welcome
+  labels: {release: kube-prometheus-stack}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-interactive}}
+  podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gramly-welcome-worker-bulk
+  namespace: gramly-welcome
+  labels: {release: kube-prometheus-stack}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-bulk}}
+  podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gramly-welcome-worker-delivery-relay
+  namespace: gramly-welcome
+  labels: {release: kube-prometheus-stack}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery-relay}}
   podMetricsEndpoints: [{port: metrics, path: /metrics, interval: 30s}]
 ---
 apiVersion: monitoring.coreos.com/v1
