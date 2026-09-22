@@ -39,8 +39,9 @@ completed and drained.
   open the global circuit.
 - Three consecutive Valkey errors open the local limiter circuit for five
   seconds. Work remains leased in PostgreSQL and is retried with jitter.
-- PostgreSQL commits synchronously to one standby. A webhook is never
-  acknowledged before commit.
+- A webhook is never acknowledged before the primary PostgreSQL commit. Strict
+  synchronous replication to a standby is a separate release gate and is not
+  active in the current two-instance production cluster.
 - `delivery_job` terminal rows leave the hot table after seven days. Monthly
   history partitions are retained for approximately 180 days.
 
@@ -51,8 +52,9 @@ completed and drained.
    instances plus three PgBouncer instances are healthy. Add a third PostgreSQL
    instance and larger node pool only after a measured capacity gate justifies
    the extra capacity and the cluster can schedule it.
-2. Run migration `0032`; compare active rows in each legacy queue with
-   `delivery_job` grouped by `source_kind`.
+2. Run migrations `0032` and `0033`; compare dispatchable rows in each legacy
+   queue with `delivery_job` grouped by `source_kind`. A `join_request` with
+   status `pending` awaits an external event and must not enter the job queue.
 3. Deploy lane workers paused, verify rendered manifests and Prometheus targets,
    then enable urgent, interactive and bulk pools in that order.
 4. Run `ops/welcome/load_test.py` for webhook ingestion. A five-step
@@ -66,6 +68,14 @@ completed and drained.
 The initial release uses the legacy PostgreSQL consumer with isolated worker
 pools. The Streams relay stays disabled; enabling a Streams consumer, the
 third database replica and the target throughput are separate gated steps.
+
+As of 2026-09-23, this initial release is live. Production has two PostgreSQL
+instances with `minSyncReplicas=0`; the PgBouncer Pooler is not applied. The
+working delivery path still claims legacy PostgreSQL queues, while
+`delivery_job` is shadow state. Migration `0033` removed waiting join requests
+from that state. The 155,000-flows-per-hour target and RPO=0 have not been
+validated or enabled. The four existing VKE nodes were sufficient for this
+stage; later capacity changes require the load and chaos gates above.
 
 Rollback disables the new lane deployments and restores the original combined
 worker configuration. Source rows and inbox events remain intact, so rollback
