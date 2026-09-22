@@ -105,7 +105,6 @@ from .owner_repository import (
     create_managed_bot,
     delete_bot,
     list_owned_bots,
-    mark_guide_complete,
     owned_bot,
     owner_from_telegram,
     pending_requests,
@@ -115,7 +114,6 @@ from .owner_repository import (
 )
 from .owner_ui import OwnerUiMiddleware, show_owner_ui_page, track_preview
 from .owner_ui import render_owner_ui as answer_with_ui_fallback
-from .owner_ui import render_owner_ui as edit_caption_with_ui_fallback
 from .owner_ui import render_owner_ui as edit_with_ui_fallback
 from .required_channel import check_required_membership, record_required_membership_update
 from .rotation import (
@@ -155,33 +153,6 @@ DOWNLOADABLE_TYPES = {
     "video_note",
     "voice",
 }
-
-GUIDE = [
-    (
-        "✨ <b>Всё управление — в одном месте</b>",
-        "Подключайте собственных ботов, управляйте каналами, приветствиями и заявками прямо в Telegram.",
-    ),
-    (
-        "🤖 <b>Подключение за три шага</b>",
-        "Создайте бота в @BotFather → пришлите токен → добавьте бота администратором в канал.",
-    ),
-    (
-        "💬 <b>Приветственные сообщения</b>",
-        "Сохраняйте текст, форматирование и медиа и задавайте задержку отправки.",
-    ),
-    (
-        "📥 <b>Заявки на вступление</b>",
-        "Включите автоматическое принятие и настройте независимую задержку.",
-    ),
-    (
-        "📊 <b>Актуальная статистика</b>",
-        "Следите за доставкой, языками и аудиторией каждого подключённого бота.",
-    ),
-    (
-        "🚀 <b>Можно начинать</b>",
-        "Подключите первого бота — остальную рутину Gramly Welcome возьмёт на себя.",
-    ),
-]
 
 
 def owner_button(
@@ -635,32 +606,26 @@ async def help_command(message: Message, _owner: Owner) -> None:
 
 
 @router.callback_query(F.data.startswith("guide:"))
-async def guide(callback: CallbackQuery, owner: Owner) -> None:
-    message = _callback_message(callback)
-    step = int((callback.data or "").split(":")[1])
-    if step >= len(GUIDE):
-        async with session_factory() as session:
-            await mark_guide_complete(session, owner.id, len(GUIDE))
-        await owner_answer(
-            message, "Готово — всё управление уже под рукой ✨", reply_markup=await main_keyboard()
-        )
-        await show_bots(message, owner, 0)
-        await callback.answer()
-        return
-    title, body = GUIDE[step]
-    final = step == len(GUIDE) - 1
-    rows = [[owner_button(text="🚀 Начать работу" if final else "➡️ Далее", callback_data=f"guide:{step + 1}")]]
-    if step:
-        rows.append([owner_button(text="Назад", callback_data=f"guide:{step - 1}", emoji_key="back")])
-    rows.append(_home_row())
-    markup = InlineKeyboardMarkup(inline_keyboard=rows)
-    content = f"{title}\n\n{body}\n\n<i>Шаг {step + 1} из {len(GUIDE)}</i>"
-    if message.photo:
-        # Keep pre-cutover onboarding messages usable after the owner webhook
-        # moves away from Django.
-        await edit_caption_with_ui_fallback(message, content, reply_markup=markup)
-    else:
-        await edit_with_ui_fallback(message, content, reply_markup=markup)
+async def guide(callback: CallbackQuery, _owner: Owner) -> None:
+    settings = get_settings()
+    await owner_answer(
+        _callback_message(callback),
+        "<b>Старый гайд заменён видеообучением</b>\n\n"
+        "Откройте новую библиотеку из 14 коротких уроков по всем основным сценариям Gramly.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    owner_button(
+                        text="Видеообучение",
+                        web_app=WebAppInfo(url=f"{settings.mini_app_url}?section=learning"),
+                        emoji_key="guide",
+                        style="primary",
+                    )
+                ],
+                _home_row(),
+            ]
+        ),
+    )
     await callback.answer()
 
 
