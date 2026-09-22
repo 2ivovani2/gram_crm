@@ -46,18 +46,26 @@ completed and drained.
 
 ## Release gate
 
-1. Apply the CloudNativePG capacity and Pooler change and confirm three healthy
-   database instances plus three PgBouncer instances.
+1. Apply the PgBouncer Pooler and synchronous-write setting while keeping the
+   current two PostgreSQL instances and resource requests. Confirm both database
+   instances plus three PgBouncer instances are healthy. Add a third PostgreSQL
+   instance and larger node pool only after a measured capacity gate justifies
+   the extra capacity and the cluster can schedule it.
 2. Run migration `0032`; compare active rows in each legacy queue with
    `delivery_job` grouped by `source_kind`.
 3. Deploy lane workers paused, verify rendered manifests and Prometheus targets,
    then enable urgent, interactive and bulk pools in that order.
-4. Run `ops/welcome/load_test.py` for webhook ingestion and the staging
-   Telegram-compatible delivery scenario at the rates above.
+4. Run `ops/welcome/load_test.py` for webhook ingestion. A five-step
+   Telegram-compatible delivery load scenario at the rates above is still
+   required before claiming the 155,000-flows-per-hour target.
 5. Exercise Telegram 429/5xx, a 60-second Valkey outage, an S3 outage and a
    PostgreSQL switchover. Urgent work must recover without a retry storm.
 6. Promote 5%, 10%, 50% and 100%. Stop promotion on SLO burn, an expired join
    window, dual-write drift or a circuit that remains open.
+
+The initial release uses the legacy PostgreSQL consumer with isolated worker
+pools. The Streams relay stays disabled; enabling a Streams consumer, the
+third database replica and the target throughput are separate gated steps.
 
 Rollback disables the new lane deployments and restores the original combined
 worker configuration. Source rows and inbox events remain intact, so rollback
