@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_delivery_keda_counts_every_worker_queue_and_only_runnable_chain_steps() -> None:
+def test_delivery_keda_counts_every_worker_queue_and_due_chain_steps() -> None:
     manifest = (
         REPO_ROOT / "infra/kubernetes/base/welcome-autoscaling/workers.yaml"
     ).read_text(encoding="utf-8")
@@ -20,7 +20,8 @@ def test_delivery_keda_counts_every_worker_queue_and_only_runnable_chain_steps()
         "rotation_recommendation",
     ):
         assert f"FROM {table}" in manifest
-    assert "operation.depends_on_operation_id IS NULL OR dependency.status = 'sent'" in manifest
+    assert "operation.depends_on_operation_id IS NULL OR dependency.status = 'sent'" not in manifest
+    assert "operation.due_at <= NOW()" in manifest
     assert "SUM(pending)::numeric / 25" in manifest
     assert "minReplicaCount: 2" in manifest
     assert "maxReplicaCount: 20" in manifest
