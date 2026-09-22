@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from gramly_welcome.models import (
     Channel,
     Contact,
+    DeliveryJob,
     InboxEvent,
     InboxSource,
     JoinRequest,
@@ -94,6 +95,12 @@ async def test_partial_index_upsert_replay_and_concurrency() -> None:
             select(JoinRequest).where(JoinRequest.id == first_id)
         )
         assert request is not None
+        assert await session.scalar(
+            select(DeliveryJob.id).where(
+                DeliveryJob.source_kind == "join_request",
+                DeliveryJob.source_id == first_id,
+            )
+        ) is None
         assert request.telegram_update_id in {102, 103}
         assert request.user_chat_id in {1002, 1003}
         loaded_bot = await session.get(ManagedBot, bot_id)
@@ -123,6 +130,13 @@ async def test_partial_index_upsert_replay_and_concurrency() -> None:
         assert (replay.inbox_events, replay.approval_requests) == (0, 0)
         await session.refresh(request)
         assert request.status == "scheduled"
+        queued = await session.scalar(
+            select(DeliveryJob).where(
+                DeliveryJob.source_kind == "join_request",
+                DeliveryJob.source_id == first_id,
+            )
+        )
+        assert queued is not None and queued.status == "pending"
         recovered_event = await session.scalar(
             select(InboxEvent).where(InboxEvent.source_key == source_key)
         )
@@ -153,6 +167,12 @@ async def test_partial_index_upsert_replay_and_concurrency() -> None:
         assert request.status == "failed"
         assert request.error == "superseded_by_open_join_request"
         assert newer_request.status == "pending"
+        assert await session.scalar(
+            select(DeliveryJob.id).where(
+                DeliveryJob.source_kind == "join_request",
+                DeliveryJob.source_id == newer_request.id,
+            )
+        ) is None
 
         await session.execute(delete(Owner).where(Owner.id == owner_id))
         await session.commit()
