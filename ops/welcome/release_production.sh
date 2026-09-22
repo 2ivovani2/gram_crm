@@ -24,13 +24,24 @@ if [[ "${WELCOME_IMAGE}" == git.gramly.tech/* || "${WELCOME_WEB_IMAGE}" == git.g
 fi
 
 public_edge_ip="${PUBLIC_EDGE_IP:-45.146.131.207}"
-authoritative_ns="$(dig +short NS gramly.tech | head -n 1)"
+authoritative_ns="$(dig +time=2 +tries=1 +short NS gramly.tech | head -n 1)"
 [[ -n "${authoritative_ns}" ]] || { echo "No authoritative DNS server found for gramly.tech." >&2; exit 1; }
-resolved_admin="$(dig +short "@${authoritative_ns}" A hello-admin.gramly.tech | tail -n 1)"
-[[ "${resolved_admin}" == "${public_edge_ip}" ]] || {
-  echo "hello-admin.gramly.tech must resolve publicly to ${public_edge_ip}; got ${resolved_admin:-no A record}." >&2
-  exit 1
-}
+if resolved_admin="$(dig +time=2 +tries=1 +short "@${authoritative_ns}" A hello-admin.gramly.tech | tail -n 1)"; then
+  [[ "${resolved_admin}" == "${public_edge_ip}" ]] || {
+    echo "hello-admin.gramly.tech must resolve publicly to ${public_edge_ip}; got ${resolved_admin:-no A record}." >&2
+    exit 1
+  }
+else
+  # Some operator networks block direct DNS to authoritative nameservers.
+  # Require two independent public resolvers to agree before continuing.
+  cloudflare_admin="$(dig +time=2 +tries=1 +short @1.1.1.1 A hello-admin.gramly.tech | tail -n 1)"
+  google_admin="$(dig +time=2 +tries=1 +short @8.8.8.8 A hello-admin.gramly.tech | tail -n 1)"
+  [[ "${cloudflare_admin}" == "${public_edge_ip}" && "${google_admin}" == "${public_edge_ip}" ]] || {
+    echo "Public DNS resolvers disagree or do not point at ${public_edge_ip}." >&2
+    exit 1
+  }
+  echo "Authoritative DNS query unavailable; two public resolvers confirmed ${public_edge_ip}."
+fi
 
 "${infra_dir}/scripts/run-cnpg-backup.sh"
 
