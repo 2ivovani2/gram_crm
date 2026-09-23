@@ -636,7 +636,11 @@ export function ChainComposer({
                         update(index, { ...step, keyboard })
                       }
                     />
-                    {!complex && step.payload.type === "text" && (
+                    {((step.payload.type === "text" && step.attachments.length === 0) ||
+                      (Array.isArray(step.payload.sequence) &&
+                        step.payload.sequence.some(
+                          (item: any) => item?.kind === "message" && item.payload?.type === "text",
+                        ))) && (
                       <label className="link-preview-toggle">
                         <input type="checkbox" checked={step.payload.link_preview_enabled !== false}
                           onChange={(e) => update(index, {...step, payload:{...step.payload, link_preview_enabled:e.target.checked}})}/>

@@ -150,6 +150,8 @@ def compile_step(
             if raw_item.get("kind") == "message" and isinstance(raw_item.get("payload"), dict):
                 flush_media()
                 payload = dict(raw_item["payload"])
+                if payload.get("type", "text") == "text" and "link_preview_enabled" in step_payload:
+                    payload["link_preview_enabled"] = step_payload["link_preview_enabled"]
                 operations.append(
                     CompiledOperation(str(payload.get("type") or "text"), payload, [])
                 )

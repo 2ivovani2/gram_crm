@@ -1225,9 +1225,15 @@ async def update_step_content(
         if first_message is None:
             sequence.insert(0, {"kind": "message", "payload": replacement})
         else:
+            if "link_preview_enabled" in first_message.get("payload", {}):
+                replacement["link_preview_enabled"] = first_message["payload"]["link_preview_enabled"]
             first_message["payload"] = replacement
     else:
-        next_payload = {"type": "text", "text": payload.text, "entities": []}
+        next_payload = {
+            "type": "text", "text": payload.text, "entities": [],
+            **({"link_preview_enabled": step.payload["link_preview_enabled"]}
+               if "link_preview_enabled" in step.payload else {}),
+        }
     step.payload = next_payload
     await session.commit()
     return {"step_id": step_id, "updated": True}
