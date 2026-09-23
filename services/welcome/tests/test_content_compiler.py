@@ -86,6 +86,23 @@ def test_preserves_premium_emoji_entities_without_rewriting_offsets() -> None:
     assert operations[0].payload["entities"] == [entity]
 
 
+def test_composite_text_uses_step_link_preview_preference() -> None:
+    operations = compile_step(
+        {
+            "type": "composite",
+            "link_preview_enabled": False,
+            "sequence": [
+                {"kind": "message", "payload": {"type": "text", "text": "https://gramly.tech"}},
+                {"kind": "attachment", "attachment_index": 0},
+            ],
+        },
+        [media("photo", 1)],
+    )
+    assert operations[0].operation_type == "text"
+    assert operations[0].payload["link_preview_enabled"] is False
+    assert operations[1].operation_type == "photo"
+
+
 def test_text_becomes_first_attachment_caption() -> None:
     operations = compile_step(
         {"type": "text", "text": "Привет", "entities": []},

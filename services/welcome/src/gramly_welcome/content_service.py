@@ -626,6 +626,41 @@ async def set_step_delay(session: AsyncSession, owner_id: int, step_id: int, del
     await session.commit()
 
 
+async def set_step_link_preview(
+    session: AsyncSession, owner_id: int, step_id: int, enabled: bool
+) -> None:
+    """Set the preview preference on an editable step without changing its content."""
+    step = await session.scalar(
+        select(ContentStep)
+        .join(ContentFlowVersion, ContentFlowVersion.id == ContentStep.version_id)
+        .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+        .join(ManagedBot, ManagedBot.id == ContentFlow.bot_id)
+        .where(
+            ContentStep.id == step_id,
+            ContentFlowVersion.status == "draft",
+            ManagedBot.owner_id == owner_id,
+        )
+        .with_for_update(of=ContentFlowVersion)
+    )
+    if step is None:
+        raise ContentValidationError("Editable step was not found")
+    sequence = step.payload.get("sequence")
+    has_text = step.payload.get("type") == "text" or (
+        isinstance(sequence, list)
+        and any(
+            isinstance(item, dict)
+            and item.get("kind") == "message"
+            and isinstance(item.get("payload"), dict)
+            and item["payload"].get("type", "text") == "text"
+            for item in sequence
+        )
+    )
+    if not has_text:
+        raise ContentValidationError("В этом шаге нет текстового сообщения со ссылкой")
+    step.payload = {**step.payload, "link_preview_enabled": enabled}
+    await session.commit()
+
+
 async def move_step(session: AsyncSession, owner_id: int, step_id: int, direction: int) -> None:
     if direction not in {-1, 1}:
         raise ContentValidationError("Direction must be -1 or 1")
@@ -745,6 +780,8 @@ async def replace_draft_step(
     await session.execute(
         delete(ContentAttachment).where(ContentAttachment.step_id == step.id)
     )
+    if "link_preview_enabled" in step.payload and "link_preview_enabled" not in payload:
+        payload = {**payload, "link_preview_enabled": step.payload["link_preview_enabled"]}
     step.payload = payload
     session.add_all(
         [

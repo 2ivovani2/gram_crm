@@ -16,7 +16,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from gramly_welcome.config import Settings
-from gramly_welcome.content_service import publish_draft
+from gramly_welcome.content_service import publish_draft, replace_step_keyboard
 from gramly_welcome.db import ApplicationSession
 from gramly_welcome.editor_api import LaunchDraft, SaveDraft, launch_editor, read_editor, save_editor
 from gramly_welcome.editor_assets import emoji_set_name, owner_asset, owner_attachment
@@ -108,6 +108,31 @@ def body(doc: dict[str, Any]) -> SaveDraft:
         button_style=doc["version"]["button_style"],
         steps=doc["steps"],
     )
+
+
+@PG
+@pytest.mark.asyncio
+async def test_mini_app_save_keeps_step_id_for_owner_bot_keyboard_edit() -> None:
+    async with fixture() as (sessions, user, other, ids):
+        async with sessions() as session:
+            doc = await read_editor(ids.flow, user, session)
+            data = body(doc)
+            data.steps[0].payload = {
+                "type": "text", "text": "Новый текст https://gramly.tech",
+                "entities": [], "link_preview_enabled": False,
+            }
+            saved = await save_editor(ids.version, data, user, session, "keep-step-id")
+            assert saved["steps"][0]["id"] == ids.step
+        async with sessions() as session:
+            await replace_step_keyboard(session, ids.owner, ids.step, {
+                "kind": "inline",
+                "rows": [[{"text": "Сайт", "action_type": "url", "value": "https://gramly.tech"}]],
+            })
+        async with sessions() as session:
+            fresh = await read_editor(ids.flow, user, session)
+            assert fresh["steps"][0]["id"] == ids.step
+            assert fresh["steps"][0]["payload"]["link_preview_enabled"] is False
+            assert fresh["steps"][0]["keyboard"]["rows"][0][0]["text"] == "Сайт"
 
 
 def test_editor_endpoints_require_auth() -> None:
@@ -417,6 +442,10 @@ async def test_legacy_sequence_and_attachment_payload_survive_copy_and_reorder()
                 assert step["attachments"][0]["storage_key"] == "catalog/shared.png"
                 assert step["attachments"][0]["payload"]["caption_entities"][0]["custom_emoji_id"] == "12345"
             changed = body(saved)
+            changed.steps[0].payload = {**changed.steps[0].payload, "link_preview_enabled": False}
+            saved_preview = await save_editor(ids.version, changed, user, session, "preview")
+            assert saved_preview["steps"][0]["payload"]["link_preview_enabled"] is False
+            changed = body(saved_preview)
             changed.steps[0].payload = {"type": "text", "text": "flattened"}
             with pytest.raises(HTTPException) as rejected:
                 await save_editor(ids.version, changed, user, session, "flatten")

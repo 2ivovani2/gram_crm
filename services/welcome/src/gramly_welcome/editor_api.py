@@ -8,7 +8,7 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from .app_api import CsrfUserDep, CurrentUserDep, SessionDep, flow_draft
 from .content_compiler import AttachmentSpec, compile_step
@@ -258,6 +258,8 @@ async def save_editor(
                 else:
                     raise ValueError("Загрузите файл через редактор")
             content = deepcopy(item.payload)
+            if "link_preview_enabled" in content and not isinstance(content["link_preview_enabled"], bool):
+                raise ValueError("Некорректная настройка предпросмотра ссылок")
             original = existing_steps.get(item.id or 0)
             original_media = [
                 a
@@ -272,7 +274,11 @@ async def save_editor(
                 )
             ):
                 original = existing_steps.get(item.id or 0)
-                if original is None or content != original.payload:
+                comparable = dict(content)
+                comparable.pop("link_preview_enabled", None)
+                original_comparable = dict(original.payload) if original else {}
+                original_comparable.pop("link_preview_enabled", None)
+                if original is None or comparable != original_comparable:
                     raise ValueError(
                         "Составное сообщение можно изменить в боте; в Mini App оно сохраняется без изменений"
                     )
@@ -304,16 +310,32 @@ async def save_editor(
                     raise ValueError("Добавьте текст или файл")
             keyboard = validate_step_keyboard(item.keyboard) if item.keyboard else None
             compile_step(content, [AttachmentSpec(**m) for m in media], keyboard)
-            normalized.append((content, media, keyboard, item.delay_after_seconds))
-        await session.execute(delete(ContentStep).where(ContentStep.version_id == version_id))
-        for position, (content, media, keyboard, delay) in enumerate(normalized):
-            step = ContentStep(
-                version_id=version_id,
-                position=position,
-                payload=content,
-                delay_after_seconds=delay if position < len(normalized) - 1 else 0,
-            )
-            session.add(step)
+            normalized.append((item.id, content, media, keyboard, item.delay_after_seconds))
+        # Keep existing step IDs: owner-bot callbacks and an open keyboard wizard
+        # address a step by ID. Recreating every row made those actions stale.
+        await session.execute(
+            update(ContentStep)
+            .where(ContentStep.version_id == version_id)
+            .values(position=ContentStep.position + 1_000_000)
+        )
+        reused_ids: set[int] = set()
+        for position, (source_id, content, media, keyboard, delay) in enumerate(normalized):
+            if source_id is not None and source_id not in reused_ids:
+                step = existing_steps[source_id]
+                reused_ids.add(source_id)
+                await session.execute(delete(ContentAttachment).where(ContentAttachment.step_id == step.id))
+                await session.execute(delete(ContentKeyboard).where(ContentKeyboard.step_id == step.id))
+                step.position = position
+                step.payload = content
+                step.delay_after_seconds = delay if position < len(normalized) - 1 else 0
+            else:
+                step = ContentStep(
+                    version_id=version_id,
+                    position=position,
+                    payload=content,
+                    delay_after_seconds=delay if position < len(normalized) - 1 else 0,
+                )
+                session.add(step)
             await session.flush()
             for index, m in enumerate(media):
                 session.add(ContentAttachment(step_id=step.id, position=index, **m))
@@ -326,6 +348,8 @@ async def save_editor(
                 for row, buttons in enumerate(keyboard["rows"]):
                     for column, b in enumerate(buttons):
                         session.add(ContentKeyboardButton(keyboard_id=kb.id, row=row, position=column, **b))
+        if removed_ids := set(existing_steps) - reused_ids:
+            await session.execute(delete(ContentStep).where(ContentStep.id.in_(removed_ids)))
         version.first_delay_seconds = payload.first_delay_seconds
         version.button_style = payload.button_style
         await session.flush()

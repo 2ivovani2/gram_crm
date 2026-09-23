@@ -72,6 +72,7 @@ from .content_service import (
     set_first_delay,
     set_flow_assignments,
     set_step_delay,
+    set_step_link_preview,
     validate_step_keyboard,
 )
 from .crypto import TokenKeyring
@@ -1425,7 +1426,7 @@ async def configure_staged_buttons(callback: CallbackQuery, state: FSMContext) -
         await callback.answer("Сначала отправьте текст или файл", show_alert=True)
         return
     await state.set_state(WelcomeButtonState.waiting_for_buttons)
-    await state.update_data(step_id=0, return_to_composer=True)
+    await state.update_data(return_to_composer=True)
     await owner_answer(
         _callback_message(callback),
         "🔘 <b>Кнопки этого сообщения</b>\n\n"
@@ -1733,6 +1734,17 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
         await callback.answer("Шаг не найден.", show_alert=True)
         return
     is_final_step = step.position == max(item.position for item in snapshot.steps)
+    sequence = step.payload.get("sequence")
+    has_text = step.payload.get("type") == "text" or (
+        isinstance(sequence, list)
+        and any(
+            isinstance(item, dict)
+            and item.get("kind") == "message"
+            and isinstance(item.get("payload"), dict)
+            and item["payload"].get("type", "text") == "text"
+            for item in sequence
+        )
+    )
     action_rows: list[list[TelegramInlineKeyboardButton]] = [
             [
                 owner_button(text="Выше", callback_data=f"chain:move:{version_id}:{step_id}:-1", emoji_key="back"),
@@ -1762,6 +1774,16 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
             [owner_button(text="← К цепочке", callback_data=f"chain:editor:{version_id}")],
         ]
     )
+    if has_text:
+        enabled = step.payload.get("link_preview_enabled", True) is not False
+        action_rows.insert(
+            -2,
+            [owner_button(
+                text=f"Превью ссылок: {'включено' if enabled else 'выключено'}",
+                callback_data=f"chain:link-preview:{version_id}:{step_id}:{int(not enabled)}",
+                emoji_key="settings",
+            )],
+        )
     keyboard = InlineKeyboardMarkup(inline_keyboard=action_rows)
     await callback.answer("Показываю шаг…")
     storage = ObjectStorage(get_settings())
@@ -1793,6 +1815,20 @@ async def chain_step(callback: CallbackQuery, owner: Owner) -> None:
         ),
         reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data.startswith("chain:link-preview:"))
+async def toggle_step_link_preview(callback: CallbackQuery, owner: Owner) -> None:
+    _, _, raw_version, raw_step, raw_enabled = (callback.data or "").split(":")
+    version_id, step_id = int(raw_version), int(raw_step)
+    try:
+        async with session_factory() as session:
+            await set_step_link_preview(session, owner.id, step_id, raw_enabled == "1")
+    except ContentValidationError:
+        await callback.answer("Шаг изменился. Откройте цепочку заново.", show_alert=True)
+        return
+    await send_chain_editor(_callback_message(callback), owner, version_id)
+    await callback.answer("Настройка предпросмотра сохранена")
 
 
 @router.callback_query(F.data.startswith("chain:replace:"))

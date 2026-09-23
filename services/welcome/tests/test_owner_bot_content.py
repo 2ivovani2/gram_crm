@@ -116,6 +116,40 @@ def test_keyboard_parser_supports_removal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_staged_buttons_keep_replaced_step_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeState:
+        data: dict[str, Any] = {
+            "version_id": 10,
+            "step_id": 20,
+            "composer_mode": "replace",
+            "composer_items": [{"kind": "message", "payload": {"type": "text", "text": "Новый текст"}}],
+        }
+
+        async def get_data(self) -> dict[str, Any]:
+            return self.data
+
+        async def set_state(self, _value: Any) -> None:
+            return None
+
+        async def update_data(self, **values: Any) -> None:
+            self.data.update(values)
+
+    async def fake_answer(_message: Any, _text: str, **_kwargs: Any) -> None:
+        return None
+
+    async def fake_callback_answer(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(owner_bot, "owner_answer", fake_answer)
+    state = FakeState()
+    await owner_bot.configure_staged_buttons(
+        SimpleNamespace(message=SimpleNamespace(), answer=fake_callback_answer), state
+    )
+    assert state.data["step_id"] == 20
+    assert state.data["return_to_composer"] is True
+
+
+@pytest.mark.asyncio
 async def test_button_handler_keeps_state_for_non_text_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
