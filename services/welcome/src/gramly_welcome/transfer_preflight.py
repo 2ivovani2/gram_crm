@@ -26,7 +26,9 @@ from .models import (
 
 async def competing_admins(bot: Bot, channel: Channel, own_telegram_id: int) -> dict[str, Any]:
     try:
-        admins = await bot.get_chat_administrators(channel.telegram_id)
+        # Telegram omits other bots unless this flag is explicit. Without it,
+        # an empty result can falsely clear an observed approval conflict.
+        admins = await bot.get_chat_administrators(channel.telegram_id, return_bots=True)
     except (TelegramAPIError, OSError, TimeoutError):
         return {"status": "unavailable", "bots": []}
     others = [
