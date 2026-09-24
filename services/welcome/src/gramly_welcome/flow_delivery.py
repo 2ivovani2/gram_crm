@@ -651,6 +651,6 @@ async def close_temporary_delivery(session: AsyncSession, delivery_id: int) -> b
     if contact is not None and contact.bot_started:
         delivery.target_chat_id = None
         delivery.target_expires_at = None
-    else:
-        await cancel_delivery_operations(session, delivery.id, reason="join_request_already_processed", commit=False)
+        return False  # Stable private-chat access remains; no delivery incident.
+    await cancel_delivery_operations(session, delivery.id, reason="join_request_already_processed", commit=False)
     return True

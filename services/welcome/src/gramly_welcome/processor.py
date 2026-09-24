@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .audience import answer_challenge, create_challenge, unsubscribe, verify_subscribe_token
-from .bot_diagnostics import record_incident, resolve_incident
+from .bot_diagnostics import record_incident
 from .flow_delivery import assigned_content_flow_timeline, close_temporary_delivery, schedule_content_flow
 from .join_activation import (
     activation_token_valid,
@@ -654,10 +654,13 @@ async def process_event(session: AsyncSession, event: InboxEvent) -> None:
                 assert open_request is not None and open_request.welcome_delivery_id is not None
                 interrupted = await close_temporary_delivery(session, open_request.welcome_delivery_id)
                 approver = member.get("from") or {}
-                if interrupted and approver.get("is_bot") and approver.get("id") != bot.telegram_id:
-                    await record_incident(session, bot.id, "external_approval", channel_id=channel_id)
-                elif approver.get("id") == bot.telegram_id:
-                    await resolve_incident(session, bot.id, f"external_approval:{channel_id}")
+                if interrupted and approver.get("is_bot") and isinstance(approver.get("id"), int) and approver["id"] != bot.telegram_id:
+                    await record_incident(
+                        session, bot.id, "external_approval", channel_id=channel_id,
+                        approver_id=int(approver["id"]),
+                        approver_username=str(approver.get("username") or ""),
+                        delivery_id=open_request.welcome_delivery_id,
+                    )
             activation = (
                 await session.scalar(
                     select(JoinRequestActivation).where(

@@ -13,6 +13,8 @@ from .commercial import access_for_owner
 from .models import (
     AdImpression,
     Broadcast,
+    Channel,
+    DeliveryJob,
     DepartureEvent,
     EventLog,
     ManagedBot,
@@ -42,6 +44,7 @@ TRANSFERRED_OWNER_MODELS = (
     RotationChannel,
     AdImpression,
     EventLog,
+    DeliveryJob,
 )
 
 
@@ -103,6 +106,27 @@ async def transfer_bot(
     bot.owner_id = target_owner_id
     bot.updated_at = current
     bot_label = f"@{bot.username}" if bot.username else bot.display_name
+    existing_issues = bot.delivery_issues or {}
+    issue_channel_ids = [
+        issue.get("channel_id") for key, issue in existing_issues.items()
+        if key.startswith("external_approval:") and isinstance(issue.get("channel_id"), int)
+    ]
+    channel_names = dict((await session.execute(
+        select(Channel.id, Channel.title).where(Channel.bot_id == bot.id, Channel.id.in_(issue_channel_ids))
+    )).all()) if issue_channel_ids else {}
+    affected = [
+        str(channel_names.get(issue.get("channel_id")) or issue.get("channel_title")
+            or f"канал #{issue.get('channel_id') or '?'}")
+        for key, issue in existing_issues.items() if key.startswith("external_approval:")
+    ]
+    issue_note = (
+        "\n\nВнимание: в каналах " + ", ".join(affected[:5])
+        + (f" и ещё {len(affected) - 5}" if len(affected) > 5 else "")
+        + " уже были одобрения заявок другими ботами. Проверьте их права и автоприём."
+        if affected else ""
+    )
+    if "invalid_bot_token" in existing_issues:
+        issue_note += "\n\nТокен бота требует обновления."
     transfer_id = uuid.uuid4().hex
     session.add_all(
         [
@@ -125,7 +149,7 @@ async def transfer_bot(
                 sequence=0,
                 payload={
                     "title": "Бот добавлен",
-                    "body": f"{bot_label} передан вам. Каналы, приветствия и база уже доступны.",
+                    "body": f"{bot_label} передан вам. Каналы, приветствия и база уже доступны.{issue_note}",
                 },
                 status="pending",
                 due_at=current,
