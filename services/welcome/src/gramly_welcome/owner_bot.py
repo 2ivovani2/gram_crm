@@ -65,6 +65,7 @@ from .content_service import (
     flow_timeline_seconds,
     move_step,
     open_draft,
+    owner_flow_step_limit,
     publish_draft,
     replace_draft_step,
     replace_step_keyboard,
@@ -1251,6 +1252,7 @@ async def send_chain_editor(
 ) -> None:
     async with session_factory() as session:
         snapshot = await draft_snapshot(session, owner.id, version_id)
+        max_steps = await owner_flow_step_limit(session, owner.id, snapshot.flow.kind)
         bot = await session.get(ManagedBot, snapshot.flow.bot_id)
         channel_query = select(Channel).where(
             Channel.bot_id == snapshot.flow.bot_id,
@@ -1273,7 +1275,10 @@ async def send_chain_editor(
         f"\nЧерновик версии <b>{snapshot.version.version}</b>",
         f"Первое сообщение: <b>{_format_delay(snapshot.version.first_delay_seconds)}</b>",
     ]
-    lines.append("Лимит цепочки: до 5 сообщений и до 5 файлов.")
+    lines.append(f"Лимит цепочки: до {max_steps} сообщений и до 5 файлов.")
+    if len(snapshot.steps) > max_steps:
+        lines.append("⚠️ Business закончился: новые приветствия отправляют первые 5 сообщений. "
+                     "Для сохранения полной цепочки и отправки всех шагов продлите Business.")
     if not is_farewell:
         timeline = flow_timeline_seconds(snapshot.version, snapshot.steps)
         if timeline <= JOIN_REQUEST_MAX_TIMELINE_SECONDS:
@@ -1338,10 +1343,12 @@ async def send_chain_editor(
         lines.append("\nПока нет шагов. Добавьте первое сообщение.")
     rows.extend(
         [
-            [
+            *([[
                 owner_button(text="➕ Добавить шаг", callback_data=f"chain:add:{version_id}"),
                 owner_button(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
-            ],
+            ]] if len(snapshot.steps) < max_steps else [[
+                owner_button(text="👁 Предпросмотр", callback_data=f"chain:preview:{version_id}"),
+            ]]),
             [
                 owner_button(
                     text="⏱ Задержка первого сообщения",
@@ -1404,8 +1411,15 @@ async def add_chain_step(callback: CallbackQuery, owner: Owner, state: FSMContex
     try:
         async with session_factory() as session:
             snapshot = await draft_snapshot(session, owner.id, version_id)
+            max_steps = await owner_flow_step_limit(session, owner.id, snapshot.flow.kind)
     except ContentValidationError:
         await callback.answer("Черновик уже недоступен.", show_alert=True)
+        return
+    if len(snapshot.steps) >= max_steps:
+        await callback.answer(
+            f"Доступно до {max_steps} сообщений. Для 6–10 сообщений требуется Business.",
+            show_alert=True,
+        )
         return
     await state.set_state(WelcomeMessageState.waiting_for_message)
     await state.set_data(
@@ -1948,8 +1962,8 @@ async def mutate_chain(callback: CallbackQuery, owner: Owner) -> None:
                 await copy_step(session, owner.id, int(parts[3]))
             elif action == "delete":
                 orphaned_keys = await delete_step(session, owner.id, int(parts[3]))
-    except ContentValidationError:
-        await callback.answer("Не удалось изменить черновик.", show_alert=True)
+    except ContentValidationError as exc:
+        await callback.answer(str(exc), show_alert=True)
         return
     if action == "delete" and orphaned_keys:
         try:
@@ -3085,7 +3099,7 @@ async def _create_owner_stars_invoice_link(payment: Payment, plan: Plan) -> str:
         raise FinanceError("Цена Stars не настроена")
     return await interface_bot().create_invoice_link(
         title="GramlyHello Business",
-        description="Business на 30 дней: без рекламы и с ротацией каналов.",
+        description="Business на 30 дней: до 10 приветственных сообщений, без рекламы и с ротацией.",
         payload=str(payment.checkout_token),
         currency="XTR",
         prices=[LabeledPrice(label="Business · 30 дней", amount=plan.price_xtr)],

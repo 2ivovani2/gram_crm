@@ -1533,7 +1533,7 @@ async def _create_stars_invoice_link(settings: Settings, payment: Payment, plan:
     try:
         return await bot.create_invoice_link(
             title="GramlyHello Business",
-            description="Business на 30 дней: без рекламы и с ротацией каналов.",
+            description="Business на 30 дней: до 10 приветственных сообщений, без рекламы и с ротацией.",
             payload=str(payment.checkout_token),
             currency="XTR",
             prices=[LabeledPrice(label="Business · 30 дней", amount=plan.price_xtr)],

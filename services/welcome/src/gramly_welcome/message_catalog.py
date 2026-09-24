@@ -85,7 +85,7 @@ class CatalogStep(BaseModel):
 class CatalogSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     first_delay_seconds: int = Field(default=0, ge=0, le=MAX_DELAY_SECONDS)
-    steps: list[CatalogStep] = Field(min_length=1, max_length=5)
+    steps: list[CatalogStep] = Field(min_length=1, max_length=10)
 
     @model_validator(mode="after")
     def file_limit(self) -> CatalogSpec:
@@ -107,6 +107,12 @@ class CatalogEntry(BaseModel):
     conversion: str | None = Field(default=None, max_length=80)
     requires_business: bool = False
     spec: CatalogSpec
+
+    @model_validator(mode="after")
+    def business_step_limit(self) -> CatalogEntry:
+        if len(self.spec.steps) > 5 and (self.kind != "welcome" or not self.requires_business):
+            raise ValueError("Шаблон с 6–10 сообщениями доступен только для Business-приветствия")
+        return self
 
     @field_validator("tags")
     @classmethod
@@ -152,7 +158,7 @@ async def install_template(session: AsyncSession, *, owner_id: int, bot_id: int,
     if template is None:
         raise ContentValidationError("Шаблон больше недоступен")
     access = await access_for_owner(session, owner_id)
-    if template.requires_business and access.plan_slug != "business":
+    if (template.requires_business or len((template.spec or {}).get("steps", [])) > 5) and access.plan_slug != "business":
         raise ContentValidationError("Для этого шаблона необходим Business")
     spec = CatalogSpec.model_validate(template.spec)
     flow = ContentFlow(bot_id=bot_id, kind=template.kind, name=f"{template.title[:110]} · {uuid.uuid4().hex[:8]}",

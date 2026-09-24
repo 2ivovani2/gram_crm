@@ -5,6 +5,26 @@ test.skip(
   "Local Welcome server required",
 );
 
+test("Business editor saves ten welcome messages and prevents an eleventh", async ({ page }) => {
+  const { saves } = await ownerSetup(page, { maxSteps: 10 });
+  for (let index = 2; index <= 10; index += 1) {
+    await page.getByRole("button", { name: new RegExp(`Добавить сообщение · ${index - 1}/10`) }).click();
+    await page.getByRole("textbox", { name: "Текст сообщения" }).fill(`Шаг ${index}`);
+  }
+  await expect(page.getByRole("button", { name: "Добавить сообщение · 10/10" })).toBeDisabled();
+  await page.getByRole("button", { name: "Сохранить черновик", exact: true }).click();
+  expect(saves).toHaveLength(1);
+  expect(saves[0].data.steps).toHaveLength(10);
+});
+
+test("Free owner sees all saved steps but cannot republish a long version", async ({ page }) => {
+  await ownerSetup(page, { maxSteps: 5, initialSteps: 10 });
+  await expect(page.getByText(/Business закончился: новые приветствия/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Добавить сообщение · 10/5" })).toBeDisabled();
+  await page.getByRole("button", { name: "Далее: предпросмотр" }).click();
+  await expect(page.getByRole("alert")).toContainText("от 1 до 5 сообщений");
+});
+
 test("another Mini App session does not break template installation, uploads, saving or launch", async ({
   page,
 }) => {
