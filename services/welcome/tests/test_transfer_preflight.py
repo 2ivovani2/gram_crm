@@ -35,5 +35,6 @@ async def test_admin_check_distinguishes_possible_competitor_from_unavailable() 
     channel = SimpleNamespace(telegram_id=-1007)
     result = await competing_admins(cast(Bot, client), cast(Channel, channel), 1)
     assert result == {"status": "checked", "bots": [{"id": 2, "username": "other"}]}
+    client.get_chat_administrators.assert_awaited_with(-1007, return_bots=True)
     client.get_chat_administrators.side_effect = TimeoutError()
     assert await competing_admins(cast(Bot, client), cast(Channel, channel), 1) == {"status": "unavailable", "bots": []}
