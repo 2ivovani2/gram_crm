@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram import Bot
 
 from gramly_welcome.bot_diagnostics import diagnostics_text
+from gramly_welcome.models import Channel, ManagedBot
 from gramly_welcome.transfer_preflight import competing_admins
 
 
@@ -16,7 +19,7 @@ def test_existing_delivery_issue_identifies_channel_approver_and_steps() -> None
             "sent_steps": 2, "cancelled_steps": 3,
         },
     })
-    text = diagnostics_text(bot)
+    text = diagnostics_text(cast(ManagedBot, bot))
     assert "News" in text and "@other_bot" in text
     assert "Отправлено шагов: 2; отменено: 3" in text
 
@@ -30,7 +33,7 @@ async def test_admin_check_distinguishes_possible_competitor_from_unavailable() 
         SimpleNamespace(user=SimpleNamespace(id=4, is_bot=False, username="owner"), can_invite_users=True),
     ]))
     channel = SimpleNamespace(telegram_id=-1007)
-    result = await competing_admins(client, channel, 1)
+    result = await competing_admins(cast(Bot, client), cast(Channel, channel), 1)
     assert result == {"status": "checked", "bots": [{"id": 2, "username": "other"}]}
     client.get_chat_administrators.side_effect = TimeoutError()
-    assert await competing_admins(client, channel, 1) == {"status": "unavailable", "bots": []}
+    assert await competing_admins(cast(Bot, client), cast(Channel, channel), 1) == {"status": "unavailable", "bots": []}

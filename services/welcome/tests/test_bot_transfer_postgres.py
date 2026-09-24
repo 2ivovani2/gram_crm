@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import delete, select
@@ -96,7 +97,7 @@ async def test_bot_transfer_moves_product_state_and_keeps_credentials(monkeypatc
             target_notice = await session.scalar(select(OwnerNotification).where(
                 OwnerNotification.owner_id == target.id, OwnerNotification.kind == "bot_transfer"))
             assert target_notice and "Test channel" in target_notice.payload["body"]
-            async def fake_live_checks(*_args: object) -> dict:
+            async def fake_live_checks(*_args: object) -> dict[str, Any]:
                 return {"webhook": {"status": "ok"}, "administrators": {}}
             monkeypatch.setattr("gramly_welcome.transfer_preflight.live_transfer_checks", fake_live_checks)
             preview = await transfer_preview(session, bot, Settings())

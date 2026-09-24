@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,7 @@ def diagnostics_text(bot: ManagedBot) -> str:
     return "\n\n".join(lines)
 
 
-def external_approval_text(issue: dict, key: str) -> str:
+def external_approval_text(issue: dict[str, Any], key: str) -> str:
     channel = str(issue.get("channel_title") or f"канал #{issue.get('channel_id') or key.split(':', 1)[1]}")
     approver = str(issue.get("approver_username") or issue.get("approver_id") or "другой бот")
     if issue.get("approver_username"):
@@ -59,7 +60,7 @@ async def record_incident(
             .where(DeliveryOperation.flow_delivery_id == delivery_id)
             .group_by(DeliveryOperation.status)
         )
-        by_status = dict(counts.all())
+        by_status: dict[str, int] = {row[0]: row[1] for row in counts.all()}
         sent, cancelled = int(by_status.get("sent", 0)), int(by_status.get("cancelled", 0))
     issue = {
         "id": incident_id, "opened_at": issues.get(key, {}).get("opened_at") or datetime.now(UTC).isoformat(),

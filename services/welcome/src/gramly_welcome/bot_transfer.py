@@ -111,9 +111,9 @@ async def transfer_bot(
         issue.get("channel_id") for key, issue in existing_issues.items()
         if key.startswith("external_approval:") and isinstance(issue.get("channel_id"), int)
     ]
-    channel_names = dict((await session.execute(
+    channel_names: dict[int, str] = {row[0]: row[1] for row in (await session.execute(
         select(Channel.id, Channel.title).where(Channel.bot_id == bot.id, Channel.id.in_(issue_channel_ids))
-    )).all()) if issue_channel_ids else {}
+    )).all()} if issue_channel_ids else {}
     affected = [
         str(channel_names.get(issue.get("channel_id")) or issue.get("channel_title")
             or f"канал #{issue.get('channel_id') or '?'}")
