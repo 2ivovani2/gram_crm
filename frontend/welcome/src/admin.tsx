@@ -72,18 +72,18 @@ function TransferDialog({source,bot,onClose,onDone}:{source:OwnerSummary;bot:any
   useEffect(()=>{if(query.trim().length<2){setMatches([]);return}const timer=setTimeout(()=>adminApi<{items:OwnerSummary[]}>(`/owners?q=${encodeURIComponent(query)}&page_size=10`).then(data=>setMatches(data.items.filter(item=>item.id!==source.id))).catch(e=>setError((e as Error).message)),250);return()=>clearTimeout(timer)},[query,source.id]);
   const confirmed=preview?.channels.filter(channel=>channel.incident)||[];
   const possible=preview?.channels.filter(channel=>channel.admin_check.bots.length>0&&!channel.incident)||[];
-  const needsAcknowledgement=confirmed.length>0||possible.length>0||Boolean(preview?.other_issues.length)||preview?.webhook.status!=="ok";
+  const needsAcknowledgement=confirmed.length>0||possible.length>0||Boolean(preview?.other_issues.length)||Boolean(preview?.recent_approvals.length)||preview?.webhook.status!=="ok";
   const submit=async(e:React.FormEvent)=>{e.preventDefault();if(!target||!preview||previewBusy||(needsAcknowledgement&&!acknowledged))return;setBusy(true);setError("");try{await adminApi(`/bots/${bot.id}/transfer`,{method:"POST",body:JSON.stringify({target_owner_id:target.id,reason})});onDone()}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
   return <div className="control-modal" role="dialog" aria-modal="true" aria-labelledby="transfer-title"><form onSubmit={submit}><header><div><span className="eyebrow">BOT TRANSFER</span><h2 id="transfer-title">Передать @{bot.username||bot.display_name}</h2></div><button type="button" onClick={onClose} aria-label="Закрыть">×</button></header>
     <p>Каналы, цепочки, база и аналитика перейдут новому владельцу. Платежи и подписка @{source.username||source.telegram_id} останутся без изменений.</p>
     <section className="transfer-preflight" aria-live="polite"><h3>Проверка перед передачей</h3>
       {previewBusy?<p>Проверяем webhook, каналы и доставки…</p>:previewError?<p role="alert">Проверка недоступна: {previewError} <button type="button" onClick={loadPreview}>Повторить</button></p>:preview&&<>
-        <p>Webhook: {preview.webhook.status==="ok"?"работает":preview.webhook.status==="mismatch"?"адрес отличается":"не удалось проверить"} · активных каналов: {preview.channels.length} · заданий в работе: {preview.pending_jobs}</p>
+        <p>Webhook: {preview.webhook.status==="ok"?"адрес настроен":preview.webhook.status==="mismatch"?"адрес отличается":"не удалось проверить"} · активных каналов: {preview.channels.length} · заданий в работе: {preview.pending_jobs}</p>
         {confirmed.map(channel=><p className="transfer-warning" key={channel.id}><b>{channel.title}: подтверждённый конфликт.</b> Заявку принимал {channel.incident?.approver_username?`@${channel.incident.approver_username}`:"другой бот"}. Приветствие {channel.greeting_active?"включено":"отключено"}.</p>)}
         {possible.map(channel=><p className="transfer-caution" key={channel.id}><b>{channel.title}: возможный конфликт.</b> Право принимать заявки есть у {channel.admin_check.bots.map(item=>item.username?`@${item.username}`:`бота ${item.id}`).join(", ")}. Автоприём этим не подтверждён.</p>)}
         {preview.other_issues.length>0&&<p className="transfer-warning">Есть другие проблемы доставки: {preview.other_issues.join(", ")}.</p>}
         {preview.channels.some(channel=>channel.admin_check.status!=="checked")&&<p>Права части каналов проверить не удалось. Их состояние остаётся неизвестным.</p>}
-        {preview.recent_approvals.length>0&&<p>Последнее подтверждённое одобрение другим ботом: {formatDate(preview.recent_approvals[0].at)}.</p>}
+        {preview.recent_approvals.length>0&&<p>Последнее подтверждённое одобрение другим ботом: {preview.channels.find(channel=>channel.id===preview.recent_approvals[0].channel_id)?.title||`канал #${preview.recent_approvals[0].channel_id}`} · {preview.recent_approvals[0].approver_username?`@${preview.recent_approvals[0].approver_username}`:"другой бот"} · {formatDate(preview.recent_approvals[0].at)}.</p>}
         {!needsAcknowledgement&&<p>Подтверждённых конфликтов не найдено. Telegram-настройки могут измениться после проверки.</p>}
       </>}
     </section>
