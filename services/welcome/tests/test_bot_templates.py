@@ -177,3 +177,20 @@ async def test_clone_bot_configuration_blocks_business_rotation_for_free_owner()
 
     assert not session.committed
     assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_clone_bot_configuration_blocks_long_welcome_for_free_owner() -> None:
+    owner_id = 8
+    source = _managed(12, owner_id)
+    destination = _managed(13, owner_id)
+    session = _FakeSession(scalars=[[source, destination]], scalar=[0, None, 123])
+
+    with pytest.raises(ContentValidationError, match="6–10 сообщениями требуется Business"):
+        await clone_bot_configuration(
+            cast(AsyncSession, session), owner_id, source.id, destination.id,
+            business_enabled=False,
+        )
+
+    assert not session.committed
+    assert session.added == []

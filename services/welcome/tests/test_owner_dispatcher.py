@@ -151,6 +151,7 @@ async def test_real_owner_dispatcher_routes_encoded_callbacks_and_preserves_fsm(
     monkeypatch.setattr(owner_bot, "ensure_default_welcome_flow", AsyncMock(return_value=flow))
     monkeypatch.setattr(owner_bot, "open_draft", AsyncMock(return_value=version))
     monkeypatch.setattr(owner_bot, "draft_snapshot", AsyncMock(return_value=snapshot))
+    monkeypatch.setattr(owner_bot, "owner_flow_step_limit", AsyncMock(return_value=5))
     monkeypatch.setattr(
         owner_bot,
         "compile_preview_operations",

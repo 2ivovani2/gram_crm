@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .commercial import feature_flag_enabled, payment_method_ready
+from .content_service import has_long_published_welcome
 from .crypto_pay import CryptoInvoice, CryptoPayClient, CryptoPayError
 from .finance import (
     PAYMENT_SETTLEMENT_GRACE,
@@ -535,6 +536,7 @@ async def expire_one_business_subscription(session: AsyncSession) -> bool:
         )
     )
     affected = ", ".join(str(name) for name in bot_names) or "подключённые боты"
+    long_welcome = await has_long_published_welcome(session, subscription.owner_id)
     await session.execute(
         insert(OwnerNotification)
         .values(
@@ -549,6 +551,12 @@ async def expire_one_business_subscription(session: AsyncSession) -> bool:
                     "Аккаунт автоматически переведён на Free. Приветственные цепочки продолжают "
                     f"работать, но реклама вернулась, а ротация приостановлена. Затронуто: {affected}. "
                     "После оплаты Business восстановится автоматически — настройки ротации сохранены."
+                    + (
+                        " Новые приветствия пока отправляют только первые 5 сообщений длинной цепочки. "
+                        "Продлите Business, чтобы снова отправлялись все сообщения. "
+                        "Уже начатые доставки завершатся полностью."
+                        if long_welcome else ""
+                    )
                 ),
             },
             status="pending",

@@ -11,9 +11,10 @@ from sqlalchemy.orm import aliased
 
 from .advertising import choose_free_ad, mark_ad_operation
 from .audience import build_subscribe_token
+from .commercial import access_for_owner
 from .config import get_settings
 from .content_compiler import AttachmentSpec, CompiledOperation, compile_step
-from .content_service import flow_timeline_seconds
+from .content_service import flow_step_limit, flow_timeline_seconds
 from .metrics import JOIN_REQUEST_GREETINGS
 from .models import (
     Channel,
@@ -48,6 +49,16 @@ class OperationContext:
     def target_expired(self) -> bool:
         expires_at = self.delivery.target_expires_at
         return expires_at is not None and expires_at <= datetime.now(UTC)
+
+
+async def effective_delivery_steps(
+    session: AsyncSession, *, owner_id: int, kind: str, steps: list[ContentStep]
+) -> list[ContentStep]:
+    """Freeze the current entitlement when a new delivery is scheduled."""
+    if kind != "welcome" or len(steps) <= 5:
+        return steps
+    access = await access_for_owner(session, owner_id)
+    return steps[:flow_step_limit(kind, access.plan_slug)]
 
 
 def should_reuse_recent_welcome_delivery(*, kind: str, target_chat_id: int | None) -> bool:
@@ -194,6 +205,7 @@ async def schedule_content_flow(
             )
         ).all()
     )
+    steps = await effective_delivery_steps(session, owner_id=bot.owner_id, kind=kind, steps=steps)
     if max_timeline_seconds is not None and flow_timeline_seconds(version, steps) > max_timeline_seconds:
         return None
     if target_chat_id is not None and (
@@ -253,7 +265,7 @@ async def schedule_content_flow(
     due_at = datetime.now(UTC) + timedelta(seconds=version.first_delay_seconds)
     previous_operation_id: int | None = None
     operation_position = 0
-    for step in steps:
+    for step_index, step in enumerate(steps):
         attachments = list(
             (
                 await session.scalars(
@@ -294,7 +306,8 @@ async def schedule_content_flow(
             await session.flush()
             previous_operation_id = operation.id
             operation_position += 1
-        due_at += timedelta(seconds=step.delay_after_seconds)
+        if step_index < len(steps) - 1:
+            due_at += timedelta(seconds=step.delay_after_seconds)
     if operation_position == 0:
         await session.execute(
             update(FlowDelivery)
@@ -367,6 +380,10 @@ async def assigned_content_flow_timeline(
             )
         ).all()
     )
+    bot_owner_id = await session.scalar(select(ManagedBot.owner_id).where(ManagedBot.id == bot_id))
+    if bot_owner_id is None:
+        return None
+    steps = await effective_delivery_steps(session, owner_id=bot_owner_id, kind=kind, steps=steps)
     return flow_timeline_seconds(version, steps)
 
 

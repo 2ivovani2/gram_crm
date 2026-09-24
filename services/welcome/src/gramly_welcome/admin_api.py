@@ -20,6 +20,7 @@ from .billing import safe_invoice_snapshot, verify_and_settle_crypto_invoice
 from .bot_transfer import BotTransferError, transfer_bot
 from .business_metrics import live_business_metrics
 from .config import Settings, get_settings
+from .content_service import has_long_published_welcome
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_dependency
 from .finance import FinanceError, schedule_subscription_reminders
@@ -1298,6 +1299,12 @@ async def manage_owner_subscription(
         "cancel_renewal": "Автопродление отключено",
         "revoke_now": "Подписка Business аннулирована",
     }
+    long_welcome_notice = (
+        " Новые приветствия отправят только первые 5 сообщений; после продления Business "
+        "снова будут отправляться все. Уже начатые доставки завершатся полностью."
+        if payload.action == "revoke_now" and await has_long_published_welcome(session, owner_id)
+        else ""
+    )
     session.add(
         OwnerNotification(
             owner_id=owner_id,
@@ -1306,7 +1313,7 @@ async def manage_owner_subscription(
             sequence=0,
             payload={
                 "title": "💳 Изменение подписки",
-                "body": f"{notification_labels[payload.action]}. Причина: {payload.reason}",
+                "body": f"{notification_labels[payload.action]}. Причина: {payload.reason}.{long_welcome_notice}",
             },
             status="pending",
             due_at=now,

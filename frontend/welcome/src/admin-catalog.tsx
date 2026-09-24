@@ -71,6 +71,7 @@ function TemplateWizard({
     [notice, setNotice] = useState(""),
     [savedItem, setSavedItem] = useState<Item | null>(null),
     [exit, setExit] = useState(false);
+  const maxSteps = entry.kind === "welcome" && entry.requires_business ? 10 : 5;
   const baseline = useRef(JSON.stringify(initial));
   const dirty = JSON.stringify(entry) !== baseline.current;
   useEffect(() => {
@@ -118,7 +119,7 @@ function TemplateWizard({
       }
     }
     if (next > 1) {
-      const problem = validateChain(entry.spec);
+      const problem = validateChain(entry.spec, maxSteps);
       if (problem) {
         setError(problem);
         setStage(1);
@@ -129,7 +130,7 @@ function TemplateWizard({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const save = async (publish = false): Promise<boolean> => {
-    const problem = metadataError() || validateChain(entry.spec);
+    const problem = metadataError() || validateChain(entry.spec, maxSteps);
     if (problem) {
       setError(problem);
       setStage(metadataError() ? 0 : 1);
@@ -302,6 +303,7 @@ function TemplateWizard({
                 <option value="all">Free и Business</option>
                 <option value="business">Только Business</option>
               </select>
+              <small>Для приветственного шаблона на 6–10 сообщений выберите «Только Business».</small>
             </label>
             <details className="editor-settings">
               <summary>Автор и дополнительные сведения</summary>
@@ -326,6 +328,7 @@ function TemplateWizard({
               value={entry.spec}
               onChange={(spec) => update({ spec, screenshots: [] })}
               scope="admin"
+              maxSteps={maxSteps}
               onBusyChange={setUploading}
             />
             <div className="desktop-preview">

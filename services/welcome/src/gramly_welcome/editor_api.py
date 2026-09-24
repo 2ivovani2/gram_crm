@@ -12,7 +12,12 @@ from sqlalchemy import delete, select, update
 
 from .app_api import CsrfUserDep, CurrentUserDep, SessionDep, flow_draft
 from .content_compiler import AttachmentSpec, compile_step
-from .content_service import publish_draft, set_flow_assignments, validate_step_keyboard
+from .content_service import (
+    owner_flow_step_limit,
+    publish_draft,
+    set_flow_assignments,
+    validate_step_keyboard,
+)
 from .db import owner_transaction
 from .delays import MAX_DELAY_SECONDS
 from .idempotency import IdempotencyConflictError, claim_request, store_response
@@ -45,7 +50,7 @@ class SaveDraft(BaseModel):
     expected_revision: int = Field(ge=1)
     first_delay_seconds: int = Field(ge=0, le=MAX_DELAY_SECONDS)
     button_style: str | None = None
-    steps: list[EditorStep] = Field(min_length=1, max_length=5)
+    steps: list[EditorStep] = Field(min_length=1, max_length=10)
 
 
 class LaunchDraft(BaseModel):
@@ -133,6 +138,7 @@ async def editor_document(flow_id: int, user: Any, session: Any) -> dict[str, An
         bot_id=flow.bot_id,
         bot_username=bot.username,
         channel_ids=[c.id for c in channels] if flow.assignment_mode == "all" else selected,
+        max_steps=await owner_flow_step_limit(session, user.auth.owner.id, flow.kind),
     )
     document["channels"] = [
         {"id": c.id, "title": c.title, "can_invite_users": c.can_invite_users} for c in channels
@@ -211,6 +217,12 @@ async def save_editor(
         if stored:
             return stored.body
         version = await owned_version(session, owner_id, version_id, payload.expected_revision)
+        flow = await session.get(ContentFlow, version.flow_id)
+        if flow is None:
+            raise ValueError("Цепочка недоступна")
+        max_steps = await owner_flow_step_limit(session, owner_id, flow.kind)
+        if len(payload.steps) > max_steps:
+            raise ValueError(f"Для этой цепочки доступно до {max_steps} сообщений. Для 6–10 требуется Business")
         if payload.button_style not in {None, "default", "primary", "success", "danger"}:
             raise ValueError("Неизвестный цвет кнопок")
         if sum(len(s.attachments) for s in payload.steps) > 5:

@@ -21,6 +21,8 @@ export async function ownerSetup(
     failFirstSave = false,
     noChannels = false,
     rotateSessionBeforeInstall = false,
+    maxSteps = 5,
+    initialSteps = 1,
   } = {},
 ) {
   await page.route("https://fonts.googleapis.com/**", (route) =>
@@ -57,6 +59,7 @@ export async function ownerSetup(
       bot_id: 8,
       bot_username: "gramly_test",
       channel_ids: [],
+      max_steps: maxSteps,
     },
     version: {
       id: 101,
@@ -65,7 +68,10 @@ export async function ownerSetup(
       button_style: null,
       auto_approve: true,
     },
-    steps: [step()],
+    steps: initialSteps === 1 ? [step()] : Array.from({ length: initialSteps }, (_, index) => ({
+      ...step(), id: 11 + index, payload: { ...step().payload, text: `Сообщение ${index + 1}` },
+      delay_after_seconds: index < initialSteps - 1 ? 10 : 0,
+    })),
     channels: noChannels
       ? []
       : [{ id: 10, title: "Тестовый канал", can_invite_users: true }],

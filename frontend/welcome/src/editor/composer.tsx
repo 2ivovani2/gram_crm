@@ -242,9 +242,9 @@ function KeyboardEditor({
     </section>
   );
 }
-export function validateChain(chain: Chain): string | null {
-  if (!chain.steps.length || chain.steps.length > 5)
-    return "Добавьте от 1 до 5 сообщений.";
+export function validateChain(chain: Chain, maxSteps = 5): string | null {
+  if (!chain.steps.length || chain.steps.length > maxSteps)
+    return `Добавьте от 1 до ${maxSteps} сообщений.${maxSteps === 5 ? " Для 6–10 сообщений требуется Business." : ""}`;
   if (chain.steps.reduce((n, s) => n + s.attachments.length, 0) > 5)
     return "Допускается до 5 файлов на цепочку.";
   for (let i = 0; i < chain.steps.length; i++) {

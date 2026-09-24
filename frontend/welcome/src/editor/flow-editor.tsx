@@ -13,6 +13,7 @@ type Document = {
     bot_id: number;
     bot_username: string;
     channel_ids: number[];
+    max_steps: number;
   };
   version: {
     id: number;
@@ -98,7 +99,7 @@ export function FlowEditor({
   }, [dirty]);
   const save = async (): Promise<Document | null> => {
     if (!chain || !doc) return null;
-    const problem = validateChain(chain);
+    const problem = validateChain(chain, doc.flow.max_steps);
     if (problem) {
       setError(problem);
       setPage("edit");
@@ -136,7 +137,7 @@ export function FlowEditor({
     if (dirty) {
       if (!(await save())) return;
     } else if (chain) {
-      const problem = validateChain(chain);
+      const problem = validateChain(chain, doc?.flow.max_steps || 5);
       if (problem) {
         setError(problem);
         return;
@@ -197,6 +198,13 @@ export function FlowEditor({
     );
   return (
     <section className="flow-workspace" ref={workspace}>
+      {doc && chain && chain.steps.length > doc.flow.max_steps && (
+        <p className="composer-error" role="status">
+          Business закончился: новые приветствия отправляют первые 5 сообщений.
+          Сохранить новую версию можно после продления Business или сокращения цепочки до 5 сообщений.
+          Уже начатые доставки завершатся полностью.
+        </p>
+      )}
       <header className="workspace-heading">
         <div>
           <p className="editor-status">
@@ -286,6 +294,7 @@ export function FlowEditor({
                     value={chain}
                     onChange={setChain}
                     scope="owner"
+                    maxSteps={doc.flow.max_steps}
                     onBusyChange={setUploading}
                   />
                 </div>

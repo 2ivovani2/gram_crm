@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .commercial import access_for_owner
 from .delays import MAX_DELAY_SECONDS
 from .models import (
     Channel,
@@ -43,7 +44,32 @@ MAX_KEYBOARD_BUTTONS_PER_ROW = 3
 MAX_KEYBOARD_BUTTON_TEXT_LENGTH = 128
 MAX_KEYBOARD_URL_LENGTH = 1024
 MAX_FLOW_STEPS = 5
+MAX_BUSINESS_WELCOME_STEPS = 10
 MAX_FLOW_ATTACHMENTS = 5
+
+
+def flow_step_limit(kind: str, plan_slug: str | None) -> int:
+    return MAX_BUSINESS_WELCOME_STEPS if kind == "welcome" and plan_slug == "business" else MAX_FLOW_STEPS
+
+
+async def owner_flow_step_limit(session: AsyncSession, owner_id: int, kind: str) -> int:
+    access = await access_for_owner(session, owner_id)
+    return flow_step_limit(kind, access.plan_slug)
+
+
+async def has_long_published_welcome(session: AsyncSession, owner_id: int) -> bool:
+    flow_id = await session.scalar(
+        select(ContentFlow.id)
+        .join(ManagedBot, ManagedBot.id == ContentFlow.bot_id)
+        .join(ContentFlowVersion, ContentFlowVersion.flow_id == ContentFlow.id)
+        .join(ContentStep, ContentStep.version_id == ContentFlowVersion.id)
+        .where(ManagedBot.owner_id == owner_id, ContentFlow.kind == "welcome",
+               ContentFlowVersion.status == "published", ContentFlow.is_active.is_(True))
+        .group_by(ContentFlow.id)
+        .having(func.count(ContentStep.id) > MAX_FLOW_STEPS)
+        .limit(1)
+    )
+    return flow_id is not None
 
 
 async def _flow_usage(session: AsyncSession, version_id: int) -> tuple[int, int]:
@@ -64,10 +90,11 @@ async def _flow_usage(session: AsyncSession, version_id: int) -> tuple[int, int]
     return step_count, attachment_count
 
 
-def _validate_flow_limits(step_count: int, attachment_count: int) -> None:
-    if step_count > MAX_FLOW_STEPS:
+def _validate_flow_limits(step_count: int, attachment_count: int, *, max_steps: int = MAX_FLOW_STEPS) -> None:
+    if step_count > max_steps:
         raise ContentValidationError(
-            f"В одной цепочке можно сохранить не более {MAX_FLOW_STEPS} сообщений"
+            f"В одной цепочке можно сохранить не более {max_steps} сообщений"
+            + (". Для 6–10 сообщений требуется Business" if max_steps == MAX_FLOW_STEPS else "")
         )
     if attachment_count > MAX_FLOW_ATTACHMENTS:
         raise ContentValidationError(
@@ -245,6 +272,20 @@ async def clone_bot_configuration(
         raise ContentValidationError(
             "В шаблоне настроена Business-ротация. Подключите Business или начните с нуля"
         )
+    if not business_enabled:
+        long_version = await session.scalar(
+            select(ContentFlowVersion.id)
+            .join(ContentFlow, ContentFlow.id == ContentFlowVersion.flow_id)
+            .join(ContentStep, ContentStep.version_id == ContentFlowVersion.id)
+            .where(ContentFlow.bot_id == source.id, ContentFlow.kind == "welcome")
+            .group_by(ContentFlowVersion.id)
+            .having(func.count(ContentStep.id) > MAX_FLOW_STEPS)
+            .limit(1)
+        )
+        if long_version is not None:
+            raise ContentValidationError(
+                "Для копирования приветствия с 6–10 сообщениями требуется Business"
+            )
 
     destination.welcome_delay_seconds = source.welcome_delay_seconds
     destination.approval_delay_seconds = source.approval_delay_seconds
@@ -574,7 +615,11 @@ async def add_draft_step(
     if not 0 <= delay_after_seconds <= MAX_DELAY_SECONDS:
         raise ContentValidationError("Step delay must be between 0 and 180 days")
     step_count, attachment_count = await _flow_usage(session, version.id)
-    _validate_flow_limits(step_count + 1, attachment_count + len(attachments))
+    flow = await session.get(ContentFlow, version.flow_id)
+    if flow is None:
+        raise ContentValidationError("Content flow was not found")
+    _validate_flow_limits(step_count + 1, attachment_count + len(attachments),
+                          max_steps=await owner_flow_step_limit(session, owner_id, flow.kind))
     max_position = await session.scalar(
         select(func.max(ContentStep.position)).where(ContentStep.version_id == version.id)
     )
@@ -717,7 +762,12 @@ async def copy_step(session: AsyncSession, owner_id: int, step_id: int) -> Conte
         or 0
     )
     step_count, attachment_count = await _flow_usage(session, step.version_id)
-    _validate_flow_limits(step_count + 1, attachment_count + copied_attachment_count)
+    version = await session.get(ContentFlowVersion, step.version_id)
+    flow = await session.get(ContentFlow, version.flow_id) if version else None
+    if flow is None:
+        raise ContentValidationError("Content flow was not found")
+    _validate_flow_limits(step_count + 1, attachment_count + copied_attachment_count,
+                          max_steps=await owner_flow_step_limit(session, owner_id, flow.kind))
     await session.execute(
         update(ContentStep)
         .where(
@@ -772,9 +822,14 @@ async def replace_draft_step(
         ).all()
     )
     step_count, attachment_count = await _flow_usage(session, step.version_id)
+    version = await session.get(ContentFlowVersion, step.version_id)
+    flow = await session.get(ContentFlow, version.flow_id) if version else None
+    if flow is None:
+        raise ContentValidationError("Content flow was not found")
     _validate_flow_limits(
         step_count,
         attachment_count - len(old_attachments) + len(attachments),
+        max_steps=await owner_flow_step_limit(session, owner_id, flow.kind),
     )
     candidate_keys = [item.storage_key for item in old_attachments]
     await session.execute(
@@ -995,7 +1050,8 @@ async def publish_draft(session: AsyncSession, owner_id: int, version_id: int) -
         )
         or 0
     )
-    _validate_flow_limits(len(steps), attachment_count)
+    _validate_flow_limits(len(steps), attachment_count,
+                          max_steps=await owner_flow_step_limit(session, owner_id, flow.kind))
     for step in steps[:-1]:
         if not 0 <= step.delay_after_seconds <= MAX_DELAY_SECONDS:
             raise ContentValidationError("Every non-final step needs a 0s–180d delay")
