@@ -62,6 +62,7 @@ def test_admin_api_rejects_request_without_forward_auth(client: TestClient) -> N
     response = client.get("/api/admin/v1/overview")
 
     assert response.status_code == 403
+    assert client.get("/api/admin/v1/bots/25/transfer-preview").status_code == 403
 
 
 def test_admin_api_rejects_non_owner_group_before_database_access(client: TestClient) -> None:

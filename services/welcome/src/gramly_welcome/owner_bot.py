@@ -75,7 +75,7 @@ from .content_service import (
     set_step_link_preview,
     validate_step_keyboard,
 )
-from .crypto import TokenKeyring
+from .crypto import TokenDecryptionError, TokenKeyring
 from .crypto_pay import CryptoPayClient, CryptoPayError
 from .db import session_factory
 from .delays import DelayParseError, format_delay_clock, parse_delay
@@ -124,6 +124,7 @@ from .rotation import (
 )
 from .storage import MediaTooLargeError, ObjectStorage, ObjectStorageError
 from .telegram_delivery import send_compiled_operation
+from .transfer_preflight import competing_admins
 
 logger = logging.getLogger(__name__)
 router = Router(name="gramly-welcome-owner")
@@ -1036,7 +1037,7 @@ async def bot_card(callback: CallbackQuery, owner: Owner) -> None:
     await callback.answer()
 
 
-async def send_bot_card(message: Message, bot: ManagedBot) -> None:
+async def send_bot_card(message: Message, bot: ManagedBot, *, check_note: str = "") -> None:
     async with session_factory() as session:
         data = await bot_statistics(session, bot.id)
         channels = await bot_channels(session, bot.id)
@@ -1059,6 +1060,8 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
             [
                 owner_button(text="Дополнительные настройки", callback_data=f"bot-more:{bot.id}", emoji_key="settings"),
             ],
+            *([[owner_button(text="Проверить каналы", callback_data=f"check-channels:{bot.id}", emoji_key="channel")]]
+              if any(key.startswith("external_approval:") for key in (bot.delivery_issues or {})) else []),
             [owner_button(text="К списку ботов", callback_data="menu:bots", emoji_key="back")],
             _home_row(),
         ]
@@ -1068,9 +1071,62 @@ async def send_bot_card(message: Message, bot: ManagedBot) -> None:
         f"🤖 <b>@{bot.username or bot.display_name}</b>\n<code>{bot.telegram_id}</code>\n\n"
         f"🟢 Живые: <b>{data['live']}</b>\n🔴 Мёртвые: <b>{data['dead']}</b>\n"
         f"📣 Каналы: <b>{len(channels)}</b>\n{channel_text}"
-        + (f"\n\n<b>Диагностика</b>\n{html.escape(diagnostics_text(bot))}" if diagnostics_text(bot) else ""),
+        + (f"\n\n<b>Диагностика</b>\n{html.escape(diagnostics_text(bot))}" if diagnostics_text(bot) else "")
+        + (f"\n\n{html.escape(check_note)}" if check_note else ""),
         reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data.startswith("check-channels:"))
+async def check_conflicting_channels(callback: CallbackQuery, owner: Owner) -> None:
+    managed = await _get_owned(owner, (callback.data or "").split(":", 1)[1])
+    if managed is None:
+        await callback.answer("Нет доступа.", show_alert=True)
+        return
+    await callback.answer("Проверяю права ботов в каналах…")
+    issues = {
+        key: value for key, value in (managed.delivery_issues or {}).items()
+        if key.startswith("external_approval:") and isinstance(value, dict)
+    }
+    channels: list[tuple[str, dict[str, Any], Channel]] = []
+    async with session_factory() as session:
+        for key, issue in issues.items():
+            channel_id = issue.get("channel_id")
+            channel = await session.get(Channel, channel_id) if isinstance(channel_id, int) else None
+            if channel is not None and channel.bot_id == managed.id:
+                channels.append((key, issue, channel))
+    if not channels:
+        await send_bot_card(_callback_message(callback), managed)
+        return
+    try:
+        token = TokenKeyring.parse(get_settings().token_encryption_keys).decrypt(managed.token_ciphertext)
+        async with Bot(token=token, session=AiohttpSession(timeout=5)) as client:
+            results = await asyncio.gather(*(
+                _check_conflict_channel(client, managed, key, issue, channel)
+                for key, issue, channel in channels
+            ))
+    except (TelegramAPIError, TokenDecryptionError, OSError, ValueError):
+        results = []
+    async with session_factory() as session:
+        for key, issue, check in results:
+            if check["status"] == "checked" and not check["bots"]:
+                await resolve_incident(session, managed.id, key, expected_id=issue.get("id"))
+        await session.commit()
+    refreshed = await _get_owned(owner, str(managed.id))
+    if refreshed is not None:
+        note = (
+            "Не удалось проверить права каналов. Повторите позже." if not results else
+            "Проверка завершена. Конфликт устранён." if not any(
+                key.startswith("external_approval:") for key in (refreshed.delivery_issues or {})
+            ) else "Конфликт остаётся: другой бот всё ещё может принимать заявки, либо права канала недоступны для проверки."
+        )
+        await send_bot_card(_callback_message(callback), refreshed, check_note=note)
+
+
+async def _check_conflict_channel(
+    client: Bot, managed: ManagedBot, key: str, issue: dict[str, Any], channel: Channel,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    return key, issue, await competing_admins(client, channel, managed.telegram_id)
 
 
 @router.callback_query(F.data.startswith("bot-more:"))

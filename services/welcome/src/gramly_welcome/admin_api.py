@@ -50,6 +50,7 @@ from .models import (
     Tip,
     WeeklyBusinessSnapshot,
 )
+from .transfer_preflight import transfer_preview
 
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
@@ -1161,6 +1162,16 @@ async def owner_detail(owner_id: int, _admin: AdminDep, session: SessionDep) -> 
             for event in events
         ],
     }
+
+
+@router.get("/bots/{bot_id}/transfer-preview")
+async def preview_managed_bot_transfer(
+    bot_id: int, admin: AdminDep, session: SessionDep, settings: SettingsDep,
+) -> dict[str, object]:
+    managed = await session.get(ManagedBot, bot_id)
+    if managed is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bot not found")
+    return await transfer_preview(session, managed, settings)
 
 
 @router.post("/bots/{bot_id}/transfer")

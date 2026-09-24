@@ -39,6 +39,7 @@ async def test_closed_request_cancels_only_unsent_or_switches_to_confirmed_addre
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     unique = uuid.uuid4().int % 1_000_000_000
     now = datetime.now(UTC)
+    second_delivery_id: int | None = None
     async with sessions() as session, session.begin():
         owner = Owner(telegram_id=-(70_000_000_000 + unique))
         session.add(owner)
@@ -97,7 +98,53 @@ async def test_closed_request_cancels_only_unsent_or_switches_to_confirmed_addre
             assert await session.scalar(select(func.count(FlowDelivery.id)).where(FlowDelivery.bot_id == bot_id)) == 1
             current_bot = await session.get(ManagedBot, bot_id)
             assert current_bot and current_bot.auto_approve is False
-            assert len(current_bot.delivery_issues) == 1
+            assert len(current_bot.delivery_issues) == (0 if known_contact else 1)
+            if not known_contact:
+                issue = current_bot.delivery_issues[f"external_approval:{channel.id}"]
+                assert issue["approver_id"] == 999999
+                assert issue["sent_steps"] == 1
+                assert issue["cancelled_steps"] == 1
+                original_id = issue["id"]
+                await record_incident(session, bot_id, "external_approval", channel_id=channel.id,
+                                      approver_id=888888, approver_username="second_bot", delivery_id=delivery_id)
+                await resolve_incident(session, bot_id, f"external_approval:{channel.id}", expected_id="stale")
+                await session.commit()
+                await session.refresh(current_bot)
+                assert current_bot.delivery_issues[f"external_approval:{channel.id}"]["id"] == original_id
+                assert current_bot.delivery_issues[f"external_approval:{channel.id}"]["approver_username"] == "second_bot"
+                assert await session.scalar(select(func.count(OwnerNotification.id)).where(
+                    OwnerNotification.owner_id == owner_id,
+                    OwnerNotification.kind == "delivery_incident",
+                )) == 1
+
+        if not known_contact:
+            # A later approval by Gramly does not prove that the competing bot stopped.
+            async with sessions() as session, session.begin():
+                second_contact = Contact(bot_id=bot_id, telegram_id=unique + 2)
+                session.add(second_contact)
+                await session.flush()
+                second_delivery = FlowDelivery(
+                    bot_id=bot_id, channel_id=channel.id, contact_id=second_contact.id,
+                    version_id=version.id, event_key="own-approval", target_chat_id=unique + 12,
+                    target_expires_at=now + timedelta(minutes=5),
+                )
+                session.add(second_delivery)
+                await session.flush()
+                second_delivery_id = second_delivery.id
+                session.add(JoinRequest(
+                    bot_id=bot_id, channel_id=channel.id, contact_id=second_contact.id,
+                    telegram_update_id=102, welcome_delivery_id=second_delivery.id, status="pending",
+                ))
+            async with sessions() as session, session.begin():
+                await process_event(session, InboxEvent(bot_id=bot_id, update_id=103, payload={"chat_member": {
+                    "chat": {"id": -unique, "title": "Test"},
+                    "from": {"id": bot.telegram_id, "is_bot": True},
+                    "old_chat_member": {"status": "left", "user": {"id": unique + 2}},
+                    "new_chat_member": {"status": "member", "user": {"id": unique + 2}},
+                }}))
+            async with sessions() as session:
+                refreshed_bot = await session.get(ManagedBot, bot_id)
+                assert refreshed_bot and f"external_approval:{channel.id}" in refreshed_bot.delivery_issues
 
         async def incident() -> None:
             async with sessions() as session, session.begin():
@@ -115,6 +162,8 @@ async def test_closed_request_cancels_only_unsent_or_switches_to_confirmed_addre
     finally:
         async with sessions() as session, session.begin():
             # Remove only fixture-owned rows, in restrictive-FK order.
+            if second_delivery_id is not None:
+                await session.execute(delete(FlowDelivery).where(FlowDelivery.id == second_delivery_id))
             await session.execute(delete(FlowDelivery).where(FlowDelivery.id == delivery_id))
             await session.execute(delete(Owner).where(Owner.id == owner_id))
         await engine.dispose()
