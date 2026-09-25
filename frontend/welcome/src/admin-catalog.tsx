@@ -432,19 +432,24 @@ export function AdminCatalog({
     [query, setQuery] = useState(""),
     [kind, setKind] = useState(""),
     [state, setState] = useState("all"),
-    [loading, setLoading] = useState(false),
+    [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
   const [draft, setDraft] = useState<Entry | null>(null),
     [expected, setExpected] = useState(0);
   const version = useRef(0);
+  const pending = useRef<AbortController | null>(null);
   const load = async () => {
     const current = ++version.current;
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
     setLoading(true);
     try {
       const result = await adminApi<{ items: Item[]; total: number }>(
         `/catalog?${new URLSearchParams({ q: query, kind, state, page: String(page) })}`,
+        { signal: controller.signal },
       );
       if (current === version.current) {
         setItems(result.items);
@@ -452,15 +457,17 @@ export function AdminCatalog({
         setError("");
       }
     } catch (e) {
-      if (current === version.current) setError((e as Error).message);
+      if (current === version.current && !controller.signal.aborted) setError((e as Error).message);
     } finally {
       if (current === version.current) setLoading(false);
     }
   };
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), query ? 250 : 0);
     return () => {
+      window.clearTimeout(timer);
       version.current++;
+      pending.current?.abort();
     };
   }, [query, kind, state, page]);
   const publish = async (item: Item, archive = false) => {
@@ -559,10 +566,10 @@ export function AdminCatalog({
           </select>
         </label>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && <div className="catalog-load-error" role="alert">{error} <button type="button" onClick={() => void load()}>Повторить</button></div>}
       {notice && <p role="status">{notice}</p>}
       {loading ? (
-        <p>Загружаем каталог…</p>
+        <div className="catalog-loading" role="status" aria-label="Загружаем шаблоны"><span className="admin-loading-spinner" aria-hidden="true"/><div><span/><span/><span/></div></div>
       ) : !items.length ? (
         <p>Шаблонов пока нет. Добавьте первый или измените фильтры.</p>
       ) : (

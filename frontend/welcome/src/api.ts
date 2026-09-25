@@ -34,6 +34,18 @@ export function requestId(): string {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 }
 
+let adminInFlight = 0;
+const adminPendingListeners = new Set<(count: number) => void>();
+export function subscribeAdminPending(listener: (count: number) => void): () => void {
+  adminPendingListeners.add(listener);
+  listener(adminInFlight);
+  return () => { adminPendingListeners.delete(listener); };
+}
+function notifyAdminPending(delta: number) {
+  adminInFlight += delta;
+  adminPendingListeners.forEach(listener => listener(adminInFlight));
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 12_000): Promise<Response> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort("timeout"), timeoutMs);
@@ -93,14 +105,19 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (options.method && options.method !== "GET") headers.set("X-Gramly-Admin-Request", "1");
-  const response = await fetchWithTimeout(`/api/admin/v1${path}`, {
-    ...options,
-    headers,
-    credentials: "same-origin",
-  }, path === "/catalog-media" && options.method === "POST" ? 120_000 : 12_000);
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(String(payload.detail || `HTTP ${response.status}`));
+  notifyAdminPending(1);
+  try {
+    const response = await fetchWithTimeout(`/api/admin/v1${path}`, {
+      ...options,
+      headers,
+      credentials: "same-origin",
+    }, path === "/catalog-media" && options.method === "POST" ? 120_000 : 12_000);
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(String(payload.detail || `HTTP ${response.status}`));
+    }
+    return response.status === 204 ? ({} as T) : await response.json();
+  } finally {
+    notifyAdminPending(-1);
   }
-  return response.status === 204 ? ({} as T) : response.json();
 }

@@ -320,7 +320,7 @@ export function RichEditor({
         {toolbar("Имя участника", () =>
           editor.chain().focus().insertContent("{name}").run(),
         )}
-        {toolbar("Эмодзи", () => {
+        {toolbar("Premium-эмодзи", () => {
           selection.current = {
             from: editor.state.selection.from,
             to: editor.state.selection.to,
@@ -365,6 +365,7 @@ export function RichEditor({
       )}
       {picker && (
         <section className="emoji-picker" aria-label="Premium-эмодзи">
+          <p>Вставьте ссылку на набор Telegram и выберите эмодзи. Его ID и обычный символ сохранятся в шаблоне и перейдут в копию пользователя вместе с текстом и медиа.</p>
           <label>
             Ссылка на набор эмодзи
             <input
@@ -379,7 +380,7 @@ export function RichEditor({
               disabled={loading}
               onClick={() => void load()}
             >
-              {loading ? "Загружаем…" : "Открыть набор"}
+              {loading ? "Загружаем набор…" : "Показать эмодзи"}
             </button>
             <button
               type="button"
