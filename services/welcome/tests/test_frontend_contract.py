@@ -23,7 +23,19 @@ def test_control_center_exposes_invoice_section_and_safe_reconciliation() -> Non
     assert 'payment_status:status' in source
     assert 'Сверить с провайдером' in source
     assert 'Скачать CSV' in source
-    assert 'section==="Инвойсы"&&<Invoices/>' in source
+    assert 'section==="Инвойсы"&&<Invoices initialStatus={invoiceStatusFilter}/>' in source
+
+
+def test_control_center_dashboard_links_to_filtered_owners_and_invoices() -> None:
+    app = (REPO_ROOT / "frontend/welcome/src/admin.tsx").read_text(encoding="utf-8")
+    dashboard = (REPO_ROOT / "frontend/welcome/src/admin-dashboard.tsx").read_text(encoding="utf-8")
+
+    assert 'segment=${segment}' in app
+    assert 'initialSegment={ownerSegment}' in app
+    assert 'openOwners("high_activity")' in dashboard
+    assert 'openOwners("with_audience")' in dashboard
+    assert 'openInvoices("settled")' in dashboard
+    assert 'aria-pressed={days === value}' in dashboard
 
 
 def test_mini_app_bootstrap_has_timeout_uuid_fallback_and_error_boundary() -> None:

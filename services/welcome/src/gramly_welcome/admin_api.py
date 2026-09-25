@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Select
 
+from .admin_dashboard_metrics import high_activity_owner_ids, product_dashboard_metrics, reachable_contacts
 from .billing import safe_invoice_snapshot, verify_and_settle_crypto_invoice
 from .bot_transfer import BotTransferError, transfer_bot
 from .business_metrics import live_business_metrics
@@ -306,6 +309,8 @@ def _payment_filters(
         filters.append(or_(*candidates))
     if payment_status == "active":
         filters.append(Payment.status.not_in(("expired", "failed")))
+    elif payment_status == "settled":
+        filters.append(Payment.status.in_(("paid", "refunded")))
     elif payment_status == "unpaid":
         filters.append(Payment.status.in_(("created", "expired", "failed")))
     elif payment_status != "all":
@@ -867,14 +872,18 @@ def _subscription_is_business(subscription: Subscription | None, plan: Plan | No
     return subscription.ends_at is None or subscription.ends_at > datetime.now(UTC)
 
 
-@router.get("/dashboard")
-async def dashboard(
+_dashboard_cache: dict[int, tuple[float, dict[str, object]]] = {}
+_dashboard_cache_lock = asyncio.Lock()
+
+
+async def _dashboard_uncached(
     _admin: AdminDep,
     session: SessionDep,
     days: int = 30,
 ) -> dict[str, object]:
     days = max(7, min(days, 90))
-    since = datetime.now(UTC) - timedelta(days=days)
+    as_of = datetime.now(UTC)
+    since = as_of - timedelta(days=days)
     owners_total = int(await session.scalar(select(func.count(Owner.id))) or 0)
     owners_new = int(await session.scalar(select(func.count(Owner.id)).where(Owner.created_at >= since)) or 0)
     owners_active = int(
@@ -952,7 +961,13 @@ async def dashboard(
             )
         ).all()
     )
+    product_metrics = await product_dashboard_metrics(session, as_of=as_of, since=since)
     return {
+        "as_of": as_of.isoformat(),
+        "period_start": since.isoformat(),
+        "period_end": as_of.isoformat(),
+        "weekly_start": (as_of - timedelta(days=7)).isoformat(),
+        **product_metrics,
         "range_days": days,
         "owners": {"total": owners_total, "new": owners_new, "active": owners_active},
         "business_active": business_active,
@@ -985,12 +1000,32 @@ async def dashboard(
     }
 
 
+@router.get("/dashboard")
+async def dashboard(
+    _admin: AdminDep,
+    session: SessionDep,
+    days: int = 30,
+) -> dict[str, object]:
+    days = max(7, min(days, 90))
+    cached = _dashboard_cache.get(days)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    async with _dashboard_cache_lock:
+        cached = _dashboard_cache.get(days)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+        result = await _dashboard_uncached(_admin, session, days)
+        _dashboard_cache[days] = (time.monotonic() + 30, result)
+        return result
+
+
 @router.get("/owners")
 async def owners(
     _admin: AdminDep,
     session: SessionDep,
     q: str = "",
     plan: str = "all",
+    segment: str = "all",
     page: int = 1,
     page_size: int = 25,
 ) -> dict[str, object]:
@@ -1018,6 +1053,20 @@ async def owners(
         filters.append(business_condition)
     elif plan == "free":
         filters.append(or_(Subscription.id.is_(None), ~business_condition))
+    if segment == "with_bot":
+        filters.append(Owner.id.in_(select(ManagedBot.owner_id).where(ManagedBot.is_active.is_(True))))
+    elif segment == "high_activity":
+        filters.append(Owner.id.in_(high_activity_owner_ids(now)))
+    elif segment == "with_audience":
+        filters.append(
+            Owner.id.in_(
+                select(ManagedBot.owner_id)
+                .join(Contact, Contact.bot_id == ManagedBot.id)
+                .where(*reachable_contacts())
+            )
+        )
+    elif segment != "all":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown owner segment")
     base = (
         select(Owner, Subscription, Plan)
         .outerjoin(Subscription, Subscription.owner_id == Owner.id)

@@ -449,6 +449,7 @@ class ReferralAttribution(Base):
 class Payment(Base):
     __tablename__ = "payment"
     __table_args__ = (
+        Index("ix_payment_refunded_at", "refunded_at", postgresql_where=text("status = 'refunded'")),
         UniqueConstraint("provider", "provider_invoice_id", name="uq_payment_provider_invoice"),
         UniqueConstraint("checkout_token", name="payment_checkout_token_key"),
         CheckConstraint(
@@ -870,6 +871,10 @@ class FlowDelivery(Base):
 class DeliveryOperation(Base):
     __tablename__ = "delivery_operation"
     __table_args__ = (
+        Index(
+            "ix_delivery_operation_expired_window", "flow_delivery_id",
+            postgresql_where=text("error = 'join_request_window_expired'"),
+        ),
         UniqueConstraint("flow_delivery_id", "position", name="uq_delivery_operation_position"),
         Index("ix_delivery_operation_claim", "status", "due_at", "lease_expires_at"),
         CheckConstraint("position >= 0", name="ck_delivery_operation_position"),
@@ -1122,6 +1127,10 @@ class WelcomeDraftMedia(Base):
 class Contact(Base):
     __tablename__ = "contact"
     __table_args__ = (
+        Index(
+            "ix_contact_active_consent_dashboard", "consented_at", "bot_id", "telegram_id",
+            postgresql_where=text("consent_status = 'active' AND bot_started AND delivery_status <> 'dead'"),
+        ),
         UniqueConstraint("bot_id", "telegram_id", name="uq_contact_bot_telegram"),
         CheckConstraint(
             "consent_status IN ('none','active','unsubscribed','blocked')",
@@ -1157,6 +1166,10 @@ class Contact(Base):
 class SubscriberChallenge(Base):
     __tablename__ = "subscriber_challenge"
     __table_args__ = (
+        Index(
+            "ix_subscriber_challenge_passed_at", "completed_at", "contact_id",
+            postgresql_where=text("status = 'passed'"),
+        ),
         UniqueConstraint("public_token", name="subscriber_challenge_public_token_key"),
         CheckConstraint(
             "status IN ('pending','passed','expired','failed')",
