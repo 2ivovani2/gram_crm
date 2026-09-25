@@ -224,6 +224,10 @@ async def product_dashboard_metrics(
         },
         "delivery_health": {
             "completed": delivery_counts.get("completed", 0), "partial": delivery_counts.get("partial", 0),
+            "send_failed": delivery_counts.get("failed", 0),
+            "unreachable": delivery_counts.get("unreachable", 0),
+            "cancelled": delivery_counts.get("cancelled", 0),
+            # Keep the old combined field for clients of the existing dashboard API.
             "failed": delivery_counts.get("failed", 0) + delivery_counts.get("unreachable", 0),
             "expired_join_windows": expired,
         },

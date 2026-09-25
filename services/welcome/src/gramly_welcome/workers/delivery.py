@@ -424,6 +424,13 @@ async def _process_operation(
     if context.operation.status != "processing" or context.operation.lease_owner != worker_id:
         DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
         return
+    if context.delivery.status in {"completed", "partial", "failed", "cancelled", "unreachable"}:
+        async with session_factory() as session:
+            await cancel_delivery_operations(
+                session, context.delivery.id, reason="delivery_already_finished"
+            )
+        DELIVERY_ATTEMPTS.labels("operation_cancelled").inc()
+        return
     if not context.bot.is_active or not context.channel.is_active:
         async with session_factory() as session:
             await finish_operation(

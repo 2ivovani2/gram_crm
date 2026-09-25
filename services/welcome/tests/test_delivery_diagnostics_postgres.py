@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from gramly_welcome.bot_diagnostics import record_incident, resolve_incident
-from gramly_welcome.flow_delivery import close_temporary_delivery
+from gramly_welcome.flow_delivery import cancel_delivery_operations, close_temporary_delivery
 from gramly_welcome.models import (
     Channel,
     Contact,
@@ -29,6 +29,67 @@ from gramly_welcome.processor import process_event
 
 DATABASE_URL = os.getenv("WELCOME_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="WELCOME_TEST_DATABASE_URL is not set")
+
+
+@pytest.mark.asyncio
+async def test_terminal_flow_cancels_orphaned_processing_operation() -> None:
+    assert DATABASE_URL
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    unique = uuid.uuid4().int % 1_000_000_000
+    now = datetime.now(UTC)
+    async with sessions() as session, session.begin():
+        owner = Owner(telegram_id=-(80_000_000_000 + unique))
+        session.add(owner)
+        await session.flush()
+        bot = ManagedBot(owner_id=owner.id, public_id=uuid.uuid4(),
+                         telegram_id=-(81_000_000_000 + unique), display_name="Test",
+                         token_ciphertext="test", webhook_secret=uuid.uuid4().hex,
+                         path_secret=uuid.uuid4().hex)
+        session.add(bot)
+        await session.flush()
+        channel = Channel(bot_id=bot.id, telegram_id=-unique, title="Test")
+        contact = Contact(bot_id=bot.id, telegram_id=unique)
+        flow = ContentFlow(bot_id=bot.id, name="Test", kind="welcome")
+        session.add_all([channel, contact, flow])
+        await session.flush()
+        version = ContentFlowVersion(flow_id=flow.id, version=1, status="published",
+                                     author_telegram_id=unique)
+        session.add(version)
+        await session.flush()
+        step = ContentStep(version_id=version.id, position=0, payload={"text": "hello"})
+        delivery = FlowDelivery(bot_id=bot.id, channel_id=channel.id, contact_id=contact.id,
+                                version_id=version.id, event_key="orphan", status="partial",
+                                completed_at=now, target_chat_id=unique + 1,
+                                target_expires_at=now - timedelta(minutes=1))
+        session.add_all([step, delivery])
+        await session.flush()
+        session.add_all([
+            DeliveryOperation(flow_delivery_id=delivery.id, step_id=step.id, position=0,
+                              operation_type="text", status="sent", due_at=now),
+            DeliveryOperation(flow_delivery_id=delivery.id, step_id=step.id, position=1,
+                              operation_type="text", status="processing", due_at=now,
+                              lease_owner="stale-worker", lease_expires_at=now - timedelta(seconds=1)),
+        ])
+        owner_id, delivery_id = owner.id, delivery.id
+    try:
+        async with sessions() as session:
+            assert await cancel_delivery_operations(session, delivery_id,
+                                                     reason="delivery_already_finished") == "partial"
+            assert await cancel_delivery_operations(session, delivery_id,
+                                                     reason="delivery_already_finished") == "partial"
+            row = await session.get(FlowDelivery, delivery_id)
+            operations = list(await session.scalars(select(DeliveryOperation)
+                .where(DeliveryOperation.flow_delivery_id == delivery_id)
+                .order_by(DeliveryOperation.position)))
+            assert row and row.status == "partial" and row.completed_at == now
+            assert [item.status for item in operations] == ["sent", "cancelled"]
+            assert operations[1].lease_owner is None and operations[1].lease_expires_at is None
+    finally:
+        async with sessions() as session, session.begin():
+            await session.execute(delete(FlowDelivery).where(FlowDelivery.id == delivery_id))
+            await session.execute(delete(Owner).where(Owner.id == owner_id))
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

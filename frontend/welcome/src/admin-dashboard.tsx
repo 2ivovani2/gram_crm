@@ -17,7 +17,7 @@ type DashboardData = {
     owners: number; with_bot: number; with_channel: number;
     with_published_welcome: number; with_completed_delivery: number;
   };
-  delivery_health: { completed: number; partial: number; failed: number; expired_join_windows: number };
+  delivery_health: { completed: number; partial: number; failed: number; send_failed?: number; unreachable?: number; cancelled?: number; expired_join_windows: number };
   growth_series: {
     payments: Array<{ date: string; count: number; gross_rub: string }>;
     new_consents: Array<{ date: string; count: number }>;
@@ -88,8 +88,8 @@ export function AdminDashboard({ data, days, setDays, busy, error, retry, openOw
           <Trend label="Подтверждённые согласия по дням" items={data.growth_series.new_consents} value={item => `${item.count} человек`}/>
         </article>
         <article className="dashboard-panel"><header><span>03 · Качество</span><h2>Доставка приветствий</h2><p>Цепочки, созданные за {days} дней</p></header>
-          <div className="dashboard-health"><div><b>{formatNumber(health?.completed || 0)}</b><span>Успешно</span></div><div><b>{formatNumber(health?.partial || 0)}</b><span>Частично</span></div><div><b>{formatNumber(health?.failed || 0)}</b><span>Ошибка</span></div><div className="alert"><b>{formatNumber(health?.expired_join_windows || 0)}</b><span>Истекло окно заявки</span></div></div>
-          <p className="dashboard-footnote">Просроченные окна считаются по цепочкам с ошибкой <code>join_request_window_expired</code>.</p>
+          <div className="dashboard-health"><div><b>{formatNumber(health?.completed || 0)}</b><span>Успешно</span></div><div><b>{formatNumber(health?.partial || 0)}</b><span>Часть отправлена</span></div><div className="alert"><b>{formatNumber((health?.send_failed ?? health?.failed) || 0)}</b><span>Ошибка отправки</span></div><div><b>{formatNumber(health?.unreachable || 0)}</b><span>Нельзя написать первым</span></div><div><b>{formatNumber(health?.cancelled || 0)}</b><span>Отменено</span></div><div className="alert"><b>{formatNumber(health?.expired_join_windows || 0)}</b><span>Истекло окно заявки</span></div></div>
+          <p className="dashboard-footnote">«Нельзя написать первым» — у бота нет адреса для отправки: обычно человек вступил без заявки и не запускал бота. Истёкшее окно заявки может также входить в частично отправленные или отменённые цепочки.</p>
         </article>
       </div>
       <div className="dashboard-detail-row">

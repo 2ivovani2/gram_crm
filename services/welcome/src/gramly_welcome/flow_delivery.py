@@ -609,8 +609,7 @@ async def cancel_delivery_operations(
     )
     if delivery is None:
         return None
-    if delivery.status in {"completed", "partial", "failed", "cancelled", "unreachable"}:
-        return delivery.status
+    terminal = delivery.status in {"completed", "partial", "failed", "cancelled", "unreachable"}
     cancelled_ids = list(
         await session.scalars(
             select(DeliveryOperation.id).where(
@@ -632,6 +631,14 @@ async def cancel_delivery_operations(
             error=reason[:500],
         )
     )
+    for operation_id in cancelled_ids:
+        await mark_ad_operation(session, operation_id, status="cancelled", error=reason)
+    if terminal:
+        # A worker may have held a lease while another operation completed the
+        # flow. Clear that orphan without changing the already recorded result.
+        if commit:
+            await session.commit()
+        return delivery.status
     rows = (
         await session.execute(
             select(DeliveryOperation.status, func.count(DeliveryOperation.id))
@@ -648,8 +655,6 @@ async def cancel_delivery_operations(
         final_status = "completed"
     delivery.status = final_status
     delivery.completed_at = datetime.now(UTC)
-    for operation_id in cancelled_ids:
-        await mark_ad_operation(session, operation_id, status="cancelled", error=reason)
     if delivery.target_chat_id is not None:
         JOIN_REQUEST_GREETINGS.labels(
             "expired" if reason == "join_request_window_expired" else final_status
