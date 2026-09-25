@@ -156,6 +156,26 @@ def test_invoice_filter_rejects_unknown_provider_and_status() -> None:
     assert getattr(invalid_provider.value, "status_code", None) == 422
 
 
+def test_settled_invoice_filter_includes_paid_and_refunded() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    filters = _payment_filters(
+        q="", payment_status="settled", provider="all", plan="all",
+        created_from=None, created_to=None,
+    )
+    assert len(filters) == 1
+    sql = str(filters[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))  # type: ignore[no-untyped-call]
+    assert "'paid'" in sql and "'refunded'" in sql
+
+
+def test_owner_segment_rejects_unknown_value(client: TestClient) -> None:
+    response = client.get(
+        "/api/admin/v1/owners?segment=unknown",
+        headers={"X-authentik-username": "owner", "X-authentik-groups": "gramly-owners"},
+    )
+    assert response.status_code == 400
+
+
 def test_invoice_row_exposes_operations_data_without_provider_payload() -> None:
     now = datetime.now(UTC)
     owner = Owner(
