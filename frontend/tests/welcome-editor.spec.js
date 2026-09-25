@@ -39,7 +39,7 @@ test("another Mini App session does not break template installation, uploads, sa
     .fill("Мой независимый черновик");
   await rotateSession();
   await page
-    .getByLabel("Добавить файл", { exact: true })
+    .getByLabel("Добавить файлы", { exact: true })
     .setInputFiles({ name: "test.png", mimeType: "image/png", buffer: png });
   await expect(page.locator(".media-item")).toHaveCount(1);
   await rotateSession();
@@ -79,7 +79,7 @@ test("user edits a copy, adds media and emoji, saves explicitly and launches on 
   ).toHaveText("{name}");
   await addEmoji(page);
   await page
-    .getByLabel("Добавить файл", { exact: true })
+    .getByLabel("Добавить файлы", { exact: true })
     .setInputFiles({ name: "test.png", mimeType: "image/png", buffer: png });
   await expect(page.locator(".media-item")).toHaveCount(1);
   await page.getByRole("button", { name: "Добавить ряд кнопок" }).click();
