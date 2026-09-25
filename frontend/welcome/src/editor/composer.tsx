@@ -391,8 +391,12 @@ export function ChainComposer({
 }) {
   const [active, setActive] = useState(0),
     [uploading, setUploading] = useState(false),
+    [uploadingStep, setUploadingStep] = useState<number | null>(null),
+    [uploadProgress, setUploadProgress] = useState(""),
     [error, setError] = useState("");
   const root = useRef<HTMLDivElement>(null);
+  const latest = useRef(value);
+  latest.current = value;
   useEffect(() => {
     const match = problem?.match(/Сообщение (\d+)/);
     if (!match) return;
@@ -419,47 +423,55 @@ export function ChainComposer({
     onChange({ ...value, steps });
     setActive(index + delta);
   };
-  const upload = async (index: number, file: File, replace?: number) => {
+  const upload = async (index: number, files: File[], replace?: number) => {
     setError("");
-    if (file.size > 20 * 1024 * 1024) {
+    if (files.some((file) => file.size > 20 * 1024 * 1024)) {
       setError("Максимальный размер файла — 20 МБ.");
       return;
     }
-    if (
-      replace === undefined &&
-      value.steps.reduce((n, s) => n + s.attachments.length, 0) >= 5
-    ) {
-      setError("В цепочке уже 5 файлов. Удалите или замените один из них.");
+    const available = 5 - value.steps.reduce((n, s) => n + s.attachments.length, 0)
+      + (replace === undefined ? 0 : 1);
+    if (files.length > available || (replace !== undefined && files.length !== 1)) {
+      setError(`В цепочке осталось мест для ${available} файлов. Удалите или замените вложения.`);
       return;
     }
     setUploading(true);
+    setUploadingStep(index);
     onBusyChange?.(true);
     try {
-      const result = await (scope === "admin" ? adminApi : api)<Media>(
-        scope === "admin" ? "/catalog-media" : "/editor/media",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "X-File-Name": encodeURIComponent(file.name),
+      const uploaded: Media[] = [];
+      for (const [position, file] of files.entries()) {
+        setUploadProgress(`Загружаем файл ${position + 1} из ${files.length}: ${file.name}`);
+        const result = await (scope === "admin" ? adminApi : api)<Media>(
+          scope === "admin" ? "/catalog-media" : "/editor/media",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "X-File-Name": encodeURIComponent(file.name),
+            },
+            body: file,
           },
-          body: file,
-        },
-      );
-      if (["sticker", "video_note"].includes(result.media_type))
-        throw new Error(
-          "Этот формат отправляется отдельным стикером или видеокружком. Для вложения выберите JPG, PNG, GIF или MP4.",
         );
-      result.original_name = file.name;
-      const step = value.steps[index],
-        attachments = [...step.attachments];
-      if (replace === undefined) attachments.push(result);
-      else attachments[replace] = result;
-      update(index, withMedia(step, attachments));
+        if (["sticker", "video_note"].includes(result.media_type))
+          throw new Error("Этот формат нельзя добавить в составное сообщение.");
+        uploaded.push({ ...result, original_name: file.name });
+      }
+      const current = latest.current;
+      const step = current.steps[index];
+      const attachments = [...step.attachments];
+      if (replace === undefined) attachments.push(...uploaded);
+      else attachments[replace] = uploaded[0];
+      const next = { ...current, steps: current.steps.map((s, i) =>
+        i === index ? withMedia(step, attachments) : s) };
+      latest.current = next;
+      onChange(next);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setUploading(false);
+      setUploadingStep(null);
+      setUploadProgress("");
       onBusyChange?.(false);
     }
   };
@@ -536,7 +548,7 @@ export function ChainComposer({
                       />
                     )}
                     <section className="media-editor">
-                      <h4>Медиа сообщения</h4>
+                      <div className="media-editor-heading"><div><h4>Медиа сообщения {index + 1}</h4><p>Фото, видео, аудио и документы отправятся в порядке ниже вместе с текстом и кнопками.</p></div><span>{step.attachments.length} в сообщении · {value.steps.reduce((n, s) => n + s.attachments.length, 0)}/5 в цепочке</span></div>
                       <div className="media-list">
                         {step.attachments.map((media, position) => (
                           <div
@@ -545,7 +557,7 @@ export function ChainComposer({
                           >
                             <MediaPreview media={media} scope={scope} />
                             <small>
-                              {media.original_name} ·{" "}
+                              {media.original_name || "Вложение"} · {media.media_type} ·{" "}
                               {Math.ceil(media.size / 1024)} КБ
                             </small>
                             {!complex && (
@@ -554,11 +566,10 @@ export function ChainComposer({
                                   Заменить
                                   <input
                                     type="file"
-                                    accept=".jpg,.jpeg,.png,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
                                     onChange={(e) => {
                                       const f = e.target.files?.[0];
                                       e.target.value = "";
-                                      if (f) void upload(index, f, position);
+                                      if (f) void upload(index, [f], position);
                                     }}
                                   />
                                 </label>
@@ -614,20 +625,21 @@ export function ChainComposer({
                         ))}
                       </div>
                       {!complex && (
-                        <label className="file-action">
-                          Добавить файл
+                        <label className="file-action file-action-add">
+                          Добавить файлы
                           <input
                             type="file"
-                            accept=".jpg,.jpeg,.png,.gif,.mp4,.mp3,.ogg,.pdf,.zip"
+                            multiple
                             onChange={(e) => {
-                              const f = e.target.files?.[0];
+                              const files = Array.from(e.target.files || []);
                               e.target.value = "";
-                              if (f) void upload(index, f);
+                              if (files.length) void upload(index, files);
                             }}
                           />
                         </label>
                       )}
-                      <small>До 5 файлов на цепочку, до 20 МБ каждый.</small>
+                      <small>Можно выбрать несколько файлов сразу. До 5 файлов на цепочку, до 20 МБ каждый; другие форматы отправляются как документы.</small>
+                      {uploadingStep === index && uploadProgress && <p className="media-upload-progress" role="status"><span className="media-upload-spinner" aria-hidden="true"/>{uploadProgress}</p>}
                     </section>
                     <KeyboardEditor
                       value={step.keyboard}

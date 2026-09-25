@@ -1,7 +1,8 @@
-import React, { useEffect,useRef, useMemo, useState } from "react";
-import { adminApi } from "./api";
-import { AdminCatalog } from "./admin-catalog";
+import React, { useEffect,useRef, useMemo, useState, Suspense } from "react";
+import { adminApi, subscribeAdminPending } from "./api";
 import { AdminDashboard } from "./admin-dashboard";
+
+const AdminCatalog = React.lazy(() => import("./admin-catalog").then(module => ({default:module.AdminCatalog})));
 
 type Section = "Обзор" | "Пользователи" | "Инвойсы" | "Кампании" | "Видеообучение" | "Коммуникации" | "Реклама" | "Тарифы" | "Шаблоны";
 type OwnerSummary = {
@@ -150,6 +151,7 @@ function Plans({plans,readiness,reload}:{plans:any;readiness:any;reload():Promis
 
 export function AdminApp(){
   const leaveGuard=useRef<import("./editor/exit-dialog").LeaveGuard|null>(null);
+  const reloadVersion=useRef(0);
   const [section,setSection]=useState<Section>("Обзор");
   const [dashboard,setDashboard]=useState<any>(null);
   const [dashboardBusy,setDashboardBusy]=useState(false);
@@ -164,20 +166,40 @@ export function AdminApp(){
   const [requiredChannel,setRequiredChannel]=useState<any>(null);
   const [days,setDays]=useState(30);
   const [error,setError]=useState("");
+  const [sectionBusy,setSectionBusy]=useState(false);
+  const [networkBusy,setNetworkBusy]=useState(false);
+  useEffect(()=>{
+    let timer:number|undefined;
+    const unsubscribe=subscribeAdminPending(count=>{
+      window.clearTimeout(timer);
+      if(!count){setNetworkBusy(false);return}
+      timer=window.setTimeout(()=>setNetworkBusy(true),180);
+    });
+    return()=>{window.clearTimeout(timer);unsubscribe()};
+  },[]);
   const [refreshToken,setRefreshToken]=useState(0);
   const reload=async()=>{
+    const current=++reloadVersion.current;
     setError("");
+    setSectionBusy(true);
     try{
-      const [c,a,p,r,channel]=await Promise.all([
-        adminApi<any>("/content"),
-        adminApi<any>("/advertising"), adminApi<any>("/plans"),
-        adminApi<any>("/payments/readiness"), adminApi<any>("/required-channel"),
-      ]);
-      setContent(c);setAds(a);setPlans(p);setReadiness(r);
-      setRequiredChannel(channel);setRefreshToken(v=>v+1);
-    }catch(e){setError((e as Error).message)}
+      if(section==="Видеообучение" || section==="Коммуникации") {
+        const [c,channel]=await Promise.all([adminApi<any>("/content"),
+          ...(section==="Коммуникации"?[adminApi<any>("/required-channel")]:[])]);
+        if(current===reloadVersion.current){setContent(c);if(channel)setRequiredChannel(channel)}
+      } else if(section==="Реклама") {
+        const result=await adminApi<any>("/advertising");
+        if(current===reloadVersion.current)setAds(result);
+      }
+      else if(section==="Тарифы") {
+        const [p,r]=await Promise.all([adminApi<any>("/plans"),adminApi<any>("/payments/readiness")]);
+        if(current===reloadVersion.current){setPlans(p);setReadiness(r)}
+      }
+      if(current===reloadVersion.current)setRefreshToken(v=>v+1);
+    }catch(e){if(current===reloadVersion.current)setError((e as Error).message)}
+    finally{if(current===reloadVersion.current)setSectionBusy(false)}
   };
-  useEffect(()=>{void reload()},[]);
+  useEffect(()=>{if(["Видеообучение","Коммуникации","Реклама","Тарифы"].includes(section))void reload();return()=>{reloadVersion.current++}},[section]);
   useEffect(()=>{
     if(section!=="Обзор")return;
     let current=true;setDashboardBusy(true);setDashboardError("");
@@ -196,5 +218,7 @@ export function AdminApp(){
     try{await adminApi(path,{method:"POST",body:JSON.stringify(body)});target.reset();await reload()}
     catch(e){setError((e as Error).message)}
   };
-  return <div className="admin-shell control-v2"><aside><Logo/><nav>{sections.map(item=><button className={section===item.name?"active":""} onClick={()=>{const leave=()=>{if(item.name==="Пользователи")setOwnerSegment("all");if(item.name==="Инвойсы")setInvoiceStatusFilter("active");setSection(item.name)};leaveGuard.current?leaveGuard.current(leave):leave()}} key={item.name}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav><div className="secure"><i/>SSO · Authentik<br/><small>Доступ по группам</small></div></aside><main>{error&&<ErrorBox message={error} onClose={()=>setError("")}/>}<SectionIntro section={section}/>{section==="Шаблоны"&&<AdminCatalog onLeaveGuard={guard=>{leaveGuard.current=guard}}/>}{section==="Обзор"&&<AdminDashboard data={dashboard} days={days} setDays={setDays} busy={dashboardBusy} error={dashboardError} retry={()=>setDashboardRefresh(value=>value+1)} openOwners={segment=>{setOwnerSegment(segment);setSection("Пользователи")}} openInvoices={status=>{setInvoiceStatusFilter(status);setSection("Инвойсы")}}/>} {section==="Пользователи"&&<Owners refreshToken={refreshToken} initialSegment={ownerSegment}/>} {section==="Инвойсы"&&<Invoices initialStatus={invoiceStatusFilter}/>} {section==="Кампании"&&<Campaigns/>} {section==="Видеообучение"&&<ContentAdmin content={content} reload={reload} submit={submit}/>} {section==="Коммуникации"&&<><RequiredChannel value={requiredChannel} reload={reload}/><Communications content={content} reload={reload} submit={submit}/></>} {section==="Реклама"&&<Advertising ads={ads} reload={reload} submit={submit}/>} {section==="Тарифы"&&<Plans plans={plans} readiness={readiness} reload={reload}/>}</main></div>
+  const resourceSection=["Видеообучение","Коммуникации","Реклама","Тарифы"].includes(section);
+  const ready=section==="Видеообучение"?!!content:section==="Коммуникации"?!!content&&!!requiredChannel:section==="Реклама"?!!ads:section==="Тарифы"?!!plans&&!!readiness:true;
+  return <div className="admin-shell control-v2"><div className={`admin-network-progress ${networkBusy?"visible":""}`} aria-hidden="true"/><aside><Logo/><nav>{sections.map(item=><button className={section===item.name?"active":""} onClick={()=>{const leave=()=>{if(item.name==="Пользователи")setOwnerSegment("all");if(item.name==="Инвойсы")setInvoiceStatusFilter("active");setSection(item.name)};leaveGuard.current?leaveGuard.current(leave):leave()}} key={item.name}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav><div className="secure"><i/>SSO · Authentik<br/><small>Доступ по группам</small></div></aside><main>{error&&<ErrorBox message={error} onClose={()=>setError("")}/>}<SectionIntro section={section}/>{resourceSection&&sectionBusy&&<div className="admin-loading" role="status"><span className="admin-loading-spinner" aria-hidden="true"/>Загружаем раздел…</div>}{resourceSection&&!ready&&!sectionBusy&&error&&<button className="button ghost" onClick={()=>void reload()}>Повторить загрузку</button>}{section==="Шаблоны"&&<Suspense fallback={<div className="admin-loading" role="status"><span className="admin-loading-spinner" aria-hidden="true"/>Открываем редактор шаблонов…</div>}><AdminCatalog onLeaveGuard={guard=>{leaveGuard.current=guard}}/></Suspense>}{section==="Обзор"&&<AdminDashboard data={dashboard} days={days} setDays={setDays} busy={dashboardBusy} error={dashboardError} retry={()=>setDashboardRefresh(value=>value+1)} openOwners={segment=>{setOwnerSegment(segment);setSection("Пользователи")}} openInvoices={status=>{setInvoiceStatusFilter(status);setSection("Инвойсы")}}/>} {section==="Пользователи"&&<Owners refreshToken={refreshToken} initialSegment={ownerSegment}/>} {section==="Инвойсы"&&<Invoices initialStatus={invoiceStatusFilter}/>} {section==="Кампании"&&<Campaigns/>} {section==="Видеообучение"&&ready&&<ContentAdmin content={content} reload={reload} submit={submit}/>} {section==="Коммуникации"&&ready&&<><RequiredChannel value={requiredChannel} reload={reload}/><Communications content={content} reload={reload} submit={submit}/></>} {section==="Реклама"&&ready&&<Advertising ads={ads} reload={reload} submit={submit}/>} {section==="Тарифы"&&ready&&<Plans plans={plans} readiness={readiness} reload={reload}/>}</main></div>
 }

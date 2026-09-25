@@ -15,8 +15,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from gramly_welcome.catalog_starters import starter_entries
 from gramly_welcome.message_catalog import CatalogEntry, install_template, load_catalog
 from gramly_welcome.models import (
+    ContentAttachment,
     ContentFlow,
     ContentFlowVersion,
+    ContentKeyboard,
+    ContentKeyboardButton,
     ContentStep,
     FlowChannelAssignment,
     IdempotencyRecord,
@@ -53,6 +56,22 @@ def test_removing_copied_media_does_not_remove_shared_catalog_asset() -> None:
     storage = SimpleNamespace(client=client, bucket="test")
     ObjectStorage._delete_many(cast(ObjectStorage, storage), ["catalog/revision-1/photo.jpg", "owners/1/photo.jpg"])
     assert client.delete_objects.call_args.kwargs["Delete"]["Objects"] == [{"Key": "owners/1/photo.jpg"}]
+
+
+def test_catalog_accepts_multiple_media_and_premium_entities_in_one_step() -> None:
+    data = deepcopy(starter_entries()[0])
+    data["spec"]["steps"][0] = {
+        "payload": {"type": "text", "text": "Hi ⭐", "entities": [
+            {"type": "custom_emoji", "offset": 3, "length": 1, "custom_emoji_id": "123456789"}]},
+        "attachments": [
+            {"media_type": "photo", "storage_key": "catalog/uploads/one.jpg", "original_name": "one.jpg"},
+            {"media_type": "document", "storage_key": "catalog/uploads/two.docx", "original_name": "two.docx"}],
+        "keyboard": {"kind": "inline", "rows": [[{"text": "Сайт", "action_type": "url",
+            "value": "https://gramly.tech", "style": "primary"}]]},
+    }
+    entry = CatalogEntry.model_validate(data)
+    assert len(entry.spec.steps[0].attachments) == 2
+    assert entry.spec.steps[0].payload["entities"][0]["custom_emoji_id"] == "123456789"
 
 
 @pytest.mark.asyncio
@@ -97,7 +116,17 @@ async def test_catalog_install_is_atomic_independent_unassigned_and_idempotent(m
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(message_catalog, "session_factory", sessions)
     uid = uuid.uuid4().hex[:12]
-    entry = CatalogEntry.model_validate({**starter_entries()[0], "slug": f"test-{uid}"})
+    source = deepcopy(starter_entries()[0])
+    source["spec"]["steps"][0] = {
+        "payload": {"type": "text", "text": "Hi ⭐", "entities": [
+            {"type": "custom_emoji", "offset": 3, "length": 1, "custom_emoji_id": "123456789"}]},
+        "attachments": [
+            {"media_type": "photo", "storage_key": "catalog/uploads/one.jpg", "original_name": "one.jpg"},
+            {"media_type": "document", "storage_key": "catalog/uploads/two.docx", "original_name": "two.docx"}],
+        "keyboard": {"kind": "inline", "rows": [[{"text": "Сайт", "action_type": "url",
+            "value": "https://gramly.tech", "style": "primary"}]]},
+    }
+    entry = CatalogEntry.model_validate({**source, "slug": f"test-{uid}"})
     await load_catalog([entry], apply=False)
     async with sessions() as session:
         assert await session.scalar(select(MessageTemplate).where(MessageTemplate.slug == entry.slug)) is None
@@ -141,6 +170,13 @@ async def test_catalog_install_is_atomic_independent_unassigned_and_idempotent(m
             assert flow.assignment_mode == "selected"
             step = await session.scalar(select(ContentStep).where(ContentStep.version_id == first["version_id"]).order_by(ContentStep.position))
             assert step is not None
+            assert step.payload["entities"][0]["custom_emoji_id"] == "123456789"
+            attachments = (await session.scalars(select(ContentAttachment).where(ContentAttachment.step_id == step.id).order_by(ContentAttachment.position))).all()
+            assert [a.storage_key for a in attachments] == ["catalog/uploads/one.jpg", "catalog/uploads/two.docx"]
+            keyboard = await session.scalar(select(ContentKeyboard).where(ContentKeyboard.step_id == step.id))
+            assert keyboard is not None
+            buttons = (await session.scalars(select(ContentKeyboardButton).where(ContentKeyboardButton.keyboard_id == keyboard.id))).all()
+            assert buttons[0].style == "primary"
             step.payload = {"text": "Edited copy", "type": "text"}
             await session.commit()
         async with sessions() as session:

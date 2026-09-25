@@ -222,10 +222,10 @@ export async function ownerSetup(
 }
 export async function addEmoji(page) {
   await page.getByRole("textbox", { name: "Текст сообщения" }).press("End");
-  await page.getByRole("button", { name: "Эмодзи", exact: true }).click();
+  await page.getByRole("button", { name: "Premium-эмодзи", exact: true }).click();
   await page
     .getByLabel("Ссылка на набор эмодзи")
     .fill("https://t.me/addemoji/Test");
-  await page.getByRole("button", { name: "Открыть набор" }).click();
+  await page.getByRole("button", { name: "Показать эмодзи" }).click();
   await page.getByRole("button", { name: "Вставить ⭐" }).click();
 }

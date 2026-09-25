@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/admin/v1/catalog-media", tags=["welcome-admin-ca
 MAX_BYTES = 20 * 1024 * 1024
 
 
-def identify(data: bytes) -> tuple[str, str, set[str]]:
+def identify(data: bytes, filename: str = "") -> tuple[str, str, set[str]]:
     if data.startswith(b"\xff\xd8\xff"):
         return "jpg", "image/jpeg", {"photo"}
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -25,7 +25,7 @@ def identify(data: bytes) -> tuple[str, str, set[str]]:
     if data.startswith((b"GIF87a", b"GIF89a")):
         return "gif", "image/gif", {"animation"}
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
-        return "webp", "image/webp", {"photo", "sticker"}
+        return "webp", "image/webp", {"photo", "sticker", "document"}
     if data[4:8] == b"ftyp":
         return "mp4", "video/mp4", {"video", "video_note", "animation"}
     if data.startswith(b"OggS"):
@@ -36,7 +36,10 @@ def identify(data: bytes) -> tuple[str, str, set[str]]:
         return "pdf", "application/pdf", {"document"}
     if data.startswith(b"PK\x03\x04"):
         return "zip", "application/zip", {"document"}
-    raise HTTPException(422, "Формат не поддерживается. Используйте JPG, PNG, WEBP, GIF, MP4, MP3, OGG, PDF или ZIP.")
+    # Unknown formats are sent as Telegram documents. Never render their content inline.
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    ext = suffix if re.fullmatch(r"[a-z0-9]{1,10}", suffix) else "bin"
+    return ext, "application/octet-stream", {"document"}
 
 
 @router.post("")
@@ -60,10 +63,13 @@ async def store_media(request: Request, settings: Any, media_type: str = "auto",
                 raise HTTPException(413, "Файл больше 20 МБ")
             digest.update(chunk)
             await asyncio.to_thread(handle.write, chunk)
+        if size == 0:
+            raise HTTPException(422, "Пустой файл нельзя отправить в Telegram")
         handle.seek(0)
-        ext, mime, kinds = identify(handle.read(32))
-        default = {"jpg":"photo", "png":"photo", "webp":"sticker", "gif":"animation",
-                   "mp4":"video", "ogg":"voice", "mp3":"audio", "pdf":"document", "zip":"document"}[ext]
+        original_name = re.sub(r"[\\/\x00-\x1f]", "_", unquote(request.headers.get("x-file-name", "")[:2048]))[:255]
+        ext, mime, kinds = identify(handle.read(32), original_name)
+        default = {"jpg":"photo", "png":"photo", "webp":"document", "gif":"animation",
+                   "mp4":"video", "ogg":"voice", "mp3":"audio", "pdf":"document", "zip":"document"}.get(ext, "document")
         selected = default if media_type == "auto" else media_type
         if selected not in kinds:
             raise HTTPException(422, "Тип сообщения не соответствует формату файла")
@@ -75,14 +81,13 @@ async def store_media(request: Request, settings: Any, media_type: str = "auto",
                                     ExtraArgs={"ContentType": mime})
         except Exception:
             raise HTTPException(503, "Хранилище временно недоступно. Повторите загрузку.") from None
-    original_name = re.sub(r"[\\/\x00-\x1f]", "_", unquote(request.headers.get("x-file-name", "")[:2048]))[:255]
     return {"media_type": selected, "storage_key": key, "original_name": original_name or f"media.{ext}",
             "mime_type": mime, "size": size, "payload": {}}
 
 
 @router.get("/{filename}")
 async def preview_media(filename: str, _admin: AdminDep, settings: SettingsDep) -> StreamingResponse:
-    if not re.fullmatch(r"[a-f0-9]{64}\.(jpg|png|webp|gif|mp4|ogg|mp3|pdf|zip)", filename):
+    if not re.fullmatch(r"[a-f0-9]{64}\.[a-z0-9]{1,10}", filename):
         raise HTTPException(404, "Файл не найден")
     storage = ObjectStorage(settings)
     try:
@@ -96,6 +101,7 @@ async def preview_media(filename: str, _admin: AdminDep, settings: SettingsDep) 
         finally:
             obj["Body"].close()
     mime = obj.get("ContentType", "application/octet-stream")
+    inline = mime in {"image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "audio/ogg", "audio/mpeg"}
     return StreamingResponse(chunks(), media_type=mime, headers={"Cache-Control":"no-store",
         "X-Content-Type-Options":"nosniff", "Content-Disposition":
-        "attachment" if filename.endswith((".pdf", ".zip")) else "inline"})
+        "inline" if inline else "attachment"})

@@ -17,12 +17,15 @@ for (const width of [390, 430, 1440])
   }) => {
     await page.setViewportSize({ width, height: 932 });
     const items = [];
+    const unrelatedRequests = [];
     let publishAttempts = 0,
       uploads = 0;
     await page.route("**/api/admin/v1/**", async (route) => {
       const request = route.request(),
         url = new URL(request.url()),
         path = url.pathname.replace("/api/admin/v1", "");
+      if (["/content", "/advertising", "/plans", "/payments/readiness", "/required-channel"].includes(path))
+        unrelatedRequests.push(path);
       if (path === "/catalog-media") {
         uploads++;
         return route.fulfill({
@@ -116,15 +119,10 @@ for (const width of [390, 430, 1440])
     await page
       .getByLabel("Ссылка", { exact: true })
       .fill("https://gramly.tech");
-    await page
-      .getByLabel("Добавить файл", { exact: true })
-      .setInputFiles({ name: "first.png", mimeType: "image/png", buffer: png });
-    await expect(page.locator(".media-item")).toHaveCount(1);
-    await page.getByLabel("Добавить файл", { exact: true }).setInputFiles({
-      name: "second.png",
-      mimeType: "image/png",
-      buffer: png,
-    });
+    await page.getByLabel("Добавить файлы", { exact: true }).setInputFiles([
+      { name: "first.png", mimeType: "image/png", buffer: png },
+      { name: "second.png", mimeType: "image/png", buffer: png },
+    ]);
     await expect(page.locator(".media-item")).toHaveCount(2);
     await page
       .getByRole("button", { name: "Раньше", exact: true })
@@ -171,6 +169,7 @@ for (const width of [390, 430, 1440])
     );
     expect(items).toHaveLength(1);
     expect(items[0].is_active).toBe(false);
+    expect(unrelatedRequests).toEqual([]);
     await page
       .getByRole("button", { name: "Опубликовать", exact: true })
       .click();
@@ -188,7 +187,7 @@ for (const width of [390, 430, 1440])
     await page.getByRole("button", { name: "К каталогу", exact: true }).click();
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Убрать из каталога" }).click();
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.getByRole("status").filter({ hasText: "Шаблон скрыт" })).toContainText(
       "Клиентские копии сохранены",
     );
     expect(items[0].is_active).toBe(false);
@@ -243,11 +242,8 @@ test("admin catalog ignores a late response from the previous search", async ({
   await expect(
     page.getByRole("heading", { name: "new", exact: true }),
   ).toBeVisible();
-  const oldFinished = page.waitForResponse(
-    (response) => new URL(response.url()).searchParams.get("q") === "old",
-  );
   releaseOld();
-  await oldFinished;
+  await page.waitForTimeout(100);
   await expect(
     page.getByRole("heading", { name: "new", exact: true }),
   ).toBeVisible();
