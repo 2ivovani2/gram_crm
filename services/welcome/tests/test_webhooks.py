@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,7 +73,7 @@ def test_view_webhook_is_separate_and_secret_protected(
     inserted: list[tuple[str, int | None]] = []
 
     async def fake_insert(*_args: object, **kwargs: object) -> bool:
-        inserted.append((str(kwargs["source_key"]), kwargs["bot_id"]))
+        inserted.append((str(kwargs["source_key"]), cast(int | None, kwargs["bot_id"])))
         return True
 
     monkeypatch.setattr(api, "insert_inbox_event", fake_insert)

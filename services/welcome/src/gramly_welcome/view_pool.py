@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, or_, select
-from telethon import TelegramClient  # type: ignore[import-not-found,import-untyped]
+from telethon import TelegramClient
 
 from .config import get_settings
 from .crypto import TokenKeyring
@@ -130,7 +130,7 @@ async def analytics_available() -> bool:
 async def lease_account(
     account_id: int | None = None, *, for_private_join: bool = False
 ) -> AsyncIterator[tuple[int, TelegramClient]]:
-    from telethon.errors import FloodWaitError  # type: ignore[import-not-found,import-untyped]
+    from telethon.errors import FloodWaitError
 
     now = datetime.now(UTC)
     lease_id = uuid.uuid4().hex
@@ -219,7 +219,7 @@ async def lease_account(
 
 async def check_all_accounts() -> None:
     """Probe each account without letting a scheduled probe race an active read."""
-    from telethon.errors import FloodWaitError  # type: ignore[import-not-found,import-untyped]
+    from telethon.errors import FloodWaitError
 
     async with session_factory() as session:
         ids = (await session.scalars(select(ViewMtprotoAccount.id).order_by(ViewMtprotoAccount.id))).all()

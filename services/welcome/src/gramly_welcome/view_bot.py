@@ -206,10 +206,11 @@ async def _post_views(channel_id: int, post_id: int | None) -> int | None:
     from .models import ViewPostObservation
 
     async with session_factory() as session:
-        return await session.scalar(select(ViewPostObservation.views).where(
+        result = await session.scalar(select(ViewPostObservation.views).where(
             ViewPostObservation.channel_id == channel_id,
             ViewPostObservation.post_id == post_id,
         ).order_by(ViewPostObservation.observed_at.desc()).limit(1))
+        return int(result) if result is not None else None
 
 
 def _report_keyboard(channel_id: int, *, public_username: str | None = None) -> InlineKeyboardMarkup:

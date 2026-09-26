@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from sqlalchemy import delete, func, select
-from telethon import TelegramClient, functions, utils  # type: ignore[import-not-found,import-untyped]
+from telethon import TelegramClient, functions, utils
 
 from .db import session_factory
 from .models import ViewChannelSnapshot, ViewCollectionRun, ViewPostObservation, ViewPrivateChannel

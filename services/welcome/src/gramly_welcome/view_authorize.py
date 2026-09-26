@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from telethon import TelegramClient  # type: ignore[import-not-found,import-untyped]
+from telethon import TelegramClient
 
 
 async def authorize(output: Path) -> None:

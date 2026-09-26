@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 from sqlalchemy import select
-from telethon import functions, types, utils  # type: ignore[import-not-found,import-untyped]
-from telethon.errors import (  # type: ignore[import-not-found,import-untyped]
+from telethon import functions, types, utils
+from telethon.errors import (
     ChannelPrivateError,
     InviteHashExpiredError,
     InviteHashInvalidError,
