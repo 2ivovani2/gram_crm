@@ -185,6 +185,32 @@ async def test_private_report_requires_a_link_for_the_requesting_user(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_public_report_rechecks_channel_identity_before_export(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def scalar(self, _statement: object) -> ViewChannelSnapshot:
+            return ViewChannelSnapshot(
+                channel_id=-10077, username="old_public", title="Бывший публичный",
+                subscriber_count=100, observed_at=datetime.now(UTC),
+            )
+
+    bot = SimpleNamespace(get_chat=AsyncMock(return_value=SimpleNamespace(
+        id=-10088, type=view_bot.ChatType.CHANNEL,
+    )))
+    monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
+    monkeypatch.setattr(view_bot, "view_bot", lambda: bot)
+    assert await view_bot._report_for(42, -10077) is None
+    bot.get_chat.assert_awaited_once_with("@old_public")
+
+
+@pytest.mark.asyncio
 async def test_public_analysis_does_not_start_below_five_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
     from gramly_welcome import view_bot
 

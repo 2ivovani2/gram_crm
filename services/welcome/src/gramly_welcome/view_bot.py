@@ -235,7 +235,14 @@ async def _report_for(owner_id: int, channel_id: int) -> ViewReport | None:
         ).order_by(ViewChannelSnapshot.observed_at.desc()).limit(1))
         if latest is None:
             return None
-        if not latest.username:
+        if latest.username:
+            try:
+                current = await view_bot().get_chat(f"@{latest.username}")
+            except TelegramAPIError:
+                return None
+            if current.type != ChatType.CHANNEL or current.id != channel_id:
+                return None
+        else:
             permitted = await session.scalar(select(ViewPrivateChannel.id).where(
                 ViewPrivateChannel.owner_id == owner_id,
                 ViewPrivateChannel.channel_id == channel_id,
