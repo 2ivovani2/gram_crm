@@ -82,6 +82,65 @@ async def test_view_message_falls_back_if_telegram_rejects_premium(monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_back_from_collection_name_treats_next_link_as_channel(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+
+    state = SimpleNamespace(pending_action="collection_name", pending_query="")
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def begin(self) -> Session:
+            return self
+
+        async def get(self, _model: object, _key: int) -> object:
+            return state
+
+    analyze = AsyncMock()
+    monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
+    monkeypatch.setattr(view_bot, "owner_from_telegram", AsyncMock(return_value=SimpleNamespace(id=7)))
+    monkeypatch.setattr(view_bot, "view_bot", lambda: SimpleNamespace(answer_callback_query=AsyncMock()))
+    monkeypatch.setattr(view_bot, "_gate", AsyncMock(return_value=True))
+    monkeypatch.setattr(view_bot, "_send", AsyncMock())
+    monkeypatch.setattr(view_bot, "_analyze", analyze)
+    user = {"id": 42, "is_bot": False, "first_name": "Test"}
+    await view_bot.process_view_update({"callback_query": {
+        "id": "cb", "from": user, "data": "view:menu", "message": {"chat": {"id": 42}},
+    }})
+    assert state.pending_action == ""
+    await view_bot.process_view_update({"message": {
+        "from": user, "chat": {"id": 42}, "text": "https://t.me/public_channel",
+    }})
+    analyze.assert_awaited_once_with(42, 7, "https://t.me/public_channel")
+
+
+@pytest.mark.asyncio
+async def test_collection_name_rejects_channel_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def get(self, _model: object, _key: int) -> object:
+            return SimpleNamespace(pending_action="collection_name")
+
+    send = AsyncMock()
+    monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
+    monkeypatch.setattr(view_bot, "_send", send)
+    for link in ("https://t.me/public_channel", "https://t.me/+AbCdEfGh12345678"):
+        assert await view_bot._handle_collection_text(42, 7, link)
+        assert "название коллекции" in send.call_args.args[1]
+
+
+@pytest.mark.asyncio
 async def test_measured_windows_use_only_collected_posts_and_never_invent_history() -> None:
     now = datetime(2026, 9, 26, 1, tzinfo=UTC)
     run = ViewCollectionRun(

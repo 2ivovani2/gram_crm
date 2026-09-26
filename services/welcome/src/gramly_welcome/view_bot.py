@@ -96,8 +96,9 @@ def parse_channels(text: str) -> list[str]:
 def _menu() -> InlineKeyboardMarkup:
     hello = get_settings().interface_bot_username.lstrip("@")
     rows = [
-        [InlineKeyboardButton(text="Избранные каналы", callback_data="view:favorites")],
-        [InlineKeyboardButton(text="Коллекции", callback_data="view:collections")],
+        [InlineKeyboardButton(text="Анализ каналов", callback_data="view:analyze")],
+        [InlineKeyboardButton(text="Избранное", callback_data="view:favorites"),
+         InlineKeyboardButton(text="Коллекции", callback_data="view:collections")],
         [InlineKeyboardButton(text="Как считаются показатели", callback_data="view:method")],
     ]
     if hello:
@@ -236,16 +237,16 @@ async def _post_views(channel_id: int, post_id: int | None) -> int | None:
 
 def _report_keyboard(channel_id: int, *, public_username: str | None = None) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}")],
-        [InlineKeyboardButton(text="Статистика картинкой", callback_data=f"view:image:{channel_id}")],
-        [InlineKeyboardButton(text="Топ публикаций", callback_data=f"view:top:{channel_id}")],
-        [InlineKeyboardButton(text="Экспорт CSV", callback_data=f"view:export:{channel_id}")],
+        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}"),
+         InlineKeyboardButton(text="Картинкой", callback_data=f"view:image:{channel_id}")],
+        [InlineKeyboardButton(text="Топ публикаций", callback_data=f"view:top:{channel_id}"),
+         InlineKeyboardButton(text="CSV", callback_data=f"view:export:{channel_id}")],
     ]
     if public_username:
         rows.append([InlineKeyboardButton(text="В избранное", callback_data=f"view:save:{channel_id}:{public_username}"[:64])])
     else:
         rows.append([InlineKeyboardButton(text="В избранное", callback_data=f"view:saveprivate:{channel_id}")])
-    rows.append([InlineKeyboardButton(text="Меню", callback_data="view:menu")])
+    rows[-1].append(InlineKeyboardButton(text="Меню", callback_data="view:menu"))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -538,7 +539,7 @@ async def _favorites(chat_id: int, owner_id: int) -> None:
             )
         ).all()
     if not rows:
-        await _send(chat_id, "Избранное пусто. Откройте канал и нажмите «В избранное».")
+        await _send(chat_id, "<b>Избранное пока пусто</b>\n<blockquote>Отправьте ссылку на канал и нажмите «В избранное» под отчётом.</blockquote>", keyboard=_menu())
         return
     body = "<b>Избранные каналы</b>\n" + "\n".join(
         (f'• <a href="https://t.me/{row.username}">{html.escape(row.title)}</a>'
@@ -546,7 +547,7 @@ async def _favorites(chat_id: int, owner_id: int) -> None:
         for row in rows
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        *[[InlineKeyboardButton(text=f"Проверить {row.title[:28]}", callback_data=f"view:refresh:{row.channel_id}")]
+        *[[InlineKeyboardButton(text=f"Открыть {row.title[:28]}", callback_data=f"view:refresh:{row.channel_id}")]
           for row in rows],
         [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
     ])
@@ -572,13 +573,14 @@ async def _collections(chat_id: int, owner_id: int) -> None:
                 for row in rows
             ],
             [InlineKeyboardButton(text="Создать коллекцию", callback_data="view:collection:new")],
+            [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
         ]
     )
     await _send(
         chat_id,
-        "<b>Коллекции каналов</b>\nСохраните несколько каналов для быстрого сравнения."
+        "<b>Коллекции</b>\nВыберите коллекцию или создайте новую."
         if rows
-        else "Коллекций пока нет. Создайте первую и добавьте каналы.",
+        else "<b>Коллекций пока нет</b>\n<blockquote>Создайте коллекцию и добавьте каналы, которые хотите проверять вместе.</blockquote>",
         keyboard=keyboard,
     )
 
@@ -621,7 +623,7 @@ async def _collection_detail(chat_id: int, owner_id: int, collection_id: int) ->
             ],
             [
                 InlineKeyboardButton(
-                    text="Проверить каналы", callback_data=f"view:collection:analyze:{collection_id}"
+                    text="Анализировать все", callback_data=f"view:collection:analyze:{collection_id}"
                 )
             ],
             *[
@@ -658,6 +660,13 @@ async def _set_pending_action(owner_id: int, action: str) -> None:
         )
 
 
+async def _clear_pending_action(owner_id: int) -> None:
+    async with session_factory() as session, session.begin():
+        state = await session.get(ViewUserState, owner_id)
+        if state:
+            state.pending_action = ""
+
+
 async def _handle_collection_text(chat_id: int, owner_id: int, text: str) -> bool:
     async with session_factory() as session:
         state = await session.get(ViewUserState, owner_id)
@@ -666,6 +675,9 @@ async def _handle_collection_text(chat_id: int, owner_id: int, text: str) -> boo
         return False
     if action == "collection_name":
         name = " ".join(text.strip().split())[:80]
+        if parse_channels(text) or parse_invites(text) or re.search(r"(?:https?://|t\.me/|telegram\.me/|@\w)", text, re.I):
+            await _send(chat_id, "Это похоже на ссылку или @канал. Отправьте название коллекции без ссылки либо вернитесь в меню.")
+            return True
         if len(name) < 2:
             await _send(chat_id, "Название должно содержать не меньше двух символов.")
             return True
@@ -872,6 +884,8 @@ async def process_view_update(payload: dict[str, Any]) -> None:
             await view_bot().answer_callback_query(str(callback["id"]))
         except TelegramAPIError:
             pass
+        # Every navigation action leaves the previous text-entry screen.
+        await _clear_pending_action(owner_id)
     if data == "view:check":
         if not await _gate(chat_id, owner_id):
             return
@@ -913,6 +927,14 @@ async def process_view_update(payload: dict[str, Any]) -> None:
         return
     if data == "view:favorites":
         await _favorites(chat_id, owner_id)
+    elif data == "view:analyze":
+        await _send(
+            chat_id,
+            "Отправьте @канал, ссылку на публикацию или приглашение в закрытый канал. Можно прислать несколько ссылок одним сообщением.",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data="view:menu")],
+            ]),
+        )
     elif data.startswith("view:refresh:"):
         try:
             channel_id = int(data.rsplit(":", 1)[1])
@@ -952,7 +974,13 @@ async def process_view_update(payload: dict[str, Any]) -> None:
         await _collections(chat_id, owner_id)
     elif data == "view:collection:new":
         await _set_pending_action(owner_id, "collection_name")
-        await _send(chat_id, "Как назвать новую коллекцию? Отправьте короткое название одним сообщением.")
+        await _send(
+            chat_id,
+            "Как назвать новую коллекцию? Отправьте короткое название одним сообщением.",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data="view:collections")],
+            ]),
+        )
     elif data.startswith("view:collection:add:"):
         try:
             collection_id = int(data.rsplit(":", 1)[1])
@@ -969,7 +997,13 @@ async def process_view_update(payload: dict[str, Any]) -> None:
             await _send(chat_id, "Коллекция не найдена.")
             return
         await _set_pending_action(owner_id, f"collection_add:{collection_id}")
-        await _send(chat_id, "Отправьте одну ссылку на канал, включая закрытое приглашение, или его @username.")
+        await _send(
+            chat_id,
+            "Отправьте одну ссылку на канал, включая закрытое приглашение, или его @username.",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data=f"view:collection:{collection_id}")],
+            ]),
+        )
     elif data.startswith("view:collection:analyze:"):
         try:
             collection_id = int(data.rsplit(":", 1)[1])

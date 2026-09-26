@@ -12,7 +12,7 @@ from gramly_welcome import view_pool
 from gramly_welcome.config import Settings
 from gramly_welcome.models import ViewPoolAlert, ViewPoolAlertRecipient
 from gramly_welcome.view_pool import MAX_SESSION_BYTES, ViewPoolError, validate_session_file
-from gramly_welcome.view_private import parse_invites
+from gramly_welcome.view_private import _joined_channel, parse_invites
 from gramly_welcome.view_reports import ReportPoint, ViewReport, render_report_png
 
 
@@ -21,6 +21,15 @@ def test_private_invites_are_deduplicated_without_accepting_arbitrary_urls() -> 
         "https://t.me/+UJFJMzqE5glhZWRi t.me/joinchat/UJFJMzqE5glhZWRi "
         "https://example.org/+UJFJMzqE5glhZWRi"
     ) == ["UJFJMzqE5glhZWRi"]
+
+
+def test_invite_join_unwraps_telethon_145_result() -> None:
+    broadcast = SimpleNamespace(broadcast=True)
+    group = SimpleNamespace(broadcast=False)
+    updates = SimpleNamespace(chats=[group, broadcast])
+    assert _joined_channel(SimpleNamespace(updates=updates)) is broadcast
+    assert _joined_channel(updates) is broadcast
+    assert _joined_channel(SimpleNamespace(updates=SimpleNamespace(chats=[]))) is None
 
 
 def test_session_upload_rejects_non_telethon_sqlite_and_oversize(tmp_path: Path) -> None:
