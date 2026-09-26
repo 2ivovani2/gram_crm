@@ -1,8 +1,10 @@
+import pytest
+
 from gramly_welcome import view_bot
 from gramly_welcome.config import Settings
 
 
-def test_view_menu_puts_analysis_first_and_keeps_navigation(monkeypatch) -> None:
+def test_view_menu_puts_analysis_first_and_keeps_navigation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(view_bot, "get_settings", lambda: Settings(interface_bot_username="gramly_hello_bot"))
     rows = view_bot._menu().inline_keyboard
     assert rows[0][0].callback_data == "view:analyze"
