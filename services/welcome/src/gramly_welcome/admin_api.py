@@ -11,7 +11,7 @@ from typing import Annotated, Any, cast
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import String, and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,14 +47,30 @@ from .models import (
     MarketingCampaign,
     Owner,
     OwnerNotification,
+    OwnerServiceActivity,
     Payment,
     Plan,
+    RequiredChannelMembership,
     Subscription,
     SubscriptionReminder,
     Tip,
+    ViewMtprotoAccount,
+    ViewPoolAlert,
+    ViewPrivateChannel,
     WeeklyBusinessSnapshot,
 )
 from .transfer_preflight import transfer_preview
+from .view_pool import (
+    MAX_ACCOUNTS,
+    MAX_SESSION_BYTES,
+    ViewPoolError,
+    analytics_available,
+    check_all_accounts,
+    healthy_count,
+    inspect_session,
+    refresh_pool_alert,
+    seal_session,
+)
 
 router = APIRouter(prefix="/api/admin/v1", tags=["welcome-admin"])
 SessionDep = Annotated[AsyncSession, Depends(session_dependency)]
@@ -94,6 +110,191 @@ async def mutation_admin(
 
 
 MutationAdminDep = Annotated[AdminIdentity, Depends(mutation_admin)]
+
+
+async def view_operator(admin: AdminDep) -> AdminIdentity:
+    if not admin.groups.intersection({"gramly-owners", "authentik Admins"}):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "GramlyView account operator access is required")
+    return admin
+
+
+ViewOperatorDep = Annotated[AdminIdentity, Depends(view_operator)]
+
+
+async def view_operator_mutation(
+    admin: ViewOperatorDep,
+    x_gramly_admin_request: Annotated[str, Header(alias="X-Gramly-Admin-Request")] = "",
+) -> AdminIdentity:
+    if x_gramly_admin_request != "1":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin request confirmation is required")
+    return admin
+
+
+ViewOperatorMutationDep = Annotated[AdminIdentity, Depends(view_operator_mutation)]
+
+
+@router.get("/view/accounts")
+async def view_accounts(_admin: ViewOperatorDep, session: SessionDep) -> dict[str, object]:
+    rows = (await session.scalars(select(ViewMtprotoAccount).order_by(ViewMtprotoAccount.id))).all()
+    assignment_rows = (await session.execute(
+        select(ViewPrivateChannel.account_id, func.count(ViewPrivateChannel.id))
+        .group_by(ViewPrivateChannel.account_id)
+    )).all()
+    assignments: dict[int, int] = {int(row[0]): int(row[1]) for row in assignment_rows}
+    alert = await session.get(ViewPoolAlert, 1)
+    count = await healthy_count()
+    available = await analytics_available()
+    settings = get_settings()
+    return {
+        "healthy": count,
+        "minimum": 5,
+        "available": available,
+        "api_configured": bool(settings.view_mtproto_api_id and settings.view_mtproto_api_hash),
+        "alert_recipient_owner_id": alert.recipient_owner_id if alert else None,
+        "items": [
+            {
+                "id": row.id,
+                "telegram_id": row.telegram_id,
+                "label": row.label,
+                "status": "disabled" if row.disabled else row.status,
+                "last_error": row.last_error,
+                "checked_at": row.checked_at,
+                "cooldown_until": row.cooldown_until,
+                "assigned_channels": assignments.get(row.id, 0),
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/view/accounts")
+async def upload_view_account(
+    _admin: ViewOperatorMutationDep,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+) -> dict[str, object]:
+    if not file.filename or not file.filename.lower().endswith(".session"):
+        raise HTTPException(422, "Загрузите Telethon .session файл")
+    raw = await file.read(MAX_SESSION_BYTES + 1)
+    if len(raw) > MAX_SESSION_BYTES:
+        raise HTTPException(413, "Файл сессии больше 1 МБ")
+    try:
+        telegram_id, label, verified = await asyncio.wait_for(inspect_session(raw), timeout=20)
+    except ViewPoolError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(504, "Telegram не ответил при проверке сессии. Повторите загрузку") from exc
+    except Exception as exc:
+        raise HTTPException(422, "Не удалось проверить сессию в Telegram") from exc
+    now = datetime.now(UTC)
+    async with session.begin():
+        row = await session.scalar(
+            select(ViewMtprotoAccount).where(ViewMtprotoAccount.telegram_id == telegram_id).with_for_update()
+        )
+        if row is not None and row.lease_until and row.lease_until > now:
+            raise HTTPException(409, "Аккаунт сейчас выполняет анализ. Повторите загрузку позже")
+        if row is None:
+            total = await session.scalar(select(func.count(ViewMtprotoAccount.id)))
+            if total is not None and total >= MAX_ACCOUNTS:
+                raise HTTPException(409, "Лимит 25 технических аккаунтов достигнут")
+            row = ViewMtprotoAccount(telegram_id=telegram_id, encrypted_session=seal_session(verified))
+            session.add(row)
+        else:
+            row.encrypted_session = seal_session(verified)
+        row.label = label
+        row.status = "healthy"
+        row.last_error = ""
+        row.checked_at = now
+        row.cooldown_until = None
+        row.disabled = False
+        await _audit(session, _admin, "view_account_uploaded", {"telegram_id": telegram_id})
+    await refresh_pool_alert()
+    return {"telegram_id": telegram_id, "label": label, "status": "healthy"}
+
+
+class ViewAccountToggle(BaseModel):
+    disabled: bool
+
+
+@router.post("/view/accounts/{account_id}/state")
+async def set_view_account_state(
+    account_id: int, payload: ViewAccountToggle, admin: ViewOperatorMutationDep, session: SessionDep
+) -> dict[str, object]:
+    async with session.begin():
+        row = await session.get(ViewMtprotoAccount, account_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(404, "Аккаунт не найден")
+        if row.lease_until and row.lease_until > datetime.now(UTC):
+            raise HTTPException(409, "Аккаунт выполняет анализ")
+        row.disabled = payload.disabled
+        await _audit(session, admin, "view_account_state", {"account_id": account_id, "disabled": payload.disabled})
+    await refresh_pool_alert()
+    return {"id": account_id, "disabled": payload.disabled}
+
+
+@router.delete("/view/accounts/{account_id}", status_code=204)
+async def delete_view_account(
+    account_id: int, admin: ViewOperatorMutationDep, session: SessionDep
+) -> Response:
+    async with session.begin():
+        row = await session.get(ViewMtprotoAccount, account_id, with_for_update=True)
+        if row is None:
+            raise HTTPException(404, "Аккаунт не найден")
+        if row.lease_until and row.lease_until > datetime.now(UTC):
+            raise HTTPException(409, "Аккаунт выполняет анализ")
+        assigned = await session.scalar(select(func.count(ViewPrivateChannel.id)).where(
+            ViewPrivateChannel.account_id == account_id,
+        ))
+        if assigned:
+            raise HTTPException(409, "Сначала переподключите закрытые каналы этого аккаунта")
+        telegram_id = row.telegram_id
+        await session.delete(row)
+        await _audit(session, admin, "view_account_deleted", {"telegram_id": telegram_id})
+    await refresh_pool_alert()
+    return Response(status_code=204)
+
+
+class ViewAlertRecipient(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/view/alert-recipient")
+async def set_view_alert_recipient(
+    payload: ViewAlertRecipient, admin: ViewOperatorMutationDep, session: SessionDep
+) -> dict[str, object]:
+    username = payload.username.strip().lstrip("@").lower()
+    if not username or not username.replace("_", "").isalnum():
+        raise HTTPException(422, "Укажите Telegram username")
+    async with session.begin():
+        owners = (await session.scalars(select(Owner).join(OwnerServiceActivity).where(
+            func.lower(Owner.username) == username,
+            OwnerServiceActivity.service == "view",
+        ))).all()
+        if len(owners) != 1:
+            raise HTTPException(422, "Пользователь должен открыть @gramly_view_bot командой /start")
+        owner_id, telegram_id = owners[0].id, owners[0].telegram_id
+    from .view_bot import _send
+
+    try:
+        await _send(telegram_id, "Аварийные уведомления GramlyView подключены к этому аккаунту.")
+    except Exception as exc:
+        raise HTTPException(422, "GramlyView не может отправить сообщение этому пользователю") from exc
+    async with session.begin():
+        alert = await session.get(ViewPoolAlert, 1, with_for_update=True)
+        if alert is None:
+            alert = ViewPoolAlert(id=1)
+            session.add(alert)
+        alert.recipient_owner_id = owner_id
+        alert.last_notified_at = None
+        await _audit(session, admin, "view_alert_recipient_set", {"recipient_owner_id": owner_id})
+    await refresh_pool_alert()
+    return {"username": f"@{username}"}
+
+
+@router.post("/view/accounts/check")
+async def check_view_accounts(_admin: ViewOperatorMutationDep) -> dict[str, object]:
+    await check_all_accounts()
+    return {"healthy": await healthy_count()}
 
 
 def _safe_url(value: str, *, telegraph_only: bool = False) -> str:
@@ -1026,6 +1227,7 @@ async def owners(
     q: str = "",
     plan: str = "all",
     segment: str = "all",
+    service: str = "all",
     page: int = 1,
     page_size: int = 25,
 ) -> dict[str, object]:
@@ -1067,6 +1269,16 @@ async def owners(
         )
     elif segment != "all":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown owner segment")
+    hello_ids = select(OwnerServiceActivity.owner_id).where(OwnerServiceActivity.service == "hello")
+    view_ids = select(OwnerServiceActivity.owner_id).where(OwnerServiceActivity.service == "view")
+    if service == "hello_only":
+        filters.extend([Owner.id.in_(hello_ids), Owner.id.not_in(view_ids)])
+    elif service == "view_only":
+        filters.extend([Owner.id.in_(view_ids), Owner.id.not_in(hello_ids)])
+    elif service == "both":
+        filters.extend([Owner.id.in_(hello_ids), Owner.id.in_(view_ids)])
+    elif service != "all":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown service segment")
     base = (
         select(Owner, Subscription, Plan)
         .outerjoin(Subscription, Subscription.owner_id == Owner.id)
@@ -1081,6 +1293,17 @@ async def owners(
             .limit(page_size)
         )
     ).all()
+    owner_ids = [owner.id for owner, _, _ in rows]
+    service_rows = (await session.scalars(
+        select(OwnerServiceActivity).where(OwnerServiceActivity.owner_id.in_(owner_ids))
+    )).all() if owner_ids else []
+    services_by_owner: dict[int, dict[str, object]] = {}
+    for activity in service_rows:
+        services_by_owner.setdefault(activity.owner_id, {})[activity.service] = {
+            "first_seen_at": _iso(activity.first_seen_at),
+            "last_seen_at": _iso(activity.last_seen_at),
+            "last_event": activity.last_event,
+        }
     result = []
     for owner, subscription, subscription_plan in rows:
         bot_ids = select(ManagedBot.id).where(ManagedBot.owner_id == owner.id)
@@ -1123,6 +1346,7 @@ async def owners(
                 else None,
                 "usage": {"bots": bots, "channels": channels, "contacts": contacts},
                 "paid_rub": str(paid_rub),
+                "services": services_by_owner.get(owner.id, {}),
             }
         )
     return {"items": result, "total": total, "page": page, "page_size": page_size}
@@ -1165,6 +1389,15 @@ async def owner_detail(owner_id: int, _admin: AdminDep, session: SessionDep) -> 
         ).all()
     )
     subscription, plan = subscription_row if subscription_row else (None, None)
+    services = (await session.scalars(
+        select(OwnerServiceActivity).where(OwnerServiceActivity.owner_id == owner_id)
+    )).all()
+    membership = await session.scalar(
+        select(RequiredChannelMembership)
+        .where(RequiredChannelMembership.owner_id == owner_id)
+        .order_by(RequiredChannelMembership.checked_at.desc().nullslast())
+        .limit(1)
+    )
     return {
         "owner": {
             "id": owner.id,
@@ -1211,6 +1444,19 @@ async def owner_detail(owner_id: int, _admin: AdminDep, session: SessionDep) -> 
             {"message": event.message, "context": event.context, "created_at": _iso(event.created_at)}
             for event in events
         ],
+        "services": {
+            row.service: {
+                "first_seen_at": _iso(row.first_seen_at),
+                "last_seen_at": _iso(row.last_seen_at),
+                "last_event": row.last_event,
+            }
+            for row in services
+        },
+        "view_membership": {
+            "status": membership.status,
+            "is_member": membership.is_member,
+            "checked_at": _iso(membership.checked_at),
+        } if membership else None,
     }
 
 

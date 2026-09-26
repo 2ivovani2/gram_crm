@@ -20,7 +20,9 @@ spec:
       containers:
         - name: api
           image: WELCOME_IMAGE_PLACEHOLDER
-          envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          envFrom:
+            - {secretRef: {name: gramly-welcome-runtime}}
+            - {secretRef: {name: gramly-view-mtproto, optional: true}}
           env:
             # Ten API replicas consume at most forty database sessions, while
             # the worker pools remain independently bounded.
@@ -28,12 +30,14 @@ spec:
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: http, containerPort: 8080}]
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+          volumeMounts: [{name: view-session-scratch, mountPath: /tmp}]
           startupProbe: &live {httpGet: {path: /health/live, port: http}, failureThreshold: 30, periodSeconds: 5}
           readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
           livenessProbe: *live
           resources:
             requests: {cpu: 250m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}
+      volumes: [{name: view-session-scratch, emptyDir: {sizeLimit: 16Mi}}]
 ---
 apiVersion: v1
 kind: Service

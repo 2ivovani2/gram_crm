@@ -88,6 +88,136 @@ class Owner(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class OwnerServiceActivity(Base):
+    __tablename__ = "owner_service_activity"
+    __table_args__ = (UniqueConstraint("owner_id", "service", name="uq_owner_service_activity"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    service: Mapped[str] = mapped_column(String(16))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_event: Mapped[str] = mapped_column(String(48), default="start")
+    cross_offer_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+    cross_offer_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ViewChannelSnapshot(Base):
+    __tablename__ = "view_channel_snapshot"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    username: Mapped[str] = mapped_column(String(64), default="")
+    title: Mapped[str] = mapped_column(String(255))
+    subscriber_count: Mapped[int | None] = mapped_column(BigInteger)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ViewPostObservation(Base):
+    __tablename__ = "view_post_observation"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "post_id", "observed_at", name="uq_view_post_observation"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    post_id: Mapped[int] = mapped_column(BigInteger)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    views: Mapped[int] = mapped_column(BigInteger)
+    forwards: Mapped[int | None] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(String(24), default="mtproto")
+
+
+class ViewCollectionRun(Base):
+    __tablename__ = "view_collection_run"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    coverage_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    post_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str] = mapped_column(String(48), default="")
+
+
+class ViewFavorite(Base):
+    __tablename__ = "view_favorite"
+    __table_args__ = (UniqueConstraint("owner_id", "channel_id", name="uq_view_favorite_owner_channel"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    username: Mapped[str] = mapped_column(String(64), default="")
+    title: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewCollection(Base):
+    __tablename__ = "view_collection"
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_view_collection_owner_name"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewCollectionItem(Base):
+    __tablename__ = "view_collection_item"
+    __table_args__ = (UniqueConstraint("collection_id", "channel_id", name="uq_view_collection_item"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    collection_id: Mapped[int] = mapped_column(ForeignKey("view_collection.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    username: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewUserState(Base):
+    __tablename__ = "view_user_state"
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), primary_key=True)
+    pending_query: Mapped[str] = mapped_column(Text, default="")
+    pending_action: Mapped[str] = mapped_column(String(64), default="")
+    last_analysis_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewMtprotoAccount(Base):
+    __tablename__ = "view_mtproto_account"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    encrypted_session: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="checking")
+    last_error: Mapped[str] = mapped_column(String(64), default="")
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_join_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(64))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewPrivateChannel(Base):
+    __tablename__ = "view_private_channel"
+    __table_args__ = (UniqueConstraint("owner_id", "channel_id", name="uq_view_private_owner_channel"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("view_mtproto_account.id"), index=True)
+    invite_ciphertext: Mapped[str] = mapped_column(Text)
+    invite_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewPoolAlert(Base):
+    __tablename__ = "view_pool_alert"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    recipient_owner_id: Mapped[int | None] = mapped_column(ForeignKey("owner.id"))
+    below_threshold: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Plan(Base):
     __tablename__ = "plan"
     __table_args__ = (

@@ -42,6 +42,7 @@ spec:
         operator: In
         values:
           - gramly-welcome-worker-events
+          - gramly-welcome-worker-view
           - gramly-welcome-worker-owner
           - gramly-welcome-worker-delivery
           - gramly-welcome-worker-interactive

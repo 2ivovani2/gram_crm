@@ -23,6 +23,7 @@ from ..repository import (
     queue_snapshot,
     retry_inbox_event,
 )
+from ..view_bot import process_view_update
 from .health import WorkerHealth
 from .leased import run_leased
 
@@ -31,7 +32,12 @@ logger = logging.getLogger(__name__)
 
 async def process_claimed_event(event: InboxEvent, worker_id: str, max_attempts: int) -> None:
     try:
-        if event.bot_id is None:
+        if getattr(event, "source_key", "interface") == "view":
+            await process_view_update(event.payload)
+            async with session_factory() as session:
+                async with session.begin():
+                    await finish_inbox_event(session, event.id, worker_id)
+        elif event.bot_id is None:
             # Owner-facing bot is part of the standalone Welcome product too.
             # Telegram I/O happens outside a database transaction; the durable
             # inbox lease remains the retry boundary.
@@ -117,6 +123,9 @@ async def serve() -> None:
                         limit=min(settings.worker_batch_size, settings.worker_concurrency),
                         lease_seconds=180,
                         include_owner=not settings.separate_owner_worker,
+                        # Long View scans have a dedicated consumer. Never let
+                        # them occupy the Welcome event worker's capacity.
+                        include_view=False,
                     )
                 await process_claimed_batch(
                     list(events), worker_id, settings.max_attempts, settings.worker_concurrency,

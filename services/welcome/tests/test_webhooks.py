@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,6 +60,31 @@ def test_interface_webhook_accepts_and_reports_duplicate(
 def test_interface_webhook_rejects_bad_secret(client: TestClient) -> None:
     response = client.post("/welcome/webhook/", json={"update_id": 1})
     assert response.status_code == 403
+
+
+def test_view_webhook_is_separate_and_secret_protected(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        interface_webhook_secret="interface-secret",
+        view_bot_token="123:token",
+        view_webhook_secret="view-secret",
+    )
+    inserted: list[tuple[str, int | None]] = []
+
+    async def fake_insert(*_args: object, **kwargs: object) -> bool:
+        inserted.append((str(kwargs["source_key"]), cast(int | None, kwargs["bot_id"])))
+        return True
+
+    monkeypatch.setattr(api, "insert_inbox_event", fake_insert)
+    assert client.post("/welcome/view/webhook/", json={"update_id": 7}).status_code == 403
+    response = client.post(
+        "/welcome/view/webhook/",
+        headers={"X-Telegram-Bot-Api-Secret-Token": "view-secret"},
+        json={"update_id": 7},
+    )
+    assert response.status_code == 200
+    assert inserted == [("view", None)]
 
 
 def test_webhook_rejects_large_body(client: TestClient) -> None:

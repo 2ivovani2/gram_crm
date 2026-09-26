@@ -26,6 +26,7 @@ from .models import (
     JoinRequest,
     ManagedBot,
     Owner,
+    OwnerServiceActivity,
     WelcomeDraft,
     WelcomeDraftMedia,
     WelcomeMedia,
@@ -33,13 +34,18 @@ from .models import (
 )
 
 
-async def owner_from_telegram(session: AsyncSession, user: User) -> Owner:
+async def owner_from_telegram(
+    session: AsyncSession, user: User, *, service: str = "hello", event: str = "update"
+) -> Owner:
+    if service not in {"hello", "view"}:
+        raise ValueError("Unknown Gramly service")
+    now = datetime.now(UTC)
     values = {
         "telegram_id": user.id,
         "username": user.username or "",
         "first_name": user.first_name or "",
         "last_name": user.last_name or "",
-        "last_seen_at": datetime.now(UTC),
+        "last_seen_at": now,
     }
     owner_id = await session.scalar(
         insert(Owner)
@@ -49,6 +55,14 @@ async def owner_from_telegram(session: AsyncSession, user: User) -> Owner:
             set_={key: value for key, value in values.items() if key != "telegram_id"},
         )
         .returning(Owner.id)
+    )
+    await session.execute(
+        insert(OwnerServiceActivity)
+        .values(owner_id=owner_id, service=service, first_seen_at=now, last_seen_at=now, last_event=event)
+        .on_conflict_do_update(
+            constraint="uq_owner_service_activity",
+            set_={"last_seen_at": now, "last_event": event},
+        )
     )
     await session.commit()
     owner = await session.get(Owner, owner_id)

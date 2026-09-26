@@ -101,7 +101,7 @@ def pull_secrets(resource):
 
 expected_consumers = {
     "gramly-welcome-api", "gramly-welcome-web", "gramly-welcome-worker-events",
-    "gramly-welcome-worker-owner",
+    "gramly-welcome-worker-owner", "gramly-welcome-worker-view",
     "gramly-welcome-worker-delivery", "gramly-welcome-worker-delivery-relay",
     "gramly-welcome-worker-interactive", "gramly-welcome-worker-bulk",
     "gramly-welcome-worker-billing",
@@ -121,8 +121,11 @@ for overlay in ("welcome-cutover", "welcome-migrations"):
         else:
             assert "gramly-forgejo-registry" not in secrets, name
 assert seen_consumers == expected_consumers
+staging_registry_consumers = {"gramly-welcome-worker-view-staging", "gramly-welcome-migrate-staging"}
 for overlay in ("overlays/staging", "overlays/staging/welcome-migrations"):
     for resource in rendered(overlay):
         if resource["kind"] in {"Deployment", "CronJob", "Job"}:
-            assert "gramly-forgejo-registry" not in pull_secrets(resource), overlay
+            name = resource["metadata"]["name"]
+            has_forgejo_secret = "gramly-forgejo-registry" in pull_secrets(resource)
+            assert has_forgejo_secret == (name in staging_registry_consumers), name
 print("Public SSO, Telegram ingress and production pull-secret contracts passed.")

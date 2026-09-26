@@ -14,10 +14,13 @@ dependencies = [
   "cryptography>=44,<47",
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
+  "Pillow>=11,<13",
   "prometheus-client>=0.21,<1",
   "pydantic-settings>=2.7,<3",
+  "python-multipart>=0.0.20,<1",
   "redis>=6.4,<7",
   "sqlalchemy[asyncio]>=2.0.36,<2.1",
+  "telethon>=1.45,<2",
   "uvicorn[standard]>=0.34,<1",
 ]
 
@@ -32,6 +35,7 @@ dev = [
 [project.scripts]
 welcome-api = "gramly_welcome.main:run"
 welcome-worker-events = "gramly_welcome.workers.events:run"
+welcome-worker-view = "gramly_welcome.workers.view:run"
 welcome-worker-owner = "gramly_welcome.workers.owner:run"
 welcome-diagnose-clients = "gramly_welcome.diagnose_clients:run"
 welcome-audit-clients = "gramly_welcome.audit_clients:run"
@@ -42,6 +46,10 @@ welcome-worker-billing = "gramly_welcome.workers.billing:run"
 welcome-worker-notifications = "gramly_welcome.workers.notifications:run"
 welcome-maintenance = "gramly_welcome.maintenance:run"
 welcome-reconcile-interface-webhook = "gramly_welcome.webhook_admin:run"
+welcome-reconcile-view-webhook = "gramly_welcome.view_reconcile:run"
+welcome-view-collect = "gramly_welcome.view_collector:run"
+welcome-view-check-accounts = "gramly_welcome.view_health:run"
+welcome-view-authorize = "gramly_welcome.view_authorize:run"
 welcome-reconcile-client-webhooks = "gramly_welcome.reconcile_client_webhooks:run"
 welcome-reconcile-join-requests = "gramly_welcome.reconcile_join_requests:run"
 

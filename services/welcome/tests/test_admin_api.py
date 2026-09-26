@@ -77,6 +77,22 @@ def test_admin_api_rejects_non_owner_group_before_database_access(client: TestCl
     assert response.status_code == 403
 
 
+def test_view_account_credentials_require_elevated_group_and_mutation_header(client: TestClient) -> None:
+    ordinary = {"X-authentik-username": "editor", "X-authentik-groups": "gramly-hello-admin"}
+    assert client.get("/api/admin/v1/view/accounts", headers=ordinary).status_code == 403
+    assert client.post(
+        "/api/admin/v1/view/accounts",
+        headers={**ordinary, "X-Gramly-Admin-Request": "1"},
+        files={"file": ("account.session", b"invalid", "application/octet-stream")},
+    ).status_code == 403
+    elevated = {"X-authentik-username": "operator", "X-authentik-groups": "gramly-owners"}
+    assert client.post(
+        "/api/admin/v1/view/accounts",
+        headers=elevated,
+        files={"file": ("account.session", b"invalid", "application/octet-stream")},
+    ).status_code == 403
+
+
 @pytest.mark.parametrize("group", ["gramly-owners", "authentik Admins", "Business", "Product", "gramly-hello-admin"])
 def test_admin_api_accepts_configured_control_group(
     client: TestClient, group: str

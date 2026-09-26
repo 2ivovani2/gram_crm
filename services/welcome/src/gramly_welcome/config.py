@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     interface_bot_token: str = ""
     interface_bot_username: str = ""
     interface_webhook_secret: str = ""
+    view_bot_token: str = ""
+    view_bot_username: str = ""
+    view_webhook_secret: str = ""
+    view_mtproto_api_id: int = 0
+    view_mtproto_api_hash: str = ""
     public_webhook_base_url: str = "https://gramly.tech/welcome/client"
     # Optional Telegram setWebhook IPv4 override. This is an operational
     # mitigation, not evidence of a DNS failure. URL/Host and TLS are unchanged.

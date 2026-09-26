@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: gramly-view-collector, namespace: gramly-welcome}
+spec:
+  schedule: "7 * * * *"
+  timeZone: Europe/Moscow
+  suspend: true # Enable after five accounts are loaded and the health probe passes.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 840
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets: [{name: gramly-welcome-registry}]
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: collector
+              image: WELCOME_IMAGE_PLACEHOLDER
+              command: [welcome-view-collect]
+              envFrom:
+                - {secretRef: {name: gramly-welcome-runtime}}
+                - {secretRef: {name: gramly-view-mtproto, optional: true}}
+              volumeMounts:
+                - {name: scratch, mountPath: /tmp}
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+              resources:
+                requests: {cpu: 100m, memory: 192Mi}
+                limits: {cpu: "1", memory: 512Mi}
+          volumes:
+            - {name: scratch, emptyDir: {sizeLimit: 16Mi}}
