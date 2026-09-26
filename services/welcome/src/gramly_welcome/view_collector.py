@@ -92,7 +92,7 @@ async def collect_one(client: TelegramClient, username: object, expected_id: int
 
 async def collect() -> None:
     if not await analytics_available():
-        logger.warning("GramlyView collection paused: fewer than five healthy accounts")
+        logger.warning("GramlyView collection paused: fewer than three healthy accounts")
         return
     async with session_factory() as session:
         last_run = (

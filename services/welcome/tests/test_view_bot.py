@@ -6,10 +6,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.methods import SendMessage
 
 from gramly_welcome.config import Settings
 from gramly_welcome.models import ViewChannelSnapshot, ViewCollectionRun, ViewPostObservation
-from gramly_welcome.view_bot import _channel_card, attribution, parse_channels
+from gramly_welcome.view_bot import (
+    _channel_card,
+    _report_keyboard,
+    _styled_markup,
+    attribution,
+    parse_channels,
+)
 from gramly_welcome.view_metrics import ViewWindows, measured_windows
 
 
@@ -41,6 +49,36 @@ def test_unknown_metrics_are_not_rendered_as_zero() -> None:
     assert "Канал &amp; друзья" in card
     assert "Просмотры 24 / 48 / 72 ч · нет данных" in card
     assert "ER24 · нет данных" in card
+    assert "<blockquote>" in card and "</blockquote>" in card
+
+
+def test_report_actions_have_premium_icons_and_navigation() -> None:
+    keyboard = _styled_markup(_report_keyboard(-10077, public_username="public_channel"))
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    assert {button.callback_data for button in buttons} >= {
+        "view:refresh:-10077", "view:image:-10077", "view:top:-10077",
+        "view:export:-10077", "view:menu",
+    }
+    assert all(button.icon_custom_emoji_id for button in buttons)
+
+
+@pytest.mark.asyncio
+async def test_view_message_falls_back_if_telegram_rejects_premium(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+
+    send = AsyncMock(side_effect=[
+        TelegramBadRequest(method=SendMessage(chat_id=42, text="test"), message="custom emoji not allowed"),
+        SimpleNamespace(message_id=1),
+    ])
+    monkeypatch.setattr(view_bot, "view_bot", lambda: SimpleNamespace(send_message=send))
+    monkeypatch.setattr(view_bot, "get_settings", lambda: Settings(view_bot_username="gramly_view_bot"))
+    await view_bot._send(42, "<b>Отчёт</b>", keyboard=_report_keyboard(-10077))
+    assert "tg-emoji" in send.call_args_list[0].args[1]
+    assert "tg-emoji" not in send.call_args_list[1].args[1]
+    first = send.call_args_list[0].kwargs["reply_markup"]
+    second = send.call_args_list[1].kwargs["reply_markup"]
+    assert first.inline_keyboard[0][0].icon_custom_emoji_id
+    assert second.inline_keyboard[0][0].icon_custom_emoji_id is None
 
 
 @pytest.mark.asyncio
@@ -212,7 +250,7 @@ async def test_public_report_rechecks_channel_identity_before_export(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_public_analysis_does_not_start_below_five_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_public_analysis_does_not_start_below_three_accounts(monkeypatch: pytest.MonkeyPatch) -> None:
     from gramly_welcome import view_bot
 
     send = AsyncMock()
@@ -221,5 +259,5 @@ async def test_public_analysis_does_not_start_below_five_accounts(monkeypatch: p
     monkeypatch.setattr(view_bot, "_send", send)
     monkeypatch.setattr(view_bot, "_reserve_analysis", reserve)
     await view_bot._analyze(123, 42, "https://t.me/durov")
-    assert "менее пяти" in send.call_args.args[1]
+    assert "менее трёх" in send.call_args.args[1]
     reserve.assert_not_awaited()

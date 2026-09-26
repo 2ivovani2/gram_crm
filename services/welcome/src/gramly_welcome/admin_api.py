@@ -14,6 +14,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import String, and_, case, delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import Select
@@ -56,6 +57,7 @@ from .models import (
     Tip,
     ViewMtprotoAccount,
     ViewPoolAlert,
+    ViewPoolAlertRecipient,
     ViewPrivateChannel,
     WeeklyBusinessSnapshot,
 )
@@ -63,6 +65,7 @@ from .transfer_preflight import transfer_preview
 from .view_pool import (
     MAX_ACCOUNTS,
     MAX_SESSION_BYTES,
+    MIN_HEALTHY_ACCOUNTS,
     ViewPoolError,
     analytics_available,
     check_all_accounts,
@@ -142,15 +145,24 @@ async def view_accounts(_admin: ViewOperatorDep, session: SessionDep) -> dict[st
     )).all()
     assignments: dict[int, int] = {int(row[0]): int(row[1]) for row in assignment_rows}
     alert = await session.get(ViewPoolAlert, 1)
+    recipients = (await session.execute(
+        select(ViewPoolAlertRecipient.owner_id, Owner.username, Owner.telegram_id)
+        .join(Owner, Owner.id == ViewPoolAlertRecipient.owner_id)
+        .order_by(ViewPoolAlertRecipient.created_at, ViewPoolAlertRecipient.owner_id)
+    )).all()
     count = await healthy_count()
     available = await analytics_available()
     settings = get_settings()
     return {
         "healthy": count,
-        "minimum": 5,
+        "minimum": MIN_HEALTHY_ACCOUNTS,
         "available": available,
         "api_configured": bool(settings.view_mtproto_api_id and settings.view_mtproto_api_hash),
         "alert_recipient_owner_id": alert.recipient_owner_id if alert else None,
+        "alert_recipients": [
+            {"owner_id": row.owner_id, "username": row.username or "", "telegram_id": row.telegram_id}
+            for row in recipients
+        ],
         "items": [
             {
                 "id": row.id,
@@ -258,6 +270,7 @@ class ViewAlertRecipient(BaseModel):
     username: str = Field(min_length=1, max_length=64)
 
 
+@router.post("/view/alert-recipients")
 @router.post("/view/alert-recipient")
 async def set_view_alert_recipient(
     payload: ViewAlertRecipient, admin: ViewOperatorMutationDep, session: SessionDep
@@ -273,8 +286,11 @@ async def set_view_alert_recipient(
         if len(owners) != 1:
             raise HTTPException(422, "Пользователь должен открыть @gramly_view_bot командой /start")
         owner_id, telegram_id = owners[0].id, owners[0].telegram_id
+        already_added = await session.get(ViewPoolAlertRecipient, owner_id) is not None
     from .view_bot import _send
 
+    if already_added:
+        return {"owner_id": owner_id, "username": f"@{username}"}
     try:
         await _send(telegram_id, "Аварийные уведомления GramlyView подключены к этому аккаунту.")
     except Exception as exc:
@@ -284,11 +300,38 @@ async def set_view_alert_recipient(
         if alert is None:
             alert = ViewPoolAlert(id=1)
             session.add(alert)
-        alert.recipient_owner_id = owner_id
-        alert.last_notified_at = None
-        await _audit(session, admin, "view_alert_recipient_set", {"recipient_owner_id": owner_id})
-    await refresh_pool_alert()
-    return {"username": f"@{username}"}
+        if alert.recipient_owner_id is None:
+            alert.recipient_owner_id = owner_id
+        created = await session.scalar(
+            insert(ViewPoolAlertRecipient)
+            .values(owner_id=owner_id, last_notified_event_at=alert.last_notified_at)
+            .on_conflict_do_nothing(index_elements=[ViewPoolAlertRecipient.owner_id])
+            .returning(ViewPoolAlertRecipient.owner_id)
+        )
+        if created is not None:
+            await _audit(session, admin, "view_alert_recipient_added", {"recipient_owner_id": owner_id})
+    return {"owner_id": owner_id, "username": f"@{username}"}
+
+
+@router.delete("/view/alert-recipients/{owner_id}", status_code=204)
+async def delete_view_alert_recipient(
+    owner_id: int, admin: ViewOperatorMutationDep, session: SessionDep
+) -> Response:
+    async with session.begin():
+        recipient = await session.get(ViewPoolAlertRecipient, owner_id, with_for_update=True)
+        if recipient is None:
+            raise HTTPException(404, "Получатель не найден")
+        await session.delete(recipient)
+        alert = await session.get(ViewPoolAlert, 1, with_for_update=True)
+        if alert is not None and alert.recipient_owner_id == owner_id:
+            alert.recipient_owner_id = await session.scalar(
+                select(ViewPoolAlertRecipient.owner_id)
+                .where(ViewPoolAlertRecipient.owner_id != owner_id)
+                .order_by(ViewPoolAlertRecipient.created_at)
+                .limit(1)
+            )
+        await _audit(session, admin, "view_alert_recipient_deleted", {"recipient_owner_id": owner_id})
+    return Response(status_code=204)
 
 
 @router.post("/view/accounts/check")

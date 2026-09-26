@@ -218,6 +218,14 @@ class ViewPoolAlert(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ViewPoolAlertRecipient(Base):
+    __tablename__ = "view_pool_alert_recipient"
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), primary_key=True)
+    last_notified_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Plan(Base):
     __tablename__ = "plan"
     __table_args__ = (
