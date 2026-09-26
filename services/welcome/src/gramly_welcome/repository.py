@@ -590,7 +590,7 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
             select(
                 func.coalesce(func.sum(InboxSource.pending_count), 0),
                 func.min(InboxSource.next_available_at),
-            )
+            ).where(InboxSource.pending_count > 0)
         )
     ).one()
     processing_count, processing_oldest = (

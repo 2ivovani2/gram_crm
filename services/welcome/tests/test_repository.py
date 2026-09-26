@@ -15,6 +15,7 @@ from gramly_welcome.repository import (
     _inbox_claim_query,
     _inbox_source_claim_query,
     claim_inbox_batch,
+    queue_snapshot,
 )
 
 
@@ -48,6 +49,24 @@ def test_source_scheduler_is_round_robin_and_lock_safe() -> None:
     assert "inbox_source.last_claimed_at" in compiled
     assert "LIMIT 1" in compiled
     assert "SKIP LOCKED" in compiled
+
+
+@pytest.mark.asyncio
+async def test_empty_sources_do_not_age_the_event_queue() -> None:
+    statements: list[Any] = []
+
+    class Session:
+        async def execute(self, statement: Any) -> SimpleNamespace:
+            statements.append(statement)
+            return SimpleNamespace(one=lambda: (0, None))
+
+        async def scalar(self, _statement: Any) -> int:
+            return 0
+
+    snapshot = await queue_snapshot(cast(AsyncSession, Session()))
+    compiled = str(statements[0].compile(dialect=postgresql.dialect()))  # type: ignore[no-untyped-call]
+    assert "inbox_source.pending_count >" in compiled
+    assert snapshot["events"] == (0, 0, 0.0)
 
 
 def test_expired_lease_query_is_separate_and_lock_safe() -> None:
