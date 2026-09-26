@@ -30,7 +30,7 @@ async def _set_profile_photo(token: str) -> None:
             )
             payload = response.json()
     except (httpx.HTTPError, ValueError, OSError):
-        logger.warning("Could not update GramlyView avatar", exc_info=True)
+        logger.warning("Could not update GramlyView avatar")
         return
     if not response.is_success or not payload.get("ok"):
         logger.warning("Telegram rejected GramlyView avatar: %s", payload.get("description"))
