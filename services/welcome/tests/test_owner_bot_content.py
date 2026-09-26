@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from aiogram.types import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup
@@ -18,6 +19,44 @@ from gramly_welcome.content_service import (
 from gramly_welcome.models import Payment, Plan
 from gramly_welcome.owner_bot import _parse_keyboard_definition, _toggle_channel_assignment
 from gramly_welcome.telegram_delivery import _reply_markup
+
+
+@pytest.mark.asyncio
+async def test_owner_start_and_offer_reuse_action_transaction(monkeypatch: pytest.MonkeyPatch) -> None:
+    activity = SimpleNamespace(last_event="", cross_offer_hidden=False, cross_offer_at=None)
+    commits = 0
+    reads = 0
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def scalar(self, query: object) -> object:
+            nonlocal reads
+            reads += 1
+            return None if reads in (3, 6) else activity
+
+        async def commit(self) -> None:
+            nonlocal commits
+            commits += 1
+
+    monkeypatch.setattr(owner_bot, "session_factory", Session)
+    monkeypatch.setattr(owner_bot, "get_settings", lambda: SimpleNamespace(view_bot_username="gramly_view_bot"))
+    monkeypatch.setattr(owner_bot, "main_keyboard", AsyncMock(return_value=None))
+    monkeypatch.setattr(owner_bot, "answer_with_ui_fallback", AsyncMock())
+    owner = SimpleNamespace(id=1, first_name="Owner")
+    message = SimpleNamespace(text="/start from_view")
+    await owner_bot.start(message, owner, SimpleNamespace(clear=AsyncMock()))
+    assert activity.last_event == "start_from_view"
+    assert activity.cross_offer_at is not None
+
+    callback = SimpleNamespace(message=message, answer=AsyncMock())
+    await owner_bot.hide_view_offer(callback, owner)
+    assert activity.cross_offer_hidden is True
+    assert commits == 3
 
 
 def test_keyboard_parser_uses_friendly_url_format() -> None:
