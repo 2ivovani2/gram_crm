@@ -57,8 +57,11 @@ is user-only, and channel statistics require appropriate administrator access.
 
 1. `/welcome/view/webhook/` authenticates the distinct secret, validates body
    size and commits a deduplicated `InboxEvent(source_key='view')` before 200.
-2. Events worker dispatches `view` to its own handler. Separate owner workers
-   claim only `interface`; no View update can enter Hello's owner FSM.
+2. A dedicated View worker claims only `view` inbox events. Hello event workers
+   exclude them, and owner workers claim only `interface`; a long MTProto scan
+   cannot occupy greeting delivery capacity or enter Hello's owner FSM. One
+   View pod processes four events concurrently while preserving each person's
+   order within a batch; its bounded lease is renewed during long scans.
 3. `owner_from_telegram(..., service='view')` upserts the same `Owner` by
    Telegram ID and writes per-service first/last activity. Migration backfills
    existing owners as Hello without sending any message or triggering delivery.

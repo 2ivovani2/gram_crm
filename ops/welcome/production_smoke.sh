@@ -6,7 +6,7 @@ set -euo pipefail
 namespace=gramly-welcome
 kubectl -n "${namespace}" rollout status deployment/gramly-welcome-api --timeout=10m
 kubectl -n "${namespace}" rollout status deployment/gramly-welcome-web --timeout=10m
-for worker in owner events delivery billing notifications; do
+for worker in owner events view delivery billing notifications; do
   kubectl -n "${namespace}" rollout status "deployment/gramly-welcome-worker-${worker}" --timeout=10m
 done
 
@@ -44,7 +44,7 @@ case "${admin_status}" in
 esac
 
 kubectl -n "${namespace}" get pod \
-  -l 'app.kubernetes.io/name in (gramly-welcome-api,gramly-welcome-web,gramly-welcome-worker-owner,gramly-welcome-worker-events,gramly-welcome-worker-delivery,gramly-welcome-worker-billing,gramly-welcome-worker-notifications)' \
+  -l 'app.kubernetes.io/name in (gramly-welcome-api,gramly-welcome-web,gramly-welcome-worker-owner,gramly-welcome-worker-events,gramly-welcome-worker-view,gramly-welcome-worker-delivery,gramly-welcome-worker-billing,gramly-welcome-worker-notifications)' \
   --field-selector=status.phase!=Running --no-headers | \
   grep -q . && { echo "A GramlyHello production pod is not Running." >&2; exit 1; } || true
 

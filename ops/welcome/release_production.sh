@@ -71,6 +71,7 @@ kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-dashboard.yaml"
 kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-alerts.yaml"
 
 kubectl -n gramly-welcome rollout status deployment/gramly-welcome-api --timeout=10m
+kubectl -n gramly-welcome rollout status deployment/gramly-welcome-worker-view --timeout=10m
 kubectl -n gramly-welcome exec deployment/gramly-welcome-api -- welcome-reconcile-interface-webhook
 kubectl -n gramly-welcome exec deployment/gramly-welcome-api -- welcome-reconcile-client-webhooks
 "${repo_root}/ops/welcome/production_smoke.sh"
