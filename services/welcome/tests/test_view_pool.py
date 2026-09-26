@@ -56,6 +56,15 @@ def test_report_image_contains_a_real_png_with_measured_points() -> None:
     assert len(output) > 10_000
 
 
+def test_report_image_handles_hidden_subscriber_count() -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    report = ViewReport(
+        title="Закрытый канал", subscribers=None, observed_at=now,
+        points=(), views_24h=None, er24=None,
+    )
+    assert render_report_png(report).startswith(b"\x89PNG\r\n\x1a\n")
+
+
 @pytest.mark.asyncio
 async def test_pool_blocks_four_accounts_and_opens_at_five(monkeypatch: pytest.MonkeyPatch) -> None:
     async def count_four() -> int:

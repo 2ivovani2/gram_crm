@@ -30,7 +30,7 @@ No Trustat API or implementation code is used by GramlyView.
 | `Массовая аналитика` → `Сохранённые каналы` → `Изменить/добавить коллекции` → `Создать новую коллекцию` → step 1 asks name | Favorites and named collections up to ten channels | First-party DB | Wizard step 1 observed; later Trustat steps unverified |
 | `Статистика картинкой` → channels → website link and month of daily subscriber changes | Historical series and image later | First-party periodic snapshots, never reconstructed | Text series observed; image/export details unverified |
 | `Мониторинг упоминаний` → alerts bot → new tracking: name then keyword | Planned opt-in notifications | First-party MTProto search restricted to accessible channels | Two-step wizard observed; saved alert and delivery not tested |
-| `Топ публикаций` → sort by views/forwards/comments/reactions → daily five-post list, pagination | Planned sampled-post ranking | MTProto collector | List/sorts observed; cross-channel corpus unavailable initially |
+| `Топ публикаций` → sort by views/forwards/comments/reactions → daily five-post list, pagination | Five measured posts ranked by views; other sorts pending | MTProto collector | List/sorts observed; cross-channel corpus unavailable initially |
 | `Подписка` → Premium/Medium and expiry | No View paywall | Shared Gramly identity; View free | Personally observed Premium status |
 | `Trustat API`, chat bot, website, `/help` | No copied API/chat product; View methodology help | Own endpoints only | Menu and support links observed; API internals unverified |
 | Publication link sent directly | Identifies channel and returns channel card | Public link parser; post metadata requires MTProto | Personally observed, no post-level card in that response |

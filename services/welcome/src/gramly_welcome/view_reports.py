@@ -18,7 +18,7 @@ class ReportPoint:
 @dataclass(frozen=True)
 class ViewReport:
     title: str
-    subscribers: int
+    subscribers: int | None
     observed_at: datetime
     points: tuple[ReportPoint, ...]
     views_24h: int | None
@@ -54,7 +54,8 @@ def render_report_png(report: ViewReport) -> bytes:
     draw.text((96, 156), title, font=_font(48, bold=True), fill="#F0EEE4")
     draw.line((96, 246, 984, 246), fill="#34402C", width=2)
     draw.text((96, 282), "ПОДПИСЧИКИ", font=_font(23), fill=muted)
-    draw.text((96, 328), f"{report.subscribers:,}".replace(",", " "), font=_font(80, bold=True), fill="#F0EEE4")
+    subscriber_label = f"{report.subscribers:,}".replace(",", " ") if report.subscribers is not None else "нет данных"
+    draw.text((96, 328), subscriber_label, font=_font(60 if report.subscribers is None else 80, bold=True), fill="#F0EEE4")
     draw.text((575, 292), "ПРОСМОТРЫ 24 / 48 / 72 Ч", font=_font(18), fill=muted)
     for offset, value in enumerate((report.views_24h, report.views_48h, report.views_72h)):
         label = f"{value:,}".replace(",", " ") if value is not None else "нет данных"

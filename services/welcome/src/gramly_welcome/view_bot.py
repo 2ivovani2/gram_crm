@@ -242,14 +242,12 @@ async def _report_for(owner_id: int, channel_id: int) -> ViewReport | None:
             ))
             if permitted is None:
                 return None
-        if latest.subscriber_count is None:
-            return None
         snapshots = (await session.scalars(select(ViewChannelSnapshot).where(
             ViewChannelSnapshot.channel_id == channel_id,
             ViewChannelSnapshot.subscriber_count.is_not(None),
             ViewChannelSnapshot.observed_at >= datetime.now(UTC) - timedelta(days=30),
         ).order_by(ViewChannelSnapshot.observed_at))).all()
-        windows = await measured_windows(session, channel_id, latest.subscriber_count, now=datetime.now(UTC))
+        windows = await measured_windows(session, channel_id, latest.subscriber_count or 0, now=datetime.now(UTC))
     days: dict[str, ReportPoint] = {}
     for snapshot in snapshots:
         if snapshot.subscriber_count is not None:
