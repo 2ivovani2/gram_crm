@@ -85,14 +85,15 @@ async def claim_owner_event(worker_id: str) -> InboxEvent | None:
         event = await session.scalar(
             select(InboxEvent)
             .where(
-                InboxEvent.source_key == "interface",
+                InboxEvent.source_key != "view",
+                InboxEvent.bot_id.is_(None),
                 or_(
                     and_(InboxEvent.status.in_(["pending", "retry"]), InboxEvent.available_at <= now),
                     and_(InboxEvent.status == "processing", InboxEvent.lease_expires_at < now),
                 ),
                 ~exists(
                     select(earlier.id).where(
-                        earlier.source_key == "interface",
+                        earlier.source_key == InboxEvent.source_key,
                         earlier_actor == actor,
                         earlier.update_id < InboxEvent.update_id,
                         earlier.status.in_(["pending", "retry", "processing"]),
