@@ -11,7 +11,9 @@ from sqlalchemy import update
 from ..db import session_factory
 
 
-async def run_leased(work: Awaitable[None], model: Any, row_id: int, worker_id: str) -> None:
+async def run_leased(
+    work: Awaitable[None], model: Any, row_id: int, worker_id: str, *, timeout_seconds: int = 120
+) -> None:
     async def renew() -> None:
         while True:
             await asyncio.sleep(20)
@@ -25,7 +27,7 @@ async def run_leased(work: Awaitable[None], model: Any, row_id: int, worker_id: 
 
     action, renewal = asyncio.ensure_future(work), asyncio.create_task(renew())
     try:
-        async with asyncio.timeout(120):
+        async with asyncio.timeout(timeout_seconds):
             done, _ = await asyncio.wait((action, renewal), return_when=asyncio.FIRST_COMPLETED)
             if renewal in done:
                 await renewal

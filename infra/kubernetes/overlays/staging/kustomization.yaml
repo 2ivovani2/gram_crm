@@ -17,6 +17,15 @@ labels:
     includeSelectors: false
 
 patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: gramly-welcome-worker-view
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets/-
+        value: {name: gramly-forgejo-registry}
   - path: routes.yaml
   - path: workloads.yaml
   - path: welcome-workloads.yaml

@@ -161,7 +161,7 @@ def _expired_inbox_claim_query(now: datetime) -> Select[tuple[InboxEvent]]:
 
 async def claim_inbox_batch(
     session: AsyncSession, *, worker_id: str, limit: int, lease_seconds: int,
-    include_owner: bool = True, include_view: bool = False,
+    include_owner: bool = True, include_view: bool = False, only_view: bool = False,
 ) -> list[InboxEvent]:
     now = datetime.now(UTC)
     async with session.begin():
@@ -169,7 +169,10 @@ async def claim_inbox_batch(
         # narrow partial index without an expensive OR across queue states.
         expired_query = _expired_inbox_claim_query(now)
         source_query = _inbox_source_claim_query(now)
-        if not include_owner:
+        if only_view:
+            expired_query = expired_query.where(InboxEvent.source_key == "view")
+            source_query = source_query.where(InboxSource.source_key == "view")
+        elif not include_owner:
             if include_view:
                 expired_query = expired_query.where(
                     (InboxEvent.bot_id.is_not(None)) | (InboxEvent.source_key == "view")
@@ -180,6 +183,9 @@ async def claim_inbox_batch(
             else:
                 expired_query = expired_query.where(InboxEvent.bot_id.is_not(None))
                 source_query = source_query.where(InboxSource.bot_id.is_not(None))
+        elif not include_view:
+            expired_query = expired_query.where(InboxEvent.source_key != "view")
+            source_query = source_query.where(InboxSource.source_key != "view")
         events = list((await session.scalars(expired_query.limit(limit))).all())
         remaining = limit - len(events)
         if remaining:

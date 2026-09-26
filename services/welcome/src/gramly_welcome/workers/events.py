@@ -123,7 +123,9 @@ async def serve() -> None:
                         limit=min(settings.worker_batch_size, settings.worker_concurrency),
                         lease_seconds=180,
                         include_owner=not settings.separate_owner_worker,
-                        include_view=bool(settings.view_bot_token),
+                        # Long View scans have a dedicated consumer. Never let
+                        # them occupy the Welcome event worker's capacity.
+                        include_view=False,
                     )
                 await process_claimed_batch(
                     list(events), worker_id, settings.max_attempts, settings.worker_concurrency,

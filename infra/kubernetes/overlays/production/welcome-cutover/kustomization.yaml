@@ -12,7 +12,7 @@ patches:
       group: apps
       version: v1
       kind: Deployment
-      name: gramly-welcome-(api|web|worker-owner|worker-events|worker-delivery|worker-delivery-relay|worker-interactive|worker-bulk|worker-billing|worker-notifications)
+      name: gramly-welcome-(api|web|worker-owner|worker-events|worker-view|worker-delivery|worker-delivery-relay|worker-interactive|worker-bulk|worker-billing|worker-notifications)
     patch: |-
       - op: add
         path: /spec/template/spec/imagePullSecrets/-

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import Any, cast
 
+import pytest
 from sqlalchemy import Table
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from gramly_welcome.models import InboxEvent
 from gramly_welcome.repository import (
     _expired_inbox_claim_query,
     _inbox_claim_query,
     _inbox_source_claim_query,
+    claim_inbox_batch,
 )
 
 
@@ -70,3 +75,44 @@ def test_inbox_state_indexes_only_cover_live_queue_paths() -> None:
     assert "ix_inbox_dead" in index_names
     assert "ix_inbox_claim" not in index_names
     assert "ix_inbox_event_status" not in index_names
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("only_view", [False, True])
+async def test_view_claims_are_isolated_from_hello(only_view: bool) -> None:
+    statements: list[str] = []
+
+    class Transaction:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    class Session:
+        def begin(self) -> Transaction:
+            return Transaction()
+
+        async def scalars(self, statement: Any) -> Any:
+            statements.append(str(statement.compile(
+                dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+                compile_kwargs={"literal_binds": True},
+            )))
+            return SimpleNamespace(all=lambda: [])
+
+        async def scalar(self, statement: Any) -> None:
+            statements.append(str(statement.compile(
+                dialect=postgresql.dialect(),  # type: ignore[no-untyped-call]
+                compile_kwargs={"literal_binds": True},
+            )))
+            return None
+
+    await claim_inbox_batch(
+        cast(AsyncSession, Session()), worker_id="test", limit=2,
+        lease_seconds=180, include_owner=False, only_view=only_view,
+    )
+    assert len(statements) == 2
+    if only_view:
+        assert all("source_key = 'view'" in sql for sql in statements)
+    else:
+        assert all("bot_id IS NOT NULL" in sql for sql in statements)

@@ -8,4 +8,5 @@ resources:
   - maintenance.yaml
   - view-collector.yaml
   - view-health.yaml
+  - view-worker.yaml
   - network-policy.yaml
