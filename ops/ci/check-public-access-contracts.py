@@ -106,7 +106,7 @@ expected_consumers = {
     "gramly-welcome-worker-interactive", "gramly-welcome-worker-bulk",
     "gramly-welcome-worker-billing",
     "gramly-welcome-worker-notifications", "gramly-welcome-maintenance",
-    "gramly-welcome-migrate",
+    "gramly-welcome-migrate", "gramly-view-health", "gramly-view-collector",
 }
 seen_consumers = set()
 for overlay in ("welcome-cutover", "welcome-migrations"):
@@ -121,7 +121,10 @@ for overlay in ("welcome-cutover", "welcome-migrations"):
         else:
             assert "gramly-forgejo-registry" not in secrets, name
 assert seen_consumers == expected_consumers
-staging_registry_consumers = {"gramly-welcome-worker-view-staging", "gramly-welcome-migrate-staging"}
+staging_registry_consumers = {
+    "gramly-welcome-worker-view-staging", "gramly-welcome-migrate-staging",
+    "gramly-view-health-staging", "gramly-view-collector-staging",
+}
 for overlay in ("overlays/staging", "overlays/staging/welcome-migrations"):
     for resource in rendered(overlay):
         if resource["kind"] in {"Deployment", "CronJob", "Job"}:

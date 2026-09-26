@@ -26,6 +26,15 @@ patches:
       - op: add
         path: /spec/template/spec/imagePullSecrets/-
         value: {name: gramly-forgejo-registry}
+  - target:
+      group: batch
+      version: v1
+      kind: CronJob
+      name: gramly-view-health|gramly-view-collector
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/imagePullSecrets/-
+        value: {name: gramly-forgejo-registry}
   - path: routes.yaml
   - path: workloads.yaml
   - path: welcome-workloads.yaml
