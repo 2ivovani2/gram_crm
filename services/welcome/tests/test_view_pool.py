@@ -3,12 +3,14 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
 
 from gramly_welcome import view_pool
 from gramly_welcome.config import Settings
+from gramly_welcome.models import ViewPoolAlert, ViewPoolAlertRecipient
 from gramly_welcome.view_pool import MAX_SESSION_BYTES, ViewPoolError, validate_session_file
 from gramly_welcome.view_private import parse_invites
 from gramly_welcome.view_reports import ReportPoint, ViewReport, render_report_png
@@ -66,16 +68,64 @@ def test_report_image_handles_hidden_subscriber_count() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pool_blocks_four_accounts_and_opens_at_five(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def count_four() -> int:
-        return 4
-    async def count_five() -> int:
-        return 5
+async def test_pool_blocks_two_accounts_and_opens_at_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def count_two() -> int:
+        return 2
+    async def count_three() -> int:
+        return 3
     monkeypatch.setattr(view_pool, "get_settings", lambda: Settings(view_mtproto_api_id=1, view_mtproto_api_hash="test"))
-    monkeypatch.setattr(view_pool, "healthy_count", count_four)
+    monkeypatch.setattr(view_pool, "healthy_count", count_two)
     assert not await view_pool.analytics_available()
-    monkeypatch.setattr(view_pool, "healthy_count", count_five)
+    monkeypatch.setattr(view_pool, "healthy_count", count_three)
     assert await view_pool.analytics_available()
+
+
+@pytest.mark.asyncio
+async def test_pool_alert_retries_only_failed_recipient(monkeypatch: pytest.MonkeyPatch) -> None:
+    alert = ViewPoolAlert(id=1, below_threshold=False, last_notified_at=None)
+    recipients = [
+        ViewPoolAlertRecipient(owner_id=1, last_notified_event_at=None),
+        ViewPoolAlertRecipient(owner_id=2, last_notified_event_at=None),
+    ]
+    sent: list[int] = []
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def begin(self) -> Session:
+            return self
+
+        async def get(self, model: object, key: int, **_kwargs: object) -> object:
+            if model is ViewPoolAlert:
+                return alert
+            return next((row for row in recipients if row.owner_id == key), None)
+
+        async def execute(self, _statement: object) -> SimpleNamespace:
+            due = [(row, row.owner_id + 100) for row in recipients
+                   if row.last_notified_event_at != alert.last_notified_at and row.claim_until is None]
+            return SimpleNamespace(all=lambda: due)
+
+    async def count() -> int:
+        return 2
+
+    async def send(chat_id: int, _text: str, **_kwargs: object) -> None:
+        sent.append(chat_id)
+        if chat_id == 102 and sent.count(102) == 1:
+            raise RuntimeError("temporary Telegram failure")
+
+    monkeypatch.setattr(view_pool, "session_factory", Session)
+    monkeypatch.setattr(view_pool, "healthy_count", count)
+    monkeypatch.setattr(view_pool, "get_settings", lambda: Settings(view_mtproto_api_id=1, view_mtproto_api_hash="test"))
+    monkeypatch.setattr("gramly_welcome.view_bot._send", send)
+    await view_pool.refresh_pool_alert()
+    await view_pool.refresh_pool_alert()
+    assert sent == [101, 102, 102]
+    assert recipients[0].last_notified_event_at == alert.last_notified_at
+    assert recipients[1].last_notified_event_at == alert.last_notified_at
 
 
 def test_session_blob_is_encrypted_and_roundtrips(monkeypatch: pytest.MonkeyPatch) -> None:

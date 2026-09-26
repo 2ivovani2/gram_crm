@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 import sqlite3
 import tempfile
@@ -25,7 +26,8 @@ from .crypto import TokenKeyring
 from .db import session_factory
 from .models import ViewMtprotoAccount, ViewPrivateChannel
 
-MIN_HEALTHY_ACCOUNTS = 5
+MIN_HEALTHY_ACCOUNTS = 3
+logger = logging.getLogger(__name__)
 MAX_ACCOUNTS = 25
 MAX_PRIVATE_CHANNELS_PER_ACCOUNT = 200
 MAX_SESSION_BYTES = 1_048_576
@@ -276,13 +278,14 @@ async def check_all_accounts() -> None:
 
 
 async def refresh_pool_alert() -> None:
-    from .models import Owner, ViewPoolAlert
+    from .models import Owner, ViewPoolAlert, ViewPoolAlertRecipient
 
     count = await healthy_count()
     settings = get_settings()
     api_configured = bool(settings.view_mtproto_api_id and settings.view_mtproto_api_hash)
     below = count < MIN_HEALTHY_ACCOUNTS or not api_configured
-    target: int | None = None
+    targets: list[tuple[int, int]] = []
+    event_at: datetime | None = None
     now = datetime.now(UTC)
     async with session_factory() as session, session.begin():
         alert = await session.get(ViewPoolAlert, 1, with_for_update=True)
@@ -297,29 +300,45 @@ async def refresh_pool_alert() -> None:
             alert.below_threshold = below
             alert.updated_at = now
             alert.last_notified_at = now
-            if alert.recipient_owner_id:
-                target = await session.scalar(
-                    select(Owner.telegram_id).where(Owner.id == alert.recipient_owner_id)
+        event_at = alert.last_notified_at
+        if event_at is not None:
+            rows = (await session.execute(
+                select(ViewPoolAlertRecipient, Owner.telegram_id)
+                .join(Owner, Owner.id == ViewPoolAlertRecipient.owner_id)
+                .where(
+                    or_(
+                        ViewPoolAlertRecipient.last_notified_event_at.is_(None),
+                        ViewPoolAlertRecipient.last_notified_event_at != event_at,
+                    ),
+                    or_(
+                        ViewPoolAlertRecipient.claim_until.is_(None),
+                        ViewPoolAlertRecipient.claim_until <= now,
+                    ),
                 )
-    if target is not None:
-        from .view_bot import _send
+            )).all()
+            for recipient, telegram_id in rows:
+                recipient.claim_until = now + timedelta(seconds=30)
+                targets.append((recipient.owner_id, int(telegram_id)))
+    if event_at is None:
+        return
+    from .view_bot import _send
 
+    message = (
+        f"<b>GramlyView: {'аналитика приостановлена' if below else 'аналитика восстановлена'}</b>\n"
+        f"Рабочих MTProto-аккаунтов: {count} из необходимого минимума {MIN_HEALTHY_ACCOUNTS}.\n"
+        + ("Настройте API ID/hash на сервере.\n" if not api_configured else "")
+        + ("Добавьте или восстановите аккаунты в hello-admin." if below else "Новые запросы снова обрабатываются.")
+    )
+    for owner_id, telegram_id in targets:
+        delivered = False
         try:
-            await _send(
-                target,
-                f"<b>GramlyView: {'аналитика приостановлена' if below else 'аналитика восстановлена'}</b>\n"
-                f"Рабочих MTProto-аккаунтов: {count} из необходимого минимума {MIN_HEALTHY_ACCOUNTS}.\n"
-                + ("Настройте API ID/hash на сервере.\n" if not api_configured else "")
-                + (
-                    "Добавьте или восстановите аккаунты в hello-admin."
-                    if below
-                    else "Новые запросы снова обрабатываются."
-                ),
-            )
+            await _send(telegram_id, message)
+            delivered = True
         except Exception:
-            # The persistent admin status remains visible. Retry the alert on
-            # the next probe rather than losing a failed notification.
-            async with session_factory() as session, session.begin():
-                alert = await session.get(ViewPoolAlert, 1, with_for_update=True)
-                if alert is not None:
-                    alert.last_notified_at = None
+            logger.exception("GramlyView pool alert delivery failed recipient_owner_id=%s", owner_id)
+        async with session_factory() as session, session.begin():
+            recipient = await session.get(ViewPoolAlertRecipient, owner_id, with_for_update=True)
+            if recipient is not None:
+                recipient.claim_until = None
+                if delivered:
+                    recipient.last_notified_event_at = event_at

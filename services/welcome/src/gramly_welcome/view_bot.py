@@ -17,7 +17,7 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.enums import ChatType, ParseMode
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import (
     BufferedInputFile,
     InlineKeyboardButton,
@@ -28,6 +28,7 @@ from aiogram.types import (
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from .bot_ui import DEFAULT_PREMIUM_EMOJI, infer_emoji_key, plain_markup, plain_text, premium_text
 from .config import get_settings
 from .crypto import TokenKeyring
 from .db import session_factory
@@ -104,16 +105,36 @@ def _menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _styled_markup(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    rows = []
+    for row in markup.inline_keyboard:
+        styled = []
+        for button in row:
+            key = infer_emoji_key(button.text, button.callback_data, button.url)
+            styled.append(button.model_copy(update={
+                "icon_custom_emoji_id": DEFAULT_PREMIUM_EMOJI.get(key, DEFAULT_PREMIUM_EMOJI["important"]),
+            }))
+        rows.append(styled)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 async def _send(chat_id: int, text: str, *, keyboard: InlineKeyboardMarkup | None = None) -> None:
     # One exit point ensures even error and collection cards retain attribution
     # when forwarded or copied without their inline keyboard.
-    await view_bot().send_message(
-        chat_id,
-        attribution(text),
-        parse_mode=ParseMode.HTML,
-        reply_markup=keyboard,
-        link_preview_options=LinkPreviewOptions(is_disabled=True),
-    )
+    markup = _styled_markup(keyboard or InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ]))
+    rich = premium_text("", infer_emoji_key(text)) + attribution(text)
+    try:
+        await view_bot().send_message(
+            chat_id, rich, parse_mode=ParseMode.HTML, reply_markup=markup,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
+    except TelegramBadRequest:
+        await view_bot().send_message(
+            chat_id, plain_text(rich), parse_mode=ParseMode.HTML, reply_markup=plain_markup(markup),
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
 
 
 async def _gate(chat_id: int, owner_id: int, query: str = "") -> bool:
@@ -181,13 +202,13 @@ def _channel_card(
     lines = [
         f'<b><a href="{link}">{safe_name}</a></b>' if link else f"<b>{safe_name}</b> · приватный канал",
         (f"Подписчики · {members:,}".replace(",", " ") if members is not None else "Подписчики · нет данных"),
-        "Просмотры 24 / 48 / 72 ч · "
+        "<blockquote>Просмотры 24 / 48 / 72 ч · "
         + (
             f"{windows.views_24h:,} / {windows.views_48h:,} / {windows.views_72h:,}".replace(",", " ")
             if windows.views_24h is not None
             else "нет данных"
         ),
-        "ER24 · " + (f"{windows.er24_percent:.2f}%" if windows.er24_percent is not None else "нет данных"),
+        "ER24 · " + (f"{windows.er24_percent:.2f}%" if windows.er24_percent is not None else "нет данных") + "</blockquote>",
         f"Обновлено · {observed:%d.%m.%Y %H:%M} UTC",
     ]
     if post_id is not None and link:
@@ -215,6 +236,7 @@ async def _post_views(channel_id: int, post_id: int | None) -> int | None:
 
 def _report_keyboard(channel_id: int, *, public_username: str | None = None) -> InlineKeyboardMarkup:
     rows = [
+        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}")],
         [InlineKeyboardButton(text="Статистика картинкой", callback_data=f"view:image:{channel_id}")],
         [InlineKeyboardButton(text="Топ публикаций", callback_data=f"view:top:{channel_id}")],
         [InlineKeyboardButton(text="Экспорт CSV", callback_data=f"view:export:{channel_id}")],
@@ -223,6 +245,7 @@ def _report_keyboard(channel_id: int, *, public_username: str | None = None) -> 
         rows.append([InlineKeyboardButton(text="В избранное", callback_data=f"view:save:{channel_id}:{public_username}"[:64])])
     else:
         rows.append([InlineKeyboardButton(text="В избранное", callback_data=f"view:saveprivate:{channel_id}")])
+    rows.append([InlineKeyboardButton(text="Меню", callback_data="view:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -273,11 +296,21 @@ async def _send_report_image(chat_id: int, owner_id: int, channel_id: int) -> No
     if report is None:
         await _send(chat_id, "Отчёт недоступен или у вас нет доступа к этому каналу.")
         return
-    await view_bot().send_photo(
-        chat_id, BufferedInputFile(render_report_png(report), filename="gramlyview-report.png"),
-        caption=attribution(f"<b>{html.escape(report.title)}</b>\nДанные на {report.observed_at:%d.%m.%Y %H:%M} UTC"),
-        parse_mode=ParseMode.HTML,
+    photo = BufferedInputFile(render_report_png(report), filename="gramlyview-report.png")
+    caption = premium_text("", "analytics") + attribution(
+        f"<b>{html.escape(report.title)}</b>\nДанные на {report.observed_at:%d.%m.%Y %H:%M} UTC"
     )
+    keyboard = _styled_markup(InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}")],
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ]))
+    try:
+        await view_bot().send_photo(chat_id, photo, caption=caption, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    except TelegramBadRequest:
+        await view_bot().send_photo(
+            chat_id, photo, caption=plain_text(caption), parse_mode=ParseMode.HTML,
+            reply_markup=plain_markup(keyboard),
+        )
 
 
 async def _send_report_csv(chat_id: int, owner_id: int, channel_id: int) -> None:
@@ -292,10 +325,21 @@ async def _send_report_csv(chat_id: int, owner_id: int, channel_id: int) -> None
         writer.writerow([point.day.isoformat(), point.subscribers])
     writer.writerow([])
     writer.writerow(["Источник", f"GramlyView https://t.me/{get_settings().view_bot_username.lstrip('@')}"])
-    await view_bot().send_document(
-        chat_id, BufferedInputFile(output.getvalue().encode("utf-8-sig"), filename="gramlyview-subscribers.csv"),
-        caption=attribution(f"История подписчиков · {html.escape(report.title)}"), parse_mode=ParseMode.HTML,
-    )
+    document = BufferedInputFile(output.getvalue().encode("utf-8-sig"), filename="gramlyview-subscribers.csv")
+    caption = premium_text("", "analytics") + attribution(f"История подписчиков · {html.escape(report.title)}")
+    keyboard = _styled_markup(InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}")],
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ]))
+    try:
+        await view_bot().send_document(
+            chat_id, document, caption=caption, parse_mode=ParseMode.HTML, reply_markup=keyboard,
+        )
+    except TelegramBadRequest:
+        await view_bot().send_document(
+            chat_id, document, caption=plain_text(caption), parse_mode=ParseMode.HTML,
+            reply_markup=plain_markup(keyboard),
+        )
 
 
 async def _send_top_posts(chat_id: int, owner_id: int, channel_id: int) -> None:
@@ -320,7 +364,10 @@ async def _send_top_posts(chat_id: int, owner_id: int, channel_id: int) -> None:
     lines = [f"<b>Топ публикаций · {html.escape(report.title)}</b>"]
     for index, row in enumerate(top, 1):
         lines.append(f"{index}. Пост #{row.post_id} · {row.views:,} просмотров · {row.published_at:%d.%m %H:%M} UTC".replace(",", " "))
-    await _send(chat_id, "\n".join(lines))
+    await _send(chat_id, "\n".join(lines), keyboard=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Обновить", callback_data=f"view:refresh:{channel_id}")],
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ]))
 
 
 async def _analyze(chat_id: int, owner_id: int, query: str) -> None:
@@ -334,7 +381,7 @@ async def _analyze(chat_id: int, owner_id: int, query: str) -> None:
         )
         return
     if not await analytics_available():
-        await _send(chat_id, "Аналитика временно приостановлена: доступно менее пяти рабочих аккаунтов сбора. Сохранённые отчёты остаются доступными. Попробуйте позже.")
+        await _send(chat_id, "Аналитика временно приостановлена: доступно менее трёх рабочих аккаунтов сбора. Сохранённые отчёты остаются доступными. Попробуйте позже.")
         return
     if not await _reserve_analysis(owner_id):
         await _send(chat_id, "Слишком частые запросы. Повторите анализ через 10 секунд.")
@@ -435,7 +482,7 @@ async def _analyze_private(chat_id: int, owner_id: int, channel_id: int, *, post
     from .models import ViewPrivateChannel
 
     if not await analytics_available():
-        await _send(chat_id, "Аналитика временно приостановлена: рабочих аккаунтов меньше пяти.")
+        await _send(chat_id, "Аналитика временно приостановлена: рабочих аккаунтов меньше трёх.")
         return
     async with session_factory() as session:
         linked = await session.scalar(select(ViewPrivateChannel).where(
@@ -498,7 +545,12 @@ async def _favorites(chat_id: int, owner_id: int) -> None:
          if row.username else f"• {html.escape(row.title)} · закрытый")
         for row in rows
     )
-    await _send(chat_id, body)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        *[[InlineKeyboardButton(text=f"Проверить {row.title[:28]}", callback_data=f"view:refresh:{row.channel_id}")]
+          for row in rows],
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ])
+    await _send(chat_id, body, keyboard=keyboard)
 
 
 async def _collections(chat_id: int, owner_id: int) -> None:
@@ -656,7 +708,7 @@ async def _handle_collection_text(chat_id: int, owner_id: int, text: str) -> boo
             return True
         if invites:
             if not await analytics_available():
-                await _send(chat_id, "Аналитика временно приостановлена: рабочих аккаунтов меньше пяти.")
+                await _send(chat_id, "Аналитика временно приостановлена: рабочих аккаунтов меньше трёх.")
                 return True
             try:
                 channel_id, title, _members, _observed = await asyncio.wait_for(
@@ -861,6 +913,26 @@ async def process_view_update(payload: dict[str, Any]) -> None:
         return
     if data == "view:favorites":
         await _favorites(chat_id, owner_id)
+    elif data.startswith("view:refresh:"):
+        try:
+            channel_id = int(data.rsplit(":", 1)[1])
+        except ValueError:
+            await _send(chat_id, "Отчёт не найден.")
+            return
+        report = await _report_for(owner_id, channel_id)
+        if report is None:
+            await _send(chat_id, "Отчёт недоступен или у вас нет доступа к этому каналу.")
+            return
+        async with session_factory() as session:
+            latest = await session.scalar(select(ViewChannelSnapshot).where(
+                ViewChannelSnapshot.channel_id == channel_id,
+            ).order_by(ViewChannelSnapshot.observed_at.desc()).limit(1))
+        if latest is not None and latest.username:
+            await _analyze(chat_id, owner_id, f"@{latest.username}")
+        elif await _reserve_analysis(owner_id):
+            await _analyze_private(chat_id, owner_id, channel_id)
+        else:
+            await _send(chat_id, "Слишком частые запросы. Повторите анализ через 10 секунд.")
     elif data.startswith("view:image:"):
         try:
             await _send_report_image(chat_id, owner_id, int(data.rsplit(":", 1)[1]))
@@ -961,7 +1033,7 @@ async def process_view_update(payload: dict[str, Any]) -> None:
     elif data == "view:method":
         await _send(
             chat_id,
-            "Подписчики — текущий счётчик Telegram. Просмотры 24/48/72 ч и ER24 появляются только после разрешённого сбора реальных просмотров постов. Пока измерений нет, вместо нуля показываем «нет данных».",
+            "<b>Как считаются показатели</b>\n<blockquote>Подписчики — текущий счётчик Telegram. Просмотры 24/48/72 ч и ER24 появляются только после разрешённого сбора реальных просмотров постов. Пока измерений нет, показываем «нет данных».</blockquote>",
         )
     elif data.startswith("view:saveprivate:"):
         from .models import ViewPrivateChannel
@@ -1006,7 +1078,7 @@ async def process_view_update(payload: dict[str, Any]) -> None:
     elif text.startswith("/start") or data == "view:menu":
         await _send(
             chat_id,
-            "<b>GramlyView</b>\nАналитика Telegram-каналов. Отправьте @username, ссылку на пост, приглашение в закрытый канал или список ссылок — вернём отдельные карточки с измеренными данными.",
+            "<b>GramlyView</b>\nАналитика Telegram-каналов.\n<blockquote>Отправьте @username, ссылку на пост, приглашение в закрытый канал или список ссылок. Каждый канал получит отдельную карточку.</blockquote>",
             keyboard=_menu(),
         )
         if text.startswith("/start"):

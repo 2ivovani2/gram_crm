@@ -91,6 +91,15 @@ def test_view_account_credentials_require_elevated_group_and_mutation_header(cli
         headers=elevated,
         files={"file": ("account.session", b"invalid", "application/octet-stream")},
     ).status_code == 403
+    assert client.post(
+        "/api/admin/v1/view/alert-recipients",
+        headers={**ordinary, "X-Gramly-Admin-Request": "1"},
+        json={"username": "recipient"},
+    ).status_code == 403
+    assert client.delete(
+        "/api/admin/v1/view/alert-recipients/1",
+        headers=elevated,
+    ).status_code == 403
 
 
 @pytest.mark.parametrize("group", ["gramly-owners", "authentik Admins", "Business", "Product", "gramly-hello-admin"])
