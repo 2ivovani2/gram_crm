@@ -31,6 +31,10 @@ celerybeat.pid
 .env
 .env.*
 !.env.example
+*.session
+*.session-journal
+*.session-shm
+*.session-wal
 
 # ── Node.js / Next.js ─────────────────────────────────────────────────────────
 node_modules/

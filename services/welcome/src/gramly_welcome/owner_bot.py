@@ -6,7 +6,7 @@ import io
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -97,6 +97,7 @@ from .models import (
     ManagedBot,
     MessageTemplate,
     Owner,
+    OwnerServiceActivity,
     Payment,
     Plan,
 )
@@ -316,12 +317,11 @@ class OwnerMiddleware(BaseMiddleware):
         return result
 
 
-async def main_keyboard() -> InlineKeyboardMarkup:
+async def main_keyboard(*, show_view_offer: bool = False) -> InlineKeyboardMarkup:
     async with session_factory() as session:
         theme = await load_bot_ui_theme(session)
     settings = get_settings()
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
             [
                 inline_button(
                     "Открыть Gramly",
@@ -368,7 +368,18 @@ async def main_keyboard() -> InlineKeyboardMarkup:
                 )
             ],
         ]
-    )
+    if settings.view_bot_username:
+        rows.insert(-1, [inline_button(
+            "GramlyView · аналитика каналов",
+            url=f"https://t.me/{settings.view_bot_username.lstrip('@')}?start=from_hello",
+            emoji_key="analytics", theme=theme,
+        )])
+        if show_view_offer:
+            rows.insert(-1, [inline_button(
+                "Скрыть предложение View", callback_data="menu:hide-view-offer",
+                emoji_key="delete", theme=theme,
+            )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _one_button(text: str, callback: str) -> InlineKeyboardMarkup:
@@ -574,6 +585,14 @@ async def remove_customer_webhook(managed: ManagedBot, settings: Settings) -> No
 async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     await state.clear()
     command = (message.text or "").split(maxsplit=1)
+    if len(command) == 2 and command[1] == "from_view":
+        async with session_factory() as session, session.begin():
+            activity = await session.scalar(select(OwnerServiceActivity).where(
+                OwnerServiceActivity.owner_id == owner.id,
+                OwnerServiceActivity.service == "hello",
+            ))
+            if activity:
+                activity.last_event = "start_from_view"
     if len(command) == 2 and command[1].startswith("catalog_"):
         raw_id = command[1][8:]
         if raw_id.isdigit():
@@ -634,13 +653,31 @@ async def guide(callback: CallbackQuery, _owner: Owner) -> None:
 
 
 async def show_main_menu(message: Message, owner: Owner) -> None:
-    markup = await main_keyboard()
+    show_view_offer = False
+    if get_settings().view_bot_username:
+        now = datetime.now(UTC)
+        async with session_factory() as session, session.begin():
+            hello = await session.scalar(select(OwnerServiceActivity).where(
+                OwnerServiceActivity.owner_id == owner.id,
+                OwnerServiceActivity.service == "hello",
+            ).with_for_update())
+            view_used = await session.scalar(select(OwnerServiceActivity.id).where(
+                OwnerServiceActivity.owner_id == owner.id,
+                OwnerServiceActivity.service == "view",
+            ))
+            if hello and view_used is None and not hello.cross_offer_hidden and (
+                hello.cross_offer_at is None or hello.cross_offer_at <= now - timedelta(days=30)
+            ):
+                show_view_offer = True
+                hello.cross_offer_at = now
+    markup = await main_keyboard(show_view_offer=show_view_offer)
+    offer = "\n\n<b>Новый сервис · GramlyView</b>\nБесплатная аналитика каналов. Ссылка есть в меню." if show_view_offer else ""
     await answer_with_ui_fallback(
         message,
         f"🏠 <b>{_owner_display_name(owner)}, добро пожаловать в Gramly</b>\n\n"
         "Здесь вы подключаете бота и канал, создаёте личное приветствие и следите за "
         "доставкой. Основная настройка открывается в Mini App.\n\n"
-        "Выберите следующий шаг:",
+        f"Выберите следующий шаг:{offer}",
         reply_markup=markup,
     )
 
@@ -3278,6 +3315,19 @@ async def analytics_placeholder_callback(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "menu:home")
 async def main_menu_callback(callback: CallbackQuery, owner: Owner) -> None:
+    await show_main_menu(_callback_message(callback), owner)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:hide-view-offer")
+async def hide_view_offer(callback: CallbackQuery, owner: Owner) -> None:
+    async with session_factory() as session, session.begin():
+        activity = await session.scalar(select(OwnerServiceActivity).where(
+            OwnerServiceActivity.owner_id == owner.id,
+            OwnerServiceActivity.service == "hello",
+        ))
+        if activity:
+            activity.cross_offer_hidden = True
     await show_main_menu(_callback_message(callback), owner)
     await callback.answer()
 

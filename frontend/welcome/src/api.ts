@@ -67,7 +67,7 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 1
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const mutation = options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase());
   if (mutation) {
     headers.set("X-CSRF-Token", currentCsrfToken());
@@ -111,7 +111,7 @@ export async function adminApi<T>(path: string, options: RequestInit = {}): Prom
       ...options,
       headers,
       credentials: "same-origin",
-    }, path === "/catalog-media" && options.method === "POST" ? 120_000 : 12_000);
+    }, (path === "/catalog-media" || path === "/view/accounts") && options.method === "POST" ? 120_000 : 12_000);
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(String(payload.detail || `HTTP ${response.status}`));

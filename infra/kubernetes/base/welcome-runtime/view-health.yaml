@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: gramly-view-health, namespace: gramly-welcome}
+spec:
+  schedule: "*/2 * * * *"
+  timeZone: Europe/Moscow
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 100
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          imagePullSecrets: [{name: gramly-welcome-registry}]
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: health
+              image: WELCOME_IMAGE_PLACEHOLDER
+              command: [welcome-view-check-accounts]
+              envFrom:
+                - {secretRef: {name: gramly-welcome-runtime}}
+                - {secretRef: {name: gramly-view-mtproto, optional: true}}
+              volumeMounts:
+                - {name: scratch, mountPath: /tmp}
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 384Mi}
+          volumes:
+            - {name: scratch, emptyDir: {sizeLimit: 16Mi}}

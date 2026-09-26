@@ -16,6 +16,9 @@ from .models import (
     InboxSource,
     JoinRequestActivation,
     QueueStatus,
+    ViewChannelSnapshot,
+    ViewCollectionRun,
+    ViewPostObservation,
     WebSession,
 )
 
@@ -136,6 +139,18 @@ async def maintain() -> None:
                     """
                 )
             )
+    # Bound analytics retention even if the optional collector is suspended.
+    for model, date_column, days in (
+        (ViewPostObservation, ViewPostObservation.observed_at, 7),
+        (ViewCollectionRun, ViewCollectionRun.observed_at, 14),
+        (ViewChannelSnapshot, ViewChannelSnapshot.observed_at, 90),
+    ):
+        for _ in range(5):
+            async with session_factory() as session, session.begin():
+                ids = select(model.id).where(date_column < now - timedelta(days=days)).order_by(model.id).limit(10_000)
+                result = await session.execute(delete(model).where(model.id.in_(ids)))
+                if not getattr(result, "rowcount", 0):
+                    break
     async with session_factory() as session:
         await purge_expired_tip_sessions(session, now=now)
     async with session_factory() as session:

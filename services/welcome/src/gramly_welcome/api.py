@@ -170,6 +170,26 @@ async def interface_webhook(
         WEBHOOK_LATENCY.labels("interface").observe(monotonic() - started)
 
 
+@router.post("/welcome/view/webhook/", response_model=AcceptedResponse)
+async def view_webhook(request: Request, session: SessionDep, settings: SettingsDep) -> AcceptedResponse:
+    started = monotonic()
+    result = "rejected"
+    try:
+        if not settings.accept_webhooks or not settings.view_bot_token:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "GramlyView is not configured")
+        if not _secret_valid(request, settings.view_webhook_secret):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid secret token")
+        response = await _accept(request, session, settings, source_key="view", bot_id=None)
+        result = "duplicate" if response.duplicate else "accepted"
+        return response
+    except HTTPException as exc:
+        result = "error" if exc.status_code >= 500 else "rejected"
+        raise
+    finally:
+        WEBHOOK_REQUESTS.labels("view", result).inc()
+        WEBHOOK_LATENCY.labels("view").observe(monotonic() - started)
+
+
 @router.post("/welcome/client/{public_id}/{path_secret}/", response_model=AcceptedResponse)
 async def client_webhook(
     public_id: uuid.UUID,

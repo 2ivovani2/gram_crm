@@ -20,7 +20,9 @@ spec:
         - name: worker
           image: WELCOME_IMAGE_PLACEHOLDER
           command: [welcome-worker-events]
-          envFrom: [{secretRef: {name: gramly-welcome-runtime}}]
+          envFrom:
+            - {secretRef: {name: gramly-welcome-runtime}}
+            - {secretRef: {name: gramly-view-mtproto, optional: true}}
           env:
             # Bound database usage while KEDA scales the number of consumers.
             - {name: WELCOME_WORKER_CONCURRENCY, value: "3"}

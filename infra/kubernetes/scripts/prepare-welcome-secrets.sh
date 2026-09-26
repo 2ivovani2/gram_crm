@@ -66,6 +66,12 @@ if kubectl -n "${target_namespace}" get secret gramly-welcome-runtime >/dev/null
     -o jsonpath='{.data.WELCOME_TOKEN_ENCRYPTION_KEYS}' | base64 --decode)"
   interface_secret="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
     -o jsonpath='{.data.WELCOME_INTERFACE_WEBHOOK_SECRET}' | base64 --decode)"
+  existing_view_token="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
+    -o jsonpath='{.data.WELCOME_VIEW_BOT_TOKEN}' | base64 --decode)"
+  existing_view_username="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
+    -o jsonpath='{.data.WELCOME_VIEW_BOT_USERNAME}' | base64 --decode)"
+  view_webhook_secret="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
+    -o jsonpath='{.data.WELCOME_VIEW_WEBHOOK_SECRET}' | base64 --decode)"
   crypto_webhook_secret="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
     -o jsonpath='{.data.WELCOME_CRYPTO_PAY_WEBHOOK_SECRET}' | base64 --decode)"
   existing_crypto_token="$(kubectl -n "${target_namespace}" get secret gramly-welcome-runtime \
@@ -74,11 +80,20 @@ else
   fernet_key="$(openssl rand -base64 32 | tr '/+' '_-')"
   token_keys="{\"1\":\"${fernet_key}\"}"
   interface_secret="$(openssl rand -hex 32)"
+  existing_view_token=""
+  existing_view_username=""
+  view_webhook_secret=""
   crypto_webhook_secret="$(openssl rand -hex 32)"
   existing_crypto_token=""
   unset fernet_key
 fi
 [[ -n "${crypto_webhook_secret}" ]] || crypto_webhook_secret="$(openssl rand -hex 32)"
+view_bot_token="${WELCOME_VIEW_BOT_TOKEN:-${existing_view_token}}"
+view_bot_username="${WELCOME_VIEW_BOT_USERNAME:-${existing_view_username}}"
+if [[ -n "${view_bot_token}" ]]; then
+  [[ -n "${view_bot_username}" ]] || { echo "WELCOME_VIEW_BOT_USERNAME is required with View token" >&2; exit 1; }
+  [[ -n "${view_webhook_secret}" ]] || view_webhook_secret="$(openssl rand -hex 32)"
+fi
 crypto_pay_token="${WELCOME_CRYPTO_PAY_API_TOKEN:-${existing_crypto_token}}"
 
 if [[ "${target_namespace}" == "gramly-welcome" ]]; then
@@ -99,6 +114,9 @@ runtime_args=(
   "--from-literal=WELCOME_INTERFACE_BOT_TOKEN=${WELCOME_INTERFACE_BOT_TOKEN:-}"
   "--from-literal=WELCOME_INTERFACE_BOT_USERNAME=${WELCOME_INTERFACE_BOT_USERNAME:-}"
   "--from-literal=WELCOME_INTERFACE_WEBHOOK_SECRET=${interface_secret}"
+  "--from-literal=WELCOME_VIEW_BOT_TOKEN=${view_bot_token}"
+  "--from-literal=WELCOME_VIEW_BOT_USERNAME=${view_bot_username}"
+  "--from-literal=WELCOME_VIEW_WEBHOOK_SECRET=${view_webhook_secret}"
   "--from-literal=WELCOME_MINI_APP_URL=${WELCOME_MINI_APP_URL:-https://hello.gramly.tech/app/}"
   "--from-literal=WELCOME_CRYPTO_PAY_API_TOKEN=${crypto_pay_token}"
   "--from-literal=WELCOME_CRYPTO_PAY_API_BASE_URL=${WELCOME_CRYPTO_PAY_API_BASE_URL:-${crypto_pay_default_base_url}}"

@@ -34,7 +34,7 @@ async def refresh_metrics() -> None:
                 "owner",
                 InboxEvent,
                 InboxEvent.received_at,
-                [InboxEvent.bot_id.is_(None), InboxEvent.actor_id.is_not(None)],
+                [InboxEvent.source_key == "interface", InboxEvent.actor_id.is_not(None)],
             ),
             ("owner_reply", OwnerReply, OwnerReply.created_at, []),
         ):
@@ -85,14 +85,14 @@ async def claim_owner_event(worker_id: str) -> InboxEvent | None:
         event = await session.scalar(
             select(InboxEvent)
             .where(
-                InboxEvent.bot_id.is_(None),
+                InboxEvent.source_key == "interface",
                 or_(
                     and_(InboxEvent.status.in_(["pending", "retry"]), InboxEvent.available_at <= now),
                     and_(InboxEvent.status == "processing", InboxEvent.lease_expires_at < now),
                 ),
                 ~exists(
                     select(earlier.id).where(
-                        earlier.bot_id.is_(None),
+                        earlier.source_key == "interface",
                         earlier_actor == actor,
                         earlier.update_id < InboxEvent.update_id,
                         earlier.status.in_(["pending", "retry", "processing"]),
