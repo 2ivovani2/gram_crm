@@ -586,13 +586,14 @@ async def start(message: Message, owner: Owner, state: FSMContext) -> None:
     await state.clear()
     command = (message.text or "").split(maxsplit=1)
     if len(command) == 2 and command[1] == "from_view":
-        async with session_factory() as session, session.begin():
+        async with session_factory() as session:
             activity = await session.scalar(select(OwnerServiceActivity).where(
                 OwnerServiceActivity.owner_id == owner.id,
                 OwnerServiceActivity.service == "hello",
             ))
             if activity:
                 activity.last_event = "start_from_view"
+                await session.commit()
     if len(command) == 2 and command[1].startswith("catalog_"):
         raw_id = command[1][8:]
         if raw_id.isdigit():
@@ -656,7 +657,7 @@ async def show_main_menu(message: Message, owner: Owner) -> None:
     show_view_offer = False
     if get_settings().view_bot_username:
         now = datetime.now(UTC)
-        async with session_factory() as session, session.begin():
+        async with session_factory() as session:
             hello = await session.scalar(select(OwnerServiceActivity).where(
                 OwnerServiceActivity.owner_id == owner.id,
                 OwnerServiceActivity.service == "hello",
@@ -670,6 +671,7 @@ async def show_main_menu(message: Message, owner: Owner) -> None:
             ):
                 show_view_offer = True
                 hello.cross_offer_at = now
+                await session.commit()
     markup = await main_keyboard(show_view_offer=show_view_offer)
     offer = "\n\n<b>Новый сервис · GramlyView</b>\nБесплатная аналитика каналов. Ссылка есть в меню." if show_view_offer else ""
     await answer_with_ui_fallback(
@@ -3321,13 +3323,14 @@ async def main_menu_callback(callback: CallbackQuery, owner: Owner) -> None:
 
 @router.callback_query(F.data == "menu:hide-view-offer")
 async def hide_view_offer(callback: CallbackQuery, owner: Owner) -> None:
-    async with session_factory() as session, session.begin():
+    async with session_factory() as session:
         activity = await session.scalar(select(OwnerServiceActivity).where(
             OwnerServiceActivity.owner_id == owner.id,
             OwnerServiceActivity.service == "hello",
         ))
         if activity:
             activity.cross_offer_hidden = True
+            await session.commit()
     await show_main_menu(_callback_message(callback), owner)
     await callback.answer()
 
