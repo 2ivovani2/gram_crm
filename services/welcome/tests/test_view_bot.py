@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from aiogram.enums import ChatType
 
 from gramly_welcome.config import Settings
 from gramly_welcome.models import ViewChannelSnapshot, ViewCollectionRun, ViewPostObservation
@@ -202,7 +203,7 @@ async def test_public_report_rechecks_channel_identity_before_export(monkeypatch
             )
 
     bot = SimpleNamespace(get_chat=AsyncMock(return_value=SimpleNamespace(
-        id=-10088, type=view_bot.ChatType.CHANNEL,
+        id=-10088, type=ChatType.CHANNEL,
     )))
     monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
     monkeypatch.setattr(view_bot, "view_bot", lambda: bot)
