@@ -97,7 +97,8 @@ def test_network_image_keeps_all_twenty_rows_and_unknown_values_missing() -> Non
             assert image.width == 1200
             assert image.height >= 1700
     with pytest.raises(ValueError, match="unknown network metric"):
-        render_network_png(reports, "invalid")  # type: ignore[arg-type] - invalid metric at runtime
+        # Deliberately exercise a value outside the static metric type.
+        render_network_png(reports, "invalid")  # type: ignore[arg-type]
 
 
 def test_network_views_use_one_post_weighted_formula() -> None:
