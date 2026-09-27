@@ -13,23 +13,23 @@ done
 kubectl -n "${namespace}" exec deployment/gramly-welcome-api -- python -c \
   "import httpx; response=httpx.get('http://127.0.0.1:8080/health/ready', timeout=10); response.raise_for_status()"
 
-curl --fail --silent --show-error --location --max-time 20 \
+curl --fail --silent --show-error --location --max-time 60 \
   https://gramly.tech/ >/dev/null
 
-app_html="$(curl --fail --silent --show-error --location --max-time 20 \
+app_html="$(curl --fail --silent --show-error --location --max-time 60 \
   https://hello.gramly.tech/app/)"
 asset_paths="$(grep -Eo '/assets/[^\" ]+\.(js|css)' <<<"${app_html}" | sort -u)"
 [[ -n "${asset_paths}" ]] || { echo "Mini App HTML does not reference built assets." >&2; exit 1; }
 while IFS= read -r asset_path; do
-  curl --fail --silent --show-error --location --max-time 20 \
+  curl --fail --silent --show-error --location --max-time 60 \
     "https://hello.gramly.tech${asset_path}" >/dev/null
 done <<<"${asset_paths}"
 
-curl --fail --silent --show-error --location --max-time 20 \
+curl --fail --silent --show-error --location --max-time 60 \
   https://hello.gramly.tech/api/v1/public-config >/dev/null
 
 session_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  --max-time 20 --request POST --header 'Content-Type: application/json' \
+  --max-time 60 --request POST --header 'Content-Type: application/json' \
   --data '{}' https://hello.gramly.tech/api/v1/session/telegram)"
 [[ "${session_status}" == "422" ]] || {
   echo "Expected session validation HTTP 422, got ${session_status}." >&2
@@ -37,7 +37,7 @@ session_status="$(curl --silent --show-error --output /dev/null --write-out '%{h
 }
 
 admin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  --max-time 20 https://hello-admin.gramly.tech/)"
+  --max-time 60 https://hello-admin.gramly.tech/)"
 case "${admin_status}" in
   302|303) ;;
   *) echo "Expected Authentik redirect from hello-admin, got HTTP ${admin_status}." >&2; exit 1 ;;

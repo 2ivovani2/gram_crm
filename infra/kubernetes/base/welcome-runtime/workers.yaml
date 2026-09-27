@@ -53,6 +53,7 @@ kind: Deployment
 metadata: {name: gramly-welcome-worker-delivery, namespace: gramly-welcome}
 spec:
   replicas: 2
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1, maxSurge: 0}}
   selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-worker-delivery}}
   template:
     metadata: {labels: {app.kubernetes.io/name: gramly-welcome-worker-delivery}}
@@ -92,7 +93,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           volumeMounts: [{name: temporary-media, mountPath: /tmp}]
           resources:
-            requests: {cpu: 200m, memory: 256Mi}
+            requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "2", memory: 1Gi}
       volumes: [{name: temporary-media, emptyDir: {sizeLimit: 256Mi}}]
 ---

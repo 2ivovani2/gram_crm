@@ -3,7 +3,7 @@ kind: Deployment
 metadata: {name: gramly-welcome-api, namespace: gramly-welcome}
 spec:
   replicas: 2
-  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1, maxSurge: 0}}
   selector: {matchLabels: {app.kubernetes.io/name: gramly-welcome-api}}
   template:
     metadata: {labels: {app.kubernetes.io/name: gramly-welcome-api}}
@@ -35,7 +35,7 @@ spec:
           readinessProbe: {httpGet: {path: /health/ready, port: http}, periodSeconds: 5, timeoutSeconds: 2}
           livenessProbe: *live
           resources:
-            requests: {cpu: 250m, memory: 128Mi}
+            requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}
       volumes: [{name: view-session-scratch, emptyDir: {sizeLimit: 16Mi}}]
 ---

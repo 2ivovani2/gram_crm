@@ -30,7 +30,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, readOnlyRootFilesystem: true}
           volumeMounts: [{name: scratch, mountPath: /tmp}]
           resources:
-            requests: {cpu: 200m, memory: 256Mi}
+            requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: "2", memory: 1Gi}
       volumes: [{name: scratch, emptyDir: {sizeLimit: 256Mi}}]
 ---
