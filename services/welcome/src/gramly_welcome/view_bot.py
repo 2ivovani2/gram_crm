@@ -13,8 +13,9 @@ import io
 import logging
 import re
 import secrets
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from aiogram import Bot
 from aiogram.enums import ChatType, ParseMode
@@ -41,6 +42,7 @@ from .models import (
     ViewCollectionItem,
     ViewFavorite,
     ViewMonitor,
+    ViewPostObservation,
     ViewUserState,
 )
 from .owner_repository import owner_from_telegram
@@ -49,6 +51,7 @@ from .view_metrics import ViewWindows, measured_windows
 from .view_pool import analytics_available, lease_account
 from .view_private import PrivateChannelError, connect_private, parse_invites
 from .view_reports import (
+    NetworkMetric,
     ReportPoint,
     ViewReport,
     network_summary_value,
@@ -476,7 +479,7 @@ async def _send_network_photo(
     )
     markup = _styled_markup(_network_keyboard(key, metric, reports))
     image_bytes = render_network_png(
-        reports, metric=metric, bot_username=get_settings().view_bot_username.lstrip("@"),
+        reports, metric=cast(NetworkMetric, metric), bot_username=get_settings().view_bot_username.lstrip("@"),
     )
     if message_id is not None:
         try:
@@ -675,8 +678,8 @@ _TOP_FIELDS = {
 }
 
 
-def _rank_posts(observations: list[Any], metric: str) -> list[Any]:
-    latest = {}
+def _rank_posts(observations: Sequence[ViewPostObservation], metric: str) -> list[ViewPostObservation]:
+    latest: dict[tuple[int, int], ViewPostObservation] = {}
     for observation in observations:
         latest.setdefault((observation.channel_id, observation.post_id), observation)
     field = _TOP_FIELDS[metric][1]
@@ -687,8 +690,6 @@ def _rank_posts(observations: list[Any], metric: str) -> list[Any]:
 
 
 async def _global_top_posts(chat_id: int, owner_id: int, metric: str, page: int = 0) -> None:
-    from .models import ViewPostObservation
-
     if metric not in _TOP_FIELDS:
         metric = "views"
     page = max(0, min(page, 99))

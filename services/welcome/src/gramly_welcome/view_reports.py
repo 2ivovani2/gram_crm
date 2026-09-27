@@ -150,12 +150,13 @@ def network_summary_value(reports: Sequence[ViewReport], metric: NetworkMetric) 
     values = [_network_value(report, metric) for report in reports]
     if not values or any(value is None for value in values):
         return None
+    measured = [float(value) for value in values if value is not None]
     if metric == "views":
         samples = [report.views_samples_24h or 0 for report in reports]
         if any(count <= 0 for count in samples):
             return None
-        return round(sum(float(value) * count for value, count in zip(values, samples, strict=True)) / sum(samples))
-    total = sum(float(value) for value in values if value is not None)
+        return round(sum(value * count for value, count in zip(measured, samples, strict=True)) / sum(samples))
+    total = sum(measured)
     return total / len(values) if metric == "er" else round(total)
 
 

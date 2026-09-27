@@ -77,7 +77,8 @@ async def test_batch_limit_reports_skipped_links_and_preserves_valid_results(mon
     monkeypatch.setattr(view_bot, "_reserve_analysis", AsyncMock(return_value=True))
     monkeypatch.setattr(view_bot, "_public_channel_data", lookup)
     monkeypatch.setattr(view_bot, "_send", send)
-    monkeypatch.setattr(view_bot, "_send_batch_summary", AsyncMock())
+    batch_summary = AsyncMock()
+    monkeypatch.setattr(view_bot, "_send_batch_summary", batch_summary)
     monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
     monkeypatch.setattr(view_bot, "measured_windows", AsyncMock(return_value=ViewWindows(None, None, None, None, None)))
     monkeypatch.setattr(view_bot, "_post_views", AsyncMock(return_value=None))
@@ -85,8 +86,9 @@ async def test_batch_limit_reports_skipped_links_and_preserves_valid_results(mon
     await view_bot._analyze(42, 7, " ".join(f"https://t.me/channel{index}" for index in range(1, 22)))
     assert lookup.await_count == 20
     assert "Ещё 1 ссылка вне лимита" in send.call_args_list[-1].args[1]
-    view_bot._send_batch_summary.assert_awaited_once()
-    assert len(view_bot._send_batch_summary.await_args.args[2]) == 19
+    batch_summary.assert_awaited_once()
+    assert batch_summary.await_args is not None
+    assert len(batch_summary.await_args.args[2]) == 19
 
 
 @pytest.mark.asyncio

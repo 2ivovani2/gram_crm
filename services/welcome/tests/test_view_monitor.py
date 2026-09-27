@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -46,9 +47,10 @@ async def test_daily_monitor_sends_once_after_fresh_measurement(monkeypatch: pyt
     monkeypatch.setattr(view_monitor, "required_channel_config", AsyncMock(return_value=SimpleNamespace(enabled=True, channel_id=-1001)))
     monkeypatch.setattr(view_monitor, "check_required_membership", AsyncMock(return_value=SimpleNamespace(allowed=True, temporarily_unavailable=False)))
     monkeypatch.setattr(view_monitor, "view_bot", lambda: object())
-    monkeypatch.setattr(view_monitor.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
     await view_monitor.send_daily()
     assert monitor.last_sent_on == datetime.now(view_monitor.MOSCOW).date()
     assert send.await_count == 1
+    assert send.await_args is not None
     assert "нет данных" in send.await_args.args[1]
     assert "Канал &amp; друзья" in send.await_args.args[1]
