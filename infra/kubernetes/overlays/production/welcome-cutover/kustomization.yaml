@@ -21,7 +21,7 @@ patches:
       group: batch
       version: v1
       kind: CronJob
-      name: gramly-welcome-maintenance|gramly-view-health|gramly-view-collector
+      name: gramly-welcome-maintenance|gramly-view-health|gramly-view-collector|gramly-view-monitor
     patch: |-
       - op: add
         path: /spec/jobTemplate/spec/template/spec/imagePullSecrets/-

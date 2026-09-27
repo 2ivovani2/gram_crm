@@ -25,7 +25,8 @@ MAX_POSTS_PER_CHANNEL = 500
 
 async def collect_one(client: TelegramClient, username: object, expected_id: int) -> bool:
     observed = datetime.now(UTC)
-    cutoff = observed - timedelta(hours=73)
+    # Keep the whole two-hour sampling window after a post reaches age 72h.
+    cutoff = observed - timedelta(hours=75)
     posts: list[ViewPostObservation] = []
     complete = False
     seen_count = 0
@@ -54,6 +55,11 @@ async def collect_one(client: TelegramClient, username: object, expected_id: int
                     observed_at=observed,
                     views=message.views,
                     forwards=message.forwards,
+                    replies_count=getattr(getattr(message, "replies", None), "replies", None),
+                    reactions_count=(
+                        sum(int(result.count) for result in (message.reactions.results or ()))
+                        if getattr(message, "reactions", None) is not None else None
+                    ),
                 )
             )
         else:
@@ -166,7 +172,7 @@ async def collect() -> None:
                 session.add(ViewCollectionRun(
                     channel_id=channel_id,
                     observed_at=datetime.now(UTC),
-                    coverage_start_at=datetime.now(UTC) - timedelta(hours=73),
+                    coverage_start_at=datetime.now(UTC) - timedelta(hours=75),
                     complete=False,
                     post_count=0,
                     error_code=type(exc).__name__[:48],
