@@ -36,6 +36,12 @@ class PrivateChannelError(ValueError):
     pass
 
 
+def _joined_channel(result: object) -> object | None:
+    # Telethon 1.45 wraps Updates in ChatInviteJoinResultOk.
+    updates = getattr(result, "updates", result)
+    return next((chat for chat in getattr(updates, "chats", ()) if getattr(chat, "broadcast", False)), None)
+
+
 async def connect_private(owner_id: int, invite_hash: str) -> tuple[int, str, int | None, datetime]:
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", invite_hash):
         raise PrivateChannelError("Ссылка-приглашение не распознана")
@@ -75,7 +81,7 @@ async def connect_private(owner_id: int, invite_hash: str) -> tuple[int, str, in
                     result = await client(functions.messages.ImportChatInviteRequest(hash=invite_hash))
                 except InviteRequestSentError as exc:
                     raise PrivateChannelError("Заявка на вступление отправлена. После одобрения повторите запрос") from exc
-                channel = next((chat for chat in result.chats if getattr(chat, "broadcast", False)), None)
+                channel = _joined_channel(result)
             if channel is None or not getattr(channel, "broadcast", False):
                 raise PrivateChannelError("Ссылка ведёт не на канал")
             channel_id = utils.get_peer_id(channel)
