@@ -152,12 +152,12 @@ def test_unknown_metrics_are_not_rendered_as_zero() -> None:
 def test_global_top_uses_latest_observation_and_measured_metric() -> None:
     now = datetime(2026, 9, 28, tzinfo=UTC)
     rows = [
-        SimpleNamespace(channel_id=1, post_id=11, views=500, forwards=20,
-                        replies_count=None, reactions_count=10, published_at=now),
-        SimpleNamespace(channel_id=1, post_id=11, views=300, forwards=10,
-                        replies_count=None, reactions_count=5, published_at=now),
-        SimpleNamespace(channel_id=2, post_id=22, views=400, forwards=30,
-                        replies_count=8, reactions_count=9, published_at=now),
+        ViewPostObservation(channel_id=1, post_id=11, views=500, forwards=20,
+                            replies_count=None, reactions_count=10, published_at=now, observed_at=now),
+        ViewPostObservation(channel_id=1, post_id=11, views=300, forwards=10,
+                            replies_count=None, reactions_count=5, published_at=now, observed_at=now),
+        ViewPostObservation(channel_id=2, post_id=22, views=400, forwards=30,
+                            replies_count=8, reactions_count=9, published_at=now, observed_at=now),
     ]
     assert [(row.channel_id, row.post_id) for row in _rank_posts(rows, "views")] == [(1, 11), (2, 22)]
     assert [(row.channel_id, row.post_id) for row in _rank_posts(rows, "forwards")] == [(2, 22), (1, 11)]
