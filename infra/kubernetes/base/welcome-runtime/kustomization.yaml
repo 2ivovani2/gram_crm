@@ -7,6 +7,7 @@ resources:
   - owner.yaml
   - maintenance.yaml
   - view-collector.yaml
+  - view-monitor.yaml
   - view-health.yaml
   - view-worker.yaml
   - network-policy.yaml

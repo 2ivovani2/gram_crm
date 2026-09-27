@@ -29,7 +29,7 @@ INVITE_PATTERN = re.compile(
 
 
 def parse_invites(text: str) -> list[str]:
-    return list(dict.fromkeys(match.group(1) for match in INVITE_PATTERN.finditer(text)))[:10]
+    return list(dict.fromkeys(match.group(1) for match in INVITE_PATTERN.finditer(text)))
 
 
 class PrivateChannelError(ValueError):

@@ -2,9 +2,9 @@ apiVersion: batch/v1
 kind: CronJob
 metadata: {name: gramly-view-collector, namespace: gramly-welcome}
 spec:
-  schedule: "7 * * * *"
+  schedule: "7,37 * * * *"
   timeZone: Europe/Moscow
-  suspend: true # Enable after five accounts are loaded and the health probe passes.
+  suspend: false # The collector itself pauses below three healthy accounts.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3

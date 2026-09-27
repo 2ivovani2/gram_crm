@@ -12,6 +12,7 @@ import html
 import io
 import logging
 import re
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,13 +23,14 @@ from aiogram.types import (
     BufferedInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaPhoto,
     LinkPreviewOptions,
     User,
 )
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 
-from .bot_ui import DEFAULT_PREMIUM_EMOJI, infer_emoji_key, plain_markup, plain_text, premium_text
+from .bot_ui import DEFAULT_PREMIUM_EMOJI, plain_markup, plain_text, premium_text
 from .config import get_settings
 from .crypto import TokenKeyring
 from .db import session_factory
@@ -38,6 +40,7 @@ from .models import (
     ViewCollection,
     ViewCollectionItem,
     ViewFavorite,
+    ViewMonitor,
     ViewUserState,
 )
 from .owner_repository import owner_from_telegram
@@ -45,7 +48,13 @@ from .required_channel import check_required_membership, required_channel_config
 from .view_metrics import ViewWindows, measured_windows
 from .view_pool import analytics_available, lease_account
 from .view_private import PrivateChannelError, connect_private, parse_invites
-from .view_reports import ReportPoint, ViewReport, render_report_png
+from .view_reports import (
+    ReportPoint,
+    ViewReport,
+    network_summary_value,
+    render_network_png,
+    render_report_png,
+)
 
 logger = logging.getLogger(__name__)
 CHANNEL_PATTERN = re.compile(
@@ -54,7 +63,14 @@ CHANNEL_PATTERN = re.compile(
 )
 POST_PATTERN = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/([A-Za-z][A-Za-z0-9_]{4,31})/(\d+)", re.I)
 PRIVATE_POST_PATTERN = re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/c/(\d{5,15})/(\d+)", re.I)
-MAX_CHANNELS = 10
+TARGET_PATTERN = re.compile(
+    r"(?<![\w/])(?:@(?:[A-Za-z][A-Za-z0-9_]{4,31})|"
+    r"(?:https?://)?(?:t\.me|telegram\.me)/(?:\+[A-Za-z0-9_-]{8,128}|"
+    r"joinchat/[A-Za-z0-9_-]{8,128}|c/\d{5,15}/\d+|"
+    r"[A-Za-z][A-Za-z0-9_]{4,31}(?:/\d+)?))",
+    re.I,
+)
+MAX_CHANNELS = 20
 _bot: Bot | None = None
 _lookup_slots = asyncio.Semaphore(8)
 
@@ -88,17 +104,76 @@ def parse_channels(text: str) -> list[str]:
         if username and username.lower() != "joinchat" and username.lower() not in seen:
             result.append(username)
             seen.add(username.lower())
-        if len(result) >= MAX_CHANNELS:
-            break
+    return result
+
+
+def parse_targets(text: str) -> list[str]:
+    """Telegram targets in source order, without silently truncating a batch."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for match in TARGET_PATTERN.finditer(text):
+        target = match.group()
+        public = CHANNEL_PATTERN.fullmatch(target)
+        key = (public.group(1) or public.group(2)).lower() if public else target.lower()
+        if key not in seen:
+            result.append(target)
+            seen.add(key)
+    return result
+
+
+def parse_message_targets(message: dict[str, Any]) -> list[str]:
+    """Read visible Telegram URLs and hidden text_link URLs (UTF-16 offsets)."""
+    text = str(message.get("text") or message.get("caption") or "")
+    entities = message.get("entities") if message.get("text") is not None else message.get("caption_entities")
+    rich: list[tuple[int, int, str]] = []
+    if isinstance(entities, list):
+        encoded = text.encode("utf-16-le")
+        for entity in entities:
+            if not isinstance(entity, dict) or entity.get("type") != "text_link":
+                continue
+            url = entity.get("url")
+            if not isinstance(url, str) or TARGET_PATTERN.fullmatch(url) is None:
+                continue
+            offset, length = entity.get("offset"), entity.get("length")
+            if not isinstance(offset, int) or not isinstance(length, int) or offset < 0 or length < 0:
+                continue
+            try:
+                start = len(encoded[:offset * 2].decode("utf-16-le"))
+                end = len(encoded[:(offset + length) * 2].decode("utf-16-le"))
+            except UnicodeDecodeError:
+                continue
+            if end <= len(text):
+                rich.append((start, end, url))
+    matches: list[tuple[int, str]] = [(start, url) for start, _end, url in rich]
+    for match in TARGET_PATTERN.finditer(text):
+        if any(match.start() < end and match.end() > start for start, end, _ in rich):
+            continue
+        if rich and match.group().startswith("@"):
+            line = text[text.rfind("\n", 0, match.start()) + 1:text.find("\n", match.end()) if "\n" in text[match.end():] else len(text)]
+            if not re.fullmatch(r"\s*(?:\d+[.)]\s*)?@[A-Za-z][A-Za-z0-9_]{4,31}\s*", line):
+                continue  # @admin in a forwarded channel preview is not another target.
+        matches.append((match.start(), match.group()))
+    result: list[str] = []
+    seen: set[str] = set()
+    for _position, candidate in sorted(matches, key=lambda item: item[0]):
+        for target in parse_targets(candidate):
+            public = CHANNEL_PATTERN.fullmatch(target)
+            key = (public.group(1) or public.group(2)).lower() if public else target.lower()
+            if key not in seen:
+                result.append(target)
+                seen.add(key)
     return result
 
 
 def _menu() -> InlineKeyboardMarkup:
     hello = get_settings().interface_bot_username.lstrip("@")
     rows = [
-        [InlineKeyboardButton(text="Анализ каналов", callback_data="view:analyze")],
+        [InlineKeyboardButton(text="Анализ каналов", callback_data="view:analyze"),
+         InlineKeyboardButton(text="Статистика картинкой", callback_data="view:picture")],
         [InlineKeyboardButton(text="Избранное", callback_data="view:favorites"),
          InlineKeyboardButton(text="Коллекции", callback_data="view:collections")],
+        [InlineKeyboardButton(text="Топ публикаций", callback_data="view:globaltop:views"),
+         InlineKeyboardButton(text="Мониторинг", callback_data="view:monitors")],
         [InlineKeyboardButton(text="Как считаются показатели", callback_data="view:method")],
     ]
     if hello:
@@ -107,14 +182,26 @@ def _menu() -> InlineKeyboardMarkup:
 
 
 def _styled_markup(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    icon_by_action = (
+        ("view:net:", "analytics"), ("view:image:", "media"),
+        ("view:picture", "media"), ("view:globaltop:", "preview"),
+        ("view:top:", "preview"), ("view:monitors", "timer"),
+        ("view:monitor:", "timer"), ("view:refresh:", "rotation"),
+        ("view:export:", "copy"), ("view:collection", "copy"),
+        ("view:favorites", "success"), ("view:save", "add"),
+        ("view:analyze", "analytics"), ("view:method", "help"),
+        ("view:check", "success"), ("view:menu", "home"),
+    )
     rows = []
     for row in markup.inline_keyboard:
         styled = []
         for button in row:
-            key = infer_emoji_key(button.text, button.callback_data, button.url)
-            styled.append(button.model_copy(update={
-                "icon_custom_emoji_id": DEFAULT_PREMIUM_EMOJI.get(key, DEFAULT_PREMIUM_EMOJI["important"]),
-            }))
+            key = next(
+                (name for prefix, name in icon_by_action if (button.callback_data or "").startswith(prefix)),
+                "next" if button.url else "back" if button.text == "Назад" else None,
+            )
+            icon = DEFAULT_PREMIUM_EMOJI.get(key or "")
+            styled.append(button.model_copy(update={"icon_custom_emoji_id": icon}) if icon else button)
         rows.append(styled)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -125,7 +212,12 @@ async def _send(chat_id: int, text: str, *, keyboard: InlineKeyboardMarkup | Non
     markup = _styled_markup(keyboard or InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
     ]))
-    rich = premium_text("", infer_emoji_key(text)) + attribution(text)
+    emoji_key = (
+        "warning" if any(word in text.lower() for word in ("ошибка", "не удалось", "недоступ", "не нашёл"))
+        else "analytics" if "просмотр" in text.lower() or "статист" in text.lower()
+        else "home" if text.startswith("<b>GramlyView</b>") else "message"
+    )
+    rich = premium_text("", emoji_key) + attribution(text)
     try:
         await view_bot().send_message(
             chat_id, rich, parse_mode=ParseMode.HTML, reply_markup=markup,
@@ -203,14 +295,19 @@ def _channel_card(
     lines = [
         f'<b><a href="{link}">{safe_name}</a></b>' if link else f"<b>{safe_name}</b> · приватный канал",
         (f"Подписчики · {members:,}".replace(",", " ") if members is not None else "Подписчики · нет данных"),
-        "<blockquote>Просмотры 24 / 48 / 72 ч · "
-        + (
-            f"{windows.views_24h:,} / {windows.views_48h:,} / {windows.views_72h:,}".replace(",", " ")
-            if windows.views_24h is not None
-            else "нет данных"
+        "Средние просмотры поста через 24 / 48 / 72 ч · "
+        + " / ".join(
+            f"{value:,}".replace(",", " ") if value is not None else "нет данных"
+            for value in (windows.views_24h, windows.views_48h, windows.views_72h)
         ),
-        "ER24 · " + (f"{windows.er24_percent:.2f}%" if windows.er24_percent is not None else "нет данных") + "</blockquote>",
-        f"Обновлено · {observed:%d.%m.%Y %H:%M} UTC",
+        "Замерено публикаций · "
+        + " / ".join(str(count) for count in (windows.posts_24h, windows.posts_48h, windows.posts_72h)),
+        "<blockquote>ER24 · "
+        + (f"{windows.er24_percent:.2f}%" if windows.er24_percent is not None else "нет данных")
+        + ". Считается от среднего охвата поста через 24 часа.</blockquote>",
+        f"Подписчики обновлены · {observed:%d.%m.%Y %H:%M} UTC",
+        "Замеры просмотров · "
+        + (f"{windows.observed_at:%d.%m.%Y %H:%M} UTC" if windows.observed_at else "пока нет"),
     ]
     if post_id is not None and link:
         lines.insert(
@@ -241,6 +338,7 @@ def _report_keyboard(channel_id: int, *, public_username: str | None = None) -> 
          InlineKeyboardButton(text="Картинкой", callback_data=f"view:image:{channel_id}")],
         [InlineKeyboardButton(text="Топ публикаций", callback_data=f"view:top:{channel_id}"),
          InlineKeyboardButton(text="CSV", callback_data=f"view:export:{channel_id}")],
+        [InlineKeyboardButton(text="Мониторинг", callback_data=f"view:monitor:toggle:{channel_id}")],
     ]
     if public_username:
         rows.append([InlineKeyboardButton(text="В избранное", callback_data=f"view:save:{channel_id}:{public_username}"[:64])])
@@ -259,14 +357,7 @@ async def _report_for(owner_id: int, channel_id: int) -> ViewReport | None:
         ).order_by(ViewChannelSnapshot.observed_at.desc()).limit(1))
         if latest is None:
             return None
-        if latest.username:
-            try:
-                current = await view_bot().get_chat(f"@{latest.username}")
-            except TelegramAPIError:
-                return None
-            if current.type != ChatType.CHANNEL or current.id != channel_id:
-                return None
-        else:
+        if not latest.username:
             permitted = await session.scalar(select(ViewPrivateChannel.id).where(
                 ViewPrivateChannel.owner_id == owner_id,
                 ViewPrivateChannel.channel_id == channel_id,
@@ -280,15 +371,31 @@ async def _report_for(owner_id: int, channel_id: int) -> ViewReport | None:
             ViewChannelSnapshot.observed_at >= datetime.now(UTC) - timedelta(days=30),
         ).order_by(ViewChannelSnapshot.observed_at))).all()
         windows = await measured_windows(session, channel_id, latest.subscriber_count or 0, now=datetime.now(UTC))
+    if latest.username:
+        try:
+            current = await view_bot().get_chat(f"@{latest.username}")
+        except TelegramAPIError:
+            return None
+        if current.type != ChatType.CHANNEL or current.id != channel_id:
+            return None
     days: dict[str, ReportPoint] = {}
     for snapshot in snapshots:
         if snapshot.subscriber_count is not None:
             days[snapshot.observed_at.date().isoformat()] = ReportPoint(snapshot.observed_at, snapshot.subscriber_count)
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    baseline = next(
+        (snapshot.subscriber_count for snapshot in reversed(snapshots)
+         if snapshot.observed_at <= week_ago and snapshot.subscriber_count is not None),
+        None,
+    )
+    growth = latest.subscriber_count - baseline if latest.subscriber_count is not None and baseline is not None else None
     return ViewReport(
         title=latest.title, subscribers=latest.subscriber_count, observed_at=latest.observed_at,
         points=tuple(days.values()), views_24h=windows.views_24h,
         er24=windows.er24_percent, views_48h=windows.views_48h,
-        views_72h=windows.views_72h,
+        views_72h=windows.views_72h, growth_7d=growth,
+        views_samples_24h=windows.posts_24h,
+        username=latest.username or None,
     )
 
 
@@ -297,7 +404,10 @@ async def _send_report_image(chat_id: int, owner_id: int, channel_id: int) -> No
     if report is None:
         await _send(chat_id, "Отчёт недоступен или у вас нет доступа к этому каналу.")
         return
-    photo = BufferedInputFile(render_report_png(report), filename="gramlyview-report.png")
+    photo = BufferedInputFile(
+        render_report_png(report, bot_username=get_settings().view_bot_username.lstrip("@")),
+        filename="gramlyview-report.png",
+    )
     caption = premium_text("", "analytics") + attribution(
         f"<b>{html.escape(report.title)}</b>\nДанные на {report.observed_at:%d.%m.%Y %H:%M} UTC"
     )
@@ -312,6 +422,192 @@ async def _send_report_image(chat_id: int, owner_id: int, channel_id: int) -> No
             chat_id, photo, caption=plain_text(caption), parse_mode=ParseMode.HTML,
             reply_markup=plain_markup(keyboard),
         )
+
+
+_NETWORK_METRICS = ("subscribers", "growth", "views", "er", "mentions")
+_NETWORK_LABELS = {
+    "subscribers": "Подписчики", "growth": "Рост", "views": "Просмотры",
+    "er": "ER", "mentions": "Упоминания",
+}
+
+
+def _network_keyboard(key: str, selected: str, reports: list[ViewReport]) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            text=("• " if metric == selected else "")
+            + ("Упоминания: нет данных" if metric == "mentions" and all(
+                report.mentions_7d is None for report in reports
+            ) else label),
+            callback_data=f"view:net:{key}:{metric}",
+        )
+        for metric, label in _NETWORK_LABELS.items()
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons[:3], buttons[3:], [
+        InlineKeyboardButton(text="Меню", callback_data="view:menu"),
+    ]])
+
+
+async def _network_reports(owner_id: int, ids: list[int]) -> list[ViewReport]:
+    slots = asyncio.Semaphore(4)
+
+    async def one(channel_id: int) -> ViewReport | None:
+        try:
+            async with slots:
+                return await _report_for(owner_id, channel_id)
+        except TelegramAPIError:
+            return None
+
+    return [report for report in await asyncio.gather(*(one(channel_id) for channel_id in ids[:20]))
+            if report is not None]
+
+
+async def _send_network_photo(
+    chat_id: int, owner_id: int, ids: list[int], key: str, metric: str,
+    *, message_id: int | None = None,
+) -> None:
+    reports = await _network_reports(owner_id, ids)
+    if not reports:
+        await _send(chat_id, "Отчёт больше не доступен. Отправьте ссылки ещё раз.")
+        return
+    metric = metric if metric in _NETWORK_METRICS else "subscribers"
+    caption = attribution(
+        f"<b>Статистика сети · {len(reports)} каналов</b>\n"
+        f"Показатель: {_NETWORK_LABELS[metric]} · сформировано {datetime.now(UTC):%d.%m.%Y %H:%M} UTC"
+    )
+    markup = _styled_markup(_network_keyboard(key, metric, reports))
+    image_bytes = render_network_png(
+        reports, metric=metric, bot_username=get_settings().view_bot_username.lstrip("@"),
+    )
+    if message_id is not None:
+        try:
+            await view_bot().edit_message_media(
+                chat_id=chat_id, message_id=message_id,
+                media=InputMediaPhoto(media=BufferedInputFile(image_bytes, filename="gramlyview-network.png"),
+                                      caption=caption, parse_mode=ParseMode.HTML),
+                reply_markup=markup,
+            )
+            return
+        except TelegramBadRequest:
+            try:
+                await view_bot().edit_message_media(
+                    chat_id=chat_id, message_id=message_id,
+                    media=InputMediaPhoto(media=BufferedInputFile(image_bytes, filename="gramlyview-network.png"),
+                                          caption=caption, parse_mode=ParseMode.HTML),
+                    reply_markup=plain_markup(markup),
+                )
+                return
+            except TelegramBadRequest:
+                # Telegram may reject editing an old photo; send the result below.
+                pass
+    try:
+        await view_bot().send_photo(
+            chat_id, BufferedInputFile(image_bytes, filename="gramlyview-network.png"),
+            caption=caption, parse_mode=ParseMode.HTML, reply_markup=markup,
+        )
+    except TelegramBadRequest:
+        await view_bot().send_photo(
+            chat_id, BufferedInputFile(image_bytes, filename="gramlyview-network.png"),
+            caption=plain_text(caption), parse_mode=ParseMode.HTML,
+            reply_markup=plain_markup(markup),
+        )
+
+
+async def _send_batch_summary(chat_id: int, owner_id: int, successful_ids: list[int]) -> None:
+    ids = list(dict.fromkeys(successful_ids))[:20]
+    reports = await _network_reports(owner_id, ids)
+    if len(reports) < 2:
+        return
+    key = secrets.token_hex(4)
+    async with session_factory() as session, session.begin():
+        await session.execute(
+            insert(ViewUserState).values(
+                owner_id=owner_id, report_channel_ids=ids, report_key=key,
+                updated_at=datetime.now(UTC),
+            ).on_conflict_do_update(
+                index_elements=[ViewUserState.owner_id],
+                set_={"report_channel_ids": ids, "report_key": key, "updated_at": datetime.now(UTC)},
+            )
+        )
+    subscribers = [report.subscribers for report in reports if report.subscribers is not None]
+    total = f"{sum(subscribers):,}".replace(",", " ") if len(subscribers) == len(reports) else "нет полных данных"
+    sample_count = sum(report.views_samples_24h or 0 for report in reports)
+    average = network_summary_value(reports, "views")
+    view_label = f"{average:,}".replace(",", " ") if average is not None else "нет полного итога"
+    await _send(
+        chat_id,
+        f"<b>Сеть · {len(reports)} каналов</b>\n"
+        f"Подписчики · {total}\n"
+        f"Средние просмотры поста через 24 ч · {view_label}\n"
+        f"<blockquote>По {sample_count} публикациям. Полный итог появится после замеров всех каналов.</blockquote>",
+        keyboard=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть картинку", callback_data=f"view:net:{key}:subscribers")],
+            [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+        ]),
+    )
+    await _send_network_photo(chat_id, owner_id, ids, key, "subscribers")
+
+
+async def _monitors(chat_id: int, owner_id: int) -> None:
+    async with session_factory() as session:
+        rows = (await session.scalars(
+            select(ViewMonitor).where(ViewMonitor.owner_id == owner_id, ViewMonitor.enabled.is_(True))
+            .order_by(ViewMonitor.created_at.desc()).limit(20)
+        )).all()
+    if not rows:
+        await _send(
+            chat_id,
+            "<b>Мониторинг</b>\n<blockquote>Откройте карточку канала и включите ежедневную сводку. "
+            "Она приходит в 09:00 по Москве, когда появились новые измерения.</blockquote>",
+            keyboard=_menu(),
+        )
+        return
+    accessible = []
+    for row in rows:
+        report = await _report_for(owner_id, row.channel_id)
+        if report is not None:
+            accessible.append((row, report))
+    names = [html.escape(report.title) for _row, report in accessible]
+    await _send(
+        chat_id,
+        "<b>Мониторинг · ежедневная сводка</b>\n" + "\n".join(f"• {name}" for name in names)
+        if names else "Активных доступных каналов сейчас нет.",
+        keyboard=InlineKeyboardMarkup(inline_keyboard=[
+            *[[InlineKeyboardButton(text=f"Открыть {report.title[:24]}", callback_data=f"view:refresh:{row.channel_id}")]
+              for row, report in accessible],
+            [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+        ]),
+    )
+
+
+async def _toggle_monitor(chat_id: int, owner_id: int, channel_id: int) -> None:
+    async with session_factory() as session:
+        existing = await session.scalar(select(ViewMonitor).where(
+            ViewMonitor.owner_id == owner_id, ViewMonitor.channel_id == channel_id,
+        ))
+    if existing is None or not existing.enabled:
+        report = await _report_for(owner_id, channel_id)
+        if report is None:
+            await _send(chat_id, "Нет доступа к каналу. Мониторинг не включён.")
+            return
+    async with session_factory() as session, session.begin():
+        monitor = await session.scalar(select(ViewMonitor).where(
+            ViewMonitor.owner_id == owner_id, ViewMonitor.channel_id == channel_id,
+        ).with_for_update())
+        if monitor is None:
+            session.add(ViewMonitor(owner_id=owner_id, channel_id=channel_id, enabled=True))
+            enabled = True
+        else:
+            monitor.enabled = not monitor.enabled
+            enabled = monitor.enabled
+    await _send(
+        chat_id,
+        "Ежедневная сводка включена. Она придёт в 09:00 по Москве после новых измерений."
+        if enabled else "Ежедневная сводка отключена.",
+        keyboard=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Открыть мониторинг", callback_data="view:monitors")],
+            [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+        ]),
+    )
 
 
 async def _send_report_csv(chat_id: int, owner_id: int, channel_id: int) -> None:
@@ -371,70 +667,198 @@ async def _send_top_posts(chat_id: int, owner_id: int, channel_id: int) -> None:
     ]))
 
 
-async def _analyze(chat_id: int, owner_id: int, query: str) -> None:
-    usernames = parse_channels(query)
-    invites = parse_invites(query)
-    private_post = PRIVATE_POST_PATTERN.search(query)
-    if not usernames and not invites and not private_post:
+_TOP_FIELDS = {
+    "views": ("Просмотры", "views"),
+    "forwards": ("Пересылки", "forwards"),
+    "comments": ("Комментарии", "replies_count"),
+    "reactions": ("Реакции", "reactions_count"),
+}
+
+
+def _rank_posts(observations: list[Any], metric: str) -> list[Any]:
+    latest = {}
+    for observation in observations:
+        latest.setdefault((observation.channel_id, observation.post_id), observation)
+    field = _TOP_FIELDS[metric][1]
+    return sorted(
+        (row for row in latest.values() if getattr(row, field) is not None),
+        key=lambda row: (getattr(row, field), row.published_at), reverse=True,
+    )
+
+
+async def _global_top_posts(chat_id: int, owner_id: int, metric: str, page: int = 0) -> None:
+    from .models import ViewPostObservation
+
+    if metric not in _TOP_FIELDS:
+        metric = "views"
+    page = max(0, min(page, 99))
+    async with session_factory() as session:
+        favorite_ids = (await session.scalars(select(ViewFavorite.channel_id).where(
+            ViewFavorite.owner_id == owner_id,
+        ))).all()
+        collection_ids = (await session.scalars(
+            select(ViewCollectionItem.channel_id).join(ViewCollection).where(ViewCollection.owner_id == owner_id)
+        )).all()
+        state = await session.get(ViewUserState, owner_id)
+        ids = list(dict.fromkeys([*favorite_ids, *collection_ids, *((state.report_channel_ids or []) if state else [])]))[:20]
+    reports: dict[int, ViewReport] = {}
+    for channel_id in ids:
+        report = await _report_for(owner_id, channel_id)
+        if report is not None:
+            reports[channel_id] = report
+    if not reports:
+        await _send(chat_id, "Для топа сначала проанализируйте каналы или добавьте их в избранное.", keyboard=_menu())
+        return
+    async with session_factory() as session:
+        observations = (await session.scalars(
+            select(ViewPostObservation).where(
+                ViewPostObservation.channel_id.in_(reports),
+                ViewPostObservation.published_at >= datetime.now(UTC) - timedelta(days=7),
+            ).order_by(ViewPostObservation.observed_at.desc()).limit(10_000)
+        )).all()
+    label, field = _TOP_FIELDS[metric]
+    ranked = _rank_posts(observations, metric)
+    if not ranked:
+        await _send(chat_id, f"<b>Топ · {label.lower()}</b>\nЗамеров за семь дней пока нет.", keyboard=_menu())
+        return
+    start = page * 5
+    if start >= len(ranked):
+        page = 0
+        start = 0
+    lines = [f"<b>Топ публикаций · {label.lower()}</b>",
+             f"Среди измеренных постов {len(reports)} каналов за 7 дней."]
+    for index, row in enumerate(ranked[start:start + 5], start + 1):
+        report = reports[row.channel_id]
+        value = f"{getattr(row, field):,}".replace(",", " ")
+        if report.username:
+            url = f"https://t.me/{report.username}/{row.post_id}"
+        else:
+            internal = str(abs(row.channel_id)).removeprefix("100")
+            url = f"https://t.me/c/{internal}/{row.post_id}"
+        lines.append(
+            f'{index}. {html.escape(report.title[:42])} · '
+            f'<a href="{html.escape(url, quote=True)}">пост #{row.post_id}</a> · {value}'
+        )
+    sort_buttons = [InlineKeyboardButton(
+        text=("• " if name == metric else "") + title,
+        callback_data=f"view:globaltop:{name}:0",
+    ) for name, (title, _field) in _TOP_FIELDS.items()]
+    page_buttons = []
+    if page:
+        page_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"view:globaltop:{metric}:{page - 1}"))
+    if start + 5 < len(ranked):
+        page_buttons.append(InlineKeyboardButton(text="Далее", callback_data=f"view:globaltop:{metric}:{page + 1}"))
+    await _send(chat_id, "\n".join(lines), keyboard=InlineKeyboardMarkup(inline_keyboard=[
+        sort_buttons[:2], sort_buttons[2:], *([page_buttons] if page_buttons else []),
+        [InlineKeyboardButton(text="Меню", callback_data="view:menu")],
+    ]))
+
+
+async def _analyze(chat_id: int, owner_id: int, query: str) -> list[int]:
+    targets = parse_targets(query)
+    if not targets:
         await _send(
             chat_id,
             "Не нашёл ссылку на канал. Пришлите @username, t.me/канал или приглашение t.me/+…",
         )
-        return
+        return []
     if not await analytics_available():
         await _send(chat_id, "Аналитика временно приостановлена: доступно менее трёх рабочих аккаунтов сбора. Сохранённые отчёты остаются доступными. Попробуйте позже.")
-        return
+        return []
     if not await _reserve_analysis(owner_id):
         await _send(chat_id, "Слишком частые запросы. Повторите анализ через 10 секунд.")
-        return
-    if private_post:
-        await _analyze_private(
-            chat_id, owner_id, -int(f"100{private_post.group(1)}"),
-            post_id=int(private_post.group(2)),
-        )
-    for invite in invites[:MAX_CHANNELS]:
+        return []
+    overflow = max(0, len(targets) - MAX_CHANNELS)
+    targets = targets[:MAX_CHANNELS]
+    if len(targets) > 1:
+        await _send(chat_id, f"Проверяю {len(targets)} каналов. Каждый результат отправлю отдельно.")
+    seen_channel_ids: set[int] = set()
+    successful_ids: list[int] = []
+    succeeded = failed = 0
+    for index, target in enumerate(targets, 1):
+        target_label = "Закрытый канал" if parse_invites(target) else html.escape(target)
         try:
-            channel_id, title, count, observed = await asyncio.wait_for(connect_private(owner_id, invite), timeout=180)
-            async with session_factory() as session:
-                windows = await measured_windows(session, channel_id, count or 0, now=datetime.now(UTC))
-            await _send(chat_id, _channel_card(title, None, count, observed, windows), keyboard=_report_keyboard(channel_id))
-        except PrivateChannelError as exc:
-            await _send(chat_id, html.escape(str(exc)))
-        except Exception as exc:
-            logger.error("GramlyView private analysis failed owner_id=%s class=%s", owner_id, type(exc).__name__)
-            await _send(chat_id, "Не удалось проанализировать закрытый канал. Попробуйте позже.")
-    for username in usernames[:max(0, MAX_CHANNELS - len(invites))]:
-        try:
-            channel_id, canonical, title, count, observed = await _public_channel_data(username)
-        except ValueError:
-            await _send(
-                chat_id, f"@{html.escape(username)} — это не канал. Отправьте ссылку на публичный канал."
-            )
-            continue
-        except TelegramAPIError:
-            await _send(
-                chat_id,
-                f"Не удалось получить данные @{html.escape(username)}. Проверьте ссылку и доступ бота к каналу.",
-            )
-            continue
-        post = POST_PATTERN.search(query)
-        post_id = int(post.group(2)) if post and post.group(1).lower() == username.lower() else None
-        try:
-            from .view_collector import collect_one
+            private_post = PRIVATE_POST_PATTERN.fullmatch(target)
+            invites = parse_invites(target)
+            if private_post:
+                channel_id = -int(f"100{private_post.group(1)}")
+                if channel_id not in seen_channel_ids:
+                    if await _analyze_private(chat_id, owner_id, channel_id, post_id=int(private_post.group(2))):
+                        seen_channel_ids.add(channel_id)
+                        successful_ids.append(channel_id)
+                        succeeded += 1
+                    else:
+                        failed += 1
+            elif invites:
+                channel_id, title, count, observed = await asyncio.wait_for(
+                    connect_private(owner_id, invites[0]), timeout=30 if len(targets) > 1 else 180,
+                )
+                if channel_id not in seen_channel_ids:
+                    async with session_factory() as session:
+                        windows = await measured_windows(session, channel_id, count or 0, now=datetime.now(UTC))
+                    await _send(chat_id, _channel_card(title, None, count, observed, windows), keyboard=_report_keyboard(channel_id))
+                    seen_channel_ids.add(channel_id)
+                    successful_ids.append(channel_id)
+                    succeeded += 1
+            else:
+                usernames = parse_channels(target)
+                if not usernames:
+                    continue
+                username = usernames[0]
+                channel_id, canonical, title, count, observed = await _public_channel_data(username)
+                if channel_id in seen_channel_ids:
+                    continue
+                post = POST_PATTERN.fullmatch(target)
+                post_id = int(post.group(2)) if post else None
+                if len(targets) == 1:
+                    try:
+                        from .view_collector import collect_one
 
-            async with lease_account() as (_account_id, collector):
-                await asyncio.wait_for(collect_one(collector, canonical, channel_id), timeout=90)
+                        async with lease_account() as (_account_id, collector):
+                            await asyncio.wait_for(collect_one(collector, canonical, channel_id), timeout=90)
+                    except Exception as exc:
+                        logger.info("View immediate collection deferred channel_id=%s class=%s", channel_id, type(exc).__name__)
+                async with session_factory() as session:
+                    windows = await measured_windows(session, channel_id, count or 0, now=datetime.now(UTC))
+                await _send(
+                    chat_id,
+                    _channel_card(title, canonical, count, observed, windows, post_id=post_id,
+                                  post_views=await _post_views(channel_id, post_id)),
+                    keyboard=_report_keyboard(channel_id, public_username=canonical),
+                )
+                seen_channel_ids.add(channel_id)
+                successful_ids.append(channel_id)
+                succeeded += 1
+        except ValueError as exc:
+            failed += 1
+            reason = str(exc) if isinstance(exc, PrivateChannelError) else "Это не канал"
+            await _send(chat_id, f"{target_label} · {html.escape(reason)}")
+        except TelegramAPIError:
+            failed += 1
+            await _send(chat_id, f"{target_label} · не удалось получить данные. Проверьте ссылку и доступ к каналу.")
         except Exception as exc:
-            logger.info("View immediate collection deferred channel_id=%s class=%s", channel_id, type(exc).__name__)
-        async with session_factory() as session:
-            windows = await measured_windows(session, channel_id, count or 0, now=datetime.now(UTC))
-        keyboard = _report_keyboard(channel_id, public_username=canonical)
-        await _send(
-            chat_id,
-            _channel_card(title, canonical, count, observed, windows, post_id=post_id,
-                          post_views=await _post_views(channel_id, post_id)),
-            keyboard=keyboard,
-        )
+            failed += 1
+            logger.error("GramlyView analysis failed owner_id=%s class=%s", owner_id, type(exc).__name__)
+            await _send(chat_id, f"{target_label} · не удалось проанализировать. Попробуйте позже.")
+        if len(targets) > 5 and index % 5 == 0 and index < len(targets):
+            await _send(chat_id, f"Проверено {index} из {len(targets)} каналов.")
+    if len(targets) > 1 or overflow:
+        summary = f"Готово: {succeeded} каналов, ошибок: {failed}."
+        if overflow:
+            suffix = (
+                "ссылка" if overflow % 10 == 1 and overflow % 100 != 11
+                else "ссылки" if overflow % 10 in (2, 3, 4) and overflow % 100 not in (12, 13, 14)
+                else "ссылок"
+            )
+            summary += f" Ещё {overflow} {suffix} вне лимита: за один раз можно проверить {MAX_CHANNELS}. Пришлите оставшиеся отдельно."
+        await _send(chat_id, summary)
+    if len(successful_ids) > 1:
+        try:
+            await _send_batch_summary(chat_id, owner_id, successful_ids)
+        except Exception as exc:
+            logger.error("GramlyView network summary failed owner_id=%s class=%s", owner_id, type(exc).__name__)
+            await _send(chat_id, "Карточки каналов готовы, но сводную картинку пока не удалось создать. Повторите позже.")
+    return successful_ids
 
 
 async def _public_channel_data(username: str) -> tuple[int, str, str, int, datetime]:
@@ -479,12 +903,12 @@ async def _public_channel_data(username: str) -> tuple[int, str, str, int, datet
     return chat.id, canonical, title, count, observed
 
 
-async def _analyze_private(chat_id: int, owner_id: int, channel_id: int, *, post_id: int | None = None) -> None:
+async def _analyze_private(chat_id: int, owner_id: int, channel_id: int, *, post_id: int | None = None) -> bool:
     from .models import ViewPrivateChannel
 
     if not await analytics_available():
         await _send(chat_id, "Аналитика временно приостановлена: рабочих аккаунтов меньше трёх.")
-        return
+        return False
     async with session_factory() as session:
         linked = await session.scalar(select(ViewPrivateChannel).where(
             ViewPrivateChannel.owner_id == owner_id,
@@ -493,7 +917,7 @@ async def _analyze_private(chat_id: int, owner_id: int, channel_id: int, *, post
         ))
     if linked is None:
         await _send(chat_id, "Для анализа закрытого канала пришлите его ссылку-приглашение t.me/+…")
-        return
+        return False
     from .view_private import analyze_saved_private
     try:
         title, count, observed = await analyze_saved_private(linked.account_id, channel_id)
@@ -501,11 +925,13 @@ async def _analyze_private(chat_id: int, owner_id: int, channel_id: int, *, post
             windows = await measured_windows(session, channel_id, count or 0, now=datetime.now(UTC))
         await _send(chat_id, _channel_card(title, None, count, observed, windows, post_id=post_id,
                                           post_views=await _post_views(channel_id, post_id)), keyboard=_report_keyboard(channel_id))
+        return True
     except PrivateChannelError:
         await _send(chat_id, "Аккаунт сбора потерял доступ к каналу. Отправьте новое приглашение.")
     except Exception as exc:
         logger.error("View saved private analysis failed channel_id=%s class=%s", channel_id, type(exc).__name__)
         await _send(chat_id, "Не удалось обновить закрытый канал. Повторите позже.")
+    return False
 
 
 async def _reserve_analysis(owner_id: int) -> bool:
@@ -850,13 +1276,15 @@ async def process_view_update(payload: dict[str, Any]) -> None:
         return  # analytics are private; no unsolicited group replies
     data = str(callback.get("data") or "") if isinstance(callback, dict) else ""
     text = str(message.get("text") or message.get("caption") or "") if message else ""
+    targets = parse_message_targets(message) if isinstance(message, dict) else []
+    query = "\n".join(targets) if targets else text
     forwarded = message.get("forward_origin") if message else None
     private_origin_id = 0
     if isinstance(forwarded, dict):
         origin = forwarded.get("chat") or {}
         username = origin.get("username")
         if username:
-            text = f"@{username}" if not text else f"@{username}\n{text}"
+            query = f"@{username}" if not query else f"@{username}\n{query}"
         elif forwarded.get("type") == "channel":
             private_origin_id = int(origin.get("id") or 0)
     activity_event = (
@@ -865,7 +1293,7 @@ async def process_view_update(payload: dict[str, Any]) -> None:
         else "start"
         if text.startswith("/start")
         else "analyze"
-        if text or private_origin_id
+        if query or private_origin_id
         else "menu"
     )
     async with session_factory() as session:
@@ -922,19 +1350,55 @@ async def process_view_update(payload: dict[str, Any]) -> None:
                 activity.cross_offer_hidden = True
         await _send(chat_id, "Больше не будем предлагать Gramly Hello. Ссылка на него остаётся в меню.")
         return
-    pending_query = f"private:{private_origin_id}" if private_origin_id else text
+    pending_query = f"private:{private_origin_id}" if private_origin_id else query
     if not await _gate(chat_id, owner_id, pending_query if not pending_query.startswith("/start") else ""):
         return
     if data == "view:favorites":
         await _favorites(chat_id, owner_id)
+    elif data == "view:monitors":
+        await _monitors(chat_id, owner_id)
+    elif data.startswith("view:monitor:toggle:"):
+        try:
+            channel_id = int(data.rsplit(":", 1)[1])
+        except ValueError:
+            await _send(chat_id, "Канал не найден.")
+            return
+        await _toggle_monitor(chat_id, owner_id, channel_id)
     elif data == "view:analyze":
         await _send(
             chat_id,
-            "Отправьте @канал, ссылку на публикацию или приглашение в закрытый канал. Можно прислать несколько ссылок одним сообщением.",
+            "Отправьте ссылку на канал, публикацию или пересланный список. За раз обработаем до 20 каналов.",
             keyboard=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Назад", callback_data="view:menu")],
             ]),
         )
+    elif data == "view:picture":
+        await _set_pending_action(owner_id, "network_picture")
+        await _send(
+            chat_id,
+            "<b>Статистика картинкой</b>\nОтправьте одну или несколько ссылок на каналы. "
+            "После анализа появится картинка с переключением показателей.",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data="view:menu")],
+            ]),
+        )
+    elif data.startswith("view:net:"):
+        parts = data.split(":")
+        if len(parts) != 4 or parts[3] not in _NETWORK_METRICS:
+            await _send(chat_id, "Показатель не найден.")
+            return
+        async with session_factory() as session:
+            state = await session.get(ViewUserState, owner_id)
+            ids = list(state.report_channel_ids or []) if state and state.report_key == parts[2] else []
+        if not ids:
+            await _send(chat_id, "Это старая сводка. Отправьте список каналов ещё раз.")
+            return
+        source_message = callback.get("message") if isinstance(callback, dict) else None
+        photo_message_id = (
+            int(source_message["message_id"])
+            if isinstance(source_message, dict) and source_message.get("photo") else None
+        )
+        await _send_network_photo(chat_id, owner_id, ids, parts[2], parts[3], message_id=photo_message_id)
     elif data.startswith("view:refresh:"):
         try:
             channel_id = int(data.rsplit(":", 1)[1])
@@ -970,6 +1434,13 @@ async def process_view_update(payload: dict[str, Any]) -> None:
             await _send_top_posts(chat_id, owner_id, int(data.rsplit(":", 1)[1]))
         except ValueError:
             await _send(chat_id, "Публикации не найдены.")
+    elif data.startswith("view:globaltop:"):
+        parts = data.split(":")
+        try:
+            page = int(parts[3]) if len(parts) > 3 else 0
+        except ValueError:
+            page = 0
+        await _global_top_posts(chat_id, owner_id, parts[2] if len(parts) > 2 else "views", page)
     elif data == "view:collections":
         await _collections(chat_id, owner_id)
     elif data == "view:collection:new":
@@ -1067,7 +1538,12 @@ async def process_view_update(payload: dict[str, Any]) -> None:
     elif data == "view:method":
         await _send(
             chat_id,
-            "<b>Как считаются показатели</b>\n<blockquote>Подписчики — текущий счётчик Telegram. Просмотры 24/48/72 ч и ER24 появляются только после разрешённого сбора реальных просмотров постов. Пока измерений нет, показываем «нет данных».</blockquote>",
+            "<b>Как считаются показатели</b>\n"
+            "Подписчики — текущий счётчик Telegram. Просмотры — среднее по публикациям, "
+            "замеренным через 24, 48 и 72 часа после выхода; допустимое отклонение замера — до 2 часов. "
+            "ER24 — среднее за 24 часа, делённое на число подписчиков.\n"
+            "<blockquote>Показываем число публикаций в выборке. Если подходящих замеров нет, "
+            "пишем «нет данных», а не ноль.</blockquote>",
         )
     elif data.startswith("view:saveprivate:"):
         from .models import ViewPrivateChannel
@@ -1119,9 +1595,17 @@ async def process_view_update(payload: dict[str, Any]) -> None:
             await _maybe_offer_hello(chat_id, owner_id)
     elif private_origin_id:
         await _analyze_private(chat_id, owner_id, private_origin_id)
-    elif text:
-        if not await _handle_collection_text(chat_id, owner_id, text):
-            await _analyze(chat_id, owner_id, text)
+    elif query:
+        async with session_factory() as session:
+            state = await session.get(ViewUserState, owner_id)
+            picture_requested = bool(state and state.pending_action == "network_picture")
+        if picture_requested:
+            await _clear_pending_action(owner_id)
+            successful_ids = await _analyze(chat_id, owner_id, query)
+            if len(successful_ids) == 1:
+                await _send_report_image(chat_id, owner_id, successful_ids[0])
+        elif not await _handle_collection_text(chat_id, owner_id, query):
+            await _analyze(chat_id, owner_id, query)
     else:
         await _send(
             chat_id, "Перешлите публикацию или отправьте ссылку на публичный либо закрытый канал.", keyboard=_menu()

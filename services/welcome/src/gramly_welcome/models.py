@@ -123,6 +123,8 @@ class ViewPostObservation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     views: Mapped[int] = mapped_column(BigInteger)
     forwards: Mapped[int | None] = mapped_column(BigInteger)
+    replies_count: Mapped[int | None] = mapped_column(BigInteger)
+    reactions_count: Mapped[int | None] = mapped_column(BigInteger)
     source: Mapped[str] = mapped_column(String(24), default="mtproto")
 
 
@@ -173,8 +175,21 @@ class ViewUserState(Base):
     owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), primary_key=True)
     pending_query: Mapped[str] = mapped_column(Text, default="")
     pending_action: Mapped[str] = mapped_column(String(64), default="")
+    report_channel_ids: Mapped[list[int]] = mapped_column(JSONB, default=list)
+    report_key: Mapped[str] = mapped_column(String(16), default="")
     last_analysis_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewMonitor(Base):
+    __tablename__ = "view_monitor"
+    __table_args__ = (UniqueConstraint("owner_id", "channel_id", name="uq_view_monitor_owner_channel"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_sent_on: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ViewMtprotoAccount(Base):
