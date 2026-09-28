@@ -15,6 +15,6 @@ def test_view_menu_puts_analysis_first_and_keeps_navigation(monkeypatch: pytest.
 
 def test_view_report_actions_include_monitoring_without_crowding_rows() -> None:
     rows = view_bot._report_keyboard(-10077, public_username="public_channel").inline_keyboard
-    assert [len(row) for row in rows] == [2, 2, 1, 2]
+    assert [len(row) for row in rows] == [2, 2, 2, 2, 2]
     assert rows[2][0].callback_data == "view:monitor:toggle:-10077"
     assert rows[-1][-1].callback_data == "view:menu"

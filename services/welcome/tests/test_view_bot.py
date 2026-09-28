@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -85,10 +87,12 @@ async def test_batch_limit_reports_skipped_links_and_preserves_valid_results(mon
     monkeypatch.setattr(view_bot, "lease_account", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
     await view_bot._analyze(42, 7, " ".join(f"https://t.me/channel{index}" for index in range(1, 22)))
     assert lookup.await_count == 20
-    assert "Ещё 1 ссылка вне лимита" in send.call_args_list[-1].args[1]
+    assert "Проверяю 20 каналов" in send.call_args_list[0].args[1]
     batch_summary.assert_awaited_once()
     assert batch_summary.await_args is not None
     assert len(batch_summary.await_args.args[2]) == 19
+    assert batch_summary.await_args.kwargs["overflow"] == 1
+    assert len(send.call_args_list) == 1  # no separate card or error for each link
 
 
 @pytest.mark.asyncio
@@ -144,9 +148,110 @@ def test_unknown_metrics_are_not_rendered_as_zero() -> None:
         ViewWindows(None, None, None, None, None),
     )
     assert "Канал &amp; друзья" in card
-    assert "Средние просмотры поста через 24 / 48 / 72 ч · нет данных / нет данных / нет данных" in card
+    assert "Средние просмотры постов за 24 / 48 / 72 ч · нет данных / нет данных / нет данных" in card
     assert "ER24 · нет данных" in card
     assert "<blockquote>" in card and "</blockquote>" in card
+
+
+@pytest.mark.asyncio
+async def test_cpm_shows_only_a_transparent_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+    from gramly_welcome.view_reports import ViewReport
+
+    send = AsyncMock()
+    clear = AsyncMock()
+    monkeypatch.setattr(view_bot, "_send", send)
+    monkeypatch.setattr(view_bot, "_clear_pending_action", clear)
+    monkeypatch.setattr(view_bot, "_report_for", AsyncMock(return_value=ViewReport(
+        title="Тестовый канал", subscribers=10_000, observed_at=datetime(2026, 9, 28, tzinfo=UTC),
+        points=(), views_24h=12_000, er24=120, views_samples_24h=8, username="testchannel",
+    )))
+    assert await view_bot._handle_cpm_text(42, 7, "cpm:-1001", "300")
+    assert "3 600.00 ₽" in send.call_args.args[1]
+    assert "не рыночная цена" in send.call_args.args[1]
+    clear.assert_awaited_once_with(7)
+
+
+@pytest.mark.asyncio
+async def test_network_summary_is_one_message_followed_by_one_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    from gramly_welcome import view_bot
+    from gramly_welcome.view_reports import ViewReport
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def begin(self) -> Session:
+            return self
+
+        async def execute(self, _statement: object) -> None:
+            return None
+
+    now = datetime(2026, 9, 28, tzinfo=UTC)
+    reports = [
+        ViewReport("A", 1000, now, (), 200, 20, views_48h=300, views_72h=400,
+                   views_samples_24h=2, views_samples_48h=3, views_samples_72h=4,
+                   scanned_posts_count=8),
+        ViewReport("B", 2000, now, (), None, None, scanned_posts_count=6),
+    ]
+    send = AsyncMock()
+    photo = AsyncMock()
+    monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
+    monkeypatch.setattr(view_bot, "_network_reports", AsyncMock(return_value=reports))
+    monkeypatch.setattr(view_bot, "_send", send)
+    monkeypatch.setattr(view_bot, "_send_network_photo", photo)
+    await view_bot._send_batch_summary(42, 7, [-1001, -1002], failures=["bad"], overflow=1)
+    assert send.await_count == 1
+    assert photo.await_count == 1
+    text = send.call_args.args[1]
+    assert "2 поста / 1 канал" in text
+    assert "Не удалось проверить 1" in text
+    assert "Ещё 1 ссылка вне лимита" in text
+
+
+@pytest.mark.asyncio
+async def test_public_scan_claim_coalesces_duplicate_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from gramly_welcome import view_bot, view_collector
+
+    observed = datetime.now(UTC)
+    outcomes = iter([None, "claim", None, None, observed])
+    deleted = []
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        def begin(self) -> Session:
+            return self
+
+        async def scalar(self, _statement: object) -> object:
+            return next(outcomes)
+
+        async def execute(self, statement: object) -> None:
+            deleted.append(statement)
+
+    @asynccontextmanager
+    async def lease() -> AsyncIterator[tuple[int, object]]:
+        yield 1, object()
+
+    collect = AsyncMock(return_value=True)
+    monkeypatch.setattr(view_bot, "session_factory", lambda: Session())
+    monkeypatch.setattr(view_bot, "lease_account", lease)
+    monkeypatch.setattr("gramly_welcome.view_bot.secrets.token_hex", lambda _: "claim")
+    monkeypatch.setattr(view_collector, "collect_one", collect)
+    deadline = asyncio.get_running_loop().time() + 20
+    await view_bot._collect_public_if_needed(-1001, "channel", deadline)
+    await view_bot._collect_public_if_needed(-1001, "channel", deadline)
+    collect.assert_awaited_once()
+    assert len(deleted) == 1
 
 
 def test_global_top_uses_latest_observation_and_measured_metric() -> None:
@@ -306,6 +411,18 @@ async def test_measured_windows_use_only_collected_posts_and_never_invent_histor
             observed_at=now - timedelta(hours=3),
             views=10_000,
         ),
+        ViewPostObservation(
+            channel_id=-100123, post_id=4, published_at=now - timedelta(hours=10),
+            observed_at=run.observed_at, views=100,
+        ),
+        ViewPostObservation(
+            channel_id=-100123, post_id=5, published_at=now - timedelta(hours=30),
+            observed_at=run.observed_at, views=300,
+        ),
+        ViewPostObservation(
+            channel_id=-100123, post_id=6, published_at=now - timedelta(hours=60),
+            observed_at=run.observed_at, views=500,
+        ),
     ]
 
     class FakeScalars:
@@ -321,24 +438,65 @@ async def test_measured_windows_use_only_collected_posts_and_never_invent_histor
 
     result = await measured_windows(FakeSession(), -100123, 1000, now=now)  # type: ignore[arg-type]
     assert (result.views_24h, result.views_48h, result.views_72h, result.er24_percent) == (
-        700,
-        1000,
-        1200,
-        70.0,
+        100,
+        200,
+        300,
+        10.0,
     )
-    assert (result.posts_24h, result.posts_48h, result.posts_72h) == (2, 1, 1)
+    assert (result.posts_24h, result.posts_48h, result.posts_72h) == (1, 2, 3)
+    assert (result.exact_views_24h, result.exact_views_48h, result.exact_views_72h) == (700, 1000, 1200)
+    assert (result.exact_posts_24h, result.exact_posts_48h, result.exact_posts_72h) == (2, 1, 1)
+    assert result.scanned_posts_count == 4
     run.observed_at = now - timedelta(hours=3)
-    assert (await measured_windows(FakeSession(), -100123, 1000, now=now)).views_24h == 700  # type: ignore[arg-type]
+    assert (await measured_windows(FakeSession(), -100123, 1000, now=now)).views_24h is None  # type: ignore[arg-type]
     run.observed_at = now - timedelta(minutes=15)
     unsampled = posts[:]
-    posts[:] = [posts[-1]]
+    posts[:] = [posts[5]]
     no_history = await measured_windows(FakeSession(), -100123, 1000, now=now)  # type: ignore[arg-type]
     assert (no_history.views_24h, no_history.views_48h, no_history.views_72h) == (None, None, None)
     assert (no_history.posts_24h, no_history.posts_48h, no_history.posts_72h) == (0, 0, 0)
     posts[:] = unsampled
     run.complete = False
+    run.coverage_start_at = now - timedelta(hours=12)
     missing = await measured_windows(FakeSession(), -100123, 1000, now=now)  # type: ignore[arg-type]
     assert missing.views_24h is None and missing.er24_percent is None
+    run.coverage_start_at = now - timedelta(hours=49)
+    partial = await measured_windows(FakeSession(), -100123, 1000, now=now)  # type: ignore[arg-type]
+    assert (partial.views_24h, partial.views_48h, partial.views_72h) == (100, 200, None)
+
+
+@pytest.mark.asyncio
+async def test_recent_posts_are_reported_without_exact_age_samples() -> None:
+    now = datetime(2026, 9, 28, 6, 13, tzinfo=UTC)
+    run = ViewCollectionRun(
+        channel_id=-1003758090845, observed_at=now,
+        coverage_start_at=now - timedelta(hours=75), complete=True,
+        post_count=61, error_code="",
+    )
+    posts = [
+        ViewPostObservation(
+            channel_id=run.channel_id, post_id=post_id,
+            published_at=now - timedelta(hours=12), observed_at=now, views=100 + post_id,
+        )
+        for post_id in range(1, 62)
+    ]
+
+    class FakeScalars:
+        def all(self) -> list[ViewPostObservation]:
+            return posts
+
+    class FakeSession:
+        async def scalar(self, _statement: object) -> ViewCollectionRun:
+            return run
+
+        async def scalars(self, _statement: object) -> FakeScalars:
+            return FakeScalars()
+
+    result = await measured_windows(FakeSession(), run.channel_id, 1000, now=now)  # type: ignore[arg-type]
+    assert result.scanned_posts_count == 61
+    assert (result.posts_24h, result.posts_48h, result.posts_72h) == (61, 61, 61)
+    assert (result.views_24h, result.views_48h, result.views_72h) == (131, 131, 131)
+    assert (result.exact_posts_24h, result.exact_posts_48h, result.exact_posts_72h) == (0, 0, 0)
 
 
 @pytest.mark.asyncio

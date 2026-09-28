@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
+from gramly_welcome.metrics import (
+    VIEW_COLLECTION_FAILURES,
+    VIEW_LAST_SUCCESS_AGE,
+    VIEW_QUEUE_AGE,
+    VIEW_QUEUE_DEPTH,
+)
 from gramly_welcome.models import InboxEvent
 from gramly_welcome.workers import view
 
@@ -38,3 +45,39 @@ async def test_view_batch_orders_each_person_without_blocking_others(
 
     assert timeline.index("start:10") < timeline.index("finish:10") < timeline.index("start:20")
     assert timeline.index("start:30") < timeline.index("finish:10")
+
+
+@pytest.mark.asyncio
+async def test_view_metrics_separate_pending_work_from_collection_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(UTC)
+
+    class Session:
+        calls = 0
+
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def execute(self, _query: object) -> SimpleNamespace:
+            self.calls += 1
+            row = (2, now - timedelta(seconds=30)) if self.calls == 1 else (1, now - timedelta(seconds=40))
+            return SimpleNamespace(
+                one_or_none=lambda: row,
+                one=lambda: row,
+            )
+
+        async def scalar(self, _query: object) -> int | datetime:
+            self.calls += 1
+            return 3 if self.calls == 3 else now - timedelta(minutes=4)
+
+    monkeypatch.setattr(view, "session_factory", Session)
+    await view.refresh_view_metrics()
+
+    assert VIEW_QUEUE_DEPTH._value.get() == 3
+    assert 40 <= VIEW_QUEUE_AGE._value.get() < 42
+    assert VIEW_COLLECTION_FAILURES._value.get() == 3
+    assert 240 <= VIEW_LAST_SUCCESS_AGE._value.get() < 242

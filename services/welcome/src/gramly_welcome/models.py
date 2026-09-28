@@ -139,6 +139,13 @@ class ViewCollectionRun(Base):
     error_code: Mapped[str] = mapped_column(String(48), default="")
 
 
+class ViewCollectionClaim(Base):
+    __tablename__ = "view_collection_claim"
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    claim_key: Mapped[str] = mapped_column(String(32))
+    claimed_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ViewFavorite(Base):
     __tablename__ = "view_favorite"
     __table_args__ = (UniqueConstraint("owner_id", "channel_id", name="uq_view_favorite_owner_channel"),)
@@ -190,6 +197,34 @@ class ViewMonitor(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_sent_on: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewMentionMonitor(Base):
+    __tablename__ = "view_mention_monitor"
+    __table_args__ = (UniqueConstraint("owner_id", "channel_id", name="uq_view_mention_monitor_owner_channel"),)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("owner.id", ondelete="CASCADE"), index=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    username: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ViewMentionEvent(Base):
+    __tablename__ = "view_mention_event"
+    __table_args__ = (
+        UniqueConstraint("monitor_id", "source_channel_id", "post_id", name="uq_view_mention_event_post"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    monitor_id: Mapped[int] = mapped_column(ForeignKey("view_mention_monitor.id", ondelete="CASCADE"), index=True)
+    source_channel_id: Mapped[int] = mapped_column(BigInteger)
+    source_username: Mapped[str] = mapped_column(String(64))
+    post_id: Mapped[int] = mapped_column(BigInteger)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    claim_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ViewMtprotoAccount(Base):

@@ -21,7 +21,7 @@ spec:
             - {secretRef: {name: gramly-welcome-runtime}}
             - {secretRef: {name: gramly-view-mtproto, optional: true}}
           env:
-            - {name: WELCOME_DATABASE_POOL_SIZE, value: "4"}
+            - {name: WELCOME_DATABASE_POOL_SIZE, value: "2"}
             - {name: WELCOME_DATABASE_MAX_OVERFLOW, value: "0"}
           ports: [{name: metrics, containerPort: 9090}, {name: health, containerPort: 9091}]
           startupProbe: {httpGet: {path: /health/live, port: health}, periodSeconds: 5, failureThreshold: 24}
@@ -31,7 +31,7 @@ spec:
           volumeMounts: [{name: scratch, mountPath: /tmp}]
           resources:
             requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: "2", memory: 1Gi}
+            limits: {cpu: "1", memory: 1Gi}
       volumes: [{name: scratch, emptyDir: {sizeLimit: 256Mi}}]
 ---
 apiVersion: monitoring.coreos.com/v1

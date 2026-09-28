@@ -18,7 +18,7 @@ spec:
         query: >-
           SELECT COALESCE(CEIL(SUM(pending_count)::numeric / 25), 0)
           FROM inbox_source
-          WHERE pending_count > 0 AND next_available_at <= NOW()
+          WHERE source_key != 'view' AND pending_count > 0 AND next_available_at <= NOW()
         targetQueryValue: "1"
         activationTargetQueryValue: "0"
 ---

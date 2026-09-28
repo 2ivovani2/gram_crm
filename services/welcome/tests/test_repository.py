@@ -66,6 +66,7 @@ async def test_empty_sources_do_not_age_the_event_queue() -> None:
     snapshot = await queue_snapshot(cast(AsyncSession, Session()))
     compiled = str(statements[0].compile(dialect=postgresql.dialect()))  # type: ignore[no-untyped-call]
     assert "inbox_source.pending_count >" in compiled
+    assert "inbox_source.source_key !=" in compiled
     assert snapshot["events"] == (0, 0, 0.0)
 
 

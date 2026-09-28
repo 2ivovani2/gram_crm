@@ -35,6 +35,12 @@ class ViewReport:
     growth_7d: int | None = None
     mentions_7d: int | None = None
     views_samples_24h: int | None = None
+    views_samples_48h: int = 0
+    views_samples_72h: int = 0
+    scanned_posts_count: int = 0
+    exact_posts_24h: int = 0
+    exact_posts_48h: int = 0
+    exact_posts_72h: int = 0
     username: str | None = None
 
 
@@ -98,14 +104,14 @@ def render_report_png(report: ViewReport, *, bot_username: str = "gramly_view_bo
     draw.line((56, 192, 1144, 192), fill=RULE, width=2)
     draw.text((56, 223), "ПОДПИСЧИКИ", font=_font(20, bold=True), fill=MUTED)
     draw.text((56, 258), _number(report.subscribers), font=_font(72 if report.subscribers is not None else 37, bold=True), fill=PAPER)
-    draw.text((650, 223), "СРЕДНИЕ ПРОСМОТРЫ ПОСТА · 24 Ч", font=_font(19, bold=True), fill=MUTED)
+    draw.text((650, 223), "ПОСТЫ ЗА 24 Ч · СРЕДНИЕ ПРОСМОТРЫ", font=_font(19, bold=True), fill=MUTED)
     draw.text((650, 269), _number(report.views_24h), font=_font(55 if report.views_24h is not None else 34, bold=True), fill=PAPER)
     if report.views_samples_24h is not None:
-        draw.text((650, 344), f"Измерено публикаций: {report.views_samples_24h}", font=_font(20), fill=MUTED)
+        draw.text((650, 344), f"Постов в периоде: {report.views_samples_24h}", font=_font(20), fill=MUTED)
     draw.line((56, 407, 1144, 407), fill=RULE, width=2)
     details = (
-        ("ПРОСМОТРЫ · 48 Ч", _number(report.views_48h)),
-        ("ПРОСМОТРЫ · 72 Ч", _number(report.views_72h)),
+        ("ПОСТЫ ЗА 48 Ч", _number(report.views_48h)),
+        ("ПОСТЫ ЗА 72 Ч", _number(report.views_72h)),
         ("ER24", f"{report.er24:.2f}%" if report.er24 is not None else "нет данных"),
     )
     for x, (label, value) in zip((56, 439, 817), details, strict=True):
@@ -147,17 +153,16 @@ def _network_format(value: int | float | None, metric: NetworkMetric) -> str:
 
 
 def network_summary_value(reports: Sequence[ViewReport], metric: NetworkMetric) -> int | float | None:
-    values = [_network_value(report, metric) for report in reports]
-    if not values or any(value is None for value in values):
+    measured = [(report, _network_value(report, metric)) for report in reports]
+    present = [(report, float(value)) for report, value in measured if value is not None]
+    if not present:
         return None
-    measured = [float(value) for value in values if value is not None]
-    if metric == "views":
-        samples = [report.views_samples_24h or 0 for report in reports]
-        if any(count <= 0 for count in samples):
-            return None
-        return round(sum(value * count for value, count in zip(measured, samples, strict=True)) / sum(samples))
-    total = sum(measured)
-    return total / len(values) if metric == "er" else round(total)
+    if metric in ("views", "er"):
+        weighted = [(value, report.views_samples_24h or 0) for report, value in present]
+        total_posts = sum(count for _, count in weighted)
+        return (round(sum(value * count for value, count in weighted) / total_posts, 2 if metric == "er" else 0)
+                if total_posts else None)
+    return round(sum(value for _, value in present))
 
 
 def render_network_png(
@@ -168,28 +173,34 @@ def render_network_png(
     labels = {
         "subscribers": ("Подписчики", "ИТОГО"),
         "growth": ("Рост за 7 дней", "ИТОГО"),
-        "views": ("Просмотры поста · 24 ч", "СРЕДНЕЕ ПО КАНАЛАМ"),
-        "er": ("ER24", "СРЕДНЕЕ ПО КАНАЛАМ"),
+        "views": ("Посты за 24 ч · просмотры", "СРЕДНЕЕ ПО ПОСТАМ"),
+        "er": ("ER24", "СРЕДНЕЕ ПО ПОСТАМ"),
         "mentions": ("Упоминания · 7 дней", "ИТОГО"),
     }
     if metric not in labels:
         raise ValueError("unknown network metric")
     width = 1200
-    rows = reports[:20]
-    height = max(610, 430 + 66 * len(rows))
+    all_reports = reports[:20]
+    rows = all_reports[:6]
+    height = max(610, 490 + 66 * len(rows))
     image = Image.new("RGB", (width, height), INK)
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, width, 9), fill=LIME)
     draw.text((56, 48), "GRAMLYVIEW  /  СЕТЬ КАНАЛОВ", font=_font(23, bold=True), fill=LIME)
     _logo(image, 1065, 43, 88)
-    draw.text((56, 108), f"Каналов: {len(rows)}", font=_font(48, bold=True), fill=PAPER)
+    draw.text((56, 108), f"Каналов: {len(all_reports)}", font=_font(48, bold=True), fill=PAPER)
     draw.text((56, 183), labels[metric][0].upper(), font=_font(21, bold=True), fill=MUTED)
-    values = [_network_value(report, metric) for report in rows]
+    values = [_network_value(report, metric) for report in all_reports]
     present = [value for value in values if value is not None]
-    summary = network_summary_value(rows, metric)
-    summary_text = _network_format(summary, metric) if summary is not None else "нет полного итога"
+    summary = network_summary_value(all_reports, metric)
+    summary_text = _network_format(summary, metric) if summary is not None else "нет данных"
     draw.text((56, 219), summary_text, font=_font(42 if len(summary_text) < 17 else 28, bold=True), fill=LIME)
-    draw.text((650, 231), f"{labels[metric][1]} · с данными {len(present)}/{len(rows)}", font=_font(20), fill=MUTED)
+    coverage = f"{labels[metric][1]} · с данными {len(present)}/{len(all_reports)}"
+    if metric in ("views", "er"):
+        coverage += f" · постов {sum(report.views_samples_24h or 0 for report in all_reports)}"
+    draw.text((650, 231), coverage, font=_font(20), fill=MUTED)
+    if metric == "mentions":
+        draw.text((56, 270), "ТОЛЬКО ОТСЛЕЖИВАЕМЫЕ ПУБЛИЧНЫЕ КАНАЛЫ", font=_font(17), fill=MUTED)
     draw.line((56, 300, 1144, 300), fill=RULE, width=2)
     draw.text((56, 315), "КАНАЛ", font=_font(17, bold=True), fill=MUTED)
     draw.text((850, 315), labels[metric][0].upper(), font=_font(17, bold=True), fill=MUTED)
@@ -198,12 +209,15 @@ def render_network_png(
         if index % 2 == 0:
             draw.rectangle((48, y - 3, 1152, y + 60), fill=SURFACE)
         draw.text((64, y + 9), f"{index + 1:02d}", font=_font(18), fill=MUTED)
-        draw.text((117, y + 5), _fit(draw, report.title, 700, 25, bold=True), font=_font(25, bold=True), fill=PAPER)
+        draw.text((117, y + 5), _fit(draw, report.title, 700, 30, bold=True), font=_font(30, bold=True), fill=PAPER)
         value = _network_format(values[index], metric)
-        draw.text((850, y + 8), value, font=_font(22 if value == "нет данных" else 26, bold=True), fill=MUTED if value == "нет данных" else PAPER)
-    observed = max((report.observed_at for report in rows), default=datetime.now().astimezone())
-    oldest = min((report.observed_at for report in rows), default=observed)
+        draw.text((850, y + 8), value, font=_font(26 if value == "нет данных" else 30, bold=True), fill=MUTED if value == "нет данных" else PAPER)
+    if len(all_reports) > len(rows):
+        draw.text((56, height - 125), f"ЕЩЁ {len(all_reports) - len(rows)} КАНАЛОВ · ОТКРОЙТЕ ПО КНОПКЕ", font=_font(22, bold=True), fill=LIME)
+    observed = max((report.observed_at for report in all_reports), default=datetime.now().astimezone())
+    oldest = min((report.observed_at for report in all_reports), default=observed)
     span = (f"Снимки: {oldest:%d.%m %H:%M}–{observed:%d.%m %H:%M} UTC"
-            if oldest != observed else f"Данные на {observed:%d.%m.%Y %H:%M} UTC")
+            if oldest.strftime("%d.%m %H:%M") != observed.strftime("%d.%m %H:%M")
+            else f"Данные на {observed:%d.%m.%Y %H:%M} UTC")
     _footer(draw, width, height - 63, observed, label=span, bot_username=bot_username)
     return _png(image)

@@ -82,7 +82,7 @@ def test_report_image_handles_hidden_subscriber_count() -> None:
     assert render_report_png(report).startswith(b"\x89PNG\r\n\x1a\n")
 
 
-def test_network_image_keeps_all_twenty_rows_and_unknown_values_missing() -> None:
+def test_network_image_keeps_twenty_channel_total_but_mobile_size() -> None:
     from io import BytesIO
 
     from PIL import Image
@@ -95,7 +95,7 @@ def test_network_image_keeps_all_twenty_rows_and_unknown_values_missing() -> Non
     for metric in ("subscribers", "growth", "views", "er", "mentions"):
         with Image.open(BytesIO(render_network_png(reports, metric))) as image:
             assert image.width == 1200
-            assert image.height >= 1700
+            assert 800 <= image.height < 1000
     with pytest.raises(ValueError, match="unknown network metric"):
         # Deliberately exercise a value outside the static metric type.
         render_network_png(reports, "invalid")  # type: ignore[arg-type]
@@ -113,7 +113,7 @@ def test_network_views_use_one_post_weighted_formula() -> None:
     assert network_summary_value(reports, "subscribers") == 1100
     assert network_summary_value([reports[0], ViewReport(
         title="C", subscribers=50, observed_at=now, points=(), views_24h=None, er24=None,
-    )], "views") is None
+    )], "views") == 100  # partial coverage is shown with its channel count
 
 
 @pytest.mark.asyncio

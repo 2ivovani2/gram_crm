@@ -52,6 +52,16 @@ QUEUE_DEPTH = Gauge("welcome_queue_depth", "Durable queue rows by state", ("queu
 OLDEST_PENDING_AGE = Gauge(
     "welcome_oldest_pending_age_seconds", "Age of the oldest actionable queue row", ("queue",)
 )
+VIEW_QUEUE_DEPTH = Gauge("welcome_view_queue_depth", "Pending GramlyView inbox updates")
+VIEW_QUEUE_AGE = Gauge(
+    "welcome_view_oldest_pending_age_seconds", "Age of the oldest pending GramlyView update"
+)
+VIEW_COLLECTION_FAILURES = Gauge(
+    "welcome_view_collection_failures_last_hour", "Failed GramlyView channel collection runs in the last hour"
+)
+VIEW_LAST_SUCCESS_AGE = Gauge(
+    "welcome_view_last_success_age_seconds", "Age of the latest successful GramlyView collection"
+)
 AD_DELIVERIES = Counter(
     "welcome_free_ad_deliveries_total",
     "Free plan advertising operations by terminal result",

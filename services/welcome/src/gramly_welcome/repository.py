@@ -590,13 +590,14 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
             select(
                 func.coalesce(func.sum(InboxSource.pending_count), 0),
                 func.min(InboxSource.next_available_at),
-            ).where(InboxSource.pending_count > 0)
+            ).where(InboxSource.source_key != "view", InboxSource.pending_count > 0)
         )
     ).one()
     processing_count, processing_oldest = (
         await session.execute(
             select(func.count(InboxEvent.id), func.min(InboxEvent.available_at)).where(
-                InboxEvent.status == QueueStatus.PROCESSING.value
+                InboxEvent.source_key != "view",
+                InboxEvent.status == QueueStatus.PROCESSING.value,
             )
         )
     ).one()
@@ -606,7 +607,9 @@ async def queue_snapshot(session: AsyncSession) -> dict[str, tuple[int, int, flo
     )
     event_dead = int(
         await session.scalar(
-            select(func.count(InboxEvent.id)).where(InboxEvent.status == QueueStatus.DEAD.value)
+            select(func.count(InboxEvent.id)).where(
+                InboxEvent.source_key != "view", InboxEvent.status == QueueStatus.DEAD.value
+            )
         )
         or 0
     )

@@ -160,6 +160,27 @@ spec:
           annotations:
             summary: "Welcome delivery workers are missing"
             description: "Prometheus has not observed an active delivery worker for five minutes."
+        - alert: GramlyViewWorkerMissing
+          expr: absent(welcome_worker_active{kind="view"}) == 1
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "GramlyView worker is missing"
+            description: "View analysis updates are not being processed; Hello workers must remain independent."
+        - alert: GramlyViewQueueDelayed
+          expr: max(welcome_view_oldest_pending_age_seconds) > 120
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "GramlyView analysis queue is delayed"
+            description: "The oldest actionable View update is over two minutes old. Inspect pool availability and worker capacity."
+        - alert: GramlyViewCollectionFailures
+          expr: max(welcome_view_collection_failures_last_hour) >= 3
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "GramlyView channel collection is repeatedly failing"
+            description: "At least three collection runs failed during the last hour; inspect bounded error codes and MTProto cooldowns."
         - alert: GramlyWelcomeBillingWorkersMissing
           expr: absent(welcome_worker_active{kind="billing"}) == 1
           for: 5m

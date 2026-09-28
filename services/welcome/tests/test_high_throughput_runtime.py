@@ -78,6 +78,7 @@ def test_delivery_runtime_is_split_into_isolated_lanes() -> None:
     assert "gramly-welcome-worker-interactive" in scaling
     assert "gramly-welcome-worker-bulk" in scaling
     assert "fallback: {failureThreshold: 3, replicas: 4}" in scaling
+    assert "source_key != 'view'" in scaling
 
 
 def test_delivery_job_migration_dual_writes_every_legacy_queue() -> None:

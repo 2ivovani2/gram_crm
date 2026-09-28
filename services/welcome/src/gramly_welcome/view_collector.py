@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import cast
 
@@ -16,6 +17,8 @@ from telethon import TelegramClient, functions, utils
 
 from .db import session_factory
 from .models import ViewChannelSnapshot, ViewCollectionRun, ViewPostObservation, ViewPrivateChannel
+from .repository import queue_snapshot
+from .view_mentions import active_monitors, dispatch_pending, mentioned_usernames, record_mentions
 from .view_pool import analytics_available, lease_account
 
 logger = logging.getLogger(__name__)
@@ -28,8 +31,11 @@ async def collect_one(client: TelegramClient, username: object, expected_id: int
     # Keep the whole two-hour sampling window after a post reaches age 72h.
     cutoff = observed - timedelta(hours=75)
     posts: list[ViewPostObservation] = []
+    mention_posts: list[tuple[int, datetime, str, list[str]]] = []
     complete = False
     seen_count = 0
+    eligible_count = 0
+    oldest_seen_at: datetime | None = None
     channel_id = expected_id
     try:
         entity = await client.get_entity(username)
@@ -38,13 +44,22 @@ async def collect_one(client: TelegramClient, username: object, expected_id: int
             # Usernames can move. Never attach the new channel's data to the
             # old Bot API channel identity.
             raise ValueError("channel_identity_changed")
+        source_username = str(getattr(entity, "username", None) or "").lower()
         async for message in client.iter_messages(entity, limit=MAX_POSTS_PER_CHANNEL):
             seen_count += 1
             if message.date is None:
                 continue
+            oldest_seen_at = min(oldest_seen_at, message.date) if oldest_seen_at else message.date
             if message.date < cutoff:
                 complete = True
                 break
+            eligible_count += 1
+            if source_username:
+                mention_posts.append((
+                    message.id, message.date, str(getattr(message, "message", None) or ""),
+                    [str(entity.url) for entity in (getattr(message, "entities", None) or ())
+                     if getattr(entity, "url", None)],
+                ))
             if message.views is None:
                 continue
             posts.append(
@@ -83,13 +98,23 @@ async def collect_one(client: TelegramClient, username: object, expected_id: int
         return False
     async with session_factory() as session, session.begin():
         session.add_all(posts)
+        if mention_posts:
+            names = {
+                name for _post_id, _published_at, text, links in mention_posts
+                for name in mentioned_usernames(text, links)
+            }
+            monitors = await active_monitors(session, names)
+            await record_mentions(
+                session, monitors, source_channel_id=channel_id,
+                source_username=source_username, posts=mention_posts,
+            )
         session.add(
             ViewCollectionRun(
                 channel_id=channel_id,
                 observed_at=observed,
-                coverage_start_at=cutoff,
+                coverage_start_at=cutoff if complete else (oldest_seen_at or observed),
                 complete=complete,
-                post_count=len(posts),
+                post_count=eligible_count,
                 error_code="",
             )
         )
@@ -148,24 +173,40 @@ async def collect() -> None:
         + [("private", channel_id, account_id, last_at) for channel_id, account_id, last_at in private],
         key=lambda item: item[3] or datetime.min.replace(tzinfo=UTC),
     )[:MAX_CHANNELS_PER_RUN]
+    # Cron has an 840-second deadline; leave room for dispatch and cleanup.
+    stop_at = time.monotonic() + 720
     for kind, channel_id, target, _last_at in scheduled:
+        if time.monotonic() + 35 >= stop_at:
+            break
         try:
-            async with lease_account(cast(int, target) if kind == "private" else None) as (_id, client):
-                entity = await client.get_entity(channel_id if kind == "private" else target)
-                if utils.get_peer_id(entity) != channel_id or not getattr(entity, "broadcast", False):
-                    raise ValueError("channel_identity_changed")
-                await asyncio.wait_for(collect_one(client, entity, channel_id), timeout=180)
-                full = await client(functions.channels.GetFullChannelRequest(channel=entity))
-                raw_count = getattr(full.full_chat, "participants_count", None)
-                if raw_count is not None:
-                    async with session_factory() as session, session.begin():
-                        session.add(ViewChannelSnapshot(
-                            channel_id=channel_id,
-                            username=str(getattr(entity, "username", None) or ""),
-                            title=str(getattr(entity, "title", "Канал"))[:255],
-                            subscriber_count=int(raw_count),
-                            observed_at=datetime.now(UTC),
-                        ))
+            async with session_factory() as session:
+                hello_queues = await queue_snapshot(session)
+            if any(hello_queues[name][2] > 5 for name in (
+                "deliveries", "approvals", "join_activations", "content_operations"
+            )):
+                logger.warning("View collection deferred: Hello delivery is behind schedule")
+                break
+        except Exception as exc:
+            logger.warning("View collection deferred: Hello health unavailable class=%s", type(exc).__name__)
+            break
+        try:
+            async with asyncio.timeout(30):
+                async with lease_account(cast(int, target) if kind == "private" else None) as (_id, client):
+                    entity = await client.get_entity(channel_id if kind == "private" else target)
+                    if utils.get_peer_id(entity) != channel_id or not getattr(entity, "broadcast", False):
+                        raise ValueError("channel_identity_changed")
+                    await collect_one(client, entity, channel_id)
+                    full = await client(functions.channels.GetFullChannelRequest(channel=entity))
+                    raw_count = getattr(full.full_chat, "participants_count", None)
+                    if raw_count is not None:
+                        async with session_factory() as session, session.begin():
+                            session.add(ViewChannelSnapshot(
+                                channel_id=channel_id,
+                                username=str(getattr(entity, "username", None) or ""),
+                                title=str(getattr(entity, "title", "Канал"))[:255],
+                                subscriber_count=int(raw_count),
+                                observed_at=datetime.now(UTC),
+                            ))
         except Exception as exc:
             logger.warning("View collection unavailable channel_id=%s kind=%s class=%s", channel_id, kind, type(exc).__name__)
             async with session_factory() as session, session.begin():
@@ -177,6 +218,12 @@ async def collect() -> None:
                     post_count=0,
                     error_code=type(exc).__name__[:48],
                 ))
+        # Flush alerts after each source: a slow later scan must not delay
+        # earlier findings until the end of this collector run.
+        try:
+            await dispatch_pending(limit=5, time_budget_seconds=10)
+        except Exception as exc:
+            logger.warning("View mention dispatch deferred class=%s", type(exc).__name__)
     # Bound storage without a long delete transaction. The 7-day samples
     # support short trends; older numeric observations are not needed for the
     # 72-hour cards. Repeated runs gradually drain any accumulated backlog.
@@ -192,6 +239,10 @@ async def collect() -> None:
             result = await session.execute(delete(ViewPostObservation).where(ViewPostObservation.id.in_(ids)))
             if not getattr(result, "rowcount", 0):
                 break
+    try:
+        await dispatch_pending(time_budget_seconds=60)
+    except Exception as exc:
+        logger.warning("View mention dispatch deferred class=%s", type(exc).__name__)
 
 
 def run() -> None:

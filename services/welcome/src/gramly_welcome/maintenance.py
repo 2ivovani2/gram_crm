@@ -18,6 +18,7 @@ from .models import (
     QueueStatus,
     ViewChannelSnapshot,
     ViewCollectionRun,
+    ViewMentionEvent,
     ViewPostObservation,
     WebSession,
 )
@@ -143,6 +144,7 @@ async def maintain() -> None:
     for model, date_column, days in (
         (ViewPostObservation, ViewPostObservation.observed_at, 7),
         (ViewCollectionRun, ViewCollectionRun.observed_at, 14),
+        (ViewMentionEvent, ViewMentionEvent.observed_at, 30),
         (ViewChannelSnapshot, ViewChannelSnapshot.observed_at, 90),
     ):
         for _ in range(5):
