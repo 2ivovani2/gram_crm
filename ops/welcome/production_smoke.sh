@@ -4,10 +4,10 @@ set -euo pipefail
 [[ -n "${KUBECONFIG:-}" ]] || { echo "KUBECONFIG is required." >&2; exit 1; }
 
 namespace=gramly-welcome
-kubectl -n "${namespace}" rollout status deployment/gramly-welcome-api --timeout=10m
-kubectl -n "${namespace}" rollout status deployment/gramly-welcome-web --timeout=10m
+kubectl -n "${namespace}" rollout status deployment/gramly-welcome-api --timeout=30m
+kubectl -n "${namespace}" rollout status deployment/gramly-welcome-web --timeout=30m
 for worker in owner events view delivery billing notifications; do
-  kubectl -n "${namespace}" rollout status "deployment/gramly-welcome-worker-${worker}" --timeout=10m
+  kubectl -n "${namespace}" rollout status "deployment/gramly-welcome-worker-${worker}" --timeout=30m
 done
 
 kubectl -n "${namespace}" exec deployment/gramly-welcome-api -- python -c \

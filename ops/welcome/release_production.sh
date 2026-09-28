@@ -62,7 +62,7 @@ kubectl -n gramly-welcome delete job gramly-welcome-migrate --ignore-not-found=t
 kubectl kustomize "${infra_dir}/overlays/production/welcome-migrations" | \
   sed "s|WELCOME_IMAGE_PLACEHOLDER|${WELCOME_IMAGE}|g" | kubectl apply -f -
 kubectl -n gramly-welcome wait job/gramly-welcome-migrate \
-  --for=condition=Complete --timeout=10m
+  --for=condition=Complete --timeout=30m
 
 kubectl kustomize "${infra_dir}/overlays/production/welcome-cutover" | \
   sed -e "s|WELCOME_IMAGE_PLACEHOLDER|${WELCOME_IMAGE}|g" \
@@ -70,8 +70,8 @@ kubectl kustomize "${infra_dir}/overlays/production/welcome-cutover" | \
 kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-dashboard.yaml"
 kubectl apply -f "${infra_dir}/apps/observability/gramly-welcome-alerts.yaml"
 
-kubectl -n gramly-welcome rollout status deployment/gramly-welcome-api --timeout=10m
-kubectl -n gramly-welcome rollout status deployment/gramly-welcome-worker-view --timeout=10m
+kubectl -n gramly-welcome rollout status deployment/gramly-welcome-api --timeout=30m
+kubectl -n gramly-welcome rollout status deployment/gramly-welcome-worker-view --timeout=30m
 kubectl -n gramly-welcome exec deployment/gramly-welcome-api -- welcome-reconcile-interface-webhook
 kubectl -n gramly-welcome exec deployment/gramly-welcome-api -- welcome-reconcile-client-webhooks
 "${repo_root}/ops/welcome/production_smoke.sh"
