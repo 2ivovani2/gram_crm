@@ -19,3 +19,5 @@ View has one worker pod, concurrency four, a two-connection DB pool and a one-CP
 ## Release check
 
 Apply additive migrations before the new code. Test a new public channel, a permitted private invite and a 20-link mixed request. Confirm the network text and image appear together; check post counts, scan time, partial coverage, report callbacks, CSV, top, CPM and mention opt-in. Run load and failure tests with a fake Telegram server before increasing View throughput. A production canary must show that Hello delivery latency and expired greeting counts do not regress.
+
+CI and image pulls also depend on cluster DNS and registry TLS. If `setup-python` reports a certificate for a different host, verify the answer for `files.pythonhosted.org` from the runner before retrying; on 2026-09-28 CoreDNS inherited a bad node resolver, so its public upstream was pinned to `9.9.9.9` and `1.1.1.1` with a five-minute cache. Never disable certificate verification to pass the release gate. If the immutable image cannot be pulled, leave the migration and production promotion stopped until the registry path recovers.
